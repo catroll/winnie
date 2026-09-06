@@ -19,16 +19,29 @@ Winnie 是具备长期记忆能力的通用 AI 智能体，通过 OpenAI 兼容�
 
 ## 技术栈
 
+### 选型原则
+
+候选必须是**积极维护的开源项目**。排序：**满足功能要求 > 可维护性（简单）> 性能**。闭源托管若与「无厂商锁定」冲突，即使省运维也不作为默认项。
+
+### 定稿选型
+
 | 层级 | 选型 | 说明 |
 |------|------|------|
-| 语言 | Python | 主开发语言 |
-| 服务层 | FastAPI | OpenAI 兼容 HTTP API + 知识库管理 API |
-| 管理 UI | Web 前端（框架待定） | 对话调试 + 知识库编辑 / 重纳入 |
-| 智能体编排 | LangChain / LlamaIndex | 对话与 RAG 流程编排 |
-| 文档真相源 | Git 仓库（按用户隔离） | 知识文档版本管理与变更追踪 |
-| 向量记忆库 | Pinecone / Milvus | 语义检索索引（非唯一真相） |
-| 异步任务 | Redis | 提炼、分类打标、重索引等异步队列 |
-| LLM | GPT-4 / Claude API | 推理、提炼、自动分类打标 |
+| 语言 | Python | 主开发语言；AI/RAG 生态成熟 |
+| 服务层 | FastAPI | 开源活跃；天然适合 OpenAI 兼容 HTTP API |
+| 管理 UI | Vite + React | 开源活跃；满足 Markdown 编辑/历史/重纳入，栈常见易招人 |
+| 智能体编排 | LangGraph | 通用 Agent 状态机与工具调用；记忆/RAG 作为检索节点或工具接入 |
+| 文档真相源 | Git（按用户隔离） | 版控与溯源；符合文档即知识 |
+| 向量记忆库 | Qdrant | Apache-2.0；单机 Docker 即可；过滤/多租户够用；拒 Pinecone（非开源默认），Milvus 运维过重 |
+| 异步任务 | Redis + arq | Redis 作队列；arq 异步、API 面小，比 Celery 简单 |
+| LLM 接入 | OpenAI 兼容 API（经 LiteLLM 路由） | 开源路由层；一处配置切换模型，不绑 GPT/Claude 任一厂商 |
+
+### 选项取舍（摘要）
+
+- **LangGraph vs LlamaIndex（编排）**：Winnie 的产品目标是**通用 AI**（工作如软件开发、生活如偏好与人际关系等），记忆增强是核心能力之一，但不是唯一能力——还需要多步推理、工具调用与可扩展技能。LlamaIndex **可以**做 Agent（含工具与 Workflow），且 RAG/文档索引很强，但定位仍是「数据与检索优先」；把它当通用 Agent 主框架，后续加开发工具、外部动作时往往别扭或再引一套编排。LangGraph（LangChain 生态、开源活跃）以显式状态图编排 Agent，更贴「通用助手」主路径；Markdown 知识库通过检索节点/工具接到图中即可，**不默认再叠 LlamaIndex**，以免双框架抬高维护成本。若某一期变为「纯知识库产品」，可再评估 LlamaIndex 专责索引层。
+- **Qdrant vs Pinecone / Milvus**：Pinecone 非开源，违背锁定原则。Milvus 功能强但组件多、运维重。Qdrant 功能覆盖用户隔离过滤与重建索引，部署简单，性能足够 MVP 与早期试用。
+- **Vite+React vs 更轻方案**：Streamlit 等更快出原型，但知识库编辑/历史/重纳入交互会很快顶满天花板；React 生态对 Markdown 编辑器支持更好，长期维护成本更低。
+- **LiteLLM**：把「换模型」收成配置问题，落实无厂商锁定；业务只依赖 OpenAI 兼容语义。
 
 ## 基本目录结构
 
@@ -108,7 +121,7 @@ FastAPI 网关
 | `preferences` | 偏好习惯 | 沟通风格、审美、工作/工程习惯、工具偏好 | 「PR 要小步提交」「回答先给结论」 |
 | `people` | 人物关系 | 家人、同事、朋友及关系备注 | 「伴侣不吃香菜」「搭档负责后端」 |
 | `projects` | 项目目标 | 进行中的事、里程碑、责任范围 | 「Winnie 两月 MVP」「本周只做网关」 |
-| `domain` | 领域知识 | 用户教导的事实、领域要点、可复用说明 | 「公司用 Milvus」「内部术语 X 指 Y」 |
+| `domain` | 领域知识 | 用户教导的事实、领域要点、可复用说明 | 「公司用 Qdrant」「内部术语 X 指 Y」 |
 | `procedures` | 流程方法 | SOP、操作步骤、排查路径 | 「发版先跑 lint」「故障先看 Redis」 |
 | `constraints` | 规则红线 | 必须/禁止、合规与安全约束 | 「勿外传客户名」「默认中文回复」 |
 | `resources` | 环境资源 | 设备、账号别名、路径、环境与依赖 | 「主力机是 Linux」「API 走代理」 |
