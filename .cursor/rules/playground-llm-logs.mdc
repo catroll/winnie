@@ -1,0 +1,34 @@
+---
+description: Playground 示例须将每次 LLM 交互落盘到本示例 logs/，命名 ask/answer 成对文件
+globs: playground/**/*
+alwaysApply: false
+---
+
+# Playground LLM 沟通记录
+
+后续所有 `playground/` 示例如涉及程序与 LLM 的调用，必须按本约定落盘，便于回看交互过程。
+
+## 目录
+
+- 每个示例子目录自有 `logs/`（例如 `playground/01agent-langchain/logs/`）
+- **不要**把交互原文写进 `.cursor/`；`.cursor/rules/*.mdc` 只存约定本身
+- `logs/` 不入库（gitignore）
+
+## 文件名
+
+每一轮 **程序 → LLM** 与 **LLM → 程序** 写成一对：
+
+```text
+yyyymmdd-hhmmss-nnnnnnnnn-ask.txt
+yyyymmdd-hhmmss-nnnnnnnnn-answer.txt
+```
+
+- 同一前缀的 ask/answer 为一次模型调用
+- `nnnnnnnnn`：进程内递增序号（9 位）
+- Agent 多轮 tool 循环会产生多对文件
+
+## 实现
+
+- 复用 `playground/_shared/llm_record.py` 的 `LlmInteractionRecorder`
+- 传入该示例的 `logs/` 路径；经框架 callbacks 挂载
+- LangChain：`on_chat_model_start` → ask；`on_llm_end` → answer

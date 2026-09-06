@@ -4,4 +4,15 @@
 
 | 目录 | 说明 |
 |------|------|
+| [_shared](./_shared) | 示例共用工具（含 LLM 交互落盘） |
 | [01agent-langchain](./01agent-langchain) | LangChain Agent 基本概念示例 |
+
+## LLM 交互落盘（后续示例统一）
+
+约定已写入 Cursor 项目规则：`.cursor/rules/playground-llm-logs.mdc`。
+
+摘要：
+
+- 路径：各示例自己的 `logs/`（如 `01agent-langchain/logs/`）
+- 文件：`yyyymmdd-hhmmss-nnnnnnnnn-ask.txt` / `...-answer.txt`
+- 实现：`_shared/llm_record.py`

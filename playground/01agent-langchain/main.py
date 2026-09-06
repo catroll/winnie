@@ -5,11 +5,20 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
+# playground/_shared
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+
 from agent import build_agent
+
+EXAMPLE_ID = "01agent-langchain"
+LOGS_DIR = Path(__file__).resolve().parent / "logs"
 
 
 def _print_trace(messages: list) -> None:
@@ -34,8 +43,14 @@ def _print_trace(messages: list) -> None:
 
 
 def run_once(query: str, *, show_trace: bool = True) -> str:
+    recorder = LlmInteractionRecorder(LOGS_DIR, example_id=EXAMPLE_ID)
+    print(f"[llm-record] dir → {recorder.dir}")
+
     agent = build_agent()
-    result = agent.invoke({"messages": [{"role": "user", "content": query}]})
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": query}]},
+        config={"callbacks": [recorder]},
+    )
     messages = result["messages"]
     if show_trace:
         _print_trace(messages)

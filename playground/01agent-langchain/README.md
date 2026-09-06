@@ -12,7 +12,11 @@
 | **Agent Loop** | `create_agent` — Model 发起 tool_calls ↔ 执行 Tool ↔ 再推理，直到直接回答 |
 | **Messages / State** | `invoke({"messages": ...})` — 对话状态在消息列表中累积 |
 
-运行后加默认会打印「消息轨迹」，便于看到工具调用与最终回答如何串起来。
+运行后默认会打印「消息轨迹」，并把**每一次**程序↔LLM 调用落盘到本示例 `logs/`：
+
+`logs/yyyymmdd-hhmmss-nnnnnnnnn-ask.txt`（及对应 `-answer.txt`）
+
+项目约定见 `.cursor/rules/playground-llm-logs.mdc`。
 
 ## 运行
 
