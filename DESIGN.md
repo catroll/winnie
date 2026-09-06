@@ -66,6 +66,8 @@ winnie/
 ├── src/memory/     # 提炼、分类、Git、向量索引
 ├── src/worker/     # Redis 异步任务
 ├── data/kb/        # 运行时用户 Git 知识库
+├── playground/     # 实验示例（不进主产品路径）
+│   └── 01agent-langchain/  # LangChain Agent 概念示例
 └── tests/
 ```
 
