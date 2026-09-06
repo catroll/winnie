@@ -1,8 +1,8 @@
 # Winnie
 
-具备长期记忆能力的通用 AI 智能体，通过 OpenAI 兼容的 Chat Completions 接口对外服务。交互经语义提炼后写入向量库，以检索增强生成（RAG）实现个性化记忆。
+个人智能基础设施：透明 LLM 兼容层（留存沟通与经验）、完整个人知识库，并作为个人助理的可组合基础。
 
-更多设计说明见 [DESIGN.md](./DESIGN.md)；技术评估（可迭代）见 [EVAL.md](./EVAL.md)。
+更多说明见 [DESIGN.md](./DESIGN.md)；技术评估见 [EVAL.md](./EVAL.md)。
 
 ## License
 
