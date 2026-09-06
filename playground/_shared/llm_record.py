@@ -110,12 +110,35 @@ class LlmInteractionRecorder(BaseCallbackHandler):
         *,
         run_id: UUID,
         parent_run_id: UUID | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        invocation_params: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         prefix = self._next_prefix()
         self._pending[run_id] = prefix
         model = (serialized or {}).get("id") or (serialized or {}).get("name") or ""
-        body = f"model: {model}\nparent_run_id: {parent_run_id}\n\n"
+        # tools 等不在 messages 里，而在 Chat Completions 的 tools / invocation_params
+        inv = invocation_params if invocation_params is not None else kwargs.get(
+            "invocation_params"
+        )
+        body = f"model: {model}\nparent_run_id: {parent_run_id}\n"
+        if tags:
+            body += f"tags: {tags}\n"
+        if metadata:
+            body += (
+                "metadata:\n"
+                + json.dumps(metadata, ensure_ascii=False, default=str, indent=2)
+                + "\n"
+            )
+        if inv:
+            # 完整记录发给模型侧的调用参数（含 tools schema）
+            body += (
+                "\n## invocation_params\n"
+                + json.dumps(inv, ensure_ascii=False, default=str, indent=2)
+                + "\n"
+            )
+        body += "\n## messages\n"
         body += _serialize_messages(messages)
         path = self._write(prefix, "ask", body)
         print(f"[llm-record] ask → {path}")
