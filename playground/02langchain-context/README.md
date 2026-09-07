@@ -96,6 +96,17 @@ model.invoke(messages)
 
 **Context ≠ Memory**：Context 是“本次发送给 LLM 的信息”；Memory 是“如何保存、筛选和管理历史信息”。
 
+没有单独一章把这四块拼成「高级 Context」；是拆在后面几章里的：
+
+| README 里的能力           | 更接近的章节                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| 最近历史（窗口 / 会话内） | **21** agent-memory、**42** checkpoint（按 thread 续聊）                               |
+| 重要事实（长期偏好等）    | **41** memory-store（短记 vs 长记注入）                                                |
+| 按需检索的历史            | **28–31** retriever / RAG / rag-chat / query-rewrite（历史当事料库检索，而不是整包塞） |
+| 当前任务 Context          | **29** RAG 的 `{context}`、**03** prompt；Agent 侧见 **35** rag-agent                  |
+
+若要对齐高级公式，最短路径：**21 → 41 → 30（或 31）**；再加 **42** 看持久化。
+
 ## 与第 1 章的关系
 
 |         | 01langchain-demo                  | 02langchain-context          |
