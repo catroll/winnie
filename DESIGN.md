@@ -67,9 +67,6 @@ winnie/
 ├── src/worker/     # Redis 异步任务
 ├── data/kb/        # 运行时用户 Git 知识库
 ├── playground/     # 实验示例（不进主产品路径）
-│   ├── _shared/            # 共用：LLM ask/answer 落盘等
-│   ├── 01langchain-demo/   # LangChain Agent 概念示例
-│   └── 02langchain-context/  # 多轮上下文 + 总结
 └── tests/
 ```
 

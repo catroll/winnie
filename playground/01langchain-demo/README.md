@@ -71,5 +71,3 @@ LLM 落盘约定见 `.cursor/rules/playground-llm-logs.mdc`。
 ├── pyproject.toml
 └── .env.example
 ```
-
-下一章：[02langchain-context](../02langchain-context) — 多轮会话与上下文。

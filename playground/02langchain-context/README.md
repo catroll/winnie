@@ -75,5 +75,3 @@ uv run python main.py --turn "我叫 Cat" --turn "时区 UTC+8" --turn "偏好�
 ├── pyproject.toml
 └── .env.example
 ```
-
-上一章：[01langchain-demo](../01langchain-demo)。
