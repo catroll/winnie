@@ -10,10 +10,10 @@
 
 知识点：
 
-* ChatModel
-* invoke()
-* System / Human Message
-* 基础 Prompt
+- ChatModel
+- invoke()
+- System / Human Message
+- 基础 Prompt
 
 Demo：
 
@@ -35,12 +35,12 @@ LLM
 
 知识点：
 
-* Chat History
-* Message History
-* SystemMessage
-* HumanMessage
-* AIMessage
-* 上下文传递
+- Chat History
+- Message History
+- SystemMessage
+- HumanMessage
+- AIMessage
+- 上下文传递
 
 建议重点理解：
 
@@ -54,11 +54,11 @@ LLM
 
 知识点：
 
-* PromptTemplate
-* ChatPromptTemplate
-* MessagesPlaceholder
-* Partial Variables
-* Few-shot Prompt
+- PromptTemplate
+- ChatPromptTemplate
+- MessagesPlaceholder
+- Partial Variables
+- Few-shot Prompt
 
 Demo：
 
@@ -89,10 +89,10 @@ Few-shot Prompt
 
 知识点：
 
-* Structured Output
-* Pydantic
-* JSON Schema
-* Output Parser
+- Structured Output
+- Pydantic
+- JSON Schema
+- Output Parser
 
 Demo：
 
@@ -141,10 +141,10 @@ LLM → Structured Data → Program
 
 知识点：
 
-* Runnable
-* RunnableLambda
-* RunnableSequence
-* RunnableParallel
+- Runnable
+- RunnableLambda
+- RunnableSequence
+- RunnableParallel
 
 理解：
 
@@ -178,10 +178,10 @@ prompt | model | parser
 
 知识点：
 
-* Pipe
-* Chain
-* Sequence
-* Composition
+- Pipe
+- Chain
+- Sequence
+- Composition
 
 Demo：
 
@@ -203,9 +203,9 @@ Parser
 
 知识点：
 
-* RunnableParallel
-* 并行任务
-* 多模型调用
+- RunnableParallel
+- 并行任务
+- 多模型调用
 
 Demo：
 
@@ -220,10 +220,10 @@ Demo：
 
 ```json
 {
-    "title": "",
-    "summary": "",
-    "keywords": [],
-    "sentiment": ""
+  "title": "",
+  "summary": "",
+  "keywords": [],
+  "sentiment": ""
 }
 ```
 
@@ -237,10 +237,10 @@ Demo：
 
 知识点：
 
-* stream()
-* astream()
-* Token Streaming
-* Callback
+- stream()
+- astream()
+- Token Streaming
+- Callback
 
 Demo：
 
@@ -270,10 +270,10 @@ WebSocket
 
 知识点：
 
-* ainvoke()
-* asyncio
-* astream()
-* 并发控制
+- ainvoke()
+- asyncio
+- astream()
+- 并发控制
 
 Demo：
 
@@ -303,9 +303,9 @@ Task3 ─┘
 
 知识点：
 
-* ChatOpenAI
-* 不同 LLM Provider
-* Model Abstraction
+- ChatOpenAI
+- 不同 LLM Provider
+- Model Abstraction
 
 Demo：
 
@@ -334,10 +334,10 @@ ModelFactory
 
 知识点：
 
-* RunnableConfig
-* tags
-* metadata
-* configurable fields
+- RunnableConfig
+- tags
+- metadata
+- configurable fields
 
 Demo：
 
@@ -359,11 +359,11 @@ prod
 
 知识点：
 
-* Callback Handler
-* LLM Start
-* LLM End
-* Tool Start
-* Error
+- Callback Handler
+- LLM Start
+- LLM End
+- Tool Start
+- Error
 
 Demo：
 
@@ -394,10 +394,10 @@ Error
 
 知识点：
 
-* Retry
-* Timeout
-* Fallback
-* Error Handling
+- Retry
+- Timeout
+- Fallback
+- Error Handling
 
 Demo：
 
@@ -431,9 +431,9 @@ LLM B
 
 知识点：
 
-* @tool
-* Tool Schema
-* Tool Description
+- @tool
+- Tool Schema
+- Tool Description
 
 Demo：
 
@@ -475,9 +475,9 @@ Agent
 
 学习：
 
-* Tool Selection
-* Tool Calling
-* Tool Result
+- Tool Selection
+- Tool Calling
+- Tool Result
 
 ---
 
@@ -487,9 +487,9 @@ Agent
 
 知识点：
 
-* Pydantic
-* JSON Schema
-* 参数校验
+- Pydantic
+- JSON Schema
+- 参数校验
 
 Demo：
 
@@ -581,9 +581,9 @@ Answer
 
 学习：
 
-* create_agent
-* Agent Loop
-* State
+- create_agent
+- Agent Loop
+- State
 
 ---
 
@@ -748,9 +748,9 @@ Execute
 
 适合理解：
 
-* Approval
-* Interrupt
-* Resume
+- Approval
+- Interrupt
+- Resume
 
 ---
 
@@ -766,10 +766,10 @@ Execute
 
 知识点：
 
-* TextLoader
-* PDF Loader
-* Web Loader
-* CSV Loader
+- TextLoader
+- PDF Loader
+- Web Loader
+- CSV Loader
 
 Demo：
 
@@ -789,10 +789,10 @@ Document
 
 知识点：
 
-* CharacterTextSplitter
-* RecursiveCharacterTextSplitter
-* Chunk Size
-* Chunk Overlap
+- CharacterTextSplitter
+- RecursiveCharacterTextSplitter
+- Chunk Size
+- Chunk Overlap
 
 Demo：
 
@@ -886,9 +886,9 @@ Vector Store
 
 知识点：
 
-* similarity search
-* MMR
-* Retriever
+- similarity search
+- MMR
+- Retriever
 
 Demo：
 
@@ -1030,8 +1030,8 @@ Retriever
 
 学习：
 
-* Query Rewrite
-* History-aware Retriever
+- Query Rewrite
+- History-aware Retriever
 
 ---
 
@@ -1231,11 +1231,11 @@ After Model
 
 用途：
 
-* Prompt 注入
-* 日志
-* 权限
-* Token 控制
-* 安全控制
+- Prompt 注入
+- 日志
+- 权限
+- Token 控制
+- 安全控制
 
 ---
 
@@ -1441,10 +1441,10 @@ Loki
 
 知识点：
 
-* Dataset
-* Test Case
-* LLM Judge
-* RAG Evaluation
+- Dataset
+- Test Case
+- LLM Judge
+- RAG Evaluation
 
 Demo：
 
@@ -1519,9 +1519,9 @@ LLM
 
 学习：
 
-* batch()
-* abatch()
-* 并发
+- batch()
+- abatch()
+- 并发
 
 ---
 
@@ -1702,50 +1702,69 @@ langchain-production/
 
 # 我建议的学习优先级
 
-如果你的目标是**尽快掌握 LangChain，并为 LangGraph 打基础**，建议按下面顺序：
+如果你的目标是**尽快掌握 LangChain，并为 LangGraph 打基础**，建议按下面顺序。
+
+说明：左侧 `01–28` 是**精简学习路径自己的序号**（约 28 个主题）；右侧 `→ NN` 是上文**完整 50 章清单**里的章号。这是**子集映射，不是 50 章一一重排**——未出现在右侧的完整章号，表示本路径**暂未列入**，也**没有并入**左边某一主题（仍可按完整清单单独学，或自行并进邻近 Demo）。
 
 ```text
 第一阶段
-├── 01 demo
-├── 02 context
-├── 03 prompt
-├── 04 output
-├── 05 runnable
-├── 06 LCEL
-└── 07 stream
+├── 01 demo            → 01
+├── 02 context         → 02
+├── 03 prompt          → 03
+├── 04 output          → 04
+├── 05 runnable        → 05
+├── 06 LCEL            → 06
+└── 07 stream          → 08
 
 第二阶段
-├── 08 tool
-├── 09 tool schema
-├── 10 agent
-├── 11 agent tool
-└── 12 agent loop
+├── 08 tool            → 14
+├── 09 tool schema     → 16
+├── 10 agent           → 18
+├── 11 agent tool      → 19
+└── 12 agent loop      → 22
 
 第三阶段
-├── 13 loader
-├── 14 splitter
-├── 15 embedding
-├── 16 vectorstore
-├── 17 retriever
-└── 18 RAG
+├── 13 loader          → 24
+├── 14 splitter        → 25
+├── 15 embedding       → 26
+├── 16 vectorstore     → 27
+├── 17 retriever       → 28
+└── 18 RAG             → 29
 
 第四阶段
-├── 19 RAG Chat
-├── 20 Query Rewrite
-├── 21 Rerank
-├── 22 Hybrid Search
-└── 23 RAG Agent
+├── 19 RAG Chat        → 30
+├── 20 Query Rewrite   → 31
+├── 21 Rerank          → 33
+├── 22 Hybrid Search   → 34
+└── 23 RAG Agent       → 35
 
 第五阶段
-├── 24 Middleware
-├── 25 Memory
-├── 26 Observability
-├── 27 Evaluation
-└── 28 Production
+├── 24 Middleware      → 38
+├── 25 Memory          → 41
+├── 26 Observability   → 44
+├── 27 Evaluation      → 45
+└── 28 Production      → 50
 
 第六阶段
-└── LangGraph
+└── LangGraph          （完整清单无独立章；多 Agent 处建议切入，见 37）
 ```
+
+本路径**未列入**的完整章号（举例）：
+
+| 完整章       | 主题                              | 说明                                       |
+| ------------ | --------------------------------- | ------------------------------------------ |
+| 07           | parallel                          | 未并入；与 LCEL 相关，需要时可跟 06 一起练 |
+| 09           | async                             | 未并入；可跟 stream / batch 补             |
+| 10–13        | model / config / callback / retry | 基础设施，可并进 common                    |
+| 15 / 17      | tools / tool-error                | 可并进 tool / agent-tool                   |
+| 20 / 21 / 23 | multi-tool / agent-memory / human | Agent 加深，按需补                         |
+| 32           | multi-query                       | 可并进 Query Rewrite / RAG                 |
+| 36           | router                            | 可并进 RAG Agent                           |
+| 39–40        | middleware-auth / limit           | 可并进 Middleware                          |
+| 42–43        | checkpoint / tracing              | 可并进 Memory / Observability              |
+| 46–49        | cache / batch / fallback / cost   | 可并进 Production                          |
+
+Playground 目录仍按**完整 01–50**建章，与上表精简路径无关。
 
 ## 我的明确建议
 
