@@ -29,7 +29,6 @@ SUMMARY_ASK = (
     "只写总结，不要寒暄。"
 )
 
-
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     kwargs: dict = {"temperature": 0.2}
@@ -38,7 +37,6 @@ def build_model():
     if api_key := os.getenv("OPENAI_API_KEY"):
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
-
 
 def initial_messages() -> list:
     return [SystemMessage(content=SYSTEM_PROMPT)]

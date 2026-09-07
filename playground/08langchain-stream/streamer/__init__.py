@@ -13,7 +13,6 @@ from langchain_core.outputs import LLMResult
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     kwargs: dict = {"temperature": 0.4}
@@ -22,7 +21,6 @@ def build_model():
     if api_key := os.getenv("OPENAI_API_KEY"):
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
-
 
 PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -34,11 +32,9 @@ PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-
 def build_chain(model):
     """LCEL：流式时 parser 会透传 token 文本块。"""
     return PROMPT | model | StrOutputParser()
-
 
 class TokenPrintHandler(BaseCallbackHandler):
     """Callback：在 LLM 新 token 到达时打印（演示 Token Streaming 钩子）。"""

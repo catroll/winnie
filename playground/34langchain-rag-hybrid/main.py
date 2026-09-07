@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT.parent))
-
-from _shared.rag_data import build_store, keyword_search, split_docs
-
+from common.rag_data import build_store, keyword_search, split_docs
 
 def main() -> None:
     q = "Qdrant"
@@ -25,7 +20,6 @@ def main() -> None:
         print("-", d.page_content[:50])
     merged = {d.page_content: d for d in vec + lex}
     print("Hybrid union:", len(merged))
-
 
 if __name__ == "__main__":
     main()

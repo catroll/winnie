@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.rag_data import HashEmbeddings
-
+from common.rag_data import HashEmbeddings
 
 def main() -> None:
     emb = HashEmbeddings(size=8)
@@ -18,7 +12,6 @@ def main() -> None:
         print(t, "→", [round(x, 3) for x in v])
     q = emb.embed_query("苹果")
     print("query 苹果 →", [round(x, 3) for x in q])
-
 
 if __name__ == "__main__":
     main()

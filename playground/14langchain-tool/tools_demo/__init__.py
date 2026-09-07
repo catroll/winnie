@@ -2,7 +2,6 @@
 
 from langchain.tools import tool
 
-
 @tool
 def get_weather(city: str) -> str:
     """查询城市天气（演示用假数据）。"""

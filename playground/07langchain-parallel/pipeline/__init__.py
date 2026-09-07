@@ -10,20 +10,17 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnableParallel
 from pydantic import BaseModel, Field
 
-
 class ArticleAnalysis(BaseModel):
     title: str = Field(description="标题，不超过 20 字")
     summary: str = Field(description="两到三句中文摘要")
     keywords: list[str] = Field(description="3～5 个关键词")
     sentiment: Literal["positive", "neutral", "negative"]
 
-
 DEFAULT_ARTICLE = """
 开源向量数据库 Qdrant 发布新版本，强化过滤查询与单机部署体验。
 不少个人开发者计划将其用于知识库检索；也有人提醒要做好备份与升级评估。
 整体社区讨论偏积极，认为文档和 Docker 体验在改善。
 """.strip()
-
 
 def build_model(model_env: str = "OPENAI_MODEL"):
     model = os.getenv(model_env) or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -34,22 +31,17 @@ def build_model(model_env: str = "OPENAI_MODEL"):
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
 
-
 class _Title(BaseModel):
     title: str
-
 
 class _Summary(BaseModel):
     summary: str
 
-
 class _Keywords(BaseModel):
     keywords: list[str]
 
-
 class _Sentiment(BaseModel):
     sentiment: Literal["positive", "neutral", "negative"]
-
 
 def _branch(system: str, model, schema: type[BaseModel]):
     """单路：Prompt → 结构化输出（json_mode，兼容更多网关）。"""
@@ -66,12 +58,10 @@ def _branch(system: str, model, schema: type[BaseModel]):
     structured = model.with_structured_output(schema, method="json_mode")
     return prompt | structured
 
-
 def _field(obj: Any, name: str):
     if isinstance(obj, dict):
         return obj[name]
     return getattr(obj, name)
-
 
 def build_pipeline(*, multi_model: bool = False):
     """

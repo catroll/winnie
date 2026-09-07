@@ -19,11 +19,9 @@ ENV_MODEL_VARS: dict[EnvName, str] = {
     "prod": "MODEL_PROD",
 }
 
-
 def resolve_model_name(env: EnvName) -> str:
     var = ENV_MODEL_VARS[env]
     return os.getenv(var) or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
-
 
 def build_base_model():
     """带 configurable_fields 的模型：运行时改 model_name。"""
@@ -44,14 +42,12 @@ def build_base_model():
         )
     )
 
-
 PROMPT = ChatPromptTemplate.from_messages(
     [
         ("system", "用一句中文回答。若能感知，可提到你是哪类助手。"),
         ("human", "{question}"),
     ]
 )
-
 
 def build_chain():
     """
@@ -71,7 +67,6 @@ def build_chain():
         | RunnableLambda(attach_runtime_view)
     )
 
-
 def config_for_env(env: EnvName, *, question: str) -> RunnableConfig:
     """组装 RunnableConfig：tags + metadata + configurable fields。"""
     model_name = resolve_model_name(env)
@@ -86,7 +81,6 @@ def config_for_env(env: EnvName, *, question: str) -> RunnableConfig:
             "model_name": model_name,
         },
     }
-
 
 def describe_envs() -> list[dict[str, str]]:
     rows = []

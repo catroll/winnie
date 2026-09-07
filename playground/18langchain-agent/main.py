@@ -8,17 +8,13 @@ from pathlib import Path
 
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
-
-from _shared.llm_record import LlmInteractionRecorder
-from _shared.model import load_env
+from common.llm_record import LlmInteractionRecorder
+from common.model import load_env
 from mini_agent import build_loop_agent, build_plain_agent
 
 EXAMPLE_ID = "18langchain-agent"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 def _print_state(messages: list) -> None:
     print("—— Agent State (messages) ——")
@@ -34,7 +30,6 @@ def _print_state(messages: list) -> None:
             print(f"{i}. Tool[{msg.name}]: {msg.content}")
         else:
             print(f"{i}. {type(msg).__name__}: {getattr(msg, 'content', msg)}")
-
 
 def main(argv=None) -> None:
     load_env(ROOT)
@@ -68,7 +63,6 @@ def main(argv=None) -> None:
         _print_state(result["messages"])
         print(f"graph type: {type(agent).__name__}")
         print()
-
 
 if __name__ == "__main__":
     main()

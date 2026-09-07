@@ -10,17 +10,13 @@ from pathlib import Path
 from langchain.agents import create_agent
 from pydantic import ValidationError
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
-
-from _shared.llm_record import LlmInteractionRecorder
-from _shared.model import build_chat_model, load_env
+from common.llm_record import LlmInteractionRecorder
+from common.model import build_chat_model, load_env
 from schema_tools import SearchInput, catalog_add, search
 
 EXAMPLE_ID = "16langchain-tool-schema"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 def main(argv=None) -> None:
     load_env(ROOT)
@@ -69,7 +65,6 @@ def main(argv=None) -> None:
             )
             print(f"User: {args.q}")
             print(f"Assistant: {result['messages'][-1].content}")
-
 
 if __name__ == "__main__":
     main()

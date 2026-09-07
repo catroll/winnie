@@ -7,14 +7,12 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
-
 
 @dataclass
 class AiCallRecord:
@@ -33,7 +31,6 @@ class AiCallRecord:
     tool_starts: list[str] = field(default_factory=list)
     run_id: str | None = None
 
-
 def _messages_to_prompt(messages: list[list[BaseMessage]] | list[BaseMessage]) -> str:
     batches = messages if messages and isinstance(messages[0], list) else [messages]
     lines: list[str] = []
@@ -44,7 +41,6 @@ def _messages_to_prompt(messages: list[list[BaseMessage]] | list[BaseMessage]) -
             lines.append(f"[{role}] {content}")
     return "\n".join(lines)
 
-
 def _estimate_cost(prompt_tokens: int | None, completion_tokens: int | None) -> float | None:
     if prompt_tokens is None and completion_tokens is None:
         return None
@@ -54,7 +50,6 @@ def _estimate_cost(prompt_tokens: int | None, completion_tokens: int | None) -> 
         (completion_tokens or 0) / 1_000_000.0
     ) * pout
     return round(cost, 8)
-
 
 class AiCallLogHandler(BaseCallbackHandler):
     """

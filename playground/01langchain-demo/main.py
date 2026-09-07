@@ -10,16 +10,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 
-# playground/_shared
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from agent import build_agent
 
 EXAMPLE_ID = "01langchain-demo"
 LOGS_DIR = Path(__file__).resolve().parent / "logs"
-
 
 def _print_trace(messages: list) -> None:
     """打印一轮 invoke 后的消息轨迹，便于观察 Agent 循环。"""
@@ -41,7 +37,6 @@ def _print_trace(messages: list) -> None:
         else:
             print(f"{i}. [{kind}] {getattr(msg, 'content', msg)}")
 
-
 def run_once(query: str, *, show_trace: bool = True) -> str:
     recorder = LlmInteractionRecorder(LOGS_DIR, example_id=EXAMPLE_ID)
     print(f"[llm-record] dir → {recorder.dir}")
@@ -57,7 +52,6 @@ def run_once(query: str, *, show_trace: bool = True) -> str:
     last = messages[-1]
     content = getattr(last, "content", str(last))
     return content if isinstance(content, str) else str(content)
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -79,7 +73,6 @@ def main(argv: list[str] | None = None) -> None:
     answer = run_once(args.query, show_trace=not args.no_trace)
     print("\n—— 最终回复 ——")
     print(answer)
-
 
 if __name__ == "__main__":
     main()

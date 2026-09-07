@@ -9,11 +9,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _shared.model import build_chat_model  # noqa: E402
+from common.model import build_chat_model
 
 PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -22,10 +18,8 @@ PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-
 def build_primary_chain():
     return PROMPT | build_chat_model() | StrOutputParser()
-
 
 def build_fallback_chain():
     """主链故意用无效模型 → 失败后 Fallback 到可用模型。"""
@@ -36,7 +30,6 @@ def build_fallback_chain():
     primary = PROMPT | bad | StrOutputParser()
     secondary = PROMPT | good | StrOutputParser()
     return primary.with_fallbacks([secondary])
-
 
 def build_retry_lambda(*, fail_times: int = 2):
     """前 N 次抛错，之后成功 —— 演示 with_retry。"""

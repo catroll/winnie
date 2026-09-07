@@ -29,7 +29,7 @@ yyyymmdd-hhmmss-nnnnnnnnn-answer.txt
 
 ## 实现
 
-- 复用 `playground/_shared/llm_record.py` 的 `LlmInteractionRecorder`
+- 复用 `playground/common` 包中的 `LlmInteractionRecorder`（`from common.llm_record import ...`）
 - 传入该示例的 `logs/` 路径；经框架 callbacks 挂载
 - LangChain：`on_chat_model_start` → ask；`on_llm_end` → answer
 - **ask 必须包含** `messages` 与 `invocation_params`（尤其是 `tools` schema）。工具定义走 API 的 `tools` 字段，通常**不会**出现在 System/Human 文本里；只记 messages 会误以为「没告诉模型有哪些工具」

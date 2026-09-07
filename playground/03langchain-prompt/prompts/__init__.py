@@ -71,7 +71,6 @@ DYNAMIC_CHAT = ChatPromptTemplate.from_messages(
     ]
 ).partial(product="Winnie")
 
-
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     kwargs: dict = {"temperature": 0}
@@ -80,7 +79,6 @@ def build_model():
     if api_key := os.getenv("OPENAI_API_KEY"):
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
-
 
 def demo_history() -> list:
     """供 MessagesPlaceholder 注入的示例历史（动态 Prompt）。"""

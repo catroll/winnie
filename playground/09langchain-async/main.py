@@ -10,9 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from async_demo import (
     DEFAULT_TASKS,
@@ -31,7 +29,6 @@ ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
 
 MODES = ("serial", "gather", "limit", "timeout", "astream")
-
 
 async def _run(mode: str, questions: list[str], config: dict) -> None:
     chain = build_chain(build_model())
@@ -69,7 +66,6 @@ async def _run(mode: str, questions: list[str], config: dict) -> None:
     print(f"\nelapsed[{label}]: {elapsed:.2f}s")
     for i, (q, a) in enumerate(zip(questions, results, strict=False), 1):
         print(f"\n[{i}] Q: {q}\n    A: {a}")
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -118,7 +114,6 @@ def main(argv: list[str] | None = None) -> None:
             await _run(args.mode, questions, config)
 
     asyncio.run(runner())
-
 
 if __name__ == "__main__":
     main()

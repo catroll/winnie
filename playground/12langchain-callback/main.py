@@ -14,16 +14,13 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import create_agent
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from logging_cb import AiCallLogHandler
 
 EXAMPLE_ID = "12langchain-callback"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -34,18 +31,15 @@ def build_model():
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
 
-
 @tool
 def ping(service: str) -> str:
     """探测服务是否可达；传入 service 名称。"""
     return f"{service}: ok"
 
-
 @tool
 def fail_tool(reason: str) -> str:
     """故意失败的工具，用于演示 Error 回调。"""
     raise RuntimeError(f"simulated tool failure: {reason}")
-
 
 def run_ok(question: str, config: dict) -> None:
     chain = (
@@ -62,7 +56,6 @@ def run_ok(question: str, config: dict) -> None:
     answer = chain.invoke({"question": question}, config=config)
     print(f"Assistant: {answer}")
 
-
 def run_tool(question: str, config: dict) -> None:
     print("mode=tool → Agent + Tool Start")
     agent = create_agent(
@@ -77,7 +70,6 @@ def run_tool(question: str, config: dict) -> None:
     last = result["messages"][-1]
     print(f"Assistant: {getattr(last, 'content', last)}")
 
-
 def run_error(config: dict) -> None:
     print("mode=error → 无效模型名触发 LLM Error")
     # 构造必失败的模型调用
@@ -91,7 +83,6 @@ def run_error(config: dict) -> None:
         bad.invoke("ping", config=config)
     except Exception as exc:  # noqa: BLE001
         print(f"(caught) {type(exc).__name__}: {exc}")
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -136,7 +127,6 @@ def main(argv: list[str] | None = None) -> None:
             run_error(config)
 
     print(f"\n共记录 {len(ai_log.records)} 条 AI 调用日志。")
-
 
 if __name__ == "__main__":
     main()

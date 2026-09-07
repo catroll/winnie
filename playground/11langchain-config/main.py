@@ -14,16 +14,13 @@ from dotenv import load_dotenv
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import BaseMessage
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from config_demo import build_chain, config_for_env, describe_envs
 
 EXAMPLE_ID = "11langchain-config"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 class ConfigProbeHandler(BaseCallbackHandler):
     """从回调里读出 tags / metadata，证明 Config 已注入运行时。"""
@@ -47,7 +44,6 @@ class ConfigProbeHandler(BaseCallbackHandler):
         self.last_metadata = metadata
         print(f"[config] tags={tags}")
         print(f"[config] metadata={json.dumps(metadata or {}, ensure_ascii=False)}")
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -94,7 +90,6 @@ def main(argv: list[str] | None = None) -> None:
         print(f"[config] configurable={cfg['configurable']}")
         result = chain.invoke({"question": args.question}, config=cfg)
         print(f"answer: {result.get('answer', result)}\n")
-
 
 if __name__ == "__main__":
     main()

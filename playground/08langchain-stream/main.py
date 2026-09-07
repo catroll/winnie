@@ -10,16 +10,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from streamer import TokenPrintHandler, build_chain, build_model
 
 EXAMPLE_ID = "08langchain-stream"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 def run_stream(question: str, config: dict) -> str:
     """同步 stream()：按块迭代，适合 CLI。"""
@@ -33,7 +30,6 @@ def run_stream(question: str, config: dict) -> str:
     print("\n")
     return "".join(parts)
 
-
 async def run_astream(question: str, config: dict) -> str:
     """异步 astream()：同样的流，挂到 asyncio（Web/ASGI 常用）。"""
     chain = build_chain(build_model())
@@ -44,7 +40,6 @@ async def run_astream(question: str, config: dict) -> str:
         print(chunk, end="", flush=True)
     print("\n")
     return "".join(parts)
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -101,7 +96,6 @@ def main(argv: list[str] | None = None) -> None:
                 pass
             print("\n—— 拼接全文 ——\n")
             print("".join(token_cb.tokens))
-
 
 if __name__ == "__main__":
     main()

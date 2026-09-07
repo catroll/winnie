@@ -4,7 +4,7 @@ LangChain **教学 Demo 组**（01–50）。总览见 [langchain-topic.md](./la
 
 | 章节 | 目录 | 说明 |
 |------|------|------|
-| — | [_shared](./_shared) | llm 落盘 / model / rag_data |
+| — | [common](./common) | 可编辑包：llm 落盘 / model / rag_data |
 | 01 | [01langchain-demo](./01langchain-demo) | 见该目录 README |
 | 02 | [02langchain-context](./02langchain-context) | 见该目录 README |
 | 03 | [03langchain-prompt](./03langchain-prompt) | 见该目录 README |
@@ -57,6 +57,8 @@ LangChain **教学 Demo 组**（01–50）。总览见 [langchain-topic.md](./la
 | 50 | [50langchain-production](./50langchain-production) | 见该目录 README |
 
 各章：`cd <dir> && uv sync && uv run python main.py`（可复用 `01langchain-demo/.env`）。
+
+共用代码通过 `pyproject.toml` 依赖 `winnie-playground-common`（`../common`，editable），导入 `common.*`。
 
 LLM 落盘约定：`.cursor/rules/playground-llm-logs.mdc`。
 

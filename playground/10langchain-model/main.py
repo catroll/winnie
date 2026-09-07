@@ -12,16 +12,13 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from factory import PROVIDERS, ModelFactory
 
 EXAMPLE_ID = "10langchain-model"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -95,7 +92,6 @@ def main(argv: list[str] | None = None) -> None:
         answer = chain.invoke({"question": args.question}, config=config)
         print(f"type: {type(model).__name__}")
         print(f"answer: {answer}\n")
-
 
 if __name__ == "__main__":
     main()

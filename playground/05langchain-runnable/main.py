@@ -10,9 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from pipeline import (
     build_model,
@@ -28,7 +26,6 @@ ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
 
 MODES = ("sequence", "pipe", "lambda", "parallel")
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -86,7 +83,6 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(out, ensure_ascii=False, indent=2))
         else:
             print(out)
-
 
 if __name__ == "__main__":
     main()

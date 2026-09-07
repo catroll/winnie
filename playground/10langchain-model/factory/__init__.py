@@ -13,7 +13,6 @@ Provider = Literal["openai", "deepseek", "qwen", "claude"]
 
 PROVIDERS: tuple[Provider, ...] = ("openai", "deepseek", "qwen", "claude")
 
-
 @dataclass(frozen=True)
 class ProviderConfig:
     name: Provider
@@ -22,7 +21,6 @@ class ProviderConfig:
     model_env: str
     default_model: str
     default_base_url: str | None = None
-
 
 # 全部走 OpenAI 兼容协议 + init_chat_model("openai:...")
 # → 业务只依赖 BaseChatModel，不绑死某一家 SDK 调用细节。
@@ -60,7 +58,6 @@ _REGISTRY: dict[Provider, ProviderConfig] = {
         default_base_url=None,  # 需自备兼容网关或填官方代理 BASE_URL
     ),
 }
-
 
 class ModelFactory:
     """统一入口：create(provider) → BaseChatModel。"""

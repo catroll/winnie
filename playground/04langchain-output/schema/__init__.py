@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 class NewsAnalysis(BaseModel):
     """LLM 应填满的结构化结果（再交给下游程序）。"""
 
@@ -16,7 +15,6 @@ class NewsAnalysis(BaseModel):
     sentiment: Literal["positive", "neutral", "negative"] = Field(
         description="整体情感倾向"
     )
-
 
 # 同一合约的 JSON Schema 视图（部分模型 / 工具链直接吃 schema）
 NEWS_JSON_SCHEMA = NewsAnalysis.model_json_schema()

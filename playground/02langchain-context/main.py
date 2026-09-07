@@ -11,9 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain.messages import AIMessage, HumanMessage, SystemMessage
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from conversation import DEMO_TURNS, SUMMARY_ASK, build_model, initial_messages
 
@@ -21,11 +19,9 @@ EXAMPLE_ID = "02langchain-context"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
 
-
 def _content(msg) -> str:
     c = getattr(msg, "content", str(msg))
     return c if isinstance(c, str) else str(c)
-
 
 def _print_history(messages: list) -> None:
     print("\n—— 当前上下文（Messages）——")
@@ -39,7 +35,6 @@ def _print_history(messages: list) -> None:
             print(f"{i}. [AI] {_content(msg)}")
         else:
             print(f"{i}. [{type(msg).__name__}] {_content(msg)}")
-
 
 def run_conversation(turns: list[str], *, show_context: bool = True) -> str:
     """逐轮追加 Human/AI，整段 messages 作为上下文；最后返回总结正文。"""
@@ -74,7 +69,6 @@ def run_conversation(turns: list[str], *, show_context: bool = True) -> str:
         _print_history(messages)
     return summary
 
-
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
     # 允许复用隔壁示例的 .env
@@ -101,7 +95,6 @@ def main(argv: list[str] | None = None) -> None:
     summary = run_conversation(turns, show_context=not args.no_context)
     print("\n—— 最终总结 ——")
     print(summary)
-
 
 if __name__ == "__main__":
     main()

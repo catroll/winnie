@@ -9,9 +9,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from chains import (
     build_basic_chain,
@@ -25,7 +23,6 @@ ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
 
 MODES = ("basic", "compose", "swap_prompt")
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -73,7 +70,6 @@ def main(argv: list[str] | None = None) -> None:
         print("shape: prompt | model | parser" + (" | lambda" if mode == "compose" else ""))
         out = chain.invoke({"question": args.question}, config=config)
         print(out)
-
 
 if __name__ == "__main__":
     main()

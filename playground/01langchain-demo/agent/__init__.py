@@ -13,7 +13,6 @@ SYSTEM_PROMPT = """你是 Winnie playground 里的示例助手。
 回答使用简体中文，简短直接。
 """
 
-
 def build_agent():
     """创建 Agent 图：Model ⇄ Tools，直到不再发起 tool_calls。"""
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")

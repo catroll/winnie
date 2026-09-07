@@ -4,13 +4,11 @@ from datetime import datetime, timezone
 
 from langchain.tools import tool
 
-
 @tool
 def get_current_time(timezone_name: str = "UTC") -> str:
     """返回当前时间。timezone_name 仅作标注（示例固定输出 UTC）。"""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     return f"{now} (requested tz label: {timezone_name})"
-
 
 @tool
 def calculator(expression: str) -> str:
@@ -24,13 +22,11 @@ def calculator(expression: str) -> str:
         return f"error: {exc}"
     return str(value)
 
-
 @tool
 def note_preference(key: str, value: str) -> str:
     """假装写入一条个人偏好（演示 Tool / 副作用；进程内字典，不落盘）。"""
     _PREFS[key] = value
     return f"saved preference: {key}={value}"
-
 
 @tool
 def read_preference(key: str) -> str:
@@ -38,7 +34,6 @@ def read_preference(key: str) -> str:
     if key not in _PREFS:
         return f"no preference for key={key}"
     return f"{key}={_PREFS[key]}"
-
 
 _PREFS: dict[str, str] = {}
 

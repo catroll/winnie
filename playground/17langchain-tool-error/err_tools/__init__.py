@@ -6,7 +6,6 @@ from langchain.tools import tool
 
 _VALID_CITIES = {"北京", "上海", "深圳"}
 
-
 @tool
 def lookup_city_code(city: str) -> str:
     """查询城市编码。city 必须是「北京/上海/深圳」之一。"""
@@ -21,7 +20,6 @@ def lookup_city_code(city: str) -> str:
         )
     codes = {"北京": "BJ", "上海": "SH", "深圳": "SZ"}
     return f"{city} → {codes[city]}"
-
 
 @tool
 def echo_ok(text: str) -> str:

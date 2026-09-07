@@ -4,26 +4,20 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 from pathlib import Path
 
 from langchain.tools import tool
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT.parent))
-
-from _shared.model import load_env
+from common.model import load_env
 
 EXAMPLE_ID = ROOT.name
 _APPROVED = {"yes", "y", "是", "同意", "ok"}
-
 
 @tool
 def delete_database(name: str) -> str:
     """删除数据库（高风险）。"""
     return f"DELETED:{name}"
-
 
 def main() -> None:
     load_env(ROOT)
@@ -47,7 +41,6 @@ def main() -> None:
 
     print("Resume: Yes → Execute")
     print(delete_database.invoke({"name": args.name}))
-
 
 if __name__ == "__main__":
     main()

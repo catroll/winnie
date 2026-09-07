@@ -14,9 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from schema import DEFAULT_NEWS, NEWS_JSON_SCHEMA, NewsAnalysis
 
@@ -34,7 +32,6 @@ _STRUCTURED_SYSTEM = (
     "sentiment(positive|neutral|negative)。"
 )
 
-
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     kwargs: dict = {"temperature": 0}
@@ -43,7 +40,6 @@ def build_model():
     if api_key := os.getenv("OPENAI_API_KEY"):
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
-
 
 def _print_result(mode: str, data: NewsAnalysis | dict) -> None:
     print(f"\n—— 结构化结果 ({mode}) ——")
@@ -54,7 +50,6 @@ def _print_result(mode: str, data: NewsAnalysis | dict) -> None:
         payload = data
         print(f"type: {type(data).__name__}")
     print(json.dumps(payload, ensure_ascii=False, indent=2))
-
 
 def run_pydantic(model, news: str, config: dict) -> NewsAnalysis:
     """推荐概念：Pydantic 合约 + with_structured_output → 模型实例。"""
@@ -68,7 +63,6 @@ def run_pydantic(model, news: str, config: dict) -> NewsAnalysis:
         result = NewsAnalysis.model_validate(result)
     assert isinstance(result, NewsAnalysis)
     return result
-
 
 def run_json_schema(model, news: str, config: dict) -> dict:
     """JSON Schema 合约：不依赖业务侧 import 某个 BaseModel 类名。"""
@@ -84,7 +78,6 @@ def run_json_schema(model, news: str, config: dict) -> dict:
     if isinstance(result, NewsAnalysis):
         return result.model_dump()
     return dict(result)
-
 
 def run_parser(model, news: str, config: dict) -> NewsAnalysis:
     """经典 Output Parser：模型先吐 JSON 文本，再解析校验为 Pydantic。"""
@@ -105,13 +98,11 @@ def run_parser(model, news: str, config: dict) -> NewsAnalysis:
     ai = model.invoke(messages, config=config)
     return parser.parse(getattr(ai, "content", str(ai)))
 
-
 RUNNERS = {
     "pydantic": run_pydantic,
     "json_schema": run_json_schema,
     "parser": run_parser,
 }
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -149,7 +140,6 @@ def main(argv: list[str] | None = None) -> None:
         print(f"\n========== mode={mode} ==========")
         result = RUNNERS[mode](model, args.news, config)
         _print_result(mode, result)
-
 
 if __name__ == "__main__":
     main()

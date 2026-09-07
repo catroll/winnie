@@ -5,6 +5,7 @@ description = "文本切分"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "winnie-playground-common",
     "langchain>=1.0.0",
     "langchain-openai>=1.0.0",
     "python-dotenv>=1.0.0",
@@ -14,3 +15,6 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["c25"]
+
+[tool.uv.sources]
+winnie-playground-common = { path = "../common", editable = true }

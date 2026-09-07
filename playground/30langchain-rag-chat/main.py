@@ -2,13 +2,12 @@ from __future__ import annotations
 import os, sys
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT)); sys.path.insert(0, str(ROOT.parent))
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from _shared.llm_record import LlmInteractionRecorder
-from _shared.model import build_chat_model, load_env
-from _shared.rag_data import build_store
+from common.llm_record import LlmInteractionRecorder
+from common.model import build_chat_model, load_env
+from common.rag_data import build_store
 EXAMPLE_ID = ROOT.name; LOGS_DIR = ROOT / "logs"
 
 def main():

@@ -5,11 +5,13 @@
 ## 依赖
 
 1. **`langchain_core.embeddings.FakeEmbeddings` 与 `InMemoryVectorStore` 都依赖 numpy**  
-   教学环境尽量少装依赖：用 `_shared/rag_data.py` 的 `HashEmbeddings` + `SimpleVectorStore`（纯 Python 余弦相似度）。
+   教学环境尽量少装依赖：用 `common.rag_data` 的 `HashEmbeddings` + `SimpleVectorStore`（纯 Python 余弦相似度）。
 2. **`HashEmbeddings` 必须带「词桶」**  
    纯 SHA 向量几乎无语义重叠，RAG 演示会答非所问。当前实现：一半维度按 token 哈希累加，一半噪声，保证含相同关键词的 chunk 更容易命中。
 3. **切分默认 `chunk_size=80, overlap=16`**  
    过小（40）易把「Markdown / Git / Qdrant」拆散，检索命中差、模型只能胡猜。
+4. **共用包用 `pyproject` 路径依赖，不用 `sys.path`**  
+   包名 `winnie-playground-common`，目录 `playground/common/`，各章 `[tool.uv.sources]` 指向 `../common`（editable）。
 
 ## Agent
 
@@ -23,7 +25,7 @@
 Document → Split → HashEmbed → SimpleVectorStore → Retriever → Prompt → LLM
 ```
 
-共用语料在 `_shared/rag_data.py`（产品说明 / 开发约定 / 演示里程碑），与 Winnie 设计文档对齐，便于后续真接 Qdrant。
+共用语料在 `common.rag_data`（产品说明 / 开发约定 / 演示里程碑），与 Winnie 设计文档对齐，便于后续真接 Qdrant。
 
 ## 观测与成本
 

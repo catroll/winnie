@@ -13,7 +13,6 @@ from langchain_core.runnables import (
     RunnableSequence,
 )
 
-
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     kwargs: dict = {"temperature": 0}
@@ -23,12 +22,10 @@ def build_model():
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
 
-
 def normalize_question(text: str) -> dict:
     """RunnableLambda：把原始字符串收成管道输入 dict。"""
     cleaned = " ".join(text.strip().split())
     return {"question": cleaned}
-
 
 # —— Pipeline：Input → Prompt → Model → Parser ——
 PROMPT = ChatPromptTemplate.from_messages(
@@ -38,23 +35,19 @@ PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-
 def build_sequence_pipeline(model):
     """显式 RunnableSequence（与 prompt | model | parser 等价）。"""
     parser = StrOutputParser()
     return RunnableSequence(PROMPT, model, parser)
 
-
 def build_pipe_pipeline(model):
     """LCEL 竖线写法：同一条 Pipeline 的语法糖（第 6 章会展开）。"""
     return PROMPT | model | StrOutputParser()
-
 
 def build_with_lambda(model):
     """Lambda 预处理 + 管道：str → dict → Prompt → Model → Parser。"""
     prep = RunnableLambda(normalize_question)
     return prep | PROMPT | model | StrOutputParser()
-
 
 def build_parallel(model):
     """RunnableParallel：同一输入扇出两路，再汇总。"""

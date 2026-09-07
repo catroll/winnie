@@ -11,7 +11,6 @@ from langchain.chat_models import init_chat_model
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
-
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     kwargs: dict = {"temperature": 0}
@@ -21,7 +20,6 @@ def build_model():
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
 
-
 PROMPT = ChatPromptTemplate.from_messages(
     [
         ("system", "用一两句中文回答。不要废话。"),
@@ -29,17 +27,14 @@ PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-
 def build_chain(model):
     return PROMPT | model | StrOutputParser()
-
 
 DEFAULT_TASKS = [
     "一句话解释 asyncio",
     "一句话解释 ainvoke",
     "一句话解释并发限流",
 ]
-
 
 async def run_serial(chain, questions: Sequence[str], config: dict) -> list[str]:
     """串行：一个接一个 ainvoke。"""
@@ -48,7 +43,6 @@ async def run_serial(chain, questions: Sequence[str], config: dict) -> list[str]
         out.append(await chain.ainvoke({"question": q}, config=config))
     return out
 
-
 async def run_gather(chain, questions: Sequence[str], config: dict) -> list[str]:
     """并行：asyncio.gather 同时 ainvoke。"""
     return list(
@@ -56,7 +50,6 @@ async def run_gather(chain, questions: Sequence[str], config: dict) -> list[str]
             *[chain.ainvoke({"question": q}, config=config) for q in questions]
         )
     )
-
 
 async def run_limited(
     chain,
@@ -74,7 +67,6 @@ async def run_limited(
 
     return list(await asyncio.gather(*[one(q) for q in questions]))
 
-
 async def run_with_timeout(
     chain,
     question: str,
@@ -88,7 +80,6 @@ async def run_with_timeout(
         timeout=timeout,
     )
 
-
 async def run_astream_one(chain, question: str, config: dict) -> str:
     """复习：异步流式（与第 8 章衔接）。"""
     parts: list[str] = []
@@ -98,12 +89,10 @@ async def run_astream_one(chain, question: str, config: dict) -> str:
     print()
     return "".join(parts)
 
-
 async def timed(label: str, coro: Awaitable) -> tuple[str, float, object]:
     t0 = time.perf_counter()
     result = await coro
     return label, time.perf_counter() - t0, result
-
 
 # 简易「失败重试」示意（教学用，非生产 Retry 中间件）
 async def ainvoke_with_retry(

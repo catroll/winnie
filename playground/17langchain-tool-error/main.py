@@ -9,17 +9,13 @@ from pathlib import Path
 from langchain.agents import create_agent
 from langchain.messages import AIMessage, ToolMessage
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
-
-from _shared.llm_record import LlmInteractionRecorder
-from _shared.model import build_chat_model, load_env
+from common.llm_record import LlmInteractionRecorder
+from common.model import build_chat_model, load_env
 from err_tools import echo_ok, lookup_city_code
 
 EXAMPLE_ID = "17langchain-tool-error"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 def main(argv=None) -> None:
     load_env(ROOT)
@@ -65,7 +61,6 @@ def main(argv=None) -> None:
         elif isinstance(msg, AIMessage) and msg.content:
             print(f"  ai: {msg.content}")
     print(f"\nFinal: {result['messages'][-1].content}")
-
 
 if __name__ == "__main__":
     main()

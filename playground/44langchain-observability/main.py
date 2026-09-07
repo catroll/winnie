@@ -16,15 +16,11 @@ from langchain_core.outputs import LLMResult
 from langchain_core.prompts import ChatPromptTemplate
 
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT.parent))
-
-from _shared.llm_record import LlmInteractionRecorder
-from _shared.model import build_chat_model, load_env
+from common.llm_record import LlmInteractionRecorder
+from common.model import build_chat_model, load_env
 
 EXAMPLE_ID = ROOT.name
 LOGS_DIR = ROOT / "logs"
-
 
 @dataclass
 class Metrics:
@@ -32,7 +28,6 @@ class Metrics:
     errors: int = 0
     tokens: int = 0
     latency_ms: list[float] = field(default_factory=list)
-
 
 class MetricsHandler(BaseCallbackHandler):
     def __init__(self, m: Metrics) -> None:
@@ -52,7 +47,6 @@ class MetricsHandler(BaseCallbackHandler):
 
     def on_llm_error(self, error, *, run_id: UUID, **kwargs):
         self.m.errors += 1
-
 
 def main() -> None:
     load_env(ROOT)
@@ -84,7 +78,6 @@ def main() -> None:
             indent=2,
         )
     )
-
 
 if __name__ == "__main__":
     main()

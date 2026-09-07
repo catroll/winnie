@@ -2,10 +2,8 @@ from __future__ import annotations
 import argparse, json, os, sys, time, hashlib
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT.parent))
-from _shared.llm_record import LlmInteractionRecorder
-from _shared.model import build_chat_model, load_env
+from common.llm_record import LlmInteractionRecorder
+from common.model import build_chat_model, load_env
 EXAMPLE_ID = ROOT.name
 LOGS_DIR = ROOT / "logs"
 
@@ -14,12 +12,11 @@ def _ready():
     if not os.getenv("OPENAI_API_KEY"):
         print("缺少 OPENAI_API_KEY", file=sys.stderr); sys.exit(1)
 
-
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from _shared.rag_data import build_store
+from common.rag_data import build_store
 
 @tool
 def knowledge(query: str) -> str:

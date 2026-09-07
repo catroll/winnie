@@ -11,16 +11,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
+from common.llm_record import LlmInteractionRecorder
 
 from pipeline import DEFAULT_ARTICLE, build_pipeline
 
 EXAMPLE_ID = "07langchain-parallel"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
-
 
 def main(argv: list[str] | None = None) -> None:
     load_dotenv()
@@ -61,7 +58,6 @@ def main(argv: list[str] | None = None) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print(f"\nelapsed: {elapsed:.2f}s  (四路应接近「最慢一路」而非四路之和)")
     print(f"llm calls recorded under: {recorder.dir}")
-
 
 if __name__ == "__main__":
     main()

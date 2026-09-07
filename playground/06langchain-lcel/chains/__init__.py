@@ -10,7 +10,6 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
-
 def build_model():
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     kwargs: dict = {"temperature": 0}
@@ -20,7 +19,6 @@ def build_model():
         kwargs["api_key"] = api_key
     return init_chat_model(f"openai:{model}", **kwargs)
 
-
 PROMPT = ChatPromptTemplate.from_messages(
     [
         ("system", "用简洁中文回答。第一行给结论，后面最多两句补充。"),
@@ -28,11 +26,9 @@ PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-
 def build_basic_chain(model):
     """核心形态：prompt | model | parser。"""
     return PROMPT | model | StrOutputParser()
-
 
 def _to_bullet_block(text: str) -> str:
     """后处理：把段落收成条目（演示 Composition：chain | lambda）。"""
@@ -46,12 +42,10 @@ def _to_bullet_block(text: str) -> str:
         bullets.append(f"- {ln}")
     return "\n".join(bullets)
 
-
 def build_composed_chain(model):
     """组合：把已有 chain 再 | 一个 RunnableLambda（复用 + 扩展）。"""
     basic = build_basic_chain(model)
     return basic | RunnableLambda(_to_bullet_block)
-
 
 def build_from_template_chain(model):
     """同一 LCEL，换 Prompt 即换 Chain——组合优于复制整条调用代码。"""
