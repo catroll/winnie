@@ -68,7 +68,8 @@ winnie/
 ├── data/kb/        # 运行时用户 Git 知识库
 ├── playground/     # 实验示例（不进主产品路径）
 │   ├── _shared/            # 共用：LLM ask/answer 落盘等
-│   └── 01agent-langchain/  # LangChain Agent 概念示例
+│   ├── 01agent-langchain/  # LangChain Agent 概念示例
+│   └── 02multi-turn-summary/  # 多轮上下文 + 总结
 └── tests/
 ```
 

@@ -1,0 +1,18 @@
+[project]
+name = "02multi-turn-summary"
+version = "0.1.0"
+description = "Multi-turn conversation with context, then summary"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=1.0.0",
+    "langchain-openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["conversation"]

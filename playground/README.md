@@ -5,7 +5,8 @@
 | 目录 | 说明 |
 |------|------|
 | [_shared](./_shared) | 示例共用工具（含 LLM 交互落盘） |
-| [01agent-langchain](./01agent-langchain) | LangChain Agent 基本概念示例 |
+| [01agent-langchain](./01agent-langchain) | LangChain Agent 基本概念（Tools / Loop） |
+| [02multi-turn-summary](./02multi-turn-summary) | 多轮上下文会话 + 收尾结构化总结 |
 
 ## LLM 交互落盘（后续示例统一）
 
