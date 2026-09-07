@@ -23,28 +23,29 @@ LLM
 
 ## 核心知识点
 
-| 知识点 | 要理解什么 |
-|--------|------------|
-| **ChatModel** | 对话模型抽象；业务代码依赖接口，不绑死某一家 HTTP SDK。本示例用 `init_chat_model("openai:...")`。 |
-| **`invoke()`** | 同步一次调用：输入 Messages（或等价结构）→ 返回模型输出。流式对应 `stream` / `astream`，本章先掌握 invoke。 |
-| **Message 角色** | **System**：人设与硬规则；**Human**：用户本轮输入。角色决定模型如何解释上下文。 |
-| **基础 Prompt** | System 里写清角色、约束、输出风格；Human 承载任务。Prompt 质量直接影响工具选择与回答稳定性。 |
+| 知识点                | 要理解什么                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **ChatModel**         | 对话模型抽象；业务代码依赖接口，不绑死某一家 HTTP SDK。本示例用 `init_chat_model("openai:...")`。                     |
+| **`invoke()`**        | 同步一次调用：输入 Messages（或等价结构）→ 返回模型输出。流式对应 `stream` / `astream`，本章先掌握 invoke。           |
+| **Message 角色**      | **System**：人设与硬规则；**Human**：用户本轮输入。角色决定模型如何解释上下文。                                       |
+| **基础 Prompt**       | System 里写清角色、约束、输出风格；Human 承载任务。Prompt 质量直接影响工具选择与回答稳定性。                          |
 | **调用参数 ≠ 仅文本** | `tools` 等走 API 的 `invocation_params`，不一定出现在 System 正文里。看 ask 日志时要连同 `invocation_params` 一起读。 |
 
 ### 本 Demo 额外涉及（可作预习）
 
 当前代码在「基础交互」之上，还演示了 **Tools**（`@tool`）与 **Agent Loop**（`create_agent`：模型可发起 `tool_calls` → 执行工具 → 再推理）。可先当黑盒跑通，细节放到后续「Tool / Agent」章深入。
 
-| 扩展概念 | 代码位置 |
-|----------|----------|
-| Tools | `agent/tools.py` |
+| 扩展概念                   | 代码位置            |
+| -------------------------- | ------------------- |
+| Tools                      | `agent/tools.py`    |
 | System Prompt / 组装 Agent | `agent/__init__.py` |
-| 轨迹打印与入口 | `main.py` |
+| 轨迹打印与入口             | `main.py`           |
 
 ## 建议重点理解
 
 - LangChain 是**编排层**：把 Message、模型、（可选）工具收成一次可调用流水线。
 - 一次 `invoke` = 至少一轮程序↔LLM；Agent 场景下可能多轮 LLM 调用（多对 ask/answer 日志）。
+  Agent Loop 是 Agent 的核心执行机制：LLM 根据当前状态决定是否调用工具，获得工具结果后再次调用 LLM，直到生成最终答案。LangChain 的 `create_agent()` 将这个循环封装起来，开发者只需调用 `agent.invoke()`。
 - 先会「无状态单轮」：发什么、回什么；再谈记忆与 Agent。
 
 ## 运行
