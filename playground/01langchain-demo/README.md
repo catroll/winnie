@@ -1,4 +1,4 @@
-# 01agent-langchain
+# 01langchain-demo
 
 基于 **LangChain** 的最小 Agent 示例，用来熟悉基本概念（非 Winnie 主产品代码）。
 
@@ -21,7 +21,7 @@
 ## 运行
 
 ```bash
-cd playground/01agent-langchain
+cd playground/01langchain-demo
 cp .env.example .env   # 填写 OPENAI_API_KEY / BASE_URL / MODEL
 uv sync
 uv run python main.py
@@ -31,7 +31,7 @@ uv run python main.py "用计算器算 2** 不支持；改算 2+2，并读取偏
 ## 目录
 
 ```text
-01agent-langchain/
+01langchain-demo/
 ├── agent/
 │   ├── __init__.py   # build_agent
 │   └── tools.py      # Tools

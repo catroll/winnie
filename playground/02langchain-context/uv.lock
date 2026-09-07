@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "01agent-langchain"
+name = "02langchain-context"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

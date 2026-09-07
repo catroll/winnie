@@ -17,7 +17,7 @@ from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
 
 from conversation import DEMO_TURNS, SUMMARY_ASK, build_model, initial_messages
 
-EXAMPLE_ID = "02multi-turn-summary"
+EXAMPLE_ID = "02langchain-context"
 ROOT = Path(__file__).resolve().parent
 LOGS_DIR = ROOT / "logs"
 
@@ -79,7 +79,7 @@ def main(argv: list[str] | None = None) -> None:
     load_dotenv()
     # 允许复用隔壁示例的 .env
     if not os.getenv("OPENAI_API_KEY"):
-        sibling = ROOT.parent / "01agent-langchain" / ".env"
+        sibling = ROOT.parent / "01langchain-demo" / ".env"
         if sibling.exists():
             load_dotenv(sibling)
 
@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> None:
         print("缺少 OPENAI_API_KEY。请复制 .env.example 为 .env 并填写。", file=sys.stderr)
         sys.exit(1)
 
-    parser = argparse.ArgumentParser(description="02multi-turn-summary playground")
+    parser = argparse.ArgumentParser(description="02langchain-context playground")
     parser.add_argument(
         "--turn",
         action="append",

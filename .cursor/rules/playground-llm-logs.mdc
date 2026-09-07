@@ -10,7 +10,7 @@ alwaysApply: false
 
 ## 目录
 
-- 每个示例子目录自有 `logs/`（例如 `playground/01agent-langchain/logs/`）
+- 每个示例子目录自有 `logs/`（例如 `playground/01langchain-demo/logs/`）
 - **不要**把交互原文写进 `.cursor/`；`.cursor/rules/*.mdc` 只存约定本身
 - `logs/` 不入库（gitignore）
 

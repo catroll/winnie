@@ -17,7 +17,7 @@ from _shared.llm_record import LlmInteractionRecorder  # noqa: E402
 
 from agent import build_agent
 
-EXAMPLE_ID = "01agent-langchain"
+EXAMPLE_ID = "01langchain-demo"
 LOGS_DIR = Path(__file__).resolve().parent / "logs"
 
 
@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> None:
         print("缺少 OPENAI_API_KEY。请复制 .env.example 为 .env 并填写。", file=sys.stderr)
         sys.exit(1)
 
-    parser = argparse.ArgumentParser(description="01agent-langchain playground")
+    parser = argparse.ArgumentParser(description="01langchain-demo playground")
     parser.add_argument(
         "query",
         nargs="?",

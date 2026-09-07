@@ -1,5 +1,5 @@
 [project]
-name = "02multi-turn-summary"
+name = "02langchain-context"
 version = "0.1.0"
 description = "Multi-turn conversation with context, then summary"
 readme = "README.md"

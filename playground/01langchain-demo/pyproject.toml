@@ -1,5 +1,5 @@
 [project]
-name = "01agent-langchain"
+name = "01langchain-demo"
 version = "0.1.0"
 description = "LangChain agent basics playground for Winnie"
 readme = "README.md"
