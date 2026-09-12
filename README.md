@@ -4,6 +4,16 @@
 
 更多说明见 [DESIGN.md](./DESIGN.md)；技术评估见 [EVAL.md](./EVAL.md)。
 
+## 快速开始（阶段一：透明代理）
+
+OpenAI 兼容透明代理与本地沟通日志：见 [docs/openai-proxy.md](./docs/openai-proxy.md)。
+
+```bash
+cd apps/api && cp .env.example .env   # 配置 UPSTREAM_*
+uv sync
+uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
+```
+
 ## License
 
 本项目采用 [Apache License 2.0](./LICENSE) 开源协议。
