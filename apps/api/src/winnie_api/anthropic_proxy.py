@@ -1,4 +1,4 @@
-"""Anthropic Messages API 透明转发。"""
+"""Anthropic Messages API 透明转发（密钥透传）。"""
 
 from __future__ import annotations
 
@@ -9,25 +9,23 @@ import httpx
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-from winnie_api.config import Settings
 from winnie_api.forward import forward_json_post, streaming_sse_response
 from winnie_api.record import InteractionRecorder
+from winnie_api.routes import Route
 
 
-def anthropic_upstream_headers(settings: Settings, request: Request) -> dict[str, str]:
+def anthropic_upstream_headers(request: Request, *, default_version: str) -> dict[str, str]:
+    """只透传客户端鉴权头，服务端不注入上游密钥。"""
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "Accept": request.headers.get("accept", "application/json"),
     }
-    if settings.anthropic_api_key:
-        headers["x-api-key"] = settings.anthropic_api_key
-    elif key := request.headers.get("x-api-key"):
+    if key := request.headers.get("x-api-key"):
         headers["x-api-key"] = key
-    elif auth := request.headers.get("authorization"):
-        # 部分客户端用 Bearer 调 Anthropic 兼容网关
+    if auth := request.headers.get("authorization"):
         headers["Authorization"] = auth
 
-    version = request.headers.get("anthropic-version") or settings.anthropic_version
+    version = request.headers.get("anthropic-version") or default_version
     headers["anthropic-version"] = version
     if beta := request.headers.get("anthropic-beta"):
         headers["anthropic-beta"] = beta
@@ -35,7 +33,6 @@ def anthropic_upstream_headers(settings: Settings, request: Request) -> dict[str
 
 
 def _extract_anthropic_stream_text(chunk: dict[str, Any]) -> str | None:
-    """从 content_block_delta 等事件提取可读文本。"""
     ctype = chunk.get("type")
     if ctype == "content_block_delta":
         delta = chunk.get("delta") or {}
@@ -56,22 +53,27 @@ def _anthropic_error(msg: str) -> dict[str, Any]:
 async def proxy_messages(
     *,
     client: httpx.AsyncClient,
-    settings: Settings,
+    route: Route,
     recorder: InteractionRecorder,
     request: Request,
     body: dict[str, Any],
+    default_version: str,
 ) -> Response:
     stream = bool(body.get("stream"))
-    url = f"{settings.normalized_anthropic_base()}/messages"
-    headers = anthropic_upstream_headers(settings, request)
+    url = f"{route.api_base()}/messages"
+    headers = anthropic_upstream_headers(request, default_version=default_version)
     prefix = recorder.begin(
-        path="/v1/messages",
+        path=f"/{route.name}/v1/messages",
         body=body,
         headers_meta={
+            "route": route.name,
+            "protocol": route.protocol,
+            "upstream": route.api_base(),
             "stream": stream,
             "client_host": request.client.host if request.client else None,
             "user_agent": request.headers.get("user-agent"),
             "anthropic_version": headers.get("anthropic-version"),
+            "has_x_api_key": "x-api-key" in request.headers,
         },
     )
 
@@ -100,29 +102,25 @@ async def proxy_messages(
 async def proxy_anthropic_models(
     *,
     client: httpx.AsyncClient,
-    settings: Settings,
+    route: Route,
     request: Request,
+    default_version: str,
 ) -> Response:
-    url = f"{settings.normalized_anthropic_base()}/models"
-    headers = anthropic_upstream_headers(settings, request)
+    url = f"{route.api_base()}/models"
+    headers = anthropic_upstream_headers(request, default_version=default_version)
     try:
         upstream = await client.get(url, headers=headers)
         data = upstream.json()
         return JSONResponse(content=data, status_code=upstream.status_code)
     except (httpx.HTTPError, json.JSONDecodeError):
-        model = settings.anthropic_default_model
         return JSONResponse(
             content={
-                "data": [
-                    {
-                        "type": "model",
-                        "id": model,
-                        "display_name": model,
-                        "created_at": "1970-01-01T00:00:00Z",
-                    }
-                ],
+                "data": [],
                 "has_more": False,
-                "first_id": model,
-                "last_id": model,
-            }
+                "error": {
+                    "type": "api_error",
+                    "message": f"upstream models unavailable for route {route.name}",
+                },
+            },
+            status_code=502,
         )

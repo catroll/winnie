@@ -9,10 +9,12 @@
 OpenAI / Anthropic 兼容透明代理与本地沟通日志：见 [docs/openai-proxy.md](./docs/openai-proxy.md)。
 
 ```bash
-cd apps/api && cp .env.example .env   # 配置 UPSTREAM_* / ANTHROPIC_*
+cd apps/api   # 按需编辑 config.yaml
 uv sync
 uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+调用示例：`http://127.0.0.1:8000/deepseek-openai/v1/chat/completions`（Bearer 透传厂商 Key）。
 
 ## License
 

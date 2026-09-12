@@ -1,0 +1,26 @@
+# Winnie API 配置（无厂商密钥；密钥由客户端透传）
+
+# 本地沟通日志根目录；实际写入 {log_root}/{route}/
+# 相对路径相对 apps/api/
+log_root: ../../data/logs
+
+# 客户端未带 anthropic-version 时的默认值
+anthropic_version: "2023-06-01"
+
+# 可选：访问本代理的大门钥（与厂商 API Key 无关）。留空则不校验。
+proxy_api_key: ""
+
+# 路径前缀 → 上游。对外暴露 /{name}/v1/...
+routes:
+  openai:
+    protocol: openai
+    base_url: https://api.openai.com
+  deepseek-openai:
+    protocol: openai
+    base_url: https://api.deepseek.com
+  qwen-openai:
+    protocol: openai
+    base_url: https://dashscope.aliyuncs.com/compatible-mode
+  anthropic:
+    protocol: anthropic
+    base_url: https://api.anthropic.com

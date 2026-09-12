@@ -1,79 +1,74 @@
-"""运行时配置。"""
+"""从 config.yaml 加载配置（不用环境变量）。"""
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
+from typing import Any, Literal
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import yaml
+from pydantic import BaseModel, Field
+
+from winnie_api.routes import Route
 
 _API_ROOT = Path(__file__).resolve().parents[2]
-_REPO_ROOT = _API_ROOT.parents[1]
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=(_API_ROOT / ".env",),
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+class RouteConfig(BaseModel):
+    protocol: Literal["openai", "anthropic"]
+    base_url: str
 
-    # OpenAI 兼容上游
-    upstream_api_key: str = Field(default="", alias="UPSTREAM_API_KEY")
-    upstream_base_url: str = Field(
-        default="https://api.openai.com/v1", alias="UPSTREAM_BASE_URL"
-    )
-    upstream_default_model: str = Field(
-        default="gpt-4o-mini", alias="UPSTREAM_DEFAULT_MODEL"
-    )
-    winnie_log_dir: str = Field(
-        default=str(_REPO_ROOT / "data" / "logs" / "openai-proxy"),
-        alias="WINNIE_LOG_DIR",
-    )
 
-    # Anthropic 原生上游
-    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
-    anthropic_base_url: str = Field(
-        default="https://api.anthropic.com", alias="ANTHROPIC_BASE_URL"
-    )
-    anthropic_version: str = Field(
-        default="2023-06-01", alias="ANTHROPIC_VERSION"
-    )
-    anthropic_default_model: str = Field(
-        default="claude-sonnet-4-5", alias="ANTHROPIC_DEFAULT_MODEL"
-    )
-    anthropic_log_dir: str = Field(
-        default=str(_REPO_ROOT / "data" / "logs" / "anthropic-proxy"),
-        alias="ANTHROPIC_LOG_DIR",
-    )
+class Settings(BaseModel):
+    log_root: str = "../../data/logs"
+    anthropic_version: str = "2023-06-01"
+    proxy_api_key: str = ""
+    routes: dict[str, RouteConfig] = Field(default_factory=dict)
 
-    winnie_api_key: str = Field(default="", alias="WINNIE_API_KEY")
+    def route_table(self) -> dict[str, Route]:
+        return {
+            name: Route(name=name, protocol=cfg.protocol, base_url=cfg.base_url)
+            for name, cfg in self.routes.items()
+        }
 
-    def normalized_upstream_base(self) -> str:
-        base = self.upstream_base_url.rstrip("/")
-        if not base.endswith("/v1"):
-            base = f"{base}/v1"
-        return base
-
-    def normalized_anthropic_base(self) -> str:
-        """Anthropic 官方根不含 /v1；统一成 …/v1。"""
-        base = self.anthropic_base_url.rstrip("/")
-        if base.endswith("/v1"):
-            return base
-        return f"{base}/v1"
-
-    def resolve_log_dir(self) -> Path:
-        return self._resolve_path(self.winnie_log_dir)
-
-    def resolve_anthropic_log_dir(self) -> Path:
-        return self._resolve_path(self.anthropic_log_dir)
-
-    def _resolve_path(self, value: str) -> Path:
-        path = Path(value)
+    def resolve_log_root(self) -> Path:
+        path = Path(self.log_root)
         if not path.is_absolute():
             path = (_API_ROOT / path).resolve()
         return path
 
 
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for key, value in overlay.items():
+        if key in out and isinstance(out[key], dict) and isinstance(value, dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def load_yaml_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"config must be a mapping: {path}")
+    return data
+
+
+def load_settings(config_path: Path | None = None) -> Settings:
+    """读取 config.yaml；若存在 config.local.yaml 则覆盖合并。"""
+    primary = config_path or (_API_ROOT / "config.yaml")
+    if not primary.is_file():
+        raise FileNotFoundError(f"missing config file: {primary}")
+    data = load_yaml_file(primary)
+    local = primary.with_name("config.local.yaml")
+    if local.is_file():
+        data = _deep_merge(data, load_yaml_file(local))
+    return Settings.model_validate(data)
+
+
+@lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return load_settings()
