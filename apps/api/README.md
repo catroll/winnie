@@ -1,6 +1,6 @@
-# Winnie API — OpenAI 透明代理
+# Winnie API — LLM 透明代理
 
-实现说明见仓库根目录 [docs/openai-proxy.md](../../docs/openai-proxy.md)。
+OpenAI 兼容 + Anthropic Messages 透明代理。说明见 [docs/openai-proxy.md](../../docs/openai-proxy.md)。
 
 ## 运行
 

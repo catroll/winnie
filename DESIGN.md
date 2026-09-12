@@ -157,7 +157,7 @@ FastAPI 网关
 
 - 搭建 FastAPI 网关与 OpenAI 兼容 Chat Completion
 - 对接基础 LLM，实现无状态对话
-- **已落地**：透明代理 + 本地 ask/answer 日志，见 [docs/openai-proxy.md](./docs/openai-proxy.md)、`apps/api/`
+- **已落地**：OpenAI + Anthropic 透明代理与本地 ask/answer 日志，见 [docs/openai-proxy.md](./docs/openai-proxy.md)、`apps/api/`
 
 ### 第二阶段：记忆核心（RAG + 文档真相源）
 

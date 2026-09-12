@@ -12,7 +12,8 @@ from typing import Any
 class InteractionRecorder:
     """每一轮代理转发写一对 ask/answer 文件。"""
 
-    def __init__(self, logs_dir: Path) -> None:
+    def __init__(self, logs_dir: Path, *, service: str = "openai-proxy") -> None:
+        self.service = service
         self.dir = logs_dir.resolve()
         self.dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
@@ -65,7 +66,7 @@ class InteractionRecorder:
     def _write(self, prefix: str, kind: str, payload: Any) -> Path:
         path = self.dir / f"{prefix}-{kind}.txt"
         header = (
-            f"# service: openai-proxy\n"
+            f"# service: {self.service}\n"
             f"# kind: {kind}\n"
             f"# recorded_at: {datetime.now().isoformat(timespec='seconds')}\n\n"
         )

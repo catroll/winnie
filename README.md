@@ -6,10 +6,10 @@
 
 ## 快速开始（阶段一：透明代理）
 
-OpenAI 兼容透明代理与本地沟通日志：见 [docs/openai-proxy.md](./docs/openai-proxy.md)。
+OpenAI / Anthropic 兼容透明代理与本地沟通日志：见 [docs/openai-proxy.md](./docs/openai-proxy.md)。
 
 ```bash
-cd apps/api && cp .env.example .env   # 配置 UPSTREAM_*
+cd apps/api && cp .env.example .env   # 配置 UPSTREAM_* / ANTHROPIC_*
 uv sync
 uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
 ```
