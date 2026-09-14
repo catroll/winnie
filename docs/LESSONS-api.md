@@ -19,8 +19,9 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
 ## 日志
 
 1. 按路由：`data/logs/{route}/`。
-2. 流式断开用 `finally` 兜底。
-3. ask 记完整 JSON；meta 记 `route` / `upstream`，不记密钥。
+2. ask 头部必须含 **client_url**（客户请求本代理的地址）与 **upstream_url**（真实上游调用地址）。
+3. 流式断开用 `finally` 兜底。
+4. ask 记完整 JSON；不记密钥明文。
 
 ## 运行
 

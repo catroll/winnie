@@ -10,7 +10,7 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
 from winnie_api.forward import forward_json_post, streaming_sse_response
-from winnie_api.record import InteractionRecorder
+from winnie_api.record import InteractionRecorder, client_request_url
 from winnie_api.routes import Route
 
 
@@ -49,15 +49,16 @@ async def proxy_chat_completions(
     body: dict[str, Any],
 ) -> Response:
     stream = bool(body.get("stream"))
-    url = f"{route.api_base()}/chat/completions"
+    upstream_url = f"{route.api_base()}/chat/completions"
     headers = openai_upstream_headers(request)
     prefix = recorder.begin(
-        path=f"/{route.name}/v1/chat/completions",
+        client_url=client_request_url(request),
+        upstream_url=upstream_url,
+        method="POST",
         body=body,
         headers_meta={
             "route": route.name,
             "protocol": route.protocol,
-            "upstream": route.api_base(),
             "stream": stream,
             "client_host": request.client.host if request.client else None,
             "user_agent": request.headers.get("user-agent"),
@@ -68,7 +69,7 @@ async def proxy_chat_completions(
     if stream:
         return streaming_sse_response(
             client=client,
-            url=url,
+            url=upstream_url,
             headers=headers,
             body=body,
             recorder=recorder,
@@ -78,7 +79,7 @@ async def proxy_chat_completions(
 
     return await forward_json_post(
         client=client,
-        url=url,
+        url=upstream_url,
         headers=headers,
         body=body,
         recorder=recorder,

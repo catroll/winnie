@@ -18,9 +18,15 @@ routes:
   deepseek-openai:
     protocol: openai
     base_url: https://api.deepseek.com
+  deepseek-anthropic:
+    protocol: anthropic
+    base_url: https://api.deepseek.com/anthropic
   qwen-openai:
     protocol: openai
     base_url: https://dashscope.aliyuncs.com/compatible-mode
+  qwen-anthropic:
+    protocol: anthropic
+    base_url: https://dashscope.aliyuncs.com/apps/anthropic
   anthropic:
     protocol: anthropic
     base_url: https://api.anthropic.com

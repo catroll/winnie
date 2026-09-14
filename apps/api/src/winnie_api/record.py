@@ -8,6 +8,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fastapi import Request
+
+
+def client_request_url(request: Request) -> str:
+    """客户打到本代理的完整 URL。"""
+    return str(request.url)
+
 
 class InteractionRecorder:
     """每一轮代理转发写一对 ask/answer 文件。"""
@@ -19,15 +26,34 @@ class InteractionRecorder:
         self._lock = threading.Lock()
         self._seq = 0
 
-    def begin(self, *, path: str, body: Any, headers_meta: dict[str, Any] | None = None) -> str:
+    def begin(
+        self,
+        *,
+        client_url: str,
+        upstream_url: str,
+        method: str = "POST",
+        body: Any = None,
+        headers_meta: dict[str, Any] | None = None,
+    ) -> str:
         prefix = self._next_prefix()
         payload: dict[str, Any] = {
-            "path": path,
+            "client_url": client_url,
+            "upstream_url": upstream_url,
+            "method": method,
             "body": body,
         }
         if headers_meta:
             payload["meta"] = headers_meta
-        self._write(prefix, "ask", payload)
+        self._write(
+            prefix,
+            "ask",
+            payload,
+            extra_headers={
+                "client_url": client_url,
+                "upstream_url": upstream_url,
+                "method": method,
+            },
+        )
         return prefix
 
     def end_json(self, prefix: str, body: Any, *, status_code: int | None = None) -> Path:
@@ -63,13 +89,24 @@ class InteractionRecorder:
             seq = self._seq
         return f"{now.strftime('%Y%m%d-%H%M%S')}-{seq:09d}"
 
-    def _write(self, prefix: str, kind: str, payload: Any) -> Path:
+    def _write(
+        self,
+        prefix: str,
+        kind: str,
+        payload: Any,
+        *,
+        extra_headers: dict[str, str] | None = None,
+    ) -> Path:
         path = self.dir / f"{prefix}-{kind}.txt"
-        header = (
-            f"# service: {self.service}\n"
-            f"# kind: {kind}\n"
-            f"# recorded_at: {datetime.now().isoformat(timespec='seconds')}\n\n"
-        )
+        lines = [
+            f"# service: {self.service}",
+            f"# kind: {kind}",
+            f"# recorded_at: {datetime.now().isoformat(timespec='seconds')}",
+        ]
+        if extra_headers:
+            for key, value in extra_headers.items():
+                lines.append(f"# {key}: {value}")
+        header = "\n".join(lines) + "\n\n"
         body = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
         path.write_text(header + body + "\n", encoding="utf-8")
         return path

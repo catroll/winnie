@@ -43,7 +43,8 @@ routes:
 
 ## 日志
 
-`data/logs/{route}/`，成对 `ask` / `answer`。
+`data/logs/{route}/`，成对 `ask` / `answer`。  
+ask 头部含 `client_url`（客户请求本代理的地址）与 `upstream_url`（真实上游调用地址）。
 
 ## 启动
 
@@ -70,5 +71,14 @@ curl -s http://127.0.0.1:8000/anthropic/v1/messages \
 ```
 
 客户端 `base_url` 设为 `http://127.0.0.1:8000/{route}`。
+
+## 冒烟测试
+
+用 DeepSeek 同一把 Key 验证 OpenAI / Anthropic 两套代理：
+
+```bash
+cd apps/api
+uv run python scripts/smoke_test.py
+```
 
 调试经验见 [LESSONS-api.md](./LESSONS-api.md)。
