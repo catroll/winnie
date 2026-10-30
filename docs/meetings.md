@@ -714,10 +714,10 @@ Deliberate deferrals and why:
   usage rows; `alembic upgrade head` preserved them and the app completed a
   file-first meeting with `auto_create_tables: false`. No production deployment
   has run it yet, so take a backup and rehearse restore before the first one.
-- **Live LLM validation**: the adapters are implemented and mocked-tested, but
-  prompt quality, token cost and long-transcript behavior still need a real key
-  and real recordings. Chunked map-reduce is implemented, but its merge quality
-  on real bilingual transcripts is unproven.
+- **Live LLM validation**: the adapters passed a real DeepSeek smoke test for
+  translation order, structured minutes, token usage and a provider 400 error.
+  Prompt quality, cost and long-transcript behavior still need real bilingual
+  recordings; the chunked map-reduce merge quality is not yet measured.
 - **Other ASR vendors**: Aliyun, local Whisper and a bilingual accuracy
   benchmark are deferred until the Doubao path has run on real recordings.
 - **Android and realtime**: the Android client is in progress in a separate
