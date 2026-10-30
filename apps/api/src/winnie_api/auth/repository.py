@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from winnie_api.auth.errors import UsernameTaken
-from winnie_api.auth.models import AuthSession, User
+from winnie_api.auth.models import AuthSession, LoginThrottle, User
 
 
 class AuthRepository:
@@ -117,9 +117,66 @@ class AuthRepository:
         )
         await self.session.commit()
 
+    async def get_login_throttle(self, key: str) -> LoginThrottle | None:
+        return await self.session.get(LoginThrottle, key)
+
+    async def record_login_failure(
+        self,
+        key: str,
+        *,
+        now: datetime,
+        max_attempts: int,
+        window_seconds: int,
+        lockout_seconds: int,
+    ) -> LoginThrottle:
+        # Two concurrent first failures can both try to insert the key. Retry
+        # once so the loser updates the winner's row instead of returning 500.
+        for attempt in range(2):
+            throttle = await self.session.get(LoginThrottle, key)
+            if throttle is None:
+                throttle = LoginThrottle(
+                    key=key,
+                    attempts=0,
+                    window_started_at=now,
+                )
+                self.session.add(throttle)
+            else:
+                started = _as_utc(throttle.window_started_at)
+                if now - started > timedelta(seconds=window_seconds):
+                    throttle.attempts = 0
+                    throttle.window_started_at = now
+                    throttle.locked_until = None
+
+            throttle.attempts += 1
+            if throttle.attempts >= max_attempts:
+                throttle.locked_until = now + timedelta(seconds=lockout_seconds)
+            throttle.updated_at = now
+            try:
+                await self.session.commit()
+            except IntegrityError:
+                await self.session.rollback()
+                if attempt == 0:
+                    continue
+                raise
+            await self.session.refresh(throttle)
+            return throttle
+        raise RuntimeError("could not record login failure")
+
+    async def clear_login_throttle(self, key: str) -> None:
+        await self.session.execute(
+            delete(LoginThrottle).where(LoginThrottle.key == key)
+        )
+        await self.session.commit()
+
     async def delete_expired_sessions(self, before: datetime) -> int:
         result = await self.session.execute(
             delete(AuthSession).where(AuthSession.expires_at < before)
         )
         await self.session.commit()
         return int(result.rowcount or 0)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)

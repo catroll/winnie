@@ -38,6 +38,10 @@ auth:
   # leave false for a single-user personal deployment.
   allow_registration: false
   session_ttl_days: 30
+  # Failed logins per username before a temporary lockout.
+  login_max_attempts: 5
+  login_window_seconds: 300
+  login_lockout_seconds: 900
 
 # Meeting notes (file-first). Enabling it mounts /api/v1/meetings.
 meetings:

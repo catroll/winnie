@@ -85,7 +85,9 @@ enough to start without re-reading the design.
 
 ## P2 — accounts and security
 
-- [ ] Add login rate limiting and a small lockout/backoff policy.
+- [x] Add login rate limiting: failures are counted per username, the account
+      is locked temporarily after the configured threshold, and login returns
+      `429` with `Retry-After`.
 - [x] Add password change; the current password is required and every session
       is revoked.
 - [ ] Add password reset (email or one-time local CLI).

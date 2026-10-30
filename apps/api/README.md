@@ -34,6 +34,10 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
 The response contains a bearer token. Send it as
 `Authorization: Bearer <token>` to `/api/v1/meetings` and `/api/v1/auth/me`.
 Later registrations are rejected unless `auth.allow_registration: true`.
+Failed logins are counted per username; after `auth.login_max_attempts` within
+`auth.login_window_seconds`, login returns `429` with `Retry-After` until the
+`auth.login_lockout_seconds` window passes. A successful login clears the
+counter.
 
 Change the password with the current password; this revokes every session, so
 log in again afterwards:

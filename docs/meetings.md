@@ -153,6 +153,13 @@ auth_sessions
   created_at         timestamptz
   last_used_at       timestamptz
 
+login_throttles
+  key                text pk               -- normalized username
+  attempts           integer not null
+  window_started_at  timestamptz not null
+  locked_until       timestamptz
+  updated_at         timestamptz
+
 meetings
   id                 uuid pk
   user_id            text not null
@@ -309,7 +316,7 @@ All product endpoints live under `/api/v1`; the existing gateway contract under
 | Method | Path | Purpose |
 |--------|------|---------|
 | `POST` | `/api/v1/auth/register` | Create an account (first account, or any when registration is open) |
-| `POST` | `/api/v1/auth/login` | Exchange username/password for a bearer token |
+| `POST` | `/api/v1/auth/login` | Exchange username/password for a bearer token; `429` when locked |
 | `POST` | `/api/v1/auth/logout` | Revoke the current session |
 | `POST` | `/api/v1/auth/password` | Change password and revoke every session |
 | `GET` | `/api/v1/auth/me` | Current account |
@@ -330,7 +337,12 @@ hashed with Argon2id, only a SHA-256 hash of the session token is stored, and
 sessions expire after `auth.session_ttl_days`. The first account can always
 register; later registrations are controlled by `auth.allow_registration`.
 Changing a password requires the current password and revokes all sessions,
-including the caller's.
+including the caller's. Failed logins are counted per normalized username; once
+`auth.login_max_attempts` is reached within `auth.login_window_seconds`, login
+returns `429` with `Retry-After` for `auth.login_lockout_seconds`. A successful
+login clears the counter. The key is the username, not the client IP, so this
+also protects a deployment behind a proxy; it does mean an attacker can
+temporarily lock a known account.
 Meeting ownership uses the authenticated `user.id`, while `auth.enabled: false`
 keeps the local single-user fallback. Android stores the token in
 `EncryptedSharedPreferences`.
@@ -414,6 +426,9 @@ auth:
   enabled: true
   allow_registration: false   # first account still allowed
   session_ttl_days: 30
+  login_max_attempts: 5
+  login_window_seconds: 300
+  login_lockout_seconds: 900
 
 meetings:
   enabled: true
@@ -639,8 +654,8 @@ Implemented:
 
 - Account system: registration, login, logout, password change,
   `GET /auth/me`, Argon2id password hashes, hashed opaque session tokens,
-  first-user bootstrap and optional registration closure. Meetings are isolated
-  by authenticated user.
+  failed-login lockout, first-user bootstrap and optional registration closure.
+  Meetings are isolated by authenticated user.
 - `auth.enabled` and `meetings.enabled` flags; the gateway still starts without
   a database when both are off.
 - SQLAlchemy models for users, sessions, meetings, segments, minutes, jobs and

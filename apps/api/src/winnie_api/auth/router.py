@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from winnie_api.auth.dependencies import bearer_token, get_current_user
 from winnie_api.auth.errors import (
     InvalidCredentials,
+    LoginLocked,
     RegistrationClosed,
     UsernameTaken,
 )
@@ -79,6 +80,12 @@ async def login(
             status_code=401,
             detail="invalid username or password",
             headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except LoginLocked as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="too many failed login attempts",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
         ) from exc
     return _token_response(user, token, expires_at)
 

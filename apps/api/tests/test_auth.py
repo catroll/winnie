@@ -7,6 +7,7 @@ import httpx
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from winnie_api.auth.service import AuthService
+from winnie_api.main import create_app
 from winnie_api.settings import Settings
 
 PASSWORD = "correct horse battery"
@@ -266,3 +267,64 @@ async def test_cleanup_deletes_only_expired_sessions(
             "select count(*) from auth_sessions"
         ).fetchone()[0]
     assert remaining == 1
+
+
+async def test_login_lockout_expires_and_resets(
+    auth_settings: Settings,
+) -> None:
+    settings = auth_settings.model_copy(
+        update={
+            "auth": auth_settings.auth.model_copy(
+                update={
+                    "login_max_attempts": 2,
+                    "login_window_seconds": 60,
+                    "login_lockout_seconds": 120,
+                }
+            )
+        }
+    )
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500)),
+        timeout=httpx.Timeout(5.0),
+    )
+    app = create_app(settings=settings, http=http)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                await _register(client, "dave")
+                for _ in range(2):
+                    failed = await client.post(
+                        "/api/v1/auth/login",
+                        json={"username": "dave", "password": "wrong password"},
+                    )
+                    assert failed.status_code == 401
+
+                locked = await client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "dave", "password": PASSWORD},
+                )
+                assert locked.status_code == 429
+                assert int(locked.headers["Retry-After"]) >= 1
+
+                database = _database_path(settings)
+                with sqlite3.connect(database) as connection:
+                    connection.execute(
+                        "update login_throttles "
+                        "set locked_until = '2000-01-01 00:00:00'"
+                    )
+
+                recovered = await client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "dave", "password": PASSWORD},
+                )
+                assert recovered.status_code == 200
+
+                reset = await client.post(
+                    "/api/v1/auth/login",
+                    json={"username": "dave", "password": "wrong password"},
+                )
+                assert reset.status_code == 401
+    finally:
+        await http.aclose()
