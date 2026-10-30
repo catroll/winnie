@@ -116,7 +116,8 @@ enough to start without re-reading the design.
 
 - [ ] Per-meeting and per-month cost view built from `usage_records`.
 - [ ] Structured logs for `meeting_id`, `job_id`, stage and provider latency.
-- [ ] Health/readiness checks that include database and queue connectivity.
+- [x] Health/readiness checks: `/healthz` is liveness and `/readyz` probes the
+      database plus Redis when the arq backend is configured.
 - [ ] Deployment guide: PostgreSQL, Redis, reverse proxy, backups, restore
       rehearsal.
 - [ ] Add a `docs/decisions.md` entry for every provider or architecture choice

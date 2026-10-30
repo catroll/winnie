@@ -11,6 +11,16 @@ OPENAI_URL = "/fake-openai/v1/chat/completions"
 ANTHROPIC_URL = "/fake-anthropic/v1/messages"
 
 
+async def test_readyz_reports_disabled_database(client: httpx.AsyncClient) -> None:
+    response = await client.get("/readyz")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "database": "disabled",
+        "queue": "disabled",
+    }
+
+
 async def test_healthz(client: httpx.AsyncClient) -> None:
     response = await client.get("/healthz")
     assert response.status_code == 200

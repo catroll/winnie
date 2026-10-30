@@ -43,3 +43,14 @@ class ArqJobQueue:
             await pool.enqueue_job("process_meeting_job", str(meeting_id))
         finally:
             await pool.aclose()
+
+    async def ping(self) -> None:
+        """Check that Redis is reachable; used by the readiness probe."""
+        from arq import create_pool
+        from arq.connections import RedisSettings
+
+        pool = await create_pool(RedisSettings.from_dsn(self.redis_url))
+        try:
+            await pool.ping()
+        finally:
+            await pool.aclose()

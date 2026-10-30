@@ -695,6 +695,8 @@ Implemented:
   tests and demos.
 - Inline job queue by default; the arq queue and `WorkerSettings` entry point
   are verified end-to-end against Redis 8 and process a meeting to `ready`.
+- `/healthz` liveness and `/readyz` readiness (database, plus Redis when arq is
+  selected).
 - Expired-session cleanup through an arq daily cron and
   `python -m winnie_api.auth.cleanup` for deployments without a worker.
 - Tests using a fake upstream, temporary SQLite databases, account isolation, a

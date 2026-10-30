@@ -50,6 +50,18 @@ async def _upload_and_process(
     return response.json()
 
 
+async def test_readyz_checks_the_meeting_database(
+    meeting_client: httpx.AsyncClient,
+) -> None:
+    response = await meeting_client.get("/readyz")
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "database": "ok",
+        "queue": "inline",
+    }
+
+
 async def test_meeting_lifecycle(
     meeting_client: httpx.AsyncClient,
     meeting_settings: Settings,

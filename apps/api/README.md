@@ -120,6 +120,13 @@ translation, minutes and the note write. Expired-session and audio-retention
 cron jobs also live in that worker. The arq/Redis path is verified end-to-end,
 but inline remains the default until a deployment always runs a worker.
 
+## Health checks
+
+- `GET /healthz` is process liveness and does no I/O.
+- `GET /readyz` runs `SELECT 1` against the configured database and, when
+  `jobs.backend: arq`, a Redis `PING` with a two-second limit. It returns `503`
+  with `database unavailable` or `queue unavailable` on failure.
+
 ## Audio retention
 
 `meetings.audio_retention_days: 0` keeps audio forever. A positive value purges
