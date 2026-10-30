@@ -98,6 +98,28 @@ try to create tables that already exist.
 uv run pytest
 ```
 
+## Background jobs
+
+The default `jobs.backend: inline` runs the meeting pipeline inside the request,
+which is convenient for a local demo but ties up the API. For a worker, set:
+
+```yaml
+jobs:
+  backend: arq
+  redis_url: redis://127.0.0.1:6379/0
+```
+
+Run the worker with the same config and storage roots as the API:
+
+```bash
+uv run arq winnie_api.jobs.worker.WorkerSettings
+```
+
+The API only enqueues `process_meeting_job`; the worker performs ASR,
+translation, minutes and the note write. Expired-session and audio-retention
+cron jobs also live in that worker. The arq/Redis path is verified end-to-end,
+but inline remains the default until a deployment always runs a worker.
+
 ## Audio retention
 
 `meetings.audio_retention_days: 0` keeps audio forever. A positive value purges

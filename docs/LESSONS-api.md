@@ -41,3 +41,21 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
    `app.openapi()["components"]["schemas"]` and use those keys. Keep sensitive
    fields such as `audio_key` out of the response model and, if needed, add a
    contract test that proves they stay out.
+
+## arq/redis pool shutdown (2026-10-31)
+
+1. **Signal:** the first real arq E2E completed the meeting (worker log showed
+   `process_meeting_job ... 0.27s`), but stderr ended with
+   `RuntimeWarning: coroutine 'Redis.close' was never awaited` from
+   `jobs/queue.py`.
+2. **Do not trust `inspect.iscoroutinefunction` for deprecated wrappers.**
+   `ArqRedis.close` is decorated, and introspection reported `False` even
+   though redis-py 5.3.1 defines `async def close(...)`; the warning is the
+   authoritative signal.
+3. **Fix:** `await pool.aclose()` in `ArqJobQueue.enqueue`; `close()` is a
+   deprecated alias for `aclose()`. The fake-pool test in
+   `tests/test_queue.py` asserts `aclose` is called, so a synchronous close
+   cannot silently return.
+4. **Verification:** Redis 8 + `arq winnie_api.jobs.worker.WorkerSettings`
+   returned `arq status: ready` and three transcript segments; the same run
+   printed `PONG` from `redis-cli`.

@@ -75,8 +75,10 @@ enough to start without re-reading the design.
       upgrade to head, verify all rows survive, and run register/create/upload/
       transcribe/minutes with `auto_create_tables: false`. A production
       backup/restore rehearsal is still required before deployment.
-- [ ] Switch the default job backend to arq/Redis once a worker is deployed;
-      keep `inline` for local demos and tests.
+- [x] Verify the arq/Redis path end-to-end: the API enqueues, a separate
+      `WorkerSettings` process transcribes/uploads, and polling reaches `ready`.
+- [ ] Make arq the default once every deployment runs a worker; keep `inline`
+      for local demos and tests.
 - [ ] Add a storage adapter for object storage (private bucket, short-lived
       URLs) while keeping local disk as the default.
 - [x] Define audio retention: `audio_retention_days` purges only audio for

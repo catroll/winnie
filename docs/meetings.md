@@ -693,7 +693,8 @@ Implemented:
   long transcripts use chunked map-reduce summarization.
 - Provider ports for ASR, translation and summarization; deterministic fakes for
   tests and demos.
-- Inline job queue by default; arq queue and worker entry point behind config.
+- Inline job queue by default; the arq queue and `WorkerSettings` entry point
+  are verified end-to-end against Redis 8 and process a meeting to `ready`.
 - Expired-session cleanup through an arq daily cron and
   `python -m winnie_api.auth.cleanup` for deployments without a worker.
 - Tests using a fake upstream, temporary SQLite databases, account isolation, a

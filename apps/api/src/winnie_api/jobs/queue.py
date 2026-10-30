@@ -42,4 +42,4 @@ class ArqJobQueue:
         try:
             await pool.enqueue_job("process_meeting_job", str(meeting_id))
         finally:
-            pool.close()
+            await pool.aclose()
