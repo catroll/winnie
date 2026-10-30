@@ -4,10 +4,13 @@ import sqlite3
 from pathlib import Path
 
 import httpx
+import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from winnie_api.auth.errors import UserNotFound
 from winnie_api.auth.service import AuthService
 from winnie_api.main import create_app
+from winnie_api.runtime import build_runtime
 from winnie_api.settings import Settings
 
 PASSWORD = "correct horse battery"
@@ -328,3 +331,44 @@ async def test_login_lockout_expires_and_resets(
                 assert reset.status_code == 401
     finally:
         await http.aclose()
+
+
+async def test_reset_password_revokes_existing_sessions(
+    auth_client: httpx.AsyncClient,
+    auth_settings: Settings,
+) -> None:
+    registered = await _register(auth_client, "alice")
+    token = registered["access_token"]
+
+    runtime = build_runtime(auth_settings)
+    assert runtime is not None and runtime.auth_service is not None
+    await runtime.startup()
+    try:
+        await runtime.auth_service.reset_password(
+            username="alice",
+            new_password="new password",
+        )
+        with pytest.raises(UserNotFound):
+            await runtime.auth_service.reset_password(
+                username="missing",
+                new_password="new password",
+            )
+    finally:
+        await runtime.shutdown()
+
+    old_session = await auth_client.get(
+        "/api/v1/auth/me", headers=_bearer(token)
+    )
+    assert old_session.status_code == 401
+
+    old_password = await auth_client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": PASSWORD},
+    )
+    assert old_password.status_code == 401
+
+    new_password = await auth_client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": "new password"},
+    )
+    assert new_password.status_code == 200

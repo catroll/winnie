@@ -49,6 +49,15 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/auth/password \
   -d '{"current_password":"...","new_password":"..."}'
 ```
 
+If the password is lost and no email service is configured, reset it from the
+host. This bypasses the current password and revokes every session, so it is
+equivalent to having database access. `--generate` prints a random password
+once; without it the command prompts twice.
+
+```bash
+uv run python -m winnie_api.auth.reset_password --generate alice
+```
+
 Expired sessions are rejected when used. Delete them periodically with the arq
 worker (daily at 03:17 UTC) or, without a worker, a cron entry:
 

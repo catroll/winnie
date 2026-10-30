@@ -23,3 +23,7 @@ class LoginLocked(AuthError):
     def __init__(self, retry_after_seconds: int) -> None:
         super().__init__("too many failed login attempts")
         self.retry_after_seconds = retry_after_seconds
+
+
+class UserNotFound(AuthError):
+    pass

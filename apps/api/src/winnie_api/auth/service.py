@@ -17,6 +17,7 @@ from winnie_api.auth.errors import (
     InvalidCredentials,
     LoginLocked,
     RegistrationClosed,
+    UserNotFound,
     UsernameTaken,
 )
 from winnie_api.auth.models import User, utcnow
@@ -131,6 +132,24 @@ class AuthService:
                 return None
             await repository.touch_session(auth_session.id, utcnow())
             return user
+
+    async def reset_password(
+        self,
+        *,
+        username: str,
+        new_password: str,
+    ) -> None:
+        """Operator-only reset: no current password, all sessions revoked."""
+        _validate_password(new_password)
+        normalized = normalize_username(username)
+        async with self.session_factory() as session:
+            repository = AuthRepository(session)
+            user = await repository.get_user_by_username(normalized)
+            if user is None:
+                raise UserNotFound(f"no account named {normalized!r}")
+            new_hash = await asyncio.to_thread(self.hasher.hash, new_password)
+            await repository.update_password_hash(user.id, new_hash)
+            await repository.delete_sessions_for_user(user.id)
 
     async def logout(self, token: str) -> None:
         async with self.session_factory() as session:

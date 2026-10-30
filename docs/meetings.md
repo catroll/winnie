@@ -353,7 +353,9 @@ including the caller's. Failed logins are counted per normalized username; once
 returns `429` with `Retry-After` for `auth.login_lockout_seconds`. A successful
 login clears the counter. The key is the username, not the client IP, so this
 also protects a deployment behind a proxy; it does mean an attacker can
-temporarily lock a known account.
+temporarily lock a known account. With no email service, a lost password is
+reset from the host with `python -m winnie_api.auth.reset_password`; this
+requires database access and revokes every session.
 Meeting ownership uses the authenticated `user.id`, while `auth.enabled: false`
 keeps the local single-user fallback. Android stores the token in
 `EncryptedSharedPreferences`.

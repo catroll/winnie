@@ -91,7 +91,9 @@ enough to start without re-reading the design.
       `429` with `Retry-After`.
 - [x] Add password change; the current password is required and every session
       is revoked.
-- [ ] Add password reset (email or one-time local CLI).
+- [x] Add password reset from the host: `python -m winnie_api.auth.reset_password`
+      prompts or generates a password and revokes every session.
+- [ ] Add email-based password reset if multi-user deployment needs it.
 - [ ] Add account management/admin endpoints only when multi-user deployment
       is real; keep single-user registration closed by default.
 - [ ] Review token storage on Android (`EncryptedSharedPreferences`) and
