@@ -9,6 +9,8 @@ infrastructure below it exists to serve the assistant.
 | Layer | What it gives you | Status |
 |-------|-------------------|--------|
 | **Assistant** | Scheduling, development help and everyday tasks, orchestrated on top of the layers below | Planned |
+| **Meeting notes** | File-first transcription, cross-lingual transcript and structured minutes | Backend implemented; real ASR, fake translation/summarization |
+| **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
 
@@ -43,11 +45,12 @@ The model gateway is fully implemented. It supports:
 - Streaming (SSE) passthrough
 - Paired `ask`/`answer` logs on local disk, per route
 
-The meeting-notes backend is scaffolded but **not production-ready**. Meeting
+The meeting-notes backend is functional but **not production-ready**. Meeting
 CRUD, audio upload, a file-first processing pipeline, transcript/minutes/export
-APIs and a Markdown knowledge sink are wired. ASR, translation and
-summarization currently use deterministic fake providers; real provider
-adapters and the Android client are next.
+APIs and a Markdown knowledge sink are wired. Accounts, per-user meeting
+isolation and the Volcengine Doubao ASR adapter are implemented; translation and
+summarization still use deterministic fakes, and the Android client has not
+started.
 
 ### Quick start
 
@@ -68,33 +71,39 @@ Point any OpenAI-compatible client at `http://127.0.0.1:8000/<route>` and pass
 your vendor key in the request headers. Routing, configuration and request
 examples are in [docs/openai-proxy.md](./docs/openai-proxy.md).
 
-The meeting API is mounted under `/api/v1/meetings` only when
-`meetings.enabled: true` is set in `apps/api/config.yaml`. The integration
-design and endpoint list are in [docs/meetings.md](./docs/meetings.md).
+Accounts and meeting notes are mounted under `/api/v1` when enabled in
+`apps/api/config.yaml`. The first account can register, then login to receive a
+bearer token. To transcribe with Doubao, export
+`VOLCENGINE_ASR_APP_ID` and `VOLCENGINE_ASR_ACCESS_TOKEN` before starting the
+API. The integration design and endpoint list are in
+[docs/meetings.md](./docs/meetings.md).
 
 ## Roadmap
 
-1. **Meeting notes** — real ASR, translation and summarization adapters; the
-   Android client; realtime streaming; then cross-meeting search.
+1. **Meeting notes** — real translation and summarization adapters; evaluate a
+   second ASR vendor on bilingual recordings; the Android client; realtime
+   streaming; then cross-meeting search.
 2. **Knowledge base** — Git-backed Markdown, management UI, classification and
    tagging, re-indexing, retrieval-augmented chat.
 3. **Assistant capabilities** — scheduling, development assistance and everyday
    tasks, composed over the knowledge base and the gateway.
-4. **Production readiness** — user isolation and permissions, queue-backed
-   background work, performance and stability.
+4. **Production readiness** — migrations, queue-backed background work,
+   retention and backups, deployment hardening.
 
-Details and design rationale are in [DESIGN.md](./DESIGN.md).
+Details and design rationale are in [DESIGN.md](./DESIGN.md). Concrete follow-ups,
+including the ASR evaluation and provider verification, are in
+[docs/todo.md](./docs/todo.md).
 
 ## Tech stack
-
-Target stack; the API, SQLAlchemy models and inline job queue scaffold are in
-place.
 
 | Area | Choice |
 |------|--------|
 | Language and API | Python, FastAPI |
+| Data | SQLAlchemy 2 async; SQLite locally, PostgreSQL-ready |
+| Accounts | Argon2id passwords, opaque bearer sessions |
+| Meeting storage | Local disk behind a `Storage` port |
+| ASR | Volcengine Doubao (big-model recording file) |
 | Management UI | Vite + React |
-| Agent orchestration | LangGraph (pipeline is plain async Python for now) |
 | Knowledge source | Git-managed Markdown |
 | Vector index | Qdrant |
 | Async jobs | Redis + arq (inline queue for local development) |
@@ -106,6 +115,7 @@ place.
 - [EVAL.md](./EVAL.md) — living feasibility assessment
 - [docs/openai-proxy.md](./docs/openai-proxy.md) — gateway contract, configuration and examples
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
+- [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [apps/api/README.md](./apps/api/README.md) — backend layout, running and tests
 
 ## License

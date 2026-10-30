@@ -27,3 +27,17 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
 
 - `uv run uvicorn winnie_api.main:app`
 - 改 `config.yaml` 后需重启（或 `--reload`）；`GET /routes` 核对。
+
+## API contract checks (2026-10-30)
+
+1. **Assert against the response schema, not the ORM model.** `MeetingRead`
+   deliberately omits `audio_key`; transcript segments expose
+   `detected_language` and `translation_status`, not `language` or `status`.
+2. **Signal:** the first end-to-end run reached `status=uploaded` and
+   `status=ready`, then crashed with `KeyError: 'audio_key'`; the next run failed
+   with `KeyError: 'language'`. The HTTP path was correct and the assertions were
+   reading implementation names.
+3. **Check:** before writing E2E assertions, read `meetings/schemas.py` or
+   `app.openapi()["components"]["schemas"]` and use those keys. Keep sensitive
+   fields such as `audio_key` out of the response model and, if needed, add a
+   contract test that proves they stay out.

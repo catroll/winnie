@@ -70,7 +70,9 @@ apps/
 ├── api/                              # Python backend — one deployable
 │   ├── src/winnie_api/
 │   │   ├── main.py                   # create_app(): composition root
+│   │   ├── runtime.py                # shared engine/session + services
 │   │   ├── settings.py               # YAML + env, extra="forbid"
+│   │   ├── auth/                     # accounts and bearer sessions
 │   │   ├── shared/
 │   │   │   ├── db.py                 # async engine / session factory
 │   │   │   ├── storage.py            # Storage interface + local/OSS
@@ -85,8 +87,8 @@ apps/
 │   │   │   ├── repository.py         # DB queries
 │   │   │   ├── service.py            # use cases + state machine
 │   │   │   ├── router.py             # /api/v1/meetings...
-│   │   │   ├── pipeline.py           # LangGraph post-processing
-│   │   │   └── prompts/              # versioned prompts
+│   │   │   ├── pipeline.py           # planned: LangGraph post-processing
+│   │   │   └── prompts/              # planned: versioned prompts
 │   │   ├── integrations/             # external providers
 │   │   │   ├── asr/{base,volcengine,aliyun,whisper}.py
 │   │   │   ├── translate/{base,llm,cloud}.py
@@ -114,7 +116,9 @@ Dependency rules:
 meetings/ ──► integrations/ ──► shared/
     │
     └──► knowledge/ (only at the end of the pipeline)
-gateway/ ──► shared/          # gateway must not import meetings
+auth/ ──► shared/
+runtime ──► auth/ + meetings/ + shared/
+gateway/ ──► shared/          # gateway must not import meetings or auth
 jobs/ ──► meetings/
 ```
 
@@ -126,12 +130,29 @@ jobs/ ──► meetings/
 
 ## 4. Domain model
 
-Use PostgreSQL. All tables carry `user_id` from day one, even while the app is
-single-user; that is the seam for later isolation.
+Use PostgreSQL in production and SQLite for local development. All tables carry
+`user_id` from day one so account isolation is a seam rather than a rewrite.
 
 ### 4.1 Tables
 
 ```text
+users
+  id                 uuid pk
+  username           text unique not null  -- normalized lowercase
+  password_hash      text not null          -- Argon2id
+  display_name       text
+  is_active          boolean not null
+  created_at         timestamptz
+  updated_at         timestamptz
+
+auth_sessions
+  id                 uuid pk
+  user_id            uuid fk -> users
+  token_hash         text unique not null   -- SHA-256 of the bearer token
+  expires_at         timestamptz
+  created_at         timestamptz
+  last_used_at       timestamptz
+
 meetings
   id                 uuid pk
   user_id            text not null
@@ -286,6 +307,10 @@ All product endpoints live under `/api/v1`; the existing gateway contract under
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| `POST` | `/api/v1/auth/register` | Create an account (first account, or any when registration is open) |
+| `POST` | `/api/v1/auth/login` | Exchange username/password for a bearer token |
+| `POST` | `/api/v1/auth/logout` | Revoke the current session |
+| `GET` | `/api/v1/auth/me` | Current account |
 | `POST` | `/api/v1/meetings` | Create a meeting (`title`, `local_language`) |
 | `POST` | `/api/v1/meetings/{id}/audio` | Upload audio (multipart; size/type limits) |
 | `POST` | `/api/v1/meetings/{id}/transcribe` | Enqueue transcription; `202` with the current meeting status (poll `GET`) |
@@ -298,9 +323,12 @@ All product endpoints live under `/api/v1`; the existing gateway contract under
 | `DELETE` | `/api/v1/meetings/{id}` | Delete meeting and purge audio |
 | `WS` | `/api/v1/meetings/{id}/stream` | Realtime audio in, events out (phase 2) |
 
-Auth: `Authorization: Bearer <token>` for the MVP, resolved to a `user_id`.
-Keep the resolver behind a dependency so accounts/OAuth can replace it without
-touching the meeting service. Android stores the token in
+Auth: accounts are implemented with opaque bearer sessions. Passwords are
+hashed with Argon2id, only a SHA-256 hash of the session token is stored, and
+sessions expire after `auth.session_ttl_days`. The first account can always
+register; later registrations are controlled by `auth.allow_registration`.
+Meeting ownership uses the authenticated `user.id`, while `auth.enabled: false`
+keeps the local single-user fallback. Android stores the token in
 `EncryptedSharedPreferences`.
 
 Job status: polling `GET /meetings/{id}` is enough for the MVP. Do not build a
@@ -329,18 +357,23 @@ class Summarizer(Protocol):
     async def summarize(self, transcript: TranscriptView) -> MinutesDraft: ...
 ```
 
-- **ASR**: start with one provider (Volcengine Doubao or Aliyun Tingwu) behind
-  `ASRProvider`. Add the second only after measuring accuracy and latency on
-  real recordings. Local `faster-whisper` is a separate implementation of the
-  same protocol, selected by config.
+- **ASR**: Volcengine Doubao (big-model recording-file API) is the first real
+  adapter behind `ASRProvider`. It submits a local file as base64 and polls the
+  query endpoint; see `integrations/asr/volcengine.py`. Evaluate Aliyun and
+  other vendors on the same bilingual recordings before adding a second
+  adapter; the follow-up is tracked in [todo.md](./todo.md). Local
+  `faster-whisper` is a separate implementation of the same protocol.
 - **Translation**: an LLM call behind `Translator` is usually good enough for
-  meeting text and reuses the same model access. A dedicated translation API is
-  an alternative implementation, not a rewrite.
+  meeting text and reuses the same model access. The current implementation is
+  the deterministic fake; the real adapter is next.
 - **Summarization**: `Summarizer` over an OpenAI-compatible model (DeepSeek or
-  Qwen). Keep prompts in `meetings/prompts/` with an explicit version.
+  Qwen). The current implementation is the deterministic fake; prompts will
+  live in `meetings/prompts/` with an explicit version when the real adapter
+  lands.
 - **Config** selects the implementation per capability, e.g.
-  `meetings.asr.provider: volcengine`. Credentials come from environment
-  variables, never from YAML committed to Git.
+  `meetings.asr_provider: volcengine`. Credentials come from environment
+  variables (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN`), never from
+  YAML committed to Git.
 - **Cost**: every provider call writes a `usage_records` row (audio seconds,
   tokens, characters). Provider prices live in config so the estimate can be
   recomputed. This is the basis of the per-meeting cost view.
@@ -349,47 +382,58 @@ class Summarizer(Protocol):
 
 ### 8.1 Composition root
 
-`create_app()` includes the meetings router only when the feature is enabled:
+`create_app()` builds one runtime when either auth or meetings is enabled:
 
 ```python
-app = create_app(settings)
+runtime = build_runtime(settings)   # None when both are disabled
+if settings.auth.enabled:
+    app.include_router(auth_router, prefix="/api/v1")
 if settings.meetings.enabled:
     app.include_router(meetings_router, prefix="/api/v1")
 ```
 
-If `meetings.enabled` is false, the gateway must still start without Postgres,
-Redis or OSS. This keeps the transparent proxy independently runnable.
+The runtime owns a single async engine and session factory; auth and meetings
+share it. With both features disabled, the gateway still starts without a
+database, Redis or object storage. This keeps the transparent proxy
+independently runnable.
 
 ### 8.2 Settings
 
-Add explicit sections; reject unknown keys:
-
 ```yaml
+auth:
+  enabled: true
+  allow_registration: false   # first account still allowed
+  session_ttl_days: 30
+
 meetings:
-  enabled: false
-  storage: local            # local | oss
+  enabled: true
+  storage: local
   local_root: ../../data/meetings
+  notes_root: ../../data/kb/meetings
   max_upload_mb: 500
   local_language: zh
-  asr:
-    provider: volcengine
-    language_confidence_threshold: 0.7
-  translate:
-    provider: llm
-  summarize:
-    provider: llm
-    model: deepseek-v4-flash
-    prompt_version: v1
+  asr_provider: volcengine
+  translator: fake
+  summarizer: fake
+  volcengine:
+    base_url: https://openspeech.bytedance.com
+    resource_id: volc.bigasr.auc
+    model_name: bigmodel
+    max_inline_mb: 100
+    poll_interval_seconds: 2
+    poll_timeout_seconds: 300
+
 database:
-  url: ""                   # env: WINNIE_DATABASE_URL
-redis:
-  url: ""                   # env: WINNIE_REDIS_URL
+  url: sqlite+aiosqlite:///../../data/winnie.db
+
+jobs:
+  backend: inline             # inline | arq
+  redis_url: ""
 ```
 
-Secrets and connection strings come from environment variables. The existing
-`config.py` currently ignores unknown keys and hard-codes "no environment
-variables"; both should be fixed in Step 0 rather than carried into a larger
-feature.
+Secrets (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN`) come from the
+environment. Unknown YAML keys are rejected at startup. Production should use
+PostgreSQL and turn off `database.auto_create_tables` once migrations exist.
 
 ### 8.3 Gateway and LLM access
 
@@ -402,8 +446,8 @@ feature.
   client conversations with `client_url`/`upstream_url`; internal AI calls need
   prompts, token usage and cost, which belong in `usage_records` plus structured
   logs.
-- Reuse `shared/http.py` and the existing request-ID/logging conventions so a
-  meeting job can be traced end to end.
+- Reuse the injected `httpx` client and the existing request-ID/logging
+  conventions so a meeting job can be traced end to end.
 
 ### 8.4 Knowledge-base sink
 
@@ -483,7 +527,8 @@ meetings to the current `main.py` would make the god module worse.
 
 ### Phase 2 — minutes and history (week 2)
 
-- LangGraph pipeline: normalize → detect → translate → summarize → persist.
+- Async pipeline: normalize → detect → translate → summarize → persist.
+  LangGraph is a later option, not a dependency of this phase.
 - Structured minutes with Pydantic validation and prompt versioning.
 - Minutes API, regenerate, Markdown/TXT export, history list.
 - Android: minutes screen, export/share, offline cache.
@@ -500,7 +545,7 @@ meetings to the current `main.py` would make the god module worse.
 - Speaker diarization, timestamps, hotword lists.
 - Cross-meeting semantic search over knowledge notes.
 - Local `faster-whisper` fallback.
-- Multi-user isolation, quotas, cost dashboard.
+- Quotas and a cost dashboard (account isolation is already implemented).
 
 ## 11. Cost, privacy and operations
 
@@ -530,37 +575,51 @@ Decisions taken in this design:
 2. One FastAPI backend for the MVP; Go was evaluated and dropped.
 3. File-first MVP; realtime shares the same tables and pipeline.
 4. Language detection is per segment; original text is always preserved.
-5. The pipeline writes summary/decisions/action items into the knowledge base,
-   not the raw transcript.
-6. PostgreSQL for meeting data, Redis/arq for jobs, storage behind an interface.
+5. Only minutes and notes enter the knowledge base. The raw transcript stays in
+   the meeting database and is not indexed, which keeps the note corpus small
+   and avoids copying sensitive verbatim text into another store.
+6. Accounts from day one: Argon2id passwords, opaque bearer sessions, and
+   per-user meeting ownership. The first account bootstraps the deployment;
+   registration can then be closed.
+7. Local disk for meeting audio and notes in this phase. The `Storage` port
+   keeps object storage as a later adapter, not a rewrite.
+8. Volcengine Doubao big-model recording-file ASR is the first real provider.
+   Aliyun and local Whisper are evaluated later against the same bilingual
+   recordings; this is tracked in [todo.md](./todo.md).
+9. SQLite and the inline queue are the development defaults. PostgreSQL and
+   arq/Redis are deployment options behind existing interfaces.
 
 Open questions still to settle:
 
-- Auth: single-user token for the MVP, or accounts from day one?
-- Storage: local disk for the MVP, or OSS immediately?
-- ASR vendor: Volcengine or Aliyun? Decide by measuring accuracy on real
-  bilingual recordings, not by feature list.
 - Translation: LLM or a dedicated translation API? Measure latency and quality
-  on the same samples.
+  on the same samples. The current adapter is still the deterministic fake.
 - Minutes template: fixed, or user-editable per meeting type?
-- Does the user want raw transcripts searchable, or only the derived note?
+- Which ASR vendor wins on bilingual accuracy, language-switch handling,
+  latency and cost? Decide by measurement, not by feature list.
 
 ## 13. Implementation status
 
-Implemented in the backend scaffold:
+Implemented:
 
-- `meetings.enabled` feature flag; the gateway still starts without a database
-  when meetings are off.
-- SQLAlchemy models for meetings, segments, minutes, jobs and usage records;
-  SQLite for local development, PostgreSQL-ready URL.
+- Account system: registration, login, logout, `GET /auth/me`, Argon2id
+  password hashes, hashed opaque session tokens, first-user bootstrap and
+  optional registration closure. Meetings are isolated by authenticated user.
+- `auth.enabled` and `meetings.enabled` flags; the gateway still starts without
+  a database when both are off.
+- SQLAlchemy models for users, sessions, meetings, segments, minutes, jobs and
+  usage records; SQLite for local development, PostgreSQL-ready URL.
 - `/api/v1/meetings` CRUD, audio upload, transcribe, transcript, minutes,
   regenerate, export and delete.
 - File-first pipeline: ASR -> per-segment language handling -> translation ->
   summarization -> Markdown note.
-- Provider ports for ASR, translation and summarization, with deterministic
-  fake implementations for tests and demos.
-- Inline job queue by default, arq queue and worker entry point behind config.
-- Tests using a fake upstream and a temporary SQLite database.
+- Volcengine Doubao big-model recording-file ASR adapter with base64 inline
+  upload, polling, usage recording and mocked HTTP tests. Credentials come from
+  `VOLCENGINE_ASR_APP_ID` and `VOLCENGINE_ASR_ACCESS_TOKEN`.
+- Provider ports for ASR, translation and summarization; deterministic fakes for
+  tests and demos.
+- Inline job queue by default; arq queue and worker entry point behind config.
+- Tests using a fake upstream, temporary SQLite databases, account isolation and
+  a mocked Volcengine endpoint.
 
 Deliberate deferrals and why:
 
@@ -571,9 +630,10 @@ Deliberate deferrals and why:
   `meetings/service.py`; `meetings/pipeline.py` is reserved for that change.
 - **Alembic**: development uses `auto_create_tables`. Add migrations before the
   first production deployment and turn that flag off.
-- **Real providers**: ASR (Volcengine/Aliyun), LLM translation and LLM
-  summarization are ports without adapters. The fake providers make the HTTP
-  and persistence path testable without cloud credentials.
+- **Real translation and summarization**: both are still deterministic fakes.
+  The ports and usage records are in place; the LLM adapters are next.
+- **Other ASR vendors**: Aliyun, local Whisper and a bilingual accuracy
+  benchmark are deferred until the Doubao path has run on real recordings.
 - **Android and realtime**: not started. File-first remains the main path.
 - **Knowledge Git write**: the note writer writes Markdown to a local
   directory; the Git commit/versioning layer is still the knowledge-base task.

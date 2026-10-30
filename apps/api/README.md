@@ -1,10 +1,14 @@
 # Winnie API
 
-FastAPI backend for Winnie. It currently ships the transparent LLM gateway;
-meeting and knowledge APIs are added incrementally.
+FastAPI backend for Winnie. It ships the transparent LLM gateway, local
+accounts, and the file-first meeting-notes backend; knowledge APIs are added
+incrementally.
 
 - Application entry and composition root: `winnie_api.main:create_app`
 - Gateway feature: `src/winnie_api/gateway/`
+- Auth feature: `src/winnie_api/auth/`
+- Meetings feature: `src/winnie_api/meetings/`
+- Shared runtime and database: `src/winnie_api/runtime.py`, `shared/db.py`
 - Settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Tests: `tests/`, using a fake upstream instead of real vendor keys
 
@@ -17,36 +21,65 @@ uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
 curl -s http://127.0.0.1:8000/routes
 ```
 
+With the default `config.yaml`, accounts and meeting notes are enabled and the
+database is created on startup. Create the first account (allowed even with
+`auth.allow_registration: false`):
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"correct horse battery"}'
+```
+
+The response contains a bearer token. Send it as
+`Authorization: Bearer <token>` to `/api/v1/meetings` and `/api/v1/auth/me`.
+Later registrations are rejected unless `auth.allow_registration: true`.
+
 ## Test
 
 ```bash
 uv run pytest
 ```
 
-## Meeting API (scaffold)
+## Meeting API
 
-The meeting-notes backend is mounted under `/api/v1/meetings` when
-`meetings.enabled: true` is set in `config.yaml`. It uses a local SQLite
-database by default and deterministic fake ASR/translation/summarization
-providers, so it runs without cloud credentials:
+The meeting backend is mounted under `/api/v1/meetings` when
+`meetings.enabled: true`. It uses local SQLite and local disk by default, so it
+runs without cloud storage. With `meetings.asr_provider: volcengine`, set:
 
 ```bash
-# create, upload, process
-curl -s -X POST http://127.0.0.1:8000/api/v1/meetings \
-  -H 'Content-Type: application/json' -d '{"title":"Weekly sync"}'
-curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/audio \
-  -F 'file=@recording.m4a'
-curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/transcribe
-
-# read
-curl -s http://127.0.0.1:8000/api/v1/meetings/<id>/transcript
-curl -s http://127.0.0.1:8000/api/v1/meetings/<id>/minutes
-curl -s 'http://127.0.0.1:8000/api/v1/meetings/<id>/export?format=markdown'
+export VOLCENGINE_ASR_APP_ID=...
+export VOLCENGINE_ASR_ACCESS_TOKEN=...
 ```
 
-The fake providers are for local demos and tests only. Real ASR and LLM
-adapters are added under `src/winnie_api/integrations/`. See
-[docs/meetings.md](../../docs/meetings.md) for the full design.
+To try the full pipeline without credentials, set `meetings.asr_provider: fake`
+in `config.local.yaml`. The fake ASR/translation/summarization providers are
+deterministic and are for local demos and tests only.
+
+```bash
+# create, upload, process (TOKEN is the access_token from registration/login)
+curl -s -X POST http://127.0.0.1:8000/api/v1/meetings \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"title":"Weekly sync"}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/audio \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'file=@recording.m4a'
+curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/transcribe \
+  -H "Authorization: Bearer $TOKEN"
+
+# read
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8000/api/v1/meetings/<id>/transcript
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:8000/api/v1/meetings/<id>/minutes
+curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://127.0.0.1:8000/api/v1/meetings/<id>/export?format=markdown'
+```
+
+Only the minutes note is written to the knowledge directory; the raw transcript
+stays in the meeting database. See [docs/meetings.md](../../docs/meetings.md)
+for the full design and [docs/todo.md](../../docs/todo.md) for provider
+evaluation and production follow-ups.
 
 ## Smoke test
 
