@@ -22,8 +22,8 @@ curl -s http://127.0.0.1:8000/routes
 ```
 
 With the default `config.yaml`, accounts and meeting notes are enabled and the
-database is created on startup. Create the first account (allowed even with
-`auth.allow_registration: false`):
+database is created on startup for development. Create the first account
+(allowed even with `auth.allow_registration: false`):
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
@@ -34,6 +34,33 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
 The response contains a bearer token. Send it as
 `Authorization: Bearer <token>` to `/api/v1/meetings` and `/api/v1/auth/me`.
 Later registrations are rejected unless `auth.allow_registration: true`.
+
+## Database migrations
+
+`auto_create_tables` is a development convenience. For a real deployment, run
+Alembic against the same config file and disable automatic table creation:
+
+```bash
+cd apps/api
+WINNIE_CONFIG=/path/to/prod.yaml uv run alembic upgrade head
+uv run alembic check
+```
+
+Set `database.auto_create_tables: false` in that config before starting the API
+or worker. `WINNIE_CONFIG` is read by the application and by `migrations/env.py`,
+so both target the same URL. Use `alembic downgrade base` only for a disposable
+database.
+
+A database that was created by `auto_create_tables` has the tables but no
+`alembic_version`. Back it up, compare the schema with the models, then stamp
+the initial revision instead of replaying it:
+
+```bash
+uv run alembic stamp head
+```
+
+Do not run `upgrade head` against a populated, unversioned database; it will
+try to create tables that already exist.
 
 ## Test
 
@@ -48,9 +75,11 @@ The meeting backend is mounted under `/api/v1/meetings` when
 runs without cloud storage. With `meetings.asr_provider: volcengine`, set:
 
 ```bash
-export VOLCENGINE_ASR_APP_ID=...
-export VOLCENGINE_ASR_ACCESS_TOKEN=...
+export VOLCENGINE_ASR_API_KEY=...
 ```
+
+This is the API key from the current Volcengine console, sent as `X-Api-Key`.
+The legacy APP ID + Access Token pair is no longer accepted.
 
 To try the full pipeline without cloud credentials, set
 `meetings.asr_provider: fake` and keep `meetings.translator` /

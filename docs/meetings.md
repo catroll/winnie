@@ -97,7 +97,7 @@ apps/
 │   │       ├── queue.py              # arq enqueue helpers
 │   │       ├── tasks.py              # transcribe / translate / summarize
 │   │       └── worker.py             # arq WorkerSettings entry
-│   ├── alembic/                      # migrations
+│   ├── migrations/                  # Alembic migrations
 │   └── tests/
 │       ├── fakes/                    # FakeASR, FakeTranslator, FakeLLM
 │       └── meetings/
@@ -377,8 +377,9 @@ class Summarizer(Protocol):
 - **Config** selects the implementation per capability, e.g.
   `meetings.asr_provider: volcengine` and
   `meetings.translator: openai_compatible`. Credentials come from environment
-  variables (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN`,
-  `WINNIE_LLM_API_KEY`), never from YAML committed to Git.
+  variables (`VOLCENGINE_ASR_API_KEY`, `WINNIE_LLM_API_KEY`), never from YAML
+  committed to Git. The Doubao key is a single new-console API key sent as
+  `X-Api-Key`; the old APP ID + Access Token pair is not supported.
 - **Cost**: every provider call writes a `usage_records` row (audio seconds,
   tokens, characters). Provider prices live in config so the estimate can be
   recomputed. This is the basis of the per-meeting cost view.
@@ -446,10 +447,12 @@ jobs:
   redis_url: ""
 ```
 
-Secrets (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN` and the key named
-by `llm.api_key_env`) come from the environment. Unknown YAML keys are rejected
-at startup. Production should use PostgreSQL and turn off
-`database.auto_create_tables` once migrations exist.
+Secrets (`VOLCENGINE_ASR_API_KEY` and the key named by `llm.api_key_env`) come
+from the environment. Unknown YAML keys are rejected at startup. Production
+should use PostgreSQL and run `uv run alembic upgrade head` with the same
+`WINNIE_CONFIG` before setting `database.auto_create_tables: false`. A database
+created by `auto_create_tables` has no `alembic_version`; back it up and
+`alembic stamp head` instead of replaying the initial revision.
 
 ### 8.3 Gateway and LLM access
 
@@ -629,13 +632,15 @@ Implemented:
   a database when both are off.
 - SQLAlchemy models for users, sessions, meetings, segments, minutes, jobs and
   usage records; SQLite for local development, PostgreSQL-ready URL.
+- Alembic initial migration and `alembic check`; tests cover upgrade, downgrade
+  and application startup with `auto_create_tables: false`.
 - `/api/v1/meetings` CRUD, audio upload, transcribe, transcript, minutes,
   regenerate, export and delete.
 - File-first pipeline: ASR -> per-segment language handling -> translation ->
   summarization -> Markdown note.
 - Volcengine Doubao big-model recording-file ASR adapter with base64 inline
-  upload, polling, usage recording and mocked HTTP tests. Credentials come from
-  `VOLCENGINE_ASR_APP_ID` and `VOLCENGINE_ASR_ACCESS_TOKEN`.
+  upload, polling, usage recording and mocked HTTP tests. The credential is the
+  new-console API key from `VOLCENGINE_ASR_API_KEY`, sent as `X-Api-Key`.
 - OpenAI-compatible LLM adapters for batched translation and structured
   minutes, selected with `meetings.translator` / `meetings.summarizer`; the key
   comes from `llm.api_key_env` (default `WINNIE_LLM_API_KEY`).
@@ -652,8 +657,9 @@ Deliberate deferrals and why:
   removing code. Revisit when real provider retries, conditional re-runs or
   multi-step tools appear. The pipeline currently lives in
   `meetings/service.py`; `meetings/pipeline.py` is reserved for that change.
-- **Alembic**: development uses `auto_create_tables`. Add migrations before the
-  first production deployment and turn that flag off.
+- **Migration rollout**: the initial revision is committed, but no production
+  deployment has run it. A migration failure on a populated database is still
+  unproven; rehearse on a copy before the first real deployment.
 - **Live LLM validation**: the adapters are implemented and mocked-tested, but
   prompt quality, token cost and long-transcript behavior still need a real key
   and real recordings. Very long transcripts are sent in one summarization

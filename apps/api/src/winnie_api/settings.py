@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -159,8 +160,14 @@ def load_yaml_file(path: Path) -> dict[str, Any]:
 
 
 def load_settings(config_path: Path | None = None) -> Settings:
-    """Load config.yaml and overlay the sibling *.local.yaml when present."""
-    primary = config_path or (_API_ROOT / "config.yaml")
+    """Load config.yaml and overlay the sibling *.local.yaml when present.
+
+    ``WINNIE_CONFIG`` lets the API, worker and Alembic share one non-default
+    config file. An explicit argument still wins.
+    """
+    primary = config_path or Path(
+        os.environ.get("WINNIE_CONFIG", _API_ROOT / "config.yaml")
+    )
     if not primary.is_file():
         raise FileNotFoundError(f"missing config file: {primary}")
     data = load_yaml_file(primary)

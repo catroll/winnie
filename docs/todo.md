@@ -5,11 +5,18 @@ enough to start without re-reading the design.
 
 ## P0 — verify the Doubao path with a real account
 
-- [ ] Smoke-test `VolcengineASRProvider` against a real recording and the
-      account's current Doubao big-model endpoint. Confirm the submit/query
-      paths, `X-Api-*` headers, `audio.format` values and status codes against
-      the account console/docs. The adapter was written from the documented
-      contract and is covered by mocked HTTP tests, not a live call.
+- [x] Verify the new-console API-key auth against the live endpoint: a valid
+      `X-Api-Key` is accepted, while a bogus one returns
+      `HTTP 401, code=45000010, message=Invalid X-Api-Key`.
+- [ ] Enable the Doubao recording-file service for the API key's project. Both
+      `volc.bigasr.auc` (model 1.0) and `volc.seedasr.auc` (model 2.0) currently
+      answer `HTTP 403, code=45000030, message=[resource_id=...] requested
+      resource not granted`. Auth is not the problem; the resource is not
+      provisioned.
+- [ ] Smoke-test `VolcengineASRProvider` against a real recording once the
+      resource is granted. Confirm the submit/query paths, `audio.format`
+      values and status codes against the account console/docs. The adapter is
+      covered by mocked HTTP tests; the live call above stopped at provisioning.
 - [ ] Record the first real meeting: upload, transcribe, translate, minutes,
       export. Fix provider payload or timestamp assumptions found there.
 - [ ] Smoke-test the internal LLM path with a real `WINNIE_LLM_API_KEY`:
@@ -52,8 +59,11 @@ enough to start without re-reading the design.
 
 ## P1 — production data and jobs
 
-- [ ] Add Alembic migrations and turn `database.auto_create_tables` off for
-      production.
+- [x] Add Alembic migrations for the initial schema; `alembic check` is clean
+      and the test suite verifies upgrade, downgrade and startup without
+      `auto_create_tables`.
+- [ ] Rehearse `alembic upgrade head` on a populated PostgreSQL copy, then set
+      `database.auto_create_tables: false` in the production config.
 - [ ] Switch the default job backend to arq/Redis once a worker is deployed;
       keep `inline` for local demos and tests.
 - [ ] Add a storage adapter for object storage (private bucket, short-lived
