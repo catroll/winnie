@@ -21,6 +21,7 @@ from winnie_api.integrations.translate.base import Translator
 from winnie_api.integrations.types import AudioRef, Usage
 from winnie_api.jobs.queue import JobQueue
 from winnie_api.knowledge.meeting_note import MeetingNoteWriter
+from winnie_api.meetings.language import detect_language
 from winnie_api.meetings.models import Meeting, Minutes, Segment, utcnow
 from winnie_api.meetings.repository import MeetingRepository
 from winnie_api.shared.storage import Storage
@@ -212,11 +213,25 @@ class MeetingService:
         )
 
         segments: list[Segment] = []
+        previous_language: str | None = None
         for seq, item in enumerate(asr_result.segments, start=1):
-            needs_translation = (
-                item.language is not None
-                and not _same_language(item.language, meeting.local_language)
-            )
+            language = item.language
+            confidence = item.language_confidence
+            if not language:
+                guess = detect_language(item.text)
+                if guess is not None:
+                    language = guess.code
+                    confidence = guess.confidence
+                elif previous_language is not None:
+                    # Short numbers or filler inherit their neighbour.
+                    language = previous_language
+                    confidence = 0.0
+                else:
+                    language = meeting.local_language
+                    confidence = 0.0
+            previous_language = language
+
+            needs_translation = not _same_language(language, meeting.local_language)
             segments.append(
                 Segment(
                     meeting_id=meeting.id,
@@ -225,8 +240,8 @@ class MeetingService:
                     end_ms=item.end_ms,
                     speaker=item.speaker,
                     text=item.text,
-                    detected_language=item.language,
-                    language_confidence=item.language_confidence,
+                    detected_language=language,
+                    language_confidence=confidence,
                     translation_status="pending" if needs_translation else "skipped",
                 )
             )

@@ -17,14 +17,14 @@ enough to start without re-reading the design.
       so 2.0 is now the default. Streaming 2.0
       (`volc.seedasr.sauc.duration`) upgrades with `101 Switching Protocols`;
       streaming 1.0 is still not granted.
-- [ ] Give segments a language before relying on translation. The 2.0 response
+- [x] Give segments a language before relying on translation. The 2.0 response
       has no per-utterance language, and its file-level LID
       (`request.enable_lid` → `result.additions.lid_lang`) mislabels a Mandarin
-      TTS clip as `speech_dia_nan`, so it is not used. With `language=None`,
-      `_process` marks every segment `translation_status="skipped"` and a
-      bilingual meeting is never translated. Implement per-segment detection
-      (script-based for zh/en, or a real `LanguageDetector`) and record the
-      choice.
+      TTS clip as `speech_dia_nan`, so it is not used. The pipeline now uses a
+      script detector (Latin/CJK/kana/hangul, 40% dominance) when ASR omits the
+      label; short segments inherit the previous language, and the first segment
+      falls back to `local_language`. A real language-ID model remains an
+      option for accented or heavily code-switched audio.
 - [ ] Record the first real meeting: upload, transcribe, translate, minutes,
       export. Fix provider payload or timestamp assumptions found there.
 - [ ] Smoke-test the internal LLM path with a real `WINNIE_LLM_API_KEY`:

@@ -269,8 +269,12 @@ realtime WS ──► streaming ASR ───┘
 - `local_language` is a per-meeting setting, default `zh`.
 - Detect language **per segment**, not per meeting. A meeting can switch
   languages mid-sentence, and one global guess would mistranslate the rest.
-- Prefer the ASR provider's detected language when its confidence is above the
-  configured threshold. Otherwise call a `LanguageDetector`.
+- Prefer the ASR provider's per-segment language when present. Otherwise use
+  the script detector in `meetings/language.py`: Latin, CJK, kana and hangul
+  are counted, and a script needs 40% of the letters to win. This covers
+  Chinese/English meetings and gives Japanese/Korean a coarse label without a
+  provider call. Replace it with a real `LanguageDetector` when accuracy on
+  accented or code-switched speech matters.
 - If `detected_language == local_language`, set `translation_status = 'skipped'`
   and leave `translated_text` null. Always keep the original `text`.
 - Translate only the differing segments, batched by meeting and language pair.
@@ -279,7 +283,8 @@ realtime WS ──► streaming ASR ───┘
   in the MVP. Word-level alignment is out of scope.
 - Short utterances are unreliable for language ID. Use a minimum character or
   duration threshold before trusting a detection; otherwise inherit the
-  previous segment's language.
+  previous segment's language, falling back to `local_language` for the first
+  segment.
 
 ### 5.3 Minutes schema
 
@@ -667,7 +672,8 @@ Implemented:
 - Audio retention by age (`audio_retention_days`, 0 keeps forever) with an arq
   daily cron and a standalone CLI; transcripts and minutes are kept.
 - File-first pipeline: ASR -> per-segment language handling -> translation ->
-  summarization -> Markdown note.
+  summarization -> Markdown note. Missing ASR labels are filled by a script
+  detector (zh/en/ja/ko), with short segments inheriting their neighbour.
 - Volcengine Doubao big-model recording-file ASR adapter with base64 inline
   upload, polling, usage recording and mocked HTTP tests. The credential is the
   new-console API key from `VOLCENGINE_ASR_API_KEY`, sent as `X-Api-Key`.
