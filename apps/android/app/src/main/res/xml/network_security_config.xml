@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      The MVP talks to a Winnie server on the local network over plain HTTP.
+      A production deployment should terminate TLS and replace this with a
+      domain-scoped configuration; see apps/android/README.md.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
