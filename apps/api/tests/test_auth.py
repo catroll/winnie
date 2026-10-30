@@ -1,0 +1,187 @@
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+import httpx
+from winnie_api.settings import Settings
+
+PASSWORD = "correct horse battery"
+
+
+def _database_path(settings: Settings) -> Path:
+    url = settings.resolve_database_url()
+    _, _, raw_path = url.partition("sqlite+aiosqlite:///")
+    return Path(raw_path)
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _register(
+    client: httpx.AsyncClient,
+    username: str,
+    password: str = PASSWORD,
+) -> dict:
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={"username": username, "password": password},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+async def test_register_login_logout(auth_client: httpx.AsyncClient) -> None:
+    registered = await _register(auth_client, "Alice")
+    token = registered["access_token"]
+    assert registered["token_type"] == "bearer"
+    assert registered["user"]["username"] == "alice"
+    assert registered["user"]["id"]
+
+    second = await auth_client.post(
+        "/api/v1/auth/register",
+        json={"username": "bob", "password": PASSWORD},
+    )
+    assert second.status_code == 403
+
+    me = await auth_client.get("/api/v1/auth/me", headers=_bearer(token))
+    assert me.status_code == 200
+    assert me.json()["username"] == "alice"
+
+    wrong = await auth_client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": "wrong password"},
+    )
+    assert wrong.status_code == 401
+
+    login = await auth_client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": PASSWORD},
+    )
+    assert login.status_code == 200
+    login_token = login.json()["access_token"]
+
+    logout = await auth_client.post(
+        "/api/v1/auth/logout", headers=_bearer(login_token)
+    )
+    assert logout.status_code == 204
+    after = await auth_client.get(
+        "/api/v1/auth/me", headers=_bearer(login_token)
+    )
+    assert after.status_code == 401
+
+
+async def test_duplicate_username(account_client: httpx.AsyncClient) -> None:
+    await _register(account_client, "alice")
+    duplicate = await account_client.post(
+        "/api/v1/auth/register",
+        json={"username": "ALICE", "password": PASSWORD},
+    )
+    assert duplicate.status_code == 409
+
+
+async def test_invalid_registration_payload(auth_client: httpx.AsyncClient) -> None:
+    short_password = await auth_client.post(
+        "/api/v1/auth/register",
+        json={"username": "alice", "password": "short"},
+    )
+    assert short_password.status_code == 422
+
+    bad_username = await auth_client.post(
+        "/api/v1/auth/register",
+        json={"username": "bad name", "password": PASSWORD},
+    )
+    assert bad_username.status_code == 422
+
+
+async def test_meetings_are_isolated_by_account(
+    account_client: httpx.AsyncClient,
+) -> None:
+    alice = await _register(account_client, "alice")
+    bob = await _register(account_client, "bob")
+    alice_headers = _bearer(alice["access_token"])
+    bob_headers = _bearer(bob["access_token"])
+
+    unauthenticated = await account_client.get("/api/v1/meetings")
+    assert unauthenticated.status_code == 401
+
+    created = await account_client.post(
+        "/api/v1/meetings",
+        json={"title": "Alice meeting"},
+        headers=alice_headers,
+    )
+    assert created.status_code == 201
+    meeting_id = created.json()["id"]
+
+    alice_list = await account_client.get(
+        "/api/v1/meetings", headers=alice_headers
+    )
+    assert alice_list.json()["total"] == 1
+
+    bob_list = await account_client.get(
+        "/api/v1/meetings", headers=bob_headers
+    )
+    assert bob_list.json()["total"] == 0
+
+    hidden = await account_client.get(
+        f"/api/v1/meetings/{meeting_id}", headers=bob_headers
+    )
+    assert hidden.status_code == 404
+
+    delete = await account_client.delete(
+        f"/api/v1/meetings/{meeting_id}", headers=bob_headers
+    )
+    assert delete.status_code == 404
+
+    visible = await account_client.get(
+        f"/api/v1/meetings/{meeting_id}", headers=alice_headers
+    )
+    assert visible.status_code == 200
+
+
+async def test_secrets_are_hashed(
+    auth_client: httpx.AsyncClient,
+    auth_settings: Settings,
+) -> None:
+    registered = await _register(auth_client, "alice")
+    token = registered["access_token"]
+
+    with sqlite3.connect(_database_path(auth_settings)) as connection:
+        password_hash = connection.execute(
+            "select password_hash from users where username = 'alice'"
+        ).fetchone()[0]
+        token_hash = connection.execute(
+            "select token_hash from auth_sessions"
+        ).fetchone()[0]
+
+    assert password_hash.startswith("$argon2id$")
+    assert PASSWORD not in password_hash
+    assert token_hash != token
+    assert len(token_hash) == 64
+
+
+async def test_expired_session_is_rejected(
+    auth_client: httpx.AsyncClient,
+    auth_settings: Settings,
+) -> None:
+    registered = await _register(auth_client, "alice")
+    token = registered["access_token"]
+
+    with sqlite3.connect(_database_path(auth_settings)) as connection:
+        connection.execute(
+            "update auth_sessions set expires_at = '2000-01-01 00:00:00'"
+        )
+        connection.commit()
+
+    response = await auth_client.get(
+        "/api/v1/auth/me", headers=_bearer(token)
+    )
+    assert response.status_code == 401
+
+
+async def test_auth_routes_are_absent_when_disabled(
+    meeting_client: httpx.AsyncClient,
+) -> None:
+    response = await meeting_client.get("/api/v1/auth/me")
+    assert response.status_code == 404

@@ -31,15 +31,19 @@ routes:
     protocol: anthropic
     base_url: https://api.anthropic.com
 
-# Meeting notes (file-first). Disabled by default; enabling it mounts
-# /api/v1/meetings.
+# Account system. Enabling auth creates users and sessions in the database.
+auth:
+  enabled: true
+  # The first account can always register. Set true to allow more accounts;
+  # leave false for a single-user personal deployment.
+  allow_registration: false
+  session_ttl_days: 30
+
+# Meeting notes (file-first). Enabling it mounts /api/v1/meetings.
 meetings:
-  enabled: false
-  # Single-user mode: every meeting belongs to this user until accounts exist.
+  enabled: true
+  # Only used when auth is disabled; all meetings belong to this local user.
   default_user_id: local
-  # Optional Bearer token for the meeting API. Empty means no check; only use
-  # that on a trusted local machine.
-  auth_token: ""
   # The user's local language. Segments in other languages get a translation.
   local_language: zh
   # Only "local" is implemented.
@@ -47,12 +51,21 @@ meetings:
   local_root: ../../data/meetings
   notes_root: ../../data/kb/meetings
   max_upload_mb: 500
-  # "fake" is for local demos and tests only; it never calls a cloud service.
-  asr_provider: fake
+  # "fake" is for local demos and tests only; "volcengine" uses Doubao.
+  asr_provider: volcengine
   translator: fake
   summarizer: fake
   model: fake
   prompt_version: v1
+  # Doubao big-model recording-file ASR. Credentials come from the
+  # VOLCENGINE_ASR_APP_ID and VOLCENGINE_ASR_ACCESS_TOKEN environment variables.
+  volcengine:
+    base_url: https://openspeech.bytedance.com
+    resource_id: volc.bigasr.auc
+    model_name: bigmodel
+    max_inline_mb: 100
+    poll_interval_seconds: 2
+    poll_timeout_seconds: 300
 
 # Meeting data. SQLite is the development default; production should use
 # PostgreSQL, for example postgresql+asyncpg://user:pass@host:5432/winnie

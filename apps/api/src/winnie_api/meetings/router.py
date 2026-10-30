@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
-import hmac
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+)
 
+from winnie_api.auth.dependencies import get_user_id
 from winnie_api.meetings.schemas import (
     MeetingCreate,
     MeetingList,
@@ -31,19 +40,6 @@ def get_service(request: Request) -> MeetingService:
     if service is None:
         raise HTTPException(status_code=503, detail="meeting notes are disabled")
     return service
-
-
-def get_user_id(request: Request) -> str:
-    settings = request.app.state.settings
-    token = settings.meetings.auth_token
-    if token:
-        authorization = request.headers.get("authorization", "")
-        scheme, _, supplied = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not hmac.compare_digest(
-            supplied.strip(), token
-        ):
-            raise HTTPException(status_code=401, detail="invalid or missing meeting token")
-    return settings.meetings.default_user_id
 
 
 def _not_found() -> HTTPException:

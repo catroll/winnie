@@ -1,14 +1,21 @@
 """Build provider adapters from configuration.
 
-Only the fake providers are implemented in the framework scaffold. Real
-adapters (Volcengine/Aliyun ASR, LLM translation and summarization) implement
-the same ports and are selected here.
+The fake providers keep tests and local demos deterministic. Volcengine
+Doubao is the first real ASR adapter; translation and summarization adapters
+land behind the same ports.
 """
 
 from __future__ import annotations
 
+import os
+
 from winnie_api.integrations.asr.base import ASRProvider
 from winnie_api.integrations.asr.fake import FakeASRProvider
+from winnie_api.integrations.asr.volcengine import (
+    ACCESS_TOKEN_ENV,
+    APP_ID_ENV,
+    VolcengineASRProvider,
+)
 from winnie_api.integrations.summarize.base import Summarizer
 from winnie_api.integrations.summarize.fake import FakeSummarizer
 from winnie_api.integrations.translate.base import Translator
@@ -20,6 +27,18 @@ def build_asr_provider(settings: Settings) -> ASRProvider:
     name = settings.meetings.asr_provider
     if name == "fake":
         return FakeASRProvider()
+    if name == "volcengine":
+        config = settings.meetings.volcengine
+        return VolcengineASRProvider(
+            app_id=os.environ.get(APP_ID_ENV, ""),
+            access_token=os.environ.get(ACCESS_TOKEN_ENV, ""),
+            base_url=config.base_url,
+            resource_id=config.resource_id,
+            model_name=config.model_name,
+            max_inline_bytes=config.max_inline_mb * 1024 * 1024,
+            poll_interval_seconds=config.poll_interval_seconds,
+            poll_timeout_seconds=config.poll_timeout_seconds,
+        )
     raise ValueError(
         f"unsupported ASR provider {name!r}; implement it under "
         "winnie_api/integrations/asr/ and register it here"

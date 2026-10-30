@@ -36,12 +36,30 @@ class JobsConfig(BaseModel):
     redis_url: str = ""
 
 
+class AuthConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    allow_registration: bool = False
+    session_ttl_days: int = Field(default=30, ge=1, le=365)
+
+
+class VolcengineASRConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str = "https://openspeech.bytedance.com"
+    resource_id: str = "volc.bigasr.auc"
+    model_name: str = "bigmodel"
+    max_inline_mb: int = Field(default=100, ge=1, le=500)
+    poll_interval_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
+    poll_timeout_seconds: float = Field(default=300.0, ge=1.0, le=3600.0)
+
+
 class MeetingsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
     default_user_id: str = "local"
-    auth_token: str = ""
     local_language: str = "zh"
     storage: Literal["local"] = "local"
     local_root: str = "../../data/meetings"
@@ -52,6 +70,7 @@ class MeetingsConfig(BaseModel):
     summarizer: str = "fake"
     model: str = "fake"
     prompt_version: str = "v1"
+    volcengine: VolcengineASRConfig = Field(default_factory=VolcengineASRConfig)
 
 
 class Settings(BaseModel):
@@ -61,6 +80,7 @@ class Settings(BaseModel):
     anthropic_version: str = "2023-06-01"
     proxy_api_key: str = ""
     routes: dict[str, RouteConfig] = Field(default_factory=dict)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     jobs: JobsConfig = Field(default_factory=JobsConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)

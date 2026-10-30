@@ -186,25 +186,6 @@ async def test_unknown_meeting_returns_404(meeting_client: httpx.AsyncClient) ->
     assert response.status_code == 404
 
 
-async def test_meeting_token_is_enforced(meeting_settings: Settings) -> None:
-    protected = meeting_settings.model_copy(
-        update={
-            "meetings": meeting_settings.meetings.model_copy(
-                update={"auth_token": "secret"}
-            )
-        }
-    )
-    async with _open_client(protected) as client:
-        denied = await client.get("/api/v1/meetings")
-        assert denied.status_code == 401
-
-        allowed = await client.get(
-            "/api/v1/meetings",
-            headers={"Authorization": "Bearer secret"},
-        )
-        assert allowed.status_code == 200
-
-
 async def test_meetings_are_absent_when_disabled(settings: Settings) -> None:
     async with _open_client(settings) as client:
         response = await client.get("/api/v1/meetings")

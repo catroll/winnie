@@ -10,6 +10,7 @@ import pytest_asyncio
 
 from winnie_api.main import create_app
 from winnie_api.settings import (
+    AuthConfig,
     DatabaseConfig,
     JobsConfig,
     MeetingsConfig,
@@ -167,6 +168,74 @@ async def meeting_client(
         timeout=httpx.Timeout(5.0),
     )
     app = create_app(settings=meeting_settings, http=http)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as test_client:
+            yield test_client
+    await http.aclose()
+
+
+@pytest.fixture
+def auth_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={},
+        auth=AuthConfig(enabled=True, allow_registration=False),
+        database=DatabaseConfig(
+            url=f"sqlite+aiosqlite:///{tmp_path / 'auth.db'}",
+            auto_create_tables=True,
+        ),
+        jobs=JobsConfig(backend="inline"),
+    )
+
+
+@pytest.fixture
+def account_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={},
+        auth=AuthConfig(enabled=True, allow_registration=True),
+        meetings=MeetingsConfig(
+            enabled=True,
+            local_root=str(tmp_path / "meetings"),
+            notes_root=str(tmp_path / "notes"),
+            max_upload_mb=1,
+        ),
+        database=DatabaseConfig(
+            url=f"sqlite+aiosqlite:///{tmp_path / 'account.db'}",
+            auto_create_tables=True,
+        ),
+        jobs=JobsConfig(backend="inline"),
+    )
+
+
+@pytest_asyncio.fixture
+async def auth_client(
+    auth_settings: Settings,
+) -> AsyncIterator[httpx.AsyncClient]:
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500)),
+        timeout=httpx.Timeout(5.0),
+    )
+    app = create_app(settings=auth_settings, http=http)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as test_client:
+            yield test_client
+    await http.aclose()
+
+
+@pytest_asyncio.fixture
+async def account_client(
+    account_settings: Settings,
+) -> AsyncIterator[httpx.AsyncClient]:
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500)),
+        timeout=httpx.Timeout(5.0),
+    )
+    app = create_app(settings=account_settings, http=http)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"

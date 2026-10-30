@@ -9,9 +9,10 @@ import httpx
 from fastapi import FastAPI
 
 from winnie_api import __version__
+from winnie_api.auth.router import router as auth_router
 from winnie_api.gateway.router import router as gateway_router
 from winnie_api.meetings.router import router as meetings_router
-from winnie_api.meetings.wiring import MeetingRuntime, build_meeting_runtime
+from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.settings import Settings, load_settings
 
 
@@ -28,9 +29,7 @@ def create_app(
     """
     resolved = settings or load_settings()
     owns_http = http is None
-    meeting_runtime: MeetingRuntime | None = None
-    if resolved.meetings.enabled:
-        meeting_runtime = build_meeting_runtime(resolved)
+    runtime: AppRuntime | None = build_runtime(resolved)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -41,21 +40,24 @@ def create_app(
         app.state.http = http or httpx.AsyncClient(
             timeout=httpx.Timeout(300.0, connect=30.0)
         )
-        if meeting_runtime is not None:
-            await meeting_runtime.startup()
-            app.state.meeting_service = meeting_runtime.service
+        if runtime is not None:
+            await runtime.startup()
+            app.state.auth_service = runtime.auth_service
+            app.state.meeting_service = runtime.meeting_service
         try:
             yield
         finally:
-            if meeting_runtime is not None:
-                await meeting_runtime.shutdown()
+            if runtime is not None:
+                await runtime.shutdown()
             if owns_http:
                 await app.state.http.aclose()
 
     app = FastAPI(title="Winnie", version=__version__, lifespan=lifespan)
     app.state.settings = resolved
     app.include_router(gateway_router)
-    if meeting_runtime is not None:
+    if resolved.auth.enabled:
+        app.include_router(auth_router, prefix="/api/v1")
+    if resolved.meetings.enabled:
         app.include_router(meetings_router, prefix="/api/v1")
 
     @app.get("/healthz")

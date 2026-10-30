@@ -214,7 +214,7 @@ class MeetingService:
         for seq, item in enumerate(asr_result.segments, start=1):
             needs_translation = (
                 item.language is not None
-                and item.language != meeting.local_language
+                and not _same_language(item.language, meeting.local_language)
             )
             segments.append(
                 Segment(
@@ -529,3 +529,8 @@ class MeetingService:
                     f"due: {item.get('due_date') or 'no due date'})"
                 )
         return "\n".join(lines) + "\n"
+
+
+def _same_language(detected: str, local: str) -> bool:
+    """Compare base language tags so zh and zh-CN count as the same language."""
+    return detected.split("-", 1)[0].lower() == local.split("-", 1)[0].lower()
