@@ -10,6 +10,7 @@ infrastructure below it exists to serve the assistant.
 |-------|-------------------|--------|
 | **Assistant** | Scheduling, development help and everyday tasks, orchestrated on top of the layers below | Planned |
 | **Meeting notes** | File-first transcription, cross-lingual transcript and structured minutes | Backend implemented; live provider validation pending |
+| **Android client** | Record a meeting, upload it, read its transcript and minutes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
@@ -50,8 +51,11 @@ CRUD, audio upload, a file-first processing pipeline, transcript/minutes/export
 APIs and a Markdown knowledge sink are wired. Accounts, per-user meeting
 isolation, the Volcengine Doubao ASR adapter, and OpenAI-compatible translation
 and structured-minutes adapters are implemented. The fake providers remain the
-default for tests and local demos; live ASR/LLM credentials still need a smoke
-test, and the Android client is in progress in a separate workstream.
+default for tests and local demos. The DeepSeek translation/minutes smoke test
+passed; live ASR still needs a real meeting with a Doubao key. The Android client
+MVP in `apps/android` runs the file-first flow — sign
+in, record, upload, transcript and minutes — and is verified against the local
+backend; running it on a device with a live ASR key is still pending.
 
 ### Quick start
 
@@ -84,8 +88,8 @@ export `WINNIE_LLM_API_KEY`. The integration design and endpoint list are in
 ## Roadmap
 
 1. **Meeting notes** — validate and tune the Doubao and LLM provider paths on
-   real recordings; evaluate a second ASR vendor on bilingual audio; the
-   Android client; realtime streaming; then cross-meeting search.
+   real recordings; evaluate a second ASR vendor on bilingual audio; run the
+   Android client on a device; realtime streaming; then cross-meeting search.
 2. **Knowledge base** — Git-backed Markdown, management UI, classification and
    tagging, re-indexing, retrieval-augmented chat.
 3. **Assistant capabilities** — scheduling, development assistance and everyday
@@ -108,6 +112,7 @@ including the ASR evaluation and provider verification, are in
 | ASR | Volcengine Doubao (big-model recording file) |
 | Translation and minutes | OpenAI-compatible chat model via an internal LLM client |
 | Management UI | Vite + React |
+| Android client | Kotlin, Jetpack Compose, OkHttp, kotlinx.serialization |
 | Knowledge source | Git-managed Markdown |
 | Vector index | Qdrant |
 | Async jobs | Redis + arq (inline queue for local development) |
@@ -121,6 +126,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [apps/api/README.md](./apps/api/README.md) — backend layout, running and tests
+- [apps/android/README.md](./apps/android/README.md) — Android MVP: build, run and limitations
 
 ## License
 

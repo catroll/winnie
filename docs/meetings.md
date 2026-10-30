@@ -1,9 +1,9 @@
 # Cross-lingual AI meeting notes — integration design
 
-Status: backend scaffold implemented; live provider validation and the Android
-client are in progress. This document covers how the meeting-notes capability
-fits into Winnie, how it reuses the existing backend, and how it is delivered
-in increments.
+Status: the backend, accounts, provider adapters and the Android MVP are
+implemented; live provider validation and device testing are pending. This
+document covers how the meeting-notes capability fits into Winnie, how it
+reuses the existing backend, and how it is delivered in increments.
 
 ## 1. Where this fits
 
@@ -357,8 +357,8 @@ temporarily lock a known account. With no email service, a lost password is
 reset from the host with `python -m winnie_api.auth.reset_password`; this
 requires database access and revokes every session.
 Meeting ownership uses the authenticated `user.id`, while `auth.enabled: false`
-keeps the local single-user fallback. Android stores the token in
-`EncryptedSharedPreferences`.
+keeps the local single-user fallback. Android stores the token encrypted with
+a key held in the Android Keystore (AES/GCM).
 
 Job status: polling `GET /meetings/{id}` is enough for the MVP. Do not build a
 WebSocket just to report progress; reserve WebSocket for realtime audio.
@@ -537,31 +537,33 @@ assistant.
 
 ## 9. Android application
 
-The Android app is a client of `/api/v1`. It should not contain AI logic. The
-FastAPI OpenAPI schema is the contract; generate the client or hand-write it,
-but do not maintain a second set of request/response models by hand.
+The Android app is a client of `/api/v1`. It contains no AI logic. The MVP is
+implemented in `apps/android`; see
+[apps/android/README.md](../apps/android/README.md) for build, run and tests.
 
 ```text
-apps/android/app/src/main/java/<pkg>/
-├── ui/           Compose: record, meeting list, transcript, minutes
-├── data/         HTTP client, Room cache, WorkManager upload
-├── audio/        AudioRecord, foreground service, chunking
-├── realtime/     WebSocket client (phase 2)
-└── di/           dependency injection
+apps/android/app/src/main/java/dev/winnie/app/
+├── ui/       Compose: login, meeting list, recorder, meeting detail
+├── data/     HTTP client, DTOs, session and token storage
+└── audio/    AudioRecord and incremental WAV writer
 ```
 
-MVP flow:
+The DTOs are hand-written for the MVP because the surface is small. If it grows
+past roughly twenty endpoints, generate the client from the OpenAPI schema
+instead of maintaining a second set of models by hand.
 
-1. Record to a local file with a foreground service and a persistent
-   notification.
-2. Upload with `WorkManager` so a killed app can retry.
-3. Poll meeting status; show progress per stage.
-4. Show transcript with original/translation side by side, and a toggle.
-5. Show minutes; export Markdown or TXT via the system share sheet.
+Implemented MVP flow:
 
-Do not build realtime streaming in the first two weeks. The proposal's own
-recommendation is file-first, and the Android foreground-service + WebSocket
-work is where the schedule usually breaks.
+1. Record to a local WAV file at 16 kHz mono with `AudioRecord`.
+2. Create the meeting, upload the file, request transcription.
+3. Poll meeting status; the detail screen waits for `ready`.
+4. Show the transcript with original and translation, then the minutes.
+
+Deferred and tracked in [todo.md](./todo.md): foreground-service recording and
+a persistent notification, `WorkManager` upload retry, offline cache,
+export/share, speaker labels, and realtime streaming. Do not build realtime
+streaming before the file-first flow is validated on a real device: the
+foreground-service + WebSocket work is where the schedule usually breaks.
 
 ## 10. Delivery plan
 
@@ -720,8 +722,9 @@ Deliberate deferrals and why:
   recordings; the chunked map-reduce merge quality is not yet measured.
 - **Other ASR vendors**: Aliyun, local Whisper and a bilingual accuracy
   benchmark are deferred until the Doubao path has run on real recordings.
-- **Android and realtime**: the Android client is in progress in a separate
-  workstream; realtime streaming is not started. File-first remains the main
-  path.
+- **Android and realtime**: the Android MVP runs the file-first flow (sign in,
+  record, upload, transcript, minutes) and is verified against the local backend
+  with fake providers; a physical-device run with a live ASR key is pending.
+  Realtime streaming is not started; file-first remains the main path.
 - **Knowledge Git write**: the note writer writes Markdown to a local
   directory; the Git commit/versioning layer is still the knowledge-base task.

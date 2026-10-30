@@ -3,7 +3,7 @@
 Prioritized follow-ups for the personal-assistant backend. Keep entries concrete
 enough to start without re-reading the design.
 
-## P0 — first real meeting and live LLM validation
+## P0 — first real meeting and bilingual fixture
 
 > The ASR credential is supplied to the Android workstream. The API process
 > still needs `VOLCENGINE_ASR_API_KEY` in its environment for the live smoke
@@ -31,9 +31,12 @@ enough to start without re-reading the design.
       option for accented or heavily code-switched audio.
 - [ ] Record the first real meeting: upload, transcribe, translate, minutes,
       export. Fix provider payload or timestamp assumptions found there.
-- [ ] Smoke-test the internal LLM path with a real `WINNIE_LLM_API_KEY`:
-      translation order/length, structured minutes, token usage and failure
-      messages. Mocked tests do not prove prompt quality.
+- [x] Smoke-test the internal LLM path with a real `WINNIE_LLM_API_KEY`:
+      two-line translation preserved order and length, structured minutes
+      returned topics/action items, and usage was 109 and 365 tokens. An invalid
+      model returned `RuntimeError` with the provider's HTTP 400 message. Prompt
+      quality, cost and long-transcript behavior still need the bilingual
+      fixture and a real meeting.
 - [ ] Add a 10–30 minute bilingual fixture (Chinese, English, code-switching,
       names, numbers) under a local-only fixture directory, never in Git.
 
@@ -108,13 +111,23 @@ enough to start without re-reading the design.
 - [ ] Add email-based password reset if multi-user deployment needs it.
 - [ ] Add account management/admin endpoints only when multi-user deployment
       is real; keep single-user registration closed by default.
-- [ ] Review token storage on Android (`EncryptedSharedPreferences`) and
-      certificate pinning only if the deployment requires it.
+- [x] Review token storage on Android: the bearer token is encrypted with an
+      AES/GCM key held in the Android Keystore, not in plain preferences.
+      Certificate pinning is not needed for the local MVP; revisit when the
+      server is public.
 
 ## P2 — clients and realtime
 
-- [ ] Android client (in progress in a separate workstream): record, upload,
-      meeting list, transcript view, minutes, export, offline cache.
+- [x] Android client MVP in `apps/android`: sign in, record a 16 kHz mono WAV,
+      upload, request transcription, meeting list, transcript and minutes views.
+      Verified against the local backend with fake providers, including a
+      JVM integration test that runs the same HTTP client the app uses.
+- [ ] Android client follow-ups: foreground-service recording so a backgrounded
+      app keeps recording, export/share, offline cache, automatic token-refresh
+      handling, and a physical-device run with a live ASR key.
+- [ ] Run the Android MVP on a phone against a real Doubao key and fix the
+      device-specific issues (mic permission UX, long-recording stability,
+      cleartext/TLS configuration).
 - [ ] Realtime WebSocket ASR and incremental translation, reusing the final
       file-first pipeline for the finished recording.
 - [ ] Speaker diarization and per-speaker labels in transcript/minutes.
@@ -128,5 +141,6 @@ enough to start without re-reading the design.
       database plus Redis when the arq backend is configured.
 - [ ] Deployment guide: PostgreSQL, Redis, reverse proxy, backups, restore
       rehearsal.
-- [ ] Add a `docs/decisions.md` entry for every provider or architecture choice
-      that is not obvious from the code.
+- [ ] Keep adding to `docs/decisions.md` for every provider or architecture
+      choice that is not obvious from the code. The Android client entries are
+      recorded there.
