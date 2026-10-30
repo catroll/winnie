@@ -1,9 +1,9 @@
 # Cross-lingual AI meeting notes — integration design
 
-Status: backend scaffold implemented; real providers and the Android client are
-pending. This document covers how the meeting-notes capability fits into
-Winnie, how it reuses the existing backend, and how it is delivered in
-increments.
+Status: backend scaffold implemented; live provider validation and the Android
+client are in progress. This document covers how the meeting-notes capability
+fits into Winnie, how it reuses the existing backend, and how it is delivered
+in increments.
 
 ## 1. Where this fits
 
@@ -720,6 +720,8 @@ Deliberate deferrals and why:
   on real bilingual transcripts is unproven.
 - **Other ASR vendors**: Aliyun, local Whisper and a bilingual accuracy
   benchmark are deferred until the Doubao path has run on real recordings.
-- **Android and realtime**: not started. File-first remains the main path.
+- **Android and realtime**: the Android client is in progress in a separate
+  workstream; realtime streaming is not started. File-first remains the main
+  path.
 - **Knowledge Git write**: the note writer writes Markdown to a local
   directory; the Git commit/versioning layer is still the knowledge-base task.

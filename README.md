@@ -51,7 +51,7 @@ APIs and a Markdown knowledge sink are wired. Accounts, per-user meeting
 isolation, the Volcengine Doubao ASR adapter, and OpenAI-compatible translation
 and structured-minutes adapters are implemented. The fake providers remain the
 default for tests and local demos; live ASR/LLM credentials still need a smoke
-test, and the Android client has not started.
+test, and the Android client is in progress in a separate workstream.
 
 ### Quick start
 

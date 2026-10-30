@@ -3,7 +3,11 @@
 Prioritized follow-ups for the personal-assistant backend. Keep entries concrete
 enough to start without re-reading the design.
 
-## P0 — verify the Doubao path with a real account
+## P0 — first real meeting and live LLM validation
+
+> The ASR credential is supplied to the Android workstream. The API process
+> still needs `VOLCENGINE_ASR_API_KEY` in its environment for the live smoke
+> test; this shell did not inherit it.
 
 - [x] Verify the new-console API-key auth against the live endpoint: a valid
       `X-Api-Key` is accepted, while a bogus one returns
@@ -33,7 +37,11 @@ enough to start without re-reading the design.
 - [ ] Add a 10–30 minute bilingual fixture (Chinese, English, code-switching,
       names, numbers) under a local-only fixture directory, never in Git.
 
-## P1 — ASR vendor evaluation (after Doubao works)
+## P1 — ASR vendor evaluation
+
+> Doubao 2.0 now works, so this is no longer gated on the ASR vendor. It still
+> needs the bilingual fixture and the first real meeting before a fair
+> comparison.
 
 - [ ] Build a small evaluation harness that runs the same audio through each
       `ASRProvider` and stores raw results plus metrics.
@@ -105,8 +113,8 @@ enough to start without re-reading the design.
 
 ## P2 — clients and realtime
 
-- [ ] Android client: record, upload, meeting list, transcript view, minutes,
-      export, offline cache.
+- [ ] Android client (in progress in a separate workstream): record, upload,
+      meeting list, transcript view, minutes, export, offline cache.
 - [ ] Realtime WebSocket ASR and incremental translation, reusing the final
       file-first pipeline for the finished recording.
 - [ ] Speaker diarization and per-speaker labels in transcript/minutes.
