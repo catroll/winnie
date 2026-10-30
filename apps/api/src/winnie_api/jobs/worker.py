@@ -11,7 +11,11 @@ from typing import Any
 from arq import cron
 from arq.connections import RedisSettings
 
-from winnie_api.jobs.tasks import cleanup_expired_sessions, process_meeting_job
+from winnie_api.jobs.tasks import (
+    cleanup_expired_audio,
+    cleanup_expired_sessions,
+    process_meeting_job,
+)
 from winnie_api.runtime import build_runtime
 from winnie_api.settings import get_settings
 
@@ -34,8 +38,15 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions = [process_meeting_job, cleanup_expired_sessions]
-    cron_jobs = [cron(cleanup_expired_sessions, hour=3, minute=17)]
+    functions = [
+        process_meeting_job,
+        cleanup_expired_sessions,
+        cleanup_expired_audio,
+    ]
+    cron_jobs = [
+        cron(cleanup_expired_sessions, hour=3, minute=17),
+        cron(cleanup_expired_audio, hour=3, minute=47),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(

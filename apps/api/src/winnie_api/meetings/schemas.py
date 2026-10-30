@@ -23,6 +23,7 @@ class MeetingRead(BaseModel):
     source: str
     local_language: str
     audio_duration_ms: int | None
+    audio_deleted_at: datetime | None = None
     error: str | None
     created_at: datetime
     updated_at: datetime

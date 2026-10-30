@@ -162,6 +162,7 @@ meetings
   status             text not null          -- see state machine
   stage              text                   -- current pipeline stage
   audio_key          text                   -- storage key, not a public URL
+  audio_deleted_at   timestamptz            -- set when retention purged audio
   audio_duration_ms  integer
   error              text
   created_at         timestamptz
@@ -417,6 +418,7 @@ meetings:
   local_root: ../../data/meetings
   notes_root: ../../data/kb/meetings
   max_upload_mb: 500
+  audio_retention_days: 0        # 0 = keep forever; audio only, not minutes
   local_language: zh
   asr_provider: volcengine
   translator: openai_compatible
@@ -576,8 +578,9 @@ meetings to the current `main.py` would make the god module worse.
   in the assistant. Keep OSS buckets private, use short-lived presigned URLs,
   offer local storage/Whisper, and implement deletion that purges audio,
   segments and derived notes. Do not commit transcripts to Git.
-- **Retention**: make audio retention configurable; transcripts and minutes can
-  outlive audio.
+- **Retention**: `audio_retention_days` purges only audio for terminal meetings;
+  transcripts and minutes outlive it. Delete meeting already purges audio,
+  segments, minutes, usage and the note immediately.
 - **Sessions**: expired bearer sessions are rejected on use and removed by the
   arq daily cron or `python -m winnie_api.auth.cleanup` when no worker runs.
 - **Idempotency**: unique job rows, conditional state transitions, and a
@@ -638,6 +641,8 @@ Implemented:
   and application startup with `auto_create_tables: false`.
 - `/api/v1/meetings` CRUD, audio upload, transcribe, transcript, minutes,
   regenerate, export and delete.
+- Audio retention by age (`audio_retention_days`, 0 keeps forever) with an arq
+  daily cron and a standalone CLI; transcripts and minutes are kept.
 - File-first pipeline: ASR -> per-segment language handling -> translation ->
   summarization -> Markdown note.
 - Volcengine Doubao big-model recording-file ASR adapter with base64 inline

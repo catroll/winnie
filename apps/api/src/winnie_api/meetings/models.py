@@ -38,6 +38,9 @@ class Meeting(Base):
     status: Mapped[str] = mapped_column(String(32), default="created", index=True)
     stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
     audio_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    audio_deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     audio_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

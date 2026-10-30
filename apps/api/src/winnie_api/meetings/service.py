@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -20,7 +21,7 @@ from winnie_api.integrations.translate.base import Translator
 from winnie_api.integrations.types import AudioRef, Usage
 from winnie_api.jobs.queue import JobQueue
 from winnie_api.knowledge.meeting_note import MeetingNoteWriter
-from winnie_api.meetings.models import Meeting, Minutes, Segment
+from winnie_api.meetings.models import Meeting, Minutes, Segment, utcnow
 from winnie_api.meetings.repository import MeetingRepository
 from winnie_api.shared.storage import Storage
 from winnie_api.settings import Settings
@@ -355,6 +356,39 @@ class MeetingService:
             "text/markdown; charset=utf-8",
             f"{meeting.id}.md",
         )
+
+    async def purge_expired_audio(self, *, now: datetime | None = None) -> int:
+        """Delete audio past the retention window while keeping the meeting.
+
+        Transcripts and minutes outlive audio. A failed storage delete is logged
+        and left for the next run instead of marking the meeting as purged.
+        """
+        days = self.settings.meetings.audio_retention_days
+        if days <= 0:
+            return 0
+        when = now or utcnow()
+        cutoff = when - timedelta(days=days)
+
+        async with self.session_factory() as session:
+            meetings = await MeetingRepository(session).list_expired_audio(cutoff)
+
+        purged = 0
+        for meeting in meetings:
+            if not meeting.audio_key:
+                continue
+            try:
+                await self.storage.delete(meeting.audio_key)
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to delete expired audio: %s", meeting.id)
+                continue
+            async with self.session_factory() as session:
+                await MeetingRepository(session).update_meeting(
+                    meeting.id,
+                    audio_key=None,
+                    audio_deleted_at=when,
+                )
+            purged += 1
+        return purged
 
     async def delete_meeting(
         self,

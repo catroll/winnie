@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -87,6 +88,20 @@ class MeetingRepository:
             setattr(meeting, key, value)
         await self.session.commit()
         return meeting
+
+    async def list_expired_audio(self, cutoff: datetime) -> list[Meeting]:
+        """Terminal meetings whose audio outlived the retention window."""
+        rows = await self.session.scalars(
+            select(Meeting)
+            .where(
+                Meeting.audio_key.is_not(None),
+                Meeting.created_at < cutoff,
+                Meeting.status.in_(("ready", "failed")),
+            )
+            .order_by(Meeting.created_at)
+            .limit(100)
+        )
+        return list(rows)
 
     async def replace_segments(
         self,

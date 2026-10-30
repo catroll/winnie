@@ -75,6 +75,20 @@ try to create tables that already exist.
 uv run pytest
 ```
 
+## Audio retention
+
+`meetings.audio_retention_days: 0` keeps audio forever. A positive value purges
+audio for terminal (`ready` or `failed`) meetings older than the window while
+keeping the transcript and minutes. Run it from cron when no arq worker is
+deployed:
+
+```bash
+uv run python -m winnie_api.meetings.cleanup_audio
+```
+
+The arq worker schedules the same purge daily at 03:47 UTC.
+`DELETE /api/v1/meetings/{id}` still deletes audio and derived data immediately.
+
 ## Meeting API
 
 The meeting backend is mounted under `/api/v1/meetings` when

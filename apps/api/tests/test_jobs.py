@@ -4,7 +4,11 @@ import uuid
 
 import pytest
 
-from winnie_api.jobs.tasks import cleanup_expired_sessions, process_meeting_job
+from winnie_api.jobs.tasks import (
+    cleanup_expired_audio,
+    cleanup_expired_sessions,
+    process_meeting_job,
+)
 
 
 class FakeMeetingService:
@@ -39,3 +43,16 @@ async def test_meeting_task_passes_a_uuid() -> None:
 async def test_meeting_task_requires_service() -> None:
     with pytest.raises(RuntimeError, match="meetings are not enabled"):
         await process_meeting_job({}, str(uuid.uuid4()))
+
+
+async def test_audio_cleanup_task_uses_meeting_service() -> None:
+    class FakeService:
+        async def purge_expired_audio(self) -> int:
+            return 4
+
+    assert await cleanup_expired_audio({"service": FakeService()}) == 4
+
+
+async def test_audio_cleanup_task_requires_meetings() -> None:
+    with pytest.raises(RuntimeError, match="meetings are not enabled"):
+        await cleanup_expired_audio({})

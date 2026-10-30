@@ -51,6 +51,9 @@ meetings:
   local_root: ../../data/meetings
   notes_root: ../../data/kb/meetings
   max_upload_mb: 500
+  # 0 keeps audio forever. A positive value purges only audio after this many
+  # days; the transcript and minutes stay available.
+  audio_retention_days: 0
   # "fake" is for local demos and tests only; "volcengine" uses Doubao.
   asr_provider: volcengine
   translator: fake

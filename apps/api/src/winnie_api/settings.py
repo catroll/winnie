@@ -84,6 +84,7 @@ class MeetingsConfig(BaseModel):
     local_root: str = "../../data/meetings"
     notes_root: str = "../../data/kb/meetings"
     max_upload_mb: int = 500
+    audio_retention_days: int = Field(default=0, ge=0, le=3650)
     asr_provider: str = "fake"
     translator: str = "fake"
     summarizer: str = "fake"

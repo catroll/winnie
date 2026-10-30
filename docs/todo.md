@@ -68,8 +68,10 @@ enough to start without re-reading the design.
       keep `inline` for local demos and tests.
 - [ ] Add a storage adapter for object storage (private bucket, short-lived
       URLs) while keeping local disk as the default.
-- [ ] Define audio retention and deletion: configurable retention window,
-      purge audio on meeting delete, keep minutes/notes if desired.
+- [x] Define audio retention: `audio_retention_days` purges only audio for
+      terminal meetings, the meeting API already purges on delete, and the arq
+      cron plus `python -m winnie_api.meetings.cleanup_audio` cover deployments
+      without a worker.
 - [x] Add a session cleanup job for expired `auth_sessions`; the arq worker
       schedules it daily and a standalone CLI is available for cron.
 

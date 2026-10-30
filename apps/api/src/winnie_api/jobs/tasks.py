@@ -18,3 +18,10 @@ async def cleanup_expired_sessions(ctx: dict[str, Any]) -> int:
     if auth is None:
         raise RuntimeError("accounts are not enabled for this worker")
     return await auth.cleanup_expired_sessions()
+
+
+async def cleanup_expired_audio(ctx: dict[str, Any]) -> int:
+    service = ctx.get("service")
+    if service is None:
+        raise RuntimeError("meetings are not enabled for this worker")
+    return await service.purge_expired_audio()
