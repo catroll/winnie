@@ -92,6 +92,7 @@ Target stack; only FastAPI is in use today.
 - [DESIGN.md](./DESIGN.md) — goals, layers, knowledge model, architecture and roadmap
 - [EVAL.md](./EVAL.md) — living feasibility assessment
 - [docs/openai-proxy.md](./docs/openai-proxy.md) — gateway contract, configuration and examples
+- [docs/meetings.md](./docs/meetings.md) — integration design for cross-lingual meeting notes
 - [apps/api/README.md](./apps/api/README.md) — running and smoke-testing the gateway
 
 ## License
