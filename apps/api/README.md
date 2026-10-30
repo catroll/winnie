@@ -136,13 +136,15 @@ llm:
   model: deepseek-chat
   max_retries: 2
   retry_backoff_seconds: 1
+  summary_chunk_chars: 24000
 ```
 
 The internal LLM client calls the provider directly and does not route through
 the transparent gateway. It retries transient transport errors and retryable
-HTTP statuses with exponential backoff; 4xx responses fail fast. Only the
-minutes note is written to the knowledge directory; the raw transcript stays in
-the meeting database. See [docs/meetings.md](../../docs/meetings.md) for the
+HTTP statuses with exponential backoff; 4xx responses fail fast. Transcripts
+longer than `summary_chunk_chars` are summarized in chunks and merged in one
+final call. Only the minutes note is written to the knowledge directory; the
+raw transcript stays in the meeting database. See [docs/meetings.md](../../docs/meetings.md) for the
 full design and [docs/todo.md](../../docs/todo.md) for provider validation and
 production follow-ups.
 

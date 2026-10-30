@@ -313,6 +313,12 @@ Store `model` and `prompt_version` with every minutes row. Regeneration must be
 possible without re-transcribing, and must produce an auditable new row or a
 version field.
 
+Long transcripts are split by rendered characters into `summary_chunk_chars`
+chunks. Each chunk returns partial minutes; one final merge call combines them,
+and usage is summed across every call. Highlights in the merged result are
+validated against the full transcript, so a chunk-local sequence cannot leak
+into the stored minutes.
+
 ## 6. API surface
 
 All product endpoints live under `/api/v1`; the existing gateway contract under
@@ -465,6 +471,7 @@ llm:
   max_retries: 2
   retry_backoff_seconds: 1
   translation_batch_chars: 6000
+  summary_chunk_chars: 24000
 
 database:
   url: sqlite+aiosqlite:///../../data/winnie.db
@@ -680,7 +687,8 @@ Implemented:
 - OpenAI-compatible LLM adapters for batched translation and structured
   minutes, selected with `meetings.translator` / `meetings.summarizer`; the key
   comes from `llm.api_key_env` (default `WINNIE_LLM_API_KEY`). Transient
-  transport/HTTP failures are retried with backoff and `Retry-After` support.
+  transport/HTTP failures are retried with backoff and `Retry-After` support;
+  long transcripts use chunked map-reduce summarization.
 - Provider ports for ASR, translation and summarization; deterministic fakes for
   tests and demos.
 - Inline job queue by default; arq queue and worker entry point behind config.
@@ -701,8 +709,8 @@ Deliberate deferrals and why:
   unproven; rehearse on a copy before the first real deployment.
 - **Live LLM validation**: the adapters are implemented and mocked-tested, but
   prompt quality, token cost and long-transcript behavior still need a real key
-  and real recordings. Very long transcripts are sent in one summarization
-  request; chunking/map-reduce is not implemented yet.
+  and real recordings. Chunked map-reduce is implemented, but its merge quality
+  on real bilingual transcripts is unproven.
 - **Other ASR vendors**: Aliyun, local Whisper and a bilingual accuracy
   benchmark are deferred until the Doubao path has run on real recordings.
 - **Android and realtime**: not started. File-first remains the main path.

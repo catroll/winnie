@@ -60,8 +60,9 @@ enough to start without re-reading the design.
       `usage_records` for each call and compare with the fake baseline.
 - [ ] Decide whether translation uses the same model as summarization or a
       dedicated translation API.
-- [ ] Add chunking/map-reduce for transcripts that exceed one model context;
-      the current summarizer sends the whole transcript in one request.
+- [x] Add chunking/map-reduce for transcripts that exceed one model context:
+      split by rendered characters, summarize each chunk, merge the partials,
+      and record the summed token usage.
 - [ ] Move prompts into versioned files (`meetings/prompts/`) once the wording
       stabilizes; `prompt_version` is already stored with minutes.
 

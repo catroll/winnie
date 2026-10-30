@@ -66,7 +66,10 @@ def build_summarizer(settings: Settings) -> Summarizer:
     if name == "fake":
         return FakeSummarizer()
     if name == "openai_compatible":
-        return LLMSummarizer(build_llm(settings))
+        return LLMSummarizer(
+            build_llm(settings),
+            max_chunk_chars=settings.llm.summary_chunk_chars,
+        )
     raise ValueError(
         f"unsupported summarizer {name!r}; implement it under "
         "winnie_api/integrations/summarize/ and register it here"

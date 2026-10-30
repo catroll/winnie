@@ -21,19 +21,74 @@ from winnie_api.integrations.types import Usage
 
 
 class LLMSummarizer(Summarizer):
-    def __init__(self, llm: OpenAICompatibleLLM) -> None:
+    def __init__(
+        self,
+        llm: OpenAICompatibleLLM,
+        *,
+        max_chunk_chars: int = 24000,
+    ) -> None:
+        if max_chunk_chars <= 0:
+            raise ValueError("max_chunk_chars must be positive")
         self.llm = llm
+        self.max_chunk_chars = max_chunk_chars
 
     async def summarize(self, transcript: TranscriptView) -> MinutesDraft:
         if not transcript.lines:
             raise ValueError("cannot summarize an empty transcript")
-        completion = await self.llm.complete(_messages(transcript))
-        return _parse_draft(completion.text, transcript, usage=completion.usage)
+
+        chunks = _chunks(transcript.lines, self.max_chunk_chars)
+        if len(chunks) == 1:
+            completion = await self.llm.complete(_messages(transcript))
+            return _parse_draft(
+                completion.text, transcript, usage=completion.usage
+            )
+
+        usages: list[Usage] = []
+        partials: list[dict[str, Any]] = []
+        for chunk in chunks:
+            view = TranscriptView(
+                meeting_title=transcript.meeting_title,
+                local_language=transcript.local_language,
+                lines=chunk,
+            )
+            completion = await self.llm.complete(_messages(view))
+            partial = _parse_draft(
+                completion.text, view, usage=completion.usage
+            )
+            partials.append(_draft_payload(partial))
+            usages.append(completion.usage)
+
+        completion = await self.llm.complete(_reduce_messages(transcript, partials))
+        usages.append(completion.usage)
+        return _parse_draft(
+            completion.text,
+            transcript,
+            usage=_merge_usage(usages),
+        )
 
 
-def _messages(transcript: TranscriptView) -> list[dict[str, str]]:
-    lines = "\n".join(_render_line(line) for line in transcript.lines)
-    schema = {
+def _chunks(
+    lines: list[TranscriptLine],
+    max_chars: int,
+) -> list[list[TranscriptLine]]:
+    chunks: list[list[TranscriptLine]] = []
+    current: list[TranscriptLine] = []
+    size = 0
+    for line in lines:
+        line_size = len(_render_line(line)) + 1
+        if current and size + line_size > max_chars:
+            chunks.append(current)
+            current = []
+            size = 0
+        current.append(line)
+        size += line_size
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _schema() -> dict[str, Any]:
+    return {
         "summary": "string",
         "topics": [{"title": "string", "points": ["string"]}],
         "decisions": [{"text": "string", "context": "string"}],
@@ -46,6 +101,10 @@ def _messages(transcript: TranscriptView) -> list[dict[str, str]]:
         ],
         "highlights": [{"segment_seq": 1, "text": "string"}],
     }
+
+
+def _messages(transcript: TranscriptView) -> list[dict[str, str]]:
+    lines = "\n".join(_render_line(line) for line in transcript.lines)
     return [
         {
             "role": "system",
@@ -62,11 +121,74 @@ def _messages(transcript: TranscriptView) -> list[dict[str, str]]:
             "role": "user",
             "content": (
                 f"Meeting title: {transcript.meeting_title}\n"
-                f"Required JSON shape:\n{json.dumps(schema, ensure_ascii=False)}\n"
+                f"Required JSON shape:\n{json.dumps(_schema(), ensure_ascii=False)}\n"
                 f"Transcript:\n{lines}"
             ),
         },
     ]
+
+
+def _reduce_messages(
+    transcript: TranscriptView,
+    partials: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You merge partial meeting minutes into one faithful set. "
+                f"Write the result in language code {transcript.local_language}. "
+                "Keep every decision and action item that appears in a partial "
+                "summary; merge duplicate topics. Do not invent facts. Return "
+                "only one JSON object with the requested keys, no Markdown. "
+                "Highlights must reference an existing segment_seq."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Meeting title: {transcript.meeting_title}\n"
+                f"Required JSON shape:\n{json.dumps(_schema(), ensure_ascii=False)}\n"
+                "Partial minutes (JSON array):\n"
+                f"{json.dumps(partials, ensure_ascii=False)}"
+            ),
+        },
+    ]
+
+
+def _draft_payload(draft: MinutesDraft) -> dict[str, Any]:
+    return {
+        "summary": draft.summary,
+        "topics": [
+            {"title": topic.title, "points": topic.points} for topic in draft.topics
+        ],
+        "decisions": [
+            {"text": decision.text, "context": decision.context}
+            for decision in draft.decisions
+        ],
+        "action_items": [
+            {
+                "text": item.text,
+                "owner": item.owner,
+                "due_date": item.due_date,
+            }
+            for item in draft.action_items
+        ],
+        "highlights": [
+            {"segment_seq": highlight.segment_seq, "text": highlight.text}
+            for highlight in draft.highlights
+        ],
+    }
+
+
+def _merge_usage(usages: list[Usage]) -> Usage | None:
+    if not usages:
+        return None
+    return Usage(
+        provider=usages[0].provider,
+        unit=usages[0].unit,
+        quantity=sum(item.quantity for item in usages),
+    )
 
 
 def _render_line(line: TranscriptLine) -> str:

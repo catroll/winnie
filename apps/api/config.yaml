@@ -90,6 +90,9 @@ llm:
   max_retries: 2
   retry_backoff_seconds: 1
   translation_batch_chars: 6000
+  # Long transcripts are summarized in chunks, then one merge call combines
+  # the partial minutes. 0 is not allowed; lower values cost more calls.
+  summary_chunk_chars: 24000
 
 # Meeting data. SQLite is the development default; production should use
 # PostgreSQL, for example postgresql+asyncpg://user:pass@host:5432/winnie

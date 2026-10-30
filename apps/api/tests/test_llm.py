@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 import httpx
 import pytest
@@ -404,3 +405,69 @@ async def test_transport_error_exhausts_retries() -> None:
     with pytest.raises(RuntimeError, match="after 2 attempts"):
         await translator.translate(["a"], source=None, target="zh")
     assert calls == 2
+
+
+async def test_summarizer_chunks_long_transcripts_and_merges_usage() -> None:
+    calls: list[tuple[str, list[int]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        system = payload["messages"][0]["content"]
+        user = payload["messages"][1]["content"]
+        if "merge partial" in system:
+            calls.append(("reduce", []))
+            content = json.dumps(
+                {
+                    "summary": "merged summary",
+                    "topics": [{"title": "Merged", "points": ["p"]}],
+                    "decisions": [],
+                    "action_items": [],
+                    "highlights": [{"segment_seq": 1, "text": "line 1"}],
+                }
+            )
+        else:
+            seqs = [int(value) for value in re.findall(r"^\[(\d+)\]", user, re.M)]
+            calls.append(("map", seqs))
+            content = json.dumps(
+                {
+                    "summary": f"partial {seqs[0]}",
+                    "topics": [{"title": f"topic {seqs[0]}", "points": []}],
+                    "decisions": [],
+                    "action_items": [],
+                    "highlights": [
+                        {"segment_seq": seqs[0], "text": f"line {seqs[0]}"}
+                    ],
+                }
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": content}}],
+                "usage": {"total_tokens": 10},
+            },
+        )
+
+    lines = [
+        TranscriptLine(
+            seq=seq,
+            text="x" * 60,
+            translated_text=None,
+            detected_language="en",
+        )
+        for seq in range(1, 5)
+    ]
+    summarizer = LLMSummarizer(_llm(handler), max_chunk_chars=150)
+    draft = await summarizer.summarize(
+        TranscriptView(meeting_title="Long", local_language="zh", lines=lines)
+    )
+
+    assert calls == [
+        ("map", [1]),
+        ("map", [2]),
+        ("map", [3]),
+        ("map", [4]),
+        ("reduce", []),
+    ]
+    assert draft.summary == "merged summary"
+    assert draft.usage is not None
+    assert draft.usage.quantity == 50

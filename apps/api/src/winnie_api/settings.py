@@ -77,6 +77,7 @@ class LLMConfig(BaseModel):
     max_retries: int = Field(default=2, ge=0, le=5)
     retry_backoff_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
     translation_batch_chars: int = Field(default=6000, ge=500, le=50000)
+    summary_chunk_chars: int = Field(default=24000, ge=2000, le=100000)
 
 
 class MeetingsConfig(BaseModel):
