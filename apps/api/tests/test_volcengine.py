@@ -19,8 +19,9 @@ async def test_volcengine_submits_polls_and_parses(tmp_path: Path) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/submit"):
             payload = json.loads(request.content)
-            assert request.headers["X-Api-App-Key"] == "app"
-            assert request.headers["X-Api-Access-Key"] == "token"
+            assert request.headers["X-Api-Key"] == "api-key"
+            assert "X-Api-App-Key" not in request.headers
+            assert "X-Api-Access-Key" not in request.headers
             assert request.headers["X-Api-Resource-Id"] == "volc.bigasr.auc"
             assert request.headers["X-Api-Sequence"] == "-1"
             assert payload["audio"]["format"] == "wav"
@@ -68,8 +69,7 @@ async def test_volcengine_submits_polls_and_parses(tmp_path: Path) -> None:
         transport=httpx.MockTransport(handler)
     ) as client:
         provider = VolcengineASRProvider(
-            app_id="app",
-            access_token="token",
+            api_key="api-key",
             poll_interval_seconds=0,
             http=client,
         )
@@ -91,8 +91,8 @@ async def test_volcengine_submits_polls_and_parses(tmp_path: Path) -> None:
 async def test_volcengine_requires_credentials(tmp_path: Path) -> None:
     audio = tmp_path / "sample.wav"
     audio.write_bytes(b"fake")
-    provider = VolcengineASRProvider(app_id="", access_token="")
-    with pytest.raises(RuntimeError, match="VOLCENGINE_ASR_APP_ID"):
+    provider = VolcengineASRProvider(api_key="")
+    with pytest.raises(RuntimeError, match="VOLCENGINE_ASR_API_KEY"):
         await provider.transcribe(AudioRef(key="sample.wav", local_path=audio))
 
 
@@ -100,8 +100,7 @@ async def test_volcengine_rejects_inline_oversize(tmp_path: Path) -> None:
     audio = tmp_path / "sample.wav"
     audio.write_bytes(b"too large")
     provider = VolcengineASRProvider(
-        app_id="app",
-        access_token="token",
+        api_key="api-key",
         max_inline_bytes=1,
     )
     with pytest.raises(ValueError, match="too large"):

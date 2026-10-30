@@ -2,10 +2,12 @@
 
 The adapter submits a locally stored file as base64 to the big-model
 recording-file API, then polls the query endpoint until the result is ready.
-Credentials are read from the environment by the factory:
+The credential is a single API key issued by the current console and sent as
+``X-Api-Key``; the older console's APP ID + Access Token pair
+(``X-Api-App-Key`` + ``X-Api-Access-Key``) is not supported. The key is read
+from the environment by the factory:
 
-    VOLCENGINE_ASR_APP_ID
-    VOLCENGINE_ASR_ACCESS_TOKEN
+    VOLCENGINE_ASR_API_KEY
 
 The endpoint and header names are vendor-specific. Keep the request/response
 mapping in this module so a future vendor can be added behind the same port
@@ -25,8 +27,7 @@ from winnie_api.integrations.asr.base import ASRProvider, ASRResult, ASRSegment
 from winnie_api.integrations.types import AudioRef, Usage
 
 DEFAULT_BASE_URL = "https://openspeech.bytedance.com"
-APP_ID_ENV = "VOLCENGINE_ASR_APP_ID"
-ACCESS_TOKEN_ENV = "VOLCENGINE_ASR_ACCESS_TOKEN"
+API_KEY_ENV = "VOLCENGINE_ASR_API_KEY"
 SUCCESS = "20000000"
 PROCESSING = {"20000001", "20000002"}
 
@@ -35,8 +36,7 @@ class VolcengineASRProvider(ASRProvider):
     def __init__(
         self,
         *,
-        app_id: str,
-        access_token: str,
+        api_key: str,
         base_url: str = DEFAULT_BASE_URL,
         resource_id: str = "volc.bigasr.auc",
         model_name: str = "bigmodel",
@@ -45,8 +45,7 @@ class VolcengineASRProvider(ASRProvider):
         poll_timeout_seconds: float = 300.0,
         http: httpx.AsyncClient | None = None,
     ) -> None:
-        self.app_id = app_id
-        self.access_token = access_token
+        self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.resource_id = resource_id
         self.model_name = model_name
@@ -127,10 +126,10 @@ class VolcengineASRProvider(ASRProvider):
                 await client.aclose()
 
     def _require_credentials(self) -> None:
-        if not self.app_id or not self.access_token:
+        if not self.api_key:
             raise RuntimeError(
-                "Volcengine ASR credentials are missing; set "
-                f"{APP_ID_ENV} and {ACCESS_TOKEN_ENV}"
+                "Volcengine ASR API key is missing; set "
+                f"{API_KEY_ENV}"
             )
 
     def _headers(
@@ -141,8 +140,7 @@ class VolcengineASRProvider(ASRProvider):
     ) -> dict[str, str]:
         headers = {
             "Content-Type": "application/json",
-            "X-Api-App-Key": self.app_id,
-            "X-Api-Access-Key": self.access_token,
+            "X-Api-Key": self.api_key,
             "X-Api-Resource-Id": self.resource_id,
             "X-Api-Request-Id": request_id,
         }

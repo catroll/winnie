@@ -56,10 +56,12 @@ meetings:
   translator: fake
   summarizer: fake
   prompt_version: v1
-  # Doubao big-model recording-file ASR. Credentials come from the
-  # VOLCENGINE_ASR_APP_ID and VOLCENGINE_ASR_ACCESS_TOKEN environment variables.
+  # Doubao big-model recording-file ASR. The API key comes from the
+  # VOLCENGINE_ASR_API_KEY environment variable (new-console API key, sent as
+  # X-Api-Key); appid/access-token from the old console are not supported.
   volcengine:
     base_url: https://openspeech.bytedance.com
+    # The model line: volc.bigasr.auc (1.0), volc.seedasr.auc (2.0).
     resource_id: volc.bigasr.auc
     model_name: bigmodel
     max_inline_mb: 100

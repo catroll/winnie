@@ -12,8 +12,7 @@ import os
 from winnie_api.integrations.asr.base import ASRProvider
 from winnie_api.integrations.asr.fake import FakeASRProvider
 from winnie_api.integrations.asr.volcengine import (
-    ACCESS_TOKEN_ENV,
-    APP_ID_ENV,
+    API_KEY_ENV,
     VolcengineASRProvider,
 )
 from winnie_api.integrations.llm.factory import build_llm
@@ -33,8 +32,7 @@ def build_asr_provider(settings: Settings) -> ASRProvider:
     if name == "volcengine":
         config = settings.meetings.volcengine
         return VolcengineASRProvider(
-            app_id=os.environ.get(APP_ID_ENV, ""),
-            access_token=os.environ.get(ACCESS_TOKEN_ENV, ""),
+            api_key=os.environ.get(API_KEY_ENV, ""),
             base_url=config.base_url,
             resource_id=config.resource_id,
             model_name=config.model_name,

@@ -75,8 +75,8 @@ examples are in [docs/openai-proxy.md](./docs/openai-proxy.md).
 Accounts and meeting notes are mounted under `/api/v1` when enabled in
 `apps/api/config.yaml`. The first account can register, then login to receive a
 bearer token. To transcribe with Doubao, export
-`VOLCENGINE_ASR_APP_ID` and `VOLCENGINE_ASR_ACCESS_TOKEN` before starting the
-API. To use a real model for translation and minutes, set
+`VOLCENGINE_ASR_API_KEY` (the API key from the current Volcengine console)
+before starting the API. To use a real model for translation and minutes, set
 `meetings.translator` and `meetings.summarizer` to `openai_compatible` and
 export `WINNIE_LLM_API_KEY`. The integration design and endpoint list are in
 [docs/meetings.md](./docs/meetings.md).
