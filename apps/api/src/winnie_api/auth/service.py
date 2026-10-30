@@ -128,6 +128,33 @@ class AuthService:
         async with self.session_factory() as session:
             await AuthRepository(session).delete_session_by_hash(hash_token(token))
 
+    async def change_password(
+        self,
+        *,
+        user_id: uuid.UUID,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """Change the password and invalidate every session, including this one."""
+        _validate_password(new_password)
+        if current_password == new_password:
+            raise ValueError("new password must differ from the current password")
+
+        async with self.session_factory() as session:
+            repository = AuthRepository(session)
+            user = await repository.get_user(user_id)
+            if (
+                user is None
+                or not user.is_active
+                or not await self._verify_password(
+                    user.password_hash, current_password
+                )
+            ):
+                raise InvalidCredentials("current password is incorrect")
+            new_hash = await asyncio.to_thread(self.hasher.hash, new_password)
+            await repository.update_password_hash(user.id, new_hash)
+            await repository.delete_sessions_for_user(user.id)
+
     async def cleanup_expired_sessions(self, *, before: datetime | None = None) -> int:
         """Delete sessions that can no longer authenticate.
 

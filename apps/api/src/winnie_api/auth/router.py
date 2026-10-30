@@ -15,6 +15,7 @@ from winnie_api.auth.errors import (
 from winnie_api.auth.models import User
 from winnie_api.auth.schemas import (
     LoginRequest,
+    PasswordChangeRequest,
     RegisterRequest,
     TokenRead,
     UserRead,
@@ -89,6 +90,29 @@ async def logout(
     service: AuthService = Depends(get_service),
 ) -> Response:
     await service.logout(bearer_token(request))
+    return Response(status_code=204)
+
+
+@router.post("/password", status_code=204)
+async def change_password(
+    payload: PasswordChangeRequest,
+    user: User = Depends(get_current_user),
+    service: AuthService = Depends(get_service),
+) -> Response:
+    try:
+        await service.change_password(
+            user_id=user.id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except InvalidCredentials as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="current password is incorrect",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return Response(status_code=204)
 
 

@@ -35,6 +35,16 @@ The response contains a bearer token. Send it as
 `Authorization: Bearer <token>` to `/api/v1/meetings` and `/api/v1/auth/me`.
 Later registrations are rejected unless `auth.allow_registration: true`.
 
+Change the password with the current password; this revokes every session, so
+log in again afterwards:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/auth/password \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"current_password":"...","new_password":"..."}'
+```
+
 Expired sessions are rejected when used. Delete them periodically with the arq
 worker (daily at 03:17 UTC) or, without a worker, a cron entry:
 

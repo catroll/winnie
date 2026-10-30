@@ -311,6 +311,7 @@ All product endpoints live under `/api/v1`; the existing gateway contract under
 | `POST` | `/api/v1/auth/register` | Create an account (first account, or any when registration is open) |
 | `POST` | `/api/v1/auth/login` | Exchange username/password for a bearer token |
 | `POST` | `/api/v1/auth/logout` | Revoke the current session |
+| `POST` | `/api/v1/auth/password` | Change password and revoke every session |
 | `GET` | `/api/v1/auth/me` | Current account |
 | `POST` | `/api/v1/meetings` | Create a meeting (`title`, `local_language`) |
 | `POST` | `/api/v1/meetings/{id}/audio` | Upload audio (multipart; size/type limits) |
@@ -328,6 +329,8 @@ Auth: accounts are implemented with opaque bearer sessions. Passwords are
 hashed with Argon2id, only a SHA-256 hash of the session token is stored, and
 sessions expire after `auth.session_ttl_days`. The first account can always
 register; later registrations are controlled by `auth.allow_registration`.
+Changing a password requires the current password and revokes all sessions,
+including the caller's.
 Meeting ownership uses the authenticated `user.id`, while `auth.enabled: false`
 keeps the local single-user fallback. Android stores the token in
 `EncryptedSharedPreferences`.
@@ -634,9 +637,10 @@ Open questions still to settle:
 
 Implemented:
 
-- Account system: registration, login, logout, `GET /auth/me`, Argon2id
-  password hashes, hashed opaque session tokens, first-user bootstrap and
-  optional registration closure. Meetings are isolated by authenticated user.
+- Account system: registration, login, logout, password change,
+  `GET /auth/me`, Argon2id password hashes, hashed opaque session tokens,
+  first-user bootstrap and optional registration closure. Meetings are isolated
+  by authenticated user.
 - `auth.enabled` and `meetings.enabled` flags; the gateway still starts without
   a database when both are off.
 - SQLAlchemy models for users, sessions, meetings, segments, minutes, jobs and

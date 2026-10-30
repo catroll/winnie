@@ -75,6 +75,48 @@ async def test_register_login_logout(auth_client: httpx.AsyncClient) -> None:
     assert after.status_code == 401
 
 
+async def test_change_password_invalidates_sessions(
+    account_client: httpx.AsyncClient,
+) -> None:
+    registered = await _register(account_client, "alice")
+    token = registered["access_token"]
+
+    wrong = await account_client.post(
+        "/api/v1/auth/password",
+        headers=_bearer(token),
+        json={"current_password": "wrong password", "new_password": "new password"},
+    )
+    assert wrong.status_code == 401
+    still_valid = await account_client.get(
+        "/api/v1/auth/me", headers=_bearer(token)
+    )
+    assert still_valid.status_code == 200
+
+    changed = await account_client.post(
+        "/api/v1/auth/password",
+        headers=_bearer(token),
+        json={"current_password": PASSWORD, "new_password": "new password"},
+    )
+    assert changed.status_code == 204
+
+    old_session = await account_client.get(
+        "/api/v1/auth/me", headers=_bearer(token)
+    )
+    assert old_session.status_code == 401
+
+    old_password = await account_client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": PASSWORD},
+    )
+    assert old_password.status_code == 401
+
+    new_password = await account_client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": "new password"},
+    )
+    assert new_password.status_code == 200
+
+
 async def test_duplicate_username(account_client: httpx.AsyncClient) -> None:
     await _register(account_client, "alice")
     duplicate = await account_client.post(

@@ -86,7 +86,9 @@ enough to start without re-reading the design.
 ## P2 — accounts and security
 
 - [ ] Add login rate limiting and a small lockout/backoff policy.
-- [ ] Add password change and password reset (email or one-time local CLI).
+- [x] Add password change; the current password is required and every session
+      is revoked.
+- [ ] Add password reset (email or one-time local CLI).
 - [ ] Add account management/admin endpoints only when multi-user deployment
       is real; keep single-user registration closed by default.
 - [ ] Review token storage on Android (`EncryptedSharedPreferences`) and
