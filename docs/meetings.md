@@ -706,9 +706,11 @@ Deliberate deferrals and why:
   removing code. Revisit when real provider retries, conditional re-runs or
   multi-step tools appear. The pipeline currently lives in
   `meetings/service.py`; `meetings/pipeline.py` is reserved for that change.
-- **Migration rollout**: the initial revision is committed, but no production
-  deployment has run it. A migration failure on a populated database is still
-  unproven; rehearse on a copy before the first real deployment.
+- **Migration rollout**: the initial schema plus both follow-up revisions were
+  rehearsed on PostgreSQL 16 with seeded users, meetings, segments, minutes and
+  usage rows; `alembic upgrade head` preserved them and the app completed a
+  file-first meeting with `auto_create_tables: false`. No production deployment
+  has run it yet, so take a backup and rehearse restore before the first one.
 - **Live LLM validation**: the adapters are implemented and mocked-tested, but
   prompt quality, token cost and long-transcript behavior still need a real key
   and real recordings. Chunked map-reduce is implemented, but its merge quality

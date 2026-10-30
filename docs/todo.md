@@ -71,8 +71,10 @@ enough to start without re-reading the design.
 - [x] Add Alembic migrations for the initial schema; `alembic check` is clean
       and the test suite verifies upgrade, downgrade and startup without
       `auto_create_tables`.
-- [ ] Rehearse `alembic upgrade head` on a populated PostgreSQL copy, then set
-      `database.auto_create_tables: false` in the production config.
+- [x] Rehearse the migration path on PostgreSQL 16: seed the initial schema,
+      upgrade to head, verify all rows survive, and run register/create/upload/
+      transcribe/minutes with `auto_create_tables: false`. A production
+      backup/restore rehearsal is still required before deployment.
 - [ ] Switch the default job backend to arq/Redis once a worker is deployed;
       keep `inline` for local demos and tests.
 - [ ] Add a storage adapter for object storage (private bucket, short-lived
