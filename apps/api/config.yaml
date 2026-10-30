@@ -1,16 +1,16 @@
-# Winnie API 配置（无厂商密钥；密钥由客户端透传）
+# Winnie API configuration (no vendor keys; clients pass them through)
 
-# 本地沟通日志根目录；实际写入 {log_root}/{route}/
-# 相对路径相对 apps/api/
+# Root directory for local conversation logs; files go to {log_root}/{route}/
+# Relative paths are resolved against apps/api/.
 log_root: ../../data/logs
 
-# 客户端未带 anthropic-version 时的默认值
+# Default used when the client does not send anthropic-version.
 anthropic_version: "2023-06-01"
 
-# 可选：访问本代理的大门钥（与厂商 API Key 无关）。留空则不校验。
+# Optional gateway key (unrelated to vendor API keys). Empty means no check.
 proxy_api_key: ""
 
-# 路径前缀 → 上游。对外暴露 /{name}/v1/...
+# Path prefix -> upstream. Public paths are /{name}/v1/...
 routes:
   openai:
     protocol: openai
@@ -30,3 +30,41 @@ routes:
   anthropic:
     protocol: anthropic
     base_url: https://api.anthropic.com
+
+# Meeting notes (file-first). Disabled by default; enabling it mounts
+# /api/v1/meetings.
+meetings:
+  enabled: false
+  # Single-user mode: every meeting belongs to this user until accounts exist.
+  default_user_id: local
+  # Optional Bearer token for the meeting API. Empty means no check; only use
+  # that on a trusted local machine.
+  auth_token: ""
+  # The user's local language. Segments in other languages get a translation.
+  local_language: zh
+  # Only "local" is implemented.
+  storage: local
+  local_root: ../../data/meetings
+  notes_root: ../../data/kb/meetings
+  max_upload_mb: 500
+  # "fake" is for local demos and tests only; it never calls a cloud service.
+  asr_provider: fake
+  translator: fake
+  summarizer: fake
+  model: fake
+  prompt_version: v1
+
+# Meeting data. SQLite is the development default; production should use
+# PostgreSQL, for example postgresql+asyncpg://user:pass@host:5432/winnie
+database:
+  url: sqlite+aiosqlite:///../../data/winnie.db
+  echo: false
+  # Create missing tables on startup for development. Turn this off and use
+  # Alembic migrations before production.
+  auto_create_tables: true
+
+jobs:
+  # inline: run in the request process, useful for local demos.
+  # arq: hand the job to a separate worker.
+  backend: inline
+  redis_url: ""

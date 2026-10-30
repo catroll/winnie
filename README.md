@@ -33,7 +33,7 @@ way to talk to models.
 
 ## What works today
 
-Only the model gateway is implemented. It supports:
+The model gateway is fully implemented. It supports:
 
 - OpenAI Chat Completions and Anthropic Messages, forwarded without protocol
   translation
@@ -42,6 +42,12 @@ Only the model gateway is implemented. It supports:
 - Client-supplied vendor API keys — Winnie never stores them
 - Streaming (SSE) passthrough
 - Paired `ask`/`answer` logs on local disk, per route
+
+The meeting-notes backend is scaffolded but **not production-ready**. Meeting
+CRUD, audio upload, a file-first processing pipeline, transcript/minutes/export
+APIs and a Markdown knowledge sink are wired. ASR, translation and
+summarization currently use deterministic fake providers; real provider
+adapters and the Android client are next.
 
 ### Quick start
 
@@ -62,29 +68,36 @@ Point any OpenAI-compatible client at `http://127.0.0.1:8000/<route>` and pass
 your vendor key in the request headers. Routing, configuration and request
 examples are in [docs/openai-proxy.md](./docs/openai-proxy.md).
 
+The meeting API is mounted under `/api/v1/meetings` only when
+`meetings.enabled: true` is set in `apps/api/config.yaml`. The integration
+design and endpoint list are in [docs/meetings.md](./docs/meetings.md).
+
 ## Roadmap
 
-1. **Knowledge base** — Git-backed Markdown, management UI, classification and
+1. **Meeting notes** — real ASR, translation and summarization adapters; the
+   Android client; realtime streaming; then cross-meeting search.
+2. **Knowledge base** — Git-backed Markdown, management UI, classification and
    tagging, re-indexing, retrieval-augmented chat.
-2. **Assistant capabilities** — scheduling, development assistance and everyday
+3. **Assistant capabilities** — scheduling, development assistance and everyday
    tasks, composed over the knowledge base and the gateway.
-3. **Production readiness** — user isolation and permissions, queue-backed
+4. **Production readiness** — user isolation and permissions, queue-backed
    background work, performance and stability.
 
 Details and design rationale are in [DESIGN.md](./DESIGN.md).
 
 ## Tech stack
 
-Target stack; only FastAPI is in use today.
+Target stack; the API, SQLAlchemy models and inline job queue scaffold are in
+place.
 
 | Area | Choice |
 |------|--------|
 | Language and API | Python, FastAPI |
 | Management UI | Vite + React |
-| Agent orchestration | LangGraph |
+| Agent orchestration | LangGraph (pipeline is plain async Python for now) |
 | Knowledge source | Git-managed Markdown |
 | Vector index | Qdrant |
-| Async jobs | Redis + arq |
+| Async jobs | Redis + arq (inline queue for local development) |
 | Model access | LiteLLM over OpenAI-compatible APIs |
 
 ## Documentation
@@ -92,8 +105,8 @@ Target stack; only FastAPI is in use today.
 - [DESIGN.md](./DESIGN.md) — goals, layers, knowledge model, architecture and roadmap
 - [EVAL.md](./EVAL.md) — living feasibility assessment
 - [docs/openai-proxy.md](./docs/openai-proxy.md) — gateway contract, configuration and examples
-- [docs/meetings.md](./docs/meetings.md) — integration design for cross-lingual meeting notes
-- [apps/api/README.md](./apps/api/README.md) — running and smoke-testing the gateway
+- [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
+- [apps/api/README.md](./apps/api/README.md) — backend layout, running and tests
 
 ## License
 

@@ -1,6 +1,10 @@
 # 本地 / 生成物（不入库）
 **/logs/
 data/logs/
+data/*.db
+data/*.db-*
+data/meetings/
+data/kb/
 **/__pycache__/
 **/.venv/
 **/.env

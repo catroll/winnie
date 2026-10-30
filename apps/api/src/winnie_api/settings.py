@@ -21,6 +21,39 @@ class RouteConfig(BaseModel):
     base_url: str
 
 
+class DatabaseConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = "sqlite+aiosqlite:///../../data/winnie.db"
+    echo: bool = False
+    auto_create_tables: bool = True
+
+
+class JobsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    backend: Literal["inline", "arq"] = "inline"
+    redis_url: str = ""
+
+
+class MeetingsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    default_user_id: str = "local"
+    auth_token: str = ""
+    local_language: str = "zh"
+    storage: Literal["local"] = "local"
+    local_root: str = "../../data/meetings"
+    notes_root: str = "../../data/kb/meetings"
+    max_upload_mb: int = 500
+    asr_provider: str = "fake"
+    translator: str = "fake"
+    summarizer: str = "fake"
+    model: str = "fake"
+    prompt_version: str = "v1"
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -28,6 +61,9 @@ class Settings(BaseModel):
     anthropic_version: str = "2023-06-01"
     proxy_api_key: str = ""
     routes: dict[str, RouteConfig] = Field(default_factory=dict)
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    jobs: JobsConfig = Field(default_factory=JobsConfig)
+    meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
 
     def route_table(self) -> dict[str, Route]:
         return {
@@ -36,10 +72,33 @@ class Settings(BaseModel):
         }
 
     def resolve_log_root(self) -> Path:
-        path = Path(self.log_root)
-        if not path.is_absolute():
-            path = (_API_ROOT / path).resolve()
-        return path
+        return _resolve_path(self.log_root)
+
+    def resolve_meetings_root(self) -> Path:
+        return _resolve_path(self.meetings.local_root)
+
+    def resolve_notes_root(self) -> Path:
+        return _resolve_path(self.meetings.notes_root)
+
+    def resolve_database_url(self) -> str:
+        """Make relative SQLite paths absolute; leave server URLs untouched."""
+        url = self.database.url
+        if not url.startswith("sqlite"):
+            return url
+        prefix, separator, raw_path = url.partition(":///")
+        if not separator or not raw_path or raw_path == ":memory:":
+            return url
+        path = Path(raw_path)
+        if path.is_absolute():
+            return url
+        return f"{prefix}:///{(_API_ROOT / path).resolve()}"
+
+
+def _resolve_path(value: str) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = (_API_ROOT / path).resolve()
+    return path
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:

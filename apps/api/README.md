@@ -23,6 +23,31 @@ curl -s http://127.0.0.1:8000/routes
 uv run pytest
 ```
 
+## Meeting API (scaffold)
+
+The meeting-notes backend is mounted under `/api/v1/meetings` when
+`meetings.enabled: true` is set in `config.yaml`. It uses a local SQLite
+database by default and deterministic fake ASR/translation/summarization
+providers, so it runs without cloud credentials:
+
+```bash
+# create, upload, process
+curl -s -X POST http://127.0.0.1:8000/api/v1/meetings \
+  -H 'Content-Type: application/json' -d '{"title":"Weekly sync"}'
+curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/audio \
+  -F 'file=@recording.m4a'
+curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/transcribe
+
+# read
+curl -s http://127.0.0.1:8000/api/v1/meetings/<id>/transcript
+curl -s http://127.0.0.1:8000/api/v1/meetings/<id>/minutes
+curl -s 'http://127.0.0.1:8000/api/v1/meetings/<id>/export?format=markdown'
+```
+
+The fake providers are for local demos and tests only. Real ASR and LLM
+adapters are added under `src/winnie_api/integrations/`. See
+[docs/meetings.md](../../docs/meetings.md) for the full design.
+
 ## Smoke test
 
 The same `DEEPSEEK_API_KEY` exercises both protocol routes:

@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 import pytest
 import pytest_asyncio
 
 from winnie_api.main import create_app
-from winnie_api.settings import RouteConfig, Settings
+from winnie_api.settings import (
+    DatabaseConfig,
+    JobsConfig,
+    MeetingsConfig,
+    RouteConfig,
+    Settings,
+)
 
 
 class FakeUpstream:
@@ -126,6 +133,43 @@ async def client(settings: Settings, upstream: FakeUpstream) -> AsyncIterator[ht
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://test"
+        ) as test_client:
+            yield test_client
+    await http.aclose()
+
+
+@pytest.fixture
+def meeting_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={},
+        meetings=MeetingsConfig(
+            enabled=True,
+            default_user_id="local",
+            local_root=str(tmp_path / "meetings"),
+            notes_root=str(tmp_path / "notes"),
+            max_upload_mb=1,
+        ),
+        database=DatabaseConfig(
+            url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
+            auto_create_tables=True,
+        ),
+        jobs=JobsConfig(backend="inline"),
+    )
+
+
+@pytest_asyncio.fixture
+async def meeting_client(
+    meeting_settings: Settings,
+) -> AsyncIterator[httpx.AsyncClient]:
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500)),
+        timeout=httpx.Timeout(5.0),
+    )
+    app = create_app(settings=meeting_settings, http=http)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as test_client:
             yield test_client
     await http.aclose()

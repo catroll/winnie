@@ -1,7 +1,8 @@
 # Cross-lingual AI meeting notes — integration design
 
-Status: proposed. This document covers how the meeting-notes capability fits
-into Winnie, how it reuses the existing backend, and how it is delivered in
+Status: backend scaffold implemented; real providers and the Android client are
+pending. This document covers how the meeting-notes capability fits into
+Winnie, how it reuses the existing backend, and how it is delivered in
 increments.
 
 ## 1. Where this fits
@@ -26,9 +27,12 @@ should not start there.
 
 ## 2. Runtime topology
 
-### 2.1 Recommendation: one Python backend for the MVP
+### 2.1 Decision: Python only
 
-| | A. One FastAPI backend (recommended) | B. Go BFF + Python AI service |
+Go was evaluated and dropped. The backend stays Python, matching the existing
+FastAPI codebase and the rest of the AI work.
+
+| | A. One Python backend (chosen) | B. Go BFF + Python AI service |
 |---|---|---|
 | MVP delivery | One deployable, one auth path | Two services, two configs, two auth paths |
 | Data ownership | Python owns meetings, segments and minutes | Go must proxy or duplicate writes; two writers is a drift risk |
@@ -36,37 +40,30 @@ should not start there.
 | Ops | `api` + `worker` | `gateway` + `api` + `worker` |
 | Time to first demo | Lower | Higher |
 
-The existing backend is FastAPI. The file-first MVP has low concurrency, a
-single user, and no need for edge rate limiting. Adding Go now would double the
-surface area for auth, deployment and configuration while the product is still
-being validated. **Use option A for the MVP.**
+The file-first MVP has low concurrency, a single user, and no need for edge
+rate limiting. A second language and service would double the surface area for
+auth, deployment and configuration while the product is still being validated.
+**Use one FastAPI backend plus one worker.**
 
-### 2.2 When Go earns its place
+### 2.2 What would have to change
 
-Add a Go BFF only when a concrete trigger appears:
+Revisit the decision only if a concrete trigger appears:
 
-- multiple clients (Android, web, CLI) need one stable edge;
 - multi-tenant auth, quotas or rate limiting become real;
 - concurrent realtime audio streams exceed what one Python process handles;
-- the AI workload needs to be isolated from the public API.
+- the AI workload must be isolated from the public API for operational reasons.
 
-If that happens, keep the boundary clean:
-
-- **Go owns**: TLS termination, auth, rate limiting, upload proxying, WebSocket
-  termination, request IDs.
-- **Python owns**: meeting domain, database, ASR/translation/summarization,
-  knowledge-base writes.
-- **Go must not own the meeting schema.** It proxies to Python's internal API
-  with a signed service token or mTLS.
-- The internal contract is versioned and documented in `docs/api/`.
-
-Until then, `apps/api` is the only backend.
+If that happens, keep the boundary clean: the edge service owns TLS, auth, rate
+limiting and WebSocket termination; Python keeps the meeting schema and the AI
+pipeline. Until then, `apps/api` is the only backend.
 
 ## 3. Repository layout
 
 This assumes the Step 0 structure from the code-structure review: `main.py` is a
 composition root and the gateway is a feature module. If Step 0 has not been
 done, add the new packages flat and move them in the same pass.
+
+Target layout; some entries are planned and not built yet:
 
 ```text
 apps/
@@ -291,7 +288,7 @@ All product endpoints live under `/api/v1`; the existing gateway contract under
 |--------|------|---------|
 | `POST` | `/api/v1/meetings` | Create a meeting (`title`, `local_language`) |
 | `POST` | `/api/v1/meetings/{id}/audio` | Upload audio (multipart; size/type limits) |
-| `POST` | `/api/v1/meetings/{id}/transcribe` | Enqueue transcription; `202` + job id |
+| `POST` | `/api/v1/meetings/{id}/transcribe` | Enqueue transcription; `202` with the current meeting status (poll `GET`) |
 | `GET` | `/api/v1/meetings` | History, paginated |
 | `GET` | `/api/v1/meetings/{id}` | Status, stage, duration, error |
 | `GET` | `/api/v1/meetings/{id}/transcript` | Segments with original + translation |
@@ -503,7 +500,6 @@ meetings to the current `main.py` would make the god module worse.
 - Speaker diarization, timestamps, hotword lists.
 - Cross-meeting semantic search over knowledge notes.
 - Local `faster-whisper` fallback.
-- Go BFF only if the triggers in section 2.2 are met.
 - Multi-user isolation, quotas, cost dashboard.
 
 ## 11. Cost, privacy and operations
@@ -531,14 +527,14 @@ Decisions taken in this design:
 
 1. Meeting notes is a bounded context inside the Winnie backend, not a separate
    service and not a separate product.
-2. One FastAPI backend for the MVP; Go is deferred until a measured trigger.
+2. One FastAPI backend for the MVP; Go was evaluated and dropped.
 3. File-first MVP; realtime shares the same tables and pipeline.
 4. Language detection is per segment; original text is always preserved.
 5. The pipeline writes summary/decisions/action items into the knowledge base,
    not the raw transcript.
 6. PostgreSQL for meeting data, Redis/arq for jobs, storage behind an interface.
 
-Open questions to settle before implementation:
+Open questions still to settle:
 
 - Auth: single-user token for the MVP, or accounts from day one?
 - Storage: local disk for the MVP, or OSS immediately?
@@ -548,3 +544,36 @@ Open questions to settle before implementation:
   on the same samples.
 - Minutes template: fixed, or user-editable per meeting type?
 - Does the user want raw transcripts searchable, or only the derived note?
+
+## 13. Implementation status
+
+Implemented in the backend scaffold:
+
+- `meetings.enabled` feature flag; the gateway still starts without a database
+  when meetings are off.
+- SQLAlchemy models for meetings, segments, minutes, jobs and usage records;
+  SQLite for local development, PostgreSQL-ready URL.
+- `/api/v1/meetings` CRUD, audio upload, transcribe, transcript, minutes,
+  regenerate, export and delete.
+- File-first pipeline: ASR -> per-segment language handling -> translation ->
+  summarization -> Markdown note.
+- Provider ports for ASR, translation and summarization, with deterministic
+  fake implementations for tests and demos.
+- Inline job queue by default, arq queue and worker entry point behind config.
+- Tests using a fake upstream and a temporary SQLite database.
+
+Deliberate deferrals and why:
+
+- **LangGraph**: the pipeline is plain async Python. There are no branches or
+  stateful retries yet; adding a graph now would add a dependency without
+  removing code. Revisit when real provider retries, conditional re-runs or
+  multi-step tools appear. The pipeline currently lives in
+  `meetings/service.py`; `meetings/pipeline.py` is reserved for that change.
+- **Alembic**: development uses `auto_create_tables`. Add migrations before the
+  first production deployment and turn that flag off.
+- **Real providers**: ASR (Volcengine/Aliyun), LLM translation and LLM
+  summarization are ports without adapters. The fake providers make the HTTP
+  and persistence path testable without cloud credentials.
+- **Android and realtime**: not started. File-first remains the main path.
+- **Knowledge Git write**: the note writer writes Markdown to a local
+  directory; the Git commit/versioning layer is still the knowledge-base task.
