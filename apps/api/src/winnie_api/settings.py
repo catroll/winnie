@@ -1,4 +1,4 @@
-"""从 config.yaml 加载配置（不用环境变量）。"""
+"""Load application settings from YAML."""
 
 from __future__ import annotations
 
@@ -7,19 +7,23 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from winnie_api.routes import Route
+from winnie_api.gateway.routes import Route
 
 _API_ROOT = Path(__file__).resolve().parents[2]
 
 
 class RouteConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     protocol: Literal["openai", "anthropic"]
     base_url: str
 
 
 class Settings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     log_root: str = "../../data/logs"
     anthropic_version: str = "2023-06-01"
     proxy_api_key: str = ""
@@ -58,12 +62,12 @@ def load_yaml_file(path: Path) -> dict[str, Any]:
 
 
 def load_settings(config_path: Path | None = None) -> Settings:
-    """读取 config.yaml；若存在 config.local.yaml 则覆盖合并。"""
+    """Load config.yaml and overlay the sibling *.local.yaml when present."""
     primary = config_path or (_API_ROOT / "config.yaml")
     if not primary.is_file():
         raise FileNotFoundError(f"missing config file: {primary}")
     data = load_yaml_file(primary)
-    local = primary.with_name("config.local.yaml")
+    local = primary.with_name(f"{primary.stem}.local{primary.suffix}")
     if local.is_file():
         data = _deep_merge(data, load_yaml_file(local))
     return Settings.model_validate(data)
@@ -71,4 +75,5 @@ def load_settings(config_path: Path | None = None) -> Settings:
 
 @lru_cache
 def get_settings() -> Settings:
+    """Process-wide settings for CLI entry points; the app uses app.state."""
     return load_settings()

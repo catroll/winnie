@@ -60,14 +60,13 @@ Winnie 定位为**个人智能基础设施**：透明接入各类大模型，沉
 
 ```text
 winnie/
-├── apps/api/       # FastAPI：Chat + 知识库 API
-├── apps/web/       # 管理 UI
-├── src/agent/      # 编排与 RAG
-├── src/memory/     # 提炼、分类、Git、向量索引
-├── src/worker/     # Redis 异步任务
+├── apps/api/       # FastAPI：透明网关 + 会议/知识库 API（含 tests/）
+├── apps/web/       # 管理 UI（规划）
+├── apps/android/   # 会议速记客户端（规划）
 ├── data/kb/        # 运行时用户 Git 知识库
-├── playground/     # 实验示例（不进主产品路径）
-└── tests/
+├── data/logs/      # 网关 ask/answer 日志
+├── docs/           # 设计、集成与调试记录
+└── playground/     # 实验示例（不进主产品路径）
 ```
 
 ## 核心架构

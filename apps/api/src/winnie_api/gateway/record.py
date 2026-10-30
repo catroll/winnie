@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -87,7 +88,7 @@ class InteractionRecorder:
         with self._lock:
             self._seq += 1
             seq = self._seq
-        return f"{now.strftime('%Y%m%d-%H%M%S')}-{seq:09d}"
+        return f"{now.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}-{seq:09d}"
 
     def _write(
         self,

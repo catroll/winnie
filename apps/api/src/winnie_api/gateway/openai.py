@@ -1,4 +1,4 @@
-"""Anthropic Messages API 透明转发（密钥透传）。"""
+"""OpenAI 兼容上游转发（密钥透传）。"""
 
 from __future__ import annotations
 
@@ -9,59 +9,48 @@ import httpx
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
-from winnie_api.forward import forward_json_post, streaming_sse_response
-from winnie_api.record import InteractionRecorder, client_request_url
-from winnie_api.routes import Route
+from winnie_api.gateway.forward import forward_json_post, streaming_sse_response
+from winnie_api.gateway.record import InteractionRecorder, client_request_url
+from winnie_api.gateway.routes import Route
 
 
-def anthropic_upstream_headers(request: Request, *, default_version: str) -> dict[str, str]:
+def openai_upstream_headers(request: Request) -> dict[str, str]:
     """只透传客户端鉴权头，服务端不注入上游密钥。"""
     headers: dict[str, str] = {
         "Content-Type": "application/json",
         "Accept": request.headers.get("accept", "application/json"),
     }
-    if key := request.headers.get("x-api-key"):
-        headers["x-api-key"] = key
     if auth := request.headers.get("authorization"):
         headers["Authorization"] = auth
-
-    version = request.headers.get("anthropic-version") or default_version
-    headers["anthropic-version"] = version
-    if beta := request.headers.get("anthropic-beta"):
-        headers["anthropic-beta"] = beta
+    if org := request.headers.get("openai-organization"):
+        headers["OpenAI-Organization"] = org
+    if project := request.headers.get("openai-project"):
+        headers["OpenAI-Project"] = project
     return headers
 
 
-def _extract_anthropic_stream_text(chunk: dict[str, Any]) -> str | None:
-    ctype = chunk.get("type")
-    if ctype == "content_block_delta":
-        delta = chunk.get("delta") or {}
-        dtype = delta.get("type")
-        if dtype == "text_delta" and (text := delta.get("text")):
-            return text
-        if dtype == "thinking_delta" and (thinking := delta.get("thinking")):
-            return thinking
-        if dtype == "input_json_delta" and (partial := delta.get("partial_json")):
-            return partial
-    return None
+def _extract_openai_stream_text(chunk: dict[str, Any]) -> str | None:
+    parts: list[str] = []
+    for choice in chunk.get("choices") or []:
+        delta = choice.get("delta") or {}
+        if content := delta.get("content"):
+            parts.append(content)
+        if reasoning := delta.get("reasoning_content"):
+            parts.append(reasoning)
+    return "".join(parts) or None
 
 
-def _anthropic_error(msg: str) -> dict[str, Any]:
-    return {"type": "error", "error": {"type": "api_error", "message": msg}}
-
-
-async def proxy_messages(
+async def proxy_chat_completions(
     *,
     client: httpx.AsyncClient,
     route: Route,
     recorder: InteractionRecorder,
     request: Request,
     body: dict[str, Any],
-    default_version: str,
 ) -> Response:
     stream = bool(body.get("stream"))
-    upstream_url = f"{route.api_base()}/messages"
-    headers = anthropic_upstream_headers(request, default_version=default_version)
+    upstream_url = f"{route.api_base()}/chat/completions"
+    headers = openai_upstream_headers(request)
     prefix = recorder.begin(
         client_url=client_request_url(request),
         upstream_url=upstream_url,
@@ -73,8 +62,7 @@ async def proxy_messages(
             "stream": stream,
             "client_host": request.client.host if request.client else None,
             "user_agent": request.headers.get("user-agent"),
-            "anthropic_version": headers.get("anthropic-version"),
-            "has_x_api_key": "x-api-key" in request.headers,
+            "has_authorization": "authorization" in request.headers,
         },
     )
 
@@ -86,7 +74,7 @@ async def proxy_messages(
             body=body,
             recorder=recorder,
             prefix=prefix,
-            extract_text=_extract_anthropic_stream_text,
+            extract_text=_extract_openai_stream_text,
         )
 
     return await forward_json_post(
@@ -96,19 +84,20 @@ async def proxy_messages(
         body=body,
         recorder=recorder,
         prefix=prefix,
-        error_envelope=_anthropic_error,
+        error_envelope=lambda msg: {
+            "error": {"message": msg, "type": "proxy_error"},
+        },
     )
 
 
-async def proxy_anthropic_models(
+async def proxy_models(
     *,
     client: httpx.AsyncClient,
     route: Route,
     request: Request,
-    default_version: str,
 ) -> Response:
     url = f"{route.api_base()}/models"
-    headers = anthropic_upstream_headers(request, default_version=default_version)
+    headers = openai_upstream_headers(request)
     try:
         upstream = await client.get(url, headers=headers)
         data = upstream.json()
@@ -116,11 +105,11 @@ async def proxy_anthropic_models(
     except (httpx.HTTPError, json.JSONDecodeError):
         return JSONResponse(
             content={
+                "object": "list",
                 "data": [],
-                "has_more": False,
                 "error": {
-                    "type": "api_error",
                     "message": f"upstream models unavailable for route {route.name}",
+                    "type": "proxy_error",
                 },
             },
             status_code=502,

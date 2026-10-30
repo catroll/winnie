@@ -10,7 +10,7 @@ import httpx
 from fastapi import Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from winnie_api.record import InteractionRecorder
+from winnie_api.gateway.record import InteractionRecorder
 
 TextExtractor = Callable[[dict[str, Any]], str | None]
 

@@ -1,3 +1,3 @@
-"""Winnie API：OpenAI 兼容透明代理。"""
+"""Winnie: personal assistant API."""
 
 __version__ = "0.1.0"

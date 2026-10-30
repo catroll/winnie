@@ -1,28 +1,39 @@
-# Winnie API — LLM 透明代理
+# Winnie API
 
-按路径前缀路由的 OpenAI / Anthropic 透明代理；厂商 Key 客户端透传。  
-配置：[`config.yaml`](./config.yaml)。说明见 [docs/openai-proxy.md](../../docs/openai-proxy.md)。
+FastAPI backend for Winnie. It currently ships the transparent LLM gateway;
+meeting and knowledge APIs are added incrementally.
 
-## 运行
+- Application entry and composition root: `winnie_api.main:create_app`
+- Gateway feature: `src/winnie_api/gateway/`
+- Settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
+- Tests: `tests/`, using a fake upstream instead of real vendor keys
+
+## Run
 
 ```bash
-# 按需编辑 config.yaml
+# Edit config.yaml as needed.
 uv sync
 uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
 curl -s http://127.0.0.1:8000/routes
 ```
 
-## 冒烟测试
+## Test
 
-同一把 `DEEPSEEK_API_KEY` 测两种协议路由：
+```bash
+uv run pytest
+```
 
-| 路由 | 协议 | 路径 |
-|------|------|------|
+## Smoke test
+
+The same `DEEPSEEK_API_KEY` exercises both protocol routes:
+
+| Route | Protocol | Path |
+|-------|----------|------|
 | `deepseek-openai` | openai | `/deepseek-openai/v1/chat/completions` |
 | `deepseek-anthropic` | anthropic | `/deepseek-anthropic/v1/messages` |
 
 ```bash
-# scripts/.env 已填 DEEPSEEK_API_KEY
+# scripts/.env contains DEEPSEEK_API_KEY
 uv run python scripts/smoke_test.py
 uv run python scripts/smoke_test.py --only openai
 uv run python scripts/smoke_test.py --only anthropic
