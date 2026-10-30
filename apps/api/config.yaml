@@ -82,6 +82,9 @@ llm:
   timeout_seconds: 120
   max_output_tokens: 4096
   temperature: 0.2
+  # Retry transient HTTP/transport failures; 4xx responses fail immediately.
+  max_retries: 2
+  retry_backoff_seconds: 1
   translation_batch_chars: 6000
 
 # Meeting data. SQLite is the development default; production should use

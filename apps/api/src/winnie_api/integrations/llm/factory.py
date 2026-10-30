@@ -23,4 +23,6 @@ def build_llm(settings: Settings) -> OpenAICompatibleLLM:
         timeout_seconds=config.timeout_seconds,
         max_output_tokens=config.max_output_tokens,
         temperature=config.temperature,
+        max_retries=config.max_retries,
+        retry_backoff_seconds=config.retry_backoff_seconds,
     )

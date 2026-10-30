@@ -54,8 +54,8 @@ enough to start without re-reading the design.
       in batches and preserves segment order.
 - [x] Implement an LLM `Summarizer` adapter returning the existing
       `MinutesDraft`, with shape validation and invalid-highlight filtering.
-- [ ] Add retry/backoff for transient provider failures; the current adapters
-      fail the meeting stage immediately.
+- [x] Add retry/backoff for transient provider failures; retryable HTTP
+      statuses and transport errors are retried, while 4xx responses fail fast.
 - [ ] Measure latency, token usage and quality on the bilingual fixture; write
       `usage_records` for each call and compare with the fake baseline.
 - [ ] Decide whether translation uses the same model as summarization or a

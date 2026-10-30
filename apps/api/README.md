@@ -120,14 +120,17 @@ llm:
   base_url: https://api.deepseek.com/v1
   api_key_env: WINNIE_LLM_API_KEY
   model: deepseek-chat
+  max_retries: 2
+  retry_backoff_seconds: 1
 ```
 
 The internal LLM client calls the provider directly and does not route through
-the transparent gateway. Only the minutes note is written to the knowledge
-directory; the raw transcript stays in the meeting database. See
-[docs/meetings.md](../../docs/meetings.md) for the full design and
-[docs/todo.md](../../docs/todo.md) for provider validation and production
-follow-ups.
+the transparent gateway. It retries transient transport errors and retryable
+HTTP statuses with exponential backoff; 4xx responses fail fast. Only the
+minutes note is written to the knowledge directory; the raw transcript stays in
+the meeting database. See [docs/meetings.md](../../docs/meetings.md) for the
+full design and [docs/todo.md](../../docs/todo.md) for provider validation and
+production follow-ups.
 
 ```bash
 # create, upload, process (TOKEN is the access_token from registration/login)

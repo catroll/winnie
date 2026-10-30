@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -13,12 +14,18 @@ from winnie_api.integrations.translate.llm import LLMTranslator
 from winnie_api.settings import LLMConfig, MeetingsConfig, Settings
 
 
-def _llm(handler, *, model: str = "test-model") -> OpenAICompatibleLLM:
+def _llm(
+    handler,
+    *,
+    model: str = "test-model",
+    **kwargs,
+) -> OpenAICompatibleLLM:
     return OpenAICompatibleLLM(
         base_url="https://llm.example/v1",
         api_key="secret",
         model=model,
         http=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        **kwargs,
     )
 
 
@@ -336,3 +343,64 @@ async def test_pipeline_uses_llm_adapters(meeting_settings, monkeypatch) -> None
     finally:
         await llm_http.aclose()
         await gateway_http.aclose()
+
+
+async def test_transient_http_error_is_retried(monkeypatch) -> None:
+    calls = 0
+    delays: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '["ok"]'}}],
+                "usage": {"total_tokens": 2},
+            },
+        )
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+    translator = LLMTranslator(
+        _llm(handler, max_retries=1, retry_backoff_seconds=0.5)
+    )
+    result = await translator.translate(["a"], source=None, target="zh")
+
+    assert calls == 2
+    assert delays == [0.5]
+    assert result.texts == ["ok"]
+
+
+async def test_client_error_is_not_retried() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, text="bad request")
+
+    translator = LLMTranslator(_llm(handler, max_retries=2))
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        await translator.translate(["a"], source=None, target="zh")
+    assert calls == 1
+
+
+async def test_transport_error_exhausts_retries() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("boom", request=request)
+
+    translator = LLMTranslator(
+        _llm(handler, max_retries=1, retry_backoff_seconds=0)
+    )
+    with pytest.raises(RuntimeError, match="after 2 attempts"):
+        await translator.translate(["a"], source=None, target="zh")
+    assert calls == 2

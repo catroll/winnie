@@ -439,6 +439,8 @@ llm:
   timeout_seconds: 120
   max_output_tokens: 4096
   temperature: 0.2
+  max_retries: 2
+  retry_backoff_seconds: 1
   translation_batch_chars: 6000
 
 database:
@@ -586,8 +588,10 @@ meetings to the current `main.py` would make the god module worse.
 - **Idempotency**: unique job rows, conditional state transitions, and a
   per-stage dedupe key. A retried ASR call must not append a second copy of
   every segment.
-- **Failure handling**: provider timeouts and rate limits are normal. Retry with
-  backoff, cap attempts, and surface the failed stage in the UI.
+- **Failure handling**: provider timeouts and rate limits are normal. The LLM
+  client retries transport errors and retryable HTTP statuses with backoff; the
+  ASR adapter still fails the stage immediately. Surface the failed stage in the
+  UI and cap future ASR attempts.
 - **Observability**: structured logs with `meeting_id`, `job_id`, `stage` and
   provider latency; usage records double as a cost ledger.
 
@@ -650,7 +654,8 @@ Implemented:
   new-console API key from `VOLCENGINE_ASR_API_KEY`, sent as `X-Api-Key`.
 - OpenAI-compatible LLM adapters for batched translation and structured
   minutes, selected with `meetings.translator` / `meetings.summarizer`; the key
-  comes from `llm.api_key_env` (default `WINNIE_LLM_API_KEY`).
+  comes from `llm.api_key_env` (default `WINNIE_LLM_API_KEY`). Transient
+  transport/HTTP failures are retried with backoff and `Retry-After` support.
 - Provider ports for ASR, translation and summarization; deterministic fakes for
   tests and demos.
 - Inline job queue by default; arq queue and worker entry point behind config.
