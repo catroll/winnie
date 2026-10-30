@@ -52,9 +52,32 @@ export VOLCENGINE_ASR_APP_ID=...
 export VOLCENGINE_ASR_ACCESS_TOKEN=...
 ```
 
-To try the full pipeline without credentials, set `meetings.asr_provider: fake`
-in `config.local.yaml`. The fake ASR/translation/summarization providers are
-deterministic and are for local demos and tests only.
+To try the full pipeline without cloud credentials, set
+`meetings.asr_provider: fake` and keep `meetings.translator` /
+`meetings.summarizer` as `fake` in `config.local.yaml`. The fake
+ASR/translation/summarization providers are deterministic and are for local
+demos and tests only.
+
+For real translation and structured minutes, set both providers to
+`openai_compatible`, configure the `llm` block in `config.yaml`, and export the
+key named by `llm.api_key_env` (default `WINNIE_LLM_API_KEY`):
+
+```yaml
+meetings:
+  translator: openai_compatible
+  summarizer: openai_compatible
+llm:
+  base_url: https://api.deepseek.com/v1
+  api_key_env: WINNIE_LLM_API_KEY
+  model: deepseek-chat
+```
+
+The internal LLM client calls the provider directly and does not route through
+the transparent gateway. Only the minutes note is written to the knowledge
+directory; the raw transcript stays in the meeting database. See
+[docs/meetings.md](../../docs/meetings.md) for the full design and
+[docs/todo.md](../../docs/todo.md) for provider validation and production
+follow-ups.
 
 ```bash
 # create, upload, process (TOKEN is the access_token from registration/login)
@@ -75,11 +98,6 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 curl -s -H "Authorization: Bearer $TOKEN" \
   'http://127.0.0.1:8000/api/v1/meetings/<id>/export?format=markdown'
 ```
-
-Only the minutes note is written to the knowledge directory; the raw transcript
-stays in the meeting database. See [docs/meetings.md](../../docs/meetings.md)
-for the full design and [docs/todo.md](../../docs/todo.md) for provider
-evaluation and production follow-ups.
 
 ## Smoke test
 

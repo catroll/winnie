@@ -348,7 +348,9 @@ class ASRProvider(Protocol):
     async def transcribe(self, audio: AudioRef, *, language_hint: str | None) -> ASRResult: ...
 
 class Translator(Protocol):
-    async def translate(self, texts: list[str], *, source: str | None, target: str) -> list[str]: ...
+    async def translate(
+        self, texts: list[str], *, source: str | None, target: str
+    ) -> TranslationResult: ...
 
 class LanguageDetector(Protocol):
     def detect(self, text: str) -> LanguageGuess: ...
@@ -364,16 +366,19 @@ class Summarizer(Protocol):
   adapter; the follow-up is tracked in [todo.md](./todo.md). Local
   `faster-whisper` is a separate implementation of the same protocol.
 - **Translation**: an LLM call behind `Translator` is usually good enough for
-  meeting text and reuses the same model access. The current implementation is
-  the deterministic fake; the real adapter is next.
+  meeting text and reuses the same internal model access. The
+  `openai_compatible` adapter batches by character count, requests a JSON array
+  in input order, and records token usage. A dedicated translation API remains
+  an alternative implementation.
 - **Summarization**: `Summarizer` over an OpenAI-compatible model (DeepSeek or
-  Qwen). The current implementation is the deterministic fake; prompts will
-  live in `meetings/prompts/` with an explicit version when the real adapter
-  lands.
+  Qwen). The `openai_compatible` adapter requests one JSON object, validates
+  the shape and filters highlights that reference missing segments. Prompts
+  live in code for now; versioned prompt files remain a later refactor.
 - **Config** selects the implementation per capability, e.g.
-  `meetings.asr_provider: volcengine`. Credentials come from environment
-  variables (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN`), never from
-  YAML committed to Git.
+  `meetings.asr_provider: volcengine` and
+  `meetings.translator: openai_compatible`. Credentials come from environment
+  variables (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN`,
+  `WINNIE_LLM_API_KEY`), never from YAML committed to Git.
 - **Cost**: every provider call writes a `usage_records` row (audio seconds,
   tokens, characters). Provider prices live in config so the estimate can be
   recomputed. This is the basis of the per-meeting cost view.
@@ -413,8 +418,9 @@ meetings:
   max_upload_mb: 500
   local_language: zh
   asr_provider: volcengine
-  translator: fake
-  summarizer: fake
+  translator: openai_compatible
+  summarizer: openai_compatible
+  prompt_version: v1
   volcengine:
     base_url: https://openspeech.bytedance.com
     resource_id: volc.bigasr.auc
@@ -422,6 +428,15 @@ meetings:
     max_inline_mb: 100
     poll_interval_seconds: 2
     poll_timeout_seconds: 300
+
+llm:
+  base_url: https://api.deepseek.com/v1
+  api_key_env: WINNIE_LLM_API_KEY
+  model: deepseek-chat
+  timeout_seconds: 120
+  max_output_tokens: 4096
+  temperature: 0.2
+  translation_batch_chars: 6000
 
 database:
   url: sqlite+aiosqlite:///../../data/winnie.db
@@ -431,23 +446,25 @@ jobs:
   redis_url: ""
 ```
 
-Secrets (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN`) come from the
-environment. Unknown YAML keys are rejected at startup. Production should use
-PostgreSQL and turn off `database.auto_create_tables` once migrations exist.
+Secrets (`VOLCENGINE_ASR_APP_ID`, `VOLCENGINE_ASR_ACCESS_TOKEN` and the key named
+by `llm.api_key_env`) come from the environment. Unknown YAML keys are rejected
+at startup. Production should use PostgreSQL and turn off
+`database.auto_create_tables` once migrations exist.
 
 ### 8.3 Gateway and LLM access
 
 - Do not call the transparent gateway over loopback from the pipeline. That adds
   latency, makes the proxy a dependency of internal jobs, and muddles its logs.
-- Put an internal `ModelClient` in `shared/llm.py` that talks to the provider
-  directly (or through LiteLLM). Both the gateway and the AI jobs may use the
-  same provider configuration, but through different call paths.
+- `integrations/llm/openai_compatible.py` is the internal model client. It talks
+  to the provider directly, records token usage, and is selected by
+  `meetings.translator` / `meetings.summarizer`. Both the gateway and the AI jobs
+  may use the same provider configuration, but through different call paths.
 - Do not reuse `InteractionRecorder` for pipeline calls. It records transparent
   client conversations with `client_url`/`upstream_url`; internal AI calls need
   prompts, token usage and cost, which belong in `usage_records` plus structured
   logs.
-- Reuse the injected `httpx` client and the existing request-ID/logging
-  conventions so a meeting job can be traced end to end.
+- Give the internal client its own timeout and error surface so a slow model
+  fails the meeting stage cleanly instead of hanging the proxy client.
 
 ### 8.4 Knowledge-base sink
 
@@ -588,11 +605,15 @@ Decisions taken in this design:
    recordings; this is tracked in [todo.md](./todo.md).
 9. SQLite and the inline queue are the development defaults. PostgreSQL and
    arq/Redis are deployment options behind existing interfaces.
+10. Translation and minutes use one internal OpenAI-compatible client, selected
+    separately from the gateway routes. The first implementation targets
+    DeepSeek; the same adapter works with any compatible endpoint.
 
 Open questions still to settle:
 
-- Translation: LLM or a dedicated translation API? Measure latency and quality
-  on the same samples. The current adapter is still the deterministic fake.
+- Translation quality and cost: compare the generic LLM adapter with a
+  dedicated translation API on the same bilingual samples. The adapter exists;
+  the measurement does not.
 - Minutes template: fixed, or user-editable per meeting type?
 - Which ASR vendor wins on bilingual accuracy, language-switch handling,
   latency and cost? Decide by measurement, not by feature list.
@@ -615,11 +636,14 @@ Implemented:
 - Volcengine Doubao big-model recording-file ASR adapter with base64 inline
   upload, polling, usage recording and mocked HTTP tests. Credentials come from
   `VOLCENGINE_ASR_APP_ID` and `VOLCENGINE_ASR_ACCESS_TOKEN`.
+- OpenAI-compatible LLM adapters for batched translation and structured
+  minutes, selected with `meetings.translator` / `meetings.summarizer`; the key
+  comes from `llm.api_key_env` (default `WINNIE_LLM_API_KEY`).
 - Provider ports for ASR, translation and summarization; deterministic fakes for
   tests and demos.
 - Inline job queue by default; arq queue and worker entry point behind config.
-- Tests using a fake upstream, temporary SQLite databases, account isolation and
-  a mocked Volcengine endpoint.
+- Tests using a fake upstream, temporary SQLite databases, account isolation, a
+  mocked Volcengine endpoint and mocked LLM responses.
 
 Deliberate deferrals and why:
 
@@ -630,8 +654,10 @@ Deliberate deferrals and why:
   `meetings/service.py`; `meetings/pipeline.py` is reserved for that change.
 - **Alembic**: development uses `auto_create_tables`. Add migrations before the
   first production deployment and turn that flag off.
-- **Real translation and summarization**: both are still deterministic fakes.
-  The ports and usage records are in place; the LLM adapters are next.
+- **Live LLM validation**: the adapters are implemented and mocked-tested, but
+  prompt quality, token cost and long-transcript behavior still need a real key
+  and real recordings. Very long transcripts are sent in one summarization
+  request; chunking/map-reduce is not implemented yet.
 - **Other ASR vendors**: Aliyun, local Whisper and a bilingual accuracy
   benchmark are deferred until the Doubao path has run on real recordings.
 - **Android and realtime**: not started. File-first remains the main path.

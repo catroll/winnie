@@ -9,7 +9,7 @@ infrastructure below it exists to serve the assistant.
 | Layer | What it gives you | Status |
 |-------|-------------------|--------|
 | **Assistant** | Scheduling, development help and everyday tasks, orchestrated on top of the layers below | Planned |
-| **Meeting notes** | File-first transcription, cross-lingual transcript and structured minutes | Backend implemented; real ASR, fake translation/summarization |
+| **Meeting notes** | File-first transcription, cross-lingual transcript and structured minutes | Backend implemented; live provider validation pending |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
@@ -48,9 +48,10 @@ The model gateway is fully implemented. It supports:
 The meeting-notes backend is functional but **not production-ready**. Meeting
 CRUD, audio upload, a file-first processing pipeline, transcript/minutes/export
 APIs and a Markdown knowledge sink are wired. Accounts, per-user meeting
-isolation and the Volcengine Doubao ASR adapter are implemented; translation and
-summarization still use deterministic fakes, and the Android client has not
-started.
+isolation, the Volcengine Doubao ASR adapter, and OpenAI-compatible translation
+and structured-minutes adapters are implemented. The fake providers remain the
+default for tests and local demos; live ASR/LLM credentials still need a smoke
+test, and the Android client has not started.
 
 ### Quick start
 
@@ -75,14 +76,16 @@ Accounts and meeting notes are mounted under `/api/v1` when enabled in
 `apps/api/config.yaml`. The first account can register, then login to receive a
 bearer token. To transcribe with Doubao, export
 `VOLCENGINE_ASR_APP_ID` and `VOLCENGINE_ASR_ACCESS_TOKEN` before starting the
-API. The integration design and endpoint list are in
+API. To use a real model for translation and minutes, set
+`meetings.translator` and `meetings.summarizer` to `openai_compatible` and
+export `WINNIE_LLM_API_KEY`. The integration design and endpoint list are in
 [docs/meetings.md](./docs/meetings.md).
 
 ## Roadmap
 
-1. **Meeting notes** — real translation and summarization adapters; evaluate a
-   second ASR vendor on bilingual recordings; the Android client; realtime
-   streaming; then cross-meeting search.
+1. **Meeting notes** — validate and tune the Doubao and LLM provider paths on
+   real recordings; evaluate a second ASR vendor on bilingual audio; the
+   Android client; realtime streaming; then cross-meeting search.
 2. **Knowledge base** — Git-backed Markdown, management UI, classification and
    tagging, re-indexing, retrieval-augmented chat.
 3. **Assistant capabilities** — scheduling, development assistance and everyday
@@ -103,6 +106,7 @@ including the ASR evaluation and provider verification, are in
 | Accounts | Argon2id passwords, opaque bearer sessions |
 | Meeting storage | Local disk behind a `Storage` port |
 | ASR | Volcengine Doubao (big-model recording file) |
+| Translation and minutes | OpenAI-compatible chat model via an internal LLM client |
 | Management UI | Vite + React |
 | Knowledge source | Git-managed Markdown |
 | Vector index | Qdrant |

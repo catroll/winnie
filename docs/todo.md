@@ -12,6 +12,9 @@ enough to start without re-reading the design.
       contract and is covered by mocked HTTP tests, not a live call.
 - [ ] Record the first real meeting: upload, transcribe, translate, minutes,
       export. Fix provider payload or timestamp assumptions found there.
+- [ ] Smoke-test the internal LLM path with a real `WINNIE_LLM_API_KEY`:
+      translation order/length, structured minutes, token usage and failure
+      messages. Mocked tests do not prove prompt quality.
 - [ ] Add a 10–30 minute bilingual fixture (Chinese, English, code-switching,
       names, numbers) under a local-only fixture directory, never in Git.
 
@@ -30,16 +33,22 @@ enough to start without re-reading the design.
 - [ ] Only after evaluation: add the winning adapter behind `ASRProvider` and
       keep Volcengine selectable.
 
-## P1 — real translation and summarization
+## P1 — validate LLM translation and minutes
 
-- [ ] Implement an LLM `Translator` adapter that translates non-local segments
-      in batches, preserves segment order and retries transient failures.
-- [ ] Implement an LLM `Summarizer` adapter returning the existing
-      `MinutesDraft`; keep prompts in `meetings/prompts/` with a version.
-- [ ] Measure latency, token usage and cost on the bilingual fixture; write
-      `usage_records` for each call.
+- [x] Implement an LLM `Translator` adapter that translates non-local segments
+      in batches and preserves segment order.
+- [x] Implement an LLM `Summarizer` adapter returning the existing
+      `MinutesDraft`, with shape validation and invalid-highlight filtering.
+- [ ] Add retry/backoff for transient provider failures; the current adapters
+      fail the meeting stage immediately.
+- [ ] Measure latency, token usage and quality on the bilingual fixture; write
+      `usage_records` for each call and compare with the fake baseline.
 - [ ] Decide whether translation uses the same model as summarization or a
       dedicated translation API.
+- [ ] Add chunking/map-reduce for transcripts that exceed one model context;
+      the current summarizer sends the whole transcript in one request.
+- [ ] Move prompts into versioned files (`meetings/prompts/`) once the wording
+      stabilizes; `prompt_version` is already stored with minutes.
 
 ## P1 — production data and jobs
 
