@@ -55,6 +55,24 @@ class VolcengineASRConfig(BaseModel):
     poll_timeout_seconds: float = Field(default=300.0, ge=1.0, le=3600.0)
 
 
+class LLMConfig(BaseModel):
+    """Internal OpenAI-compatible model access for translation and minutes.
+
+    This is deliberately separate from the gateway routes: internal jobs call
+    the provider directly instead of looping back through the proxy.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str = ""
+    api_key_env: str = "WINNIE_LLM_API_KEY"
+    model: str = "fake"
+    timeout_seconds: float = Field(default=120.0, ge=1.0, le=600.0)
+    max_output_tokens: int = Field(default=4096, ge=1, le=32768)
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    translation_batch_chars: int = Field(default=6000, ge=500, le=50000)
+
+
 class MeetingsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -68,7 +86,6 @@ class MeetingsConfig(BaseModel):
     asr_provider: str = "fake"
     translator: str = "fake"
     summarizer: str = "fake"
-    model: str = "fake"
     prompt_version: str = "v1"
     volcengine: VolcengineASRConfig = Field(default_factory=VolcengineASRConfig)
 
@@ -83,6 +100,7 @@ class Settings(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     jobs: JobsConfig = Field(default_factory=JobsConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
 
     def route_table(self) -> dict[str, Route]:

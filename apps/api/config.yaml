@@ -55,7 +55,6 @@ meetings:
   asr_provider: volcengine
   translator: fake
   summarizer: fake
-  model: fake
   prompt_version: v1
   # Doubao big-model recording-file ASR. Credentials come from the
   # VOLCENGINE_ASR_APP_ID and VOLCENGINE_ASR_ACCESS_TOKEN environment variables.
@@ -66,6 +65,19 @@ meetings:
     max_inline_mb: 100
     poll_interval_seconds: 2
     poll_timeout_seconds: 300
+
+# Internal LLM access for translation and minutes. The gateway routes above
+# stay independent; internal jobs call the provider directly.
+# Set meetings.translator / meetings.summarizer to "openai_compatible" to use
+# this block. The API key is read from the named environment variable.
+llm:
+  base_url: https://api.deepseek.com/v1
+  api_key_env: WINNIE_LLM_API_KEY
+  model: deepseek-chat
+  timeout_seconds: 120
+  max_output_tokens: 4096
+  temperature: 0.2
+  translation_batch_chars: 6000
 
 # Meeting data. SQLite is the development default; production should use
 # PostgreSQL, for example postgresql+asyncpg://user:pass@host:5432/winnie

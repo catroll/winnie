@@ -1,8 +1,8 @@
 """Build provider adapters from configuration.
 
 The fake providers keep tests and local demos deterministic. Volcengine
-Doubao is the first real ASR adapter; translation and summarization adapters
-land behind the same ports.
+Doubao is the first real ASR adapter, and the LLM adapters use one internal
+OpenAI-compatible client for translation and structured minutes.
 """
 
 from __future__ import annotations
@@ -16,10 +16,13 @@ from winnie_api.integrations.asr.volcengine import (
     APP_ID_ENV,
     VolcengineASRProvider,
 )
+from winnie_api.integrations.llm.factory import build_llm
 from winnie_api.integrations.summarize.base import Summarizer
 from winnie_api.integrations.summarize.fake import FakeSummarizer
+from winnie_api.integrations.summarize.llm import LLMSummarizer
 from winnie_api.integrations.translate.base import Translator
 from winnie_api.integrations.translate.fake import FakeTranslator
+from winnie_api.integrations.translate.llm import LLMTranslator
 from winnie_api.settings import Settings
 
 
@@ -49,6 +52,11 @@ def build_translator(settings: Settings) -> Translator:
     name = settings.meetings.translator
     if name == "fake":
         return FakeTranslator()
+    if name == "openai_compatible":
+        return LLMTranslator(
+            build_llm(settings),
+            max_batch_chars=settings.llm.translation_batch_chars,
+        )
     raise ValueError(
         f"unsupported translator {name!r}; implement it under "
         "winnie_api/integrations/translate/ and register it here"
@@ -59,6 +67,8 @@ def build_summarizer(settings: Settings) -> Summarizer:
     name = settings.meetings.summarizer
     if name == "fake":
         return FakeSummarizer()
+    if name == "openai_compatible":
+        return LLMSummarizer(build_llm(settings))
     raise ValueError(
         f"unsupported summarizer {name!r}; implement it under "
         "winnie_api/integrations/summarize/ and register it here"

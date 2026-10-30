@@ -404,11 +404,17 @@ class MeetingService:
         meeting_id: uuid.UUID,
         draft: MinutesDraft,
     ) -> Minutes:
+        # Do not claim a real model produced fake minutes.
+        model = (
+            self.settings.llm.model
+            if self.settings.meetings.summarizer != "fake"
+            else "fake"
+        )
         async with self.session_factory() as session:
             return await MeetingRepository(session).upsert_minutes(
                 meeting_id,
                 draft,
-                model=self.settings.meetings.model,
+                model=model,
                 prompt_version=self.settings.meetings.prompt_version,
             )
 
