@@ -22,7 +22,7 @@ async def test_volcengine_submits_polls_and_parses(tmp_path: Path) -> None:
             assert request.headers["X-Api-Key"] == "api-key"
             assert "X-Api-App-Key" not in request.headers
             assert "X-Api-Access-Key" not in request.headers
-            assert request.headers["X-Api-Resource-Id"] == "volc.bigasr.auc"
+            assert request.headers["X-Api-Resource-Id"] == "volc.seedasr.auc"
             assert request.headers["X-Api-Sequence"] == "-1"
             assert payload["audio"]["format"] == "wav"
             assert payload["audio"]["data"] == base64.b64encode(

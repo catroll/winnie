@@ -426,7 +426,7 @@ meetings:
   prompt_version: v1
   volcengine:
     base_url: https://openspeech.bytedance.com
-    resource_id: volc.bigasr.auc
+    resource_id: volc.seedasr.auc
     model_name: bigmodel
     max_inline_mb: 100
     poll_interval_seconds: 2

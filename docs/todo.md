@@ -8,15 +8,23 @@ enough to start without re-reading the design.
 - [x] Verify the new-console API-key auth against the live endpoint: a valid
       `X-Api-Key` is accepted, while a bogus one returns
       `HTTP 401, code=45000010, message=Invalid X-Api-Key`.
-- [ ] Enable the Doubao recording-file service for the API key's project. Both
-      `volc.bigasr.auc` (model 1.0) and `volc.seedasr.auc` (model 2.0) currently
-      answer `HTTP 403, code=45000030, message=[resource_id=...] requested
-      resource not granted`. Auth is not the problem; the resource is not
-      provisioned.
-- [ ] Smoke-test `VolcengineASRProvider` against a real recording once the
-      resource is granted. Confirm the submit/query paths, `audio.format`
-      values and status codes against the account console/docs. The adapter is
-      covered by mocked HTTP tests; the live call above stopped at provisioning.
+- [x] Enable the Doubao recording-file service for the API key's project, then
+      smoke-test `VolcengineASRProvider` on real audio. Model line 2.0
+      (`volc.seedasr.auc`) submits, polls and returns segments for both
+      Mandarin (`大家好，今天我们讨论一下产品发布的计划。请把预算和时间表发给我。`)
+      and English; usage reports the audio duration. Model line 1.0
+      (`volc.bigasr.auc`) is still `HTTP 403, code=45000030` for this account,
+      so 2.0 is now the default. Streaming 2.0
+      (`volc.seedasr.sauc.duration`) upgrades with `101 Switching Protocols`;
+      streaming 1.0 is still not granted.
+- [ ] Give segments a language before relying on translation. The 2.0 response
+      has no per-utterance language, and its file-level LID
+      (`request.enable_lid` → `result.additions.lid_lang`) mislabels a Mandarin
+      TTS clip as `speech_dia_nan`, so it is not used. With `language=None`,
+      `_process` marks every segment `translation_status="skipped"` and a
+      bilingual meeting is never translated. Implement per-segment detection
+      (script-based for zh/en, or a real `LanguageDetector`) and record the
+      choice.
 - [ ] Record the first real meeting: upload, transcribe, translate, minutes,
       export. Fix provider payload or timestamp assumptions found there.
 - [ ] Smoke-test the internal LLM path with a real `WINNIE_LLM_API_KEY`:

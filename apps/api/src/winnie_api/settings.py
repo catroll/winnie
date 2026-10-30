@@ -49,7 +49,7 @@ class VolcengineASRConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     base_url: str = "https://openspeech.bytedance.com"
-    resource_id: str = "volc.bigasr.auc"
+    resource_id: str = "volc.seedasr.auc"
     model_name: str = "bigmodel"
     max_inline_mb: int = Field(default=100, ge=1, le=500)
     poll_interval_seconds: float = Field(default=2.0, ge=0.0, le=60.0)

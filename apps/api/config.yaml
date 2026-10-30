@@ -64,8 +64,8 @@ meetings:
   # X-Api-Key); appid/access-token from the old console are not supported.
   volcengine:
     base_url: https://openspeech.bytedance.com
-    # The model line: volc.bigasr.auc (1.0), volc.seedasr.auc (2.0).
-    resource_id: volc.bigasr.auc
+    # The model line: volc.seedasr.auc (2.0, current), volc.bigasr.auc (1.0).
+    resource_id: volc.seedasr.auc
     model_name: bigmodel
     max_inline_mb: 100
     poll_interval_seconds: 2

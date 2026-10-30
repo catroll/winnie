@@ -38,7 +38,7 @@ class VolcengineASRProvider(ASRProvider):
         *,
         api_key: str,
         base_url: str = DEFAULT_BASE_URL,
-        resource_id: str = "volc.bigasr.auc",
+        resource_id: str = "volc.seedasr.auc",
         model_name: str = "bigmodel",
         max_inline_bytes: int = 100 * 1024 * 1024,
         poll_interval_seconds: float = 2.0,
@@ -61,7 +61,10 @@ class VolcengineASRProvider(ASRProvider):
         language_hint: str | None = None,
     ) -> ASRResult:
         self._require_credentials()
-        _ = language_hint  # the big-model endpoint detects language per utterance
+        # The endpoint returns no per-utterance language. Its own LID is
+        # file-level and can mislabel short clips, so segment language is left
+        # to the pipeline rather than guessed from a single audio-wide label.
+        _ = language_hint
         path = audio.local_path
         if path is None:
             raise ValueError("Volcengine ASR needs a local audio file")
