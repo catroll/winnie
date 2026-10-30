@@ -35,6 +35,13 @@ The response contains a bearer token. Send it as
 `Authorization: Bearer <token>` to `/api/v1/meetings` and `/api/v1/auth/me`.
 Later registrations are rejected unless `auth.allow_registration: true`.
 
+Expired sessions are rejected when used. Delete them periodically with the arq
+worker (daily at 03:17 UTC) or, without a worker, a cron entry:
+
+```bash
+uv run python -m winnie_api.auth.cleanup
+```
+
 ## Database migrations
 
 `auto_create_tables` is a development convenience. For a real deployment, run

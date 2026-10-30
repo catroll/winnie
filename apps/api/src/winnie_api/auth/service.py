@@ -128,6 +128,16 @@ class AuthService:
         async with self.session_factory() as session:
             await AuthRepository(session).delete_session_by_hash(hash_token(token))
 
+    async def cleanup_expired_sessions(self, *, before: datetime | None = None) -> int:
+        """Delete sessions that can no longer authenticate.
+
+        Expired sessions are already rejected by ``authenticate``; this only
+        reclaims rows so the table does not grow without bound.
+        """
+        cutoff = before or utcnow()
+        async with self.session_factory() as session:
+            return await AuthRepository(session).delete_expired_sessions(cutoff)
+
     async def _issue_session(self, user_id: uuid.UUID) -> tuple[str, datetime]:
         token = secrets.token_urlsafe(32)
         expires_at = utcnow() + timedelta(days=self.settings.auth.session_ttl_days)

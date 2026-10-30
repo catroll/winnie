@@ -70,7 +70,8 @@ enough to start without re-reading the design.
       URLs) while keeping local disk as the default.
 - [ ] Define audio retention and deletion: configurable retention window,
       purge audio on meeting delete, keep minutes/notes if desired.
-- [ ] Add a session cleanup job for expired `auth_sessions`.
+- [x] Add a session cleanup job for expired `auth_sessions`; the arq worker
+      schedules it daily and a standalone CLI is available for cron.
 
 ## P2 — accounts and security
 

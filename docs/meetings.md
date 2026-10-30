@@ -578,6 +578,8 @@ meetings to the current `main.py` would make the god module worse.
   segments and derived notes. Do not commit transcripts to Git.
 - **Retention**: make audio retention configurable; transcripts and minutes can
   outlive audio.
+- **Sessions**: expired bearer sessions are rejected on use and removed by the
+  arq daily cron or `python -m winnie_api.auth.cleanup` when no worker runs.
 - **Idempotency**: unique job rows, conditional state transitions, and a
   per-stage dedupe key. A retried ASR call must not append a second copy of
   every segment.
@@ -647,6 +649,8 @@ Implemented:
 - Provider ports for ASR, translation and summarization; deterministic fakes for
   tests and demos.
 - Inline job queue by default; arq queue and worker entry point behind config.
+- Expired-session cleanup through an arq daily cron and
+  `python -m winnie_api.auth.cleanup` for deployments without a worker.
 - Tests using a fake upstream, temporary SQLite databases, account isolation, a
   mocked Volcengine endpoint and mocked LLM responses.
 

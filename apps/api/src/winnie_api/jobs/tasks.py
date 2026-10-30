@@ -7,5 +7,14 @@ from uuid import UUID
 
 
 async def process_meeting_job(ctx: dict[str, Any], meeting_id: str) -> None:
-    service = ctx["service"]
+    service = ctx.get("service")
+    if service is None:
+        raise RuntimeError("meetings are not enabled for this worker")
     await service.process(UUID(meeting_id))
+
+
+async def cleanup_expired_sessions(ctx: dict[str, Any]) -> int:
+    auth = ctx.get("auth")
+    if auth is None:
+        raise RuntimeError("accounts are not enabled for this worker")
+    return await auth.cleanup_expired_sessions()

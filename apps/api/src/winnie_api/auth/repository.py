@@ -116,3 +116,10 @@ class AuthRepository:
             delete(AuthSession).where(AuthSession.user_id == user_id)
         )
         await self.session.commit()
+
+    async def delete_expired_sessions(self, before: datetime) -> int:
+        result = await self.session.execute(
+            delete(AuthSession).where(AuthSession.expires_at < before)
+        )
+        await self.session.commit()
+        return int(result.rowcount or 0)

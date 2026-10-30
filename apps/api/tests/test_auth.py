@@ -4,6 +4,9 @@ import sqlite3
 from pathlib import Path
 
 import httpx
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from winnie_api.auth.service import AuthService
 from winnie_api.settings import Settings
 
 PASSWORD = "correct horse battery"
@@ -185,3 +188,39 @@ async def test_auth_routes_are_absent_when_disabled(
 ) -> None:
     response = await meeting_client.get("/api/v1/auth/me")
     assert response.status_code == 404
+
+
+async def test_cleanup_deletes_only_expired_sessions(
+    auth_client: httpx.AsyncClient,
+    auth_settings: Settings,
+) -> None:
+    await _register(auth_client, "alice")
+    login = await auth_client.post(
+        "/api/v1/auth/login",
+        json={"username": "alice", "password": PASSWORD},
+    )
+    assert login.status_code == 200
+
+    with sqlite3.connect(_database_path(auth_settings)) as connection:
+        connection.execute(
+            "update auth_sessions set expires_at = '2000-01-01 00:00:00' "
+            "where id = (select min(id) from auth_sessions)"
+        )
+        connection.commit()
+
+    engine = create_async_engine(auth_settings.resolve_database_url())
+    service = AuthService(
+        session_factory=async_sessionmaker(engine, expire_on_commit=False),
+        settings=auth_settings,
+    )
+    try:
+        deleted = await service.cleanup_expired_sessions()
+    finally:
+        await engine.dispose()
+
+    assert deleted == 1
+    with sqlite3.connect(_database_path(auth_settings)) as connection:
+        remaining = connection.execute(
+            "select count(*) from auth_sessions"
+        ).fetchone()[0]
+    assert remaining == 1
