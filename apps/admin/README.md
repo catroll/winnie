@@ -87,12 +87,14 @@ supplier endpoint is added and bound.
 The page groups records by **supplier** (DeepSeek, OpenAI, Qwen, Anthropic,
 Volcengine, fake). A supplier owns:
 
-- **endpoints** — protocol plus role (gateway route or internal provider);
-- **models** — the catalog shown in the feature model select and edited with
-  the **Models** button in the supplier header.
+- one **API** for internal model calls (base URL/key/protocol);
+- **models** — the catalog shown in the feature model select, synced from the
+  supplier `/models` API or edited with **Models**;
+- **gateway routes** — public proxy paths, shown under the supplier but never
+  used by a feature.
 
-Each feature selects one internal endpoint and optionally one of that supplier's
-models:
+Each feature selects exactly one **model**; the supplier is resolved from it.
+There is no provider/endpoint dropdown in the feature table:
 
 | Feature | What it drives |
 |---|---|
@@ -101,21 +103,23 @@ models:
 | Meeting translation | Non-local transcript segments |
 | Meeting minutes | Structured summary, decisions and action items |
 
-An OpenAI/Anthropic endpoint has a separate **Gateway route** switch. With it
-on, the endpoint is reachable at `/{name}/v1/...` and the client supplies the
-vendor key; with it off, the endpoint is internal-only and is called by the
-assistant or meetings with `api_key_env`. Seeded routes have no server-side key.
-A keyless OpenAI-compatible endpoint cannot serve an internal feature, so it is
-not listed in those feature dropdowns.
+A gateway route is a separate record with a `Gateway route` switch. It is
+reachable at `/{name}/v1/...` and forwards the client's vendor key; it is never
+a feature target. The supplier API is edited with **API** and called by the
+assistant/meetings with `api_key_env`. Seeded routes have no server-side key.
+
+**Sync models** fetches the supplier's `/models` list with that key; **Models**
+is the manual fallback. Supplier marks are inline SVGs adapted from the WLB
+newapi `vendor-icons.js` catalog.
 
 The **Model runtime** card edits the shared timeout, token cap, temperature,
-retry and chunk limits. They apply to the next call. A supplier/model/endpoint
-change takes effect on the next model call; no API restart is needed. Deleting an
-endpoint unbinds its features; there is no `config.yaml` fallback, so choose a
-replacement before using them again. The page never receives or stores a vendor
-key: `api_key_env` is the *name* of an environment variable, and the table shows
-whether it is currently set. The full model, first-start behaviour (including
-the `version: 1` → `2` → `3` migration) and the HTTP API are in
+retry and chunk limits. They apply to the next call. A model/supplier change
+takes effect on the next model call; no API restart is needed. Removing the
+supplier API unbinds its features; there is no `config.yaml` fallback, so choose
+a replacement before using them again. The page never receives or stores a
+vendor key: `api_key_env` is the *name* of an environment variable, and the
+header shows whether it is currently set. The full model, first-start behaviour
+(including the `version: 1` → `2` → `3` → `4` migration) and the HTTP API are in
 [docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## Quick start

@@ -328,6 +328,8 @@ export type AIProviderKind = 'openai' | 'anthropic' | 'volcengine_asr' | 'fake';
 export interface AIModel {
   id: string;
   label: string;
+  owned_by: string;
+  created: number | null;
   context_window: number | null;
   max_output_tokens: number | null;
   notes: string;
@@ -338,6 +340,13 @@ export interface AIVendor {
   label: string;
   models: AIModel[];
   integration_count: number;
+  gateway_count: number;
+  internal_integration_id: string;
+  kind: AIProviderKind | '';
+  base_url: string;
+  api_key_env: string;
+  api_key_present: boolean;
+  enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -354,7 +363,6 @@ export interface AIIntegration {
   label: string;
   vendor: string;
   vendor_label: string;
-  role_label: string;
   kind: AIProviderKind;
   kind_label: string;
   base_url: string;

@@ -231,6 +231,13 @@ export const api = {
     });
   },
 
+  syncAIVendor(vendorId: string): Promise<{ vendor: AIVendor }> {
+    return request(
+      `/api/v1/ai/vendors/${encodeURIComponent(vendorId)}/models/sync`,
+      { method: 'POST' },
+    );
+  },
+
   createAIIntegration(
     input: AIIntegrationInput,
   ): Promise<{ integration: AIIntegration }> {
@@ -261,8 +268,8 @@ export const api = {
 
   setAIFeature(
     feature: string,
-    binding: { integration_id: string | null; model: string },
-  ): Promise<{ feature: string; binding: { integration_id: string | null; model: string } }> {
+    binding: { vendor: string; model: string },
+  ): Promise<{ feature: string; binding: { vendor: string; model: string } }> {
     return request(`/api/v1/ai/features/${encodeURIComponent(feature)}`, {
       method: 'PUT',
       body: binding,
