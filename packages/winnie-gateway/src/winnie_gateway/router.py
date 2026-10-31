@@ -46,6 +46,11 @@ def _get_route(request: Request, route_name: str) -> Route:
     return route
 
 
+def _usage(request: Request):
+    """The host's usage ledger, when recording is enabled."""
+    return getattr(request.app.state, "usage_ledger", None)
+
+
 def _recorder(request: Request, route: Route) -> InteractionRecorder:
     cache: dict[str, InteractionRecorder] = request.app.state.recorders
     if route.name not in cache:
@@ -144,6 +149,7 @@ async def chat_completions(route: str, request: Request):
         recorder=_recorder(request, r),
         request=request,
         body=body,
+        usage=_usage(request),
     )
 
 
@@ -173,4 +179,5 @@ async def anthropic_messages(route: str, request: Request):
         request=request,
         body=body,
         default_version=request.app.state.gateway.anthropic_version,
+        usage=_usage(request),
     )

@@ -40,6 +40,30 @@ ai:
   enabled: true
   path: ../../data/ai.yaml
 
+# Local LLM usage ledger. Every internal model call (assistant, translation,
+# minutes) and every call through the gateway appends one JSON line, grouped
+# by UTC month under the root. The console's "LLM usage" page reads it and
+# shows token classes, latency, estimated cost and provider balances.
+usage:
+  enabled: true
+  root: ../../data/usage
+  # Currency for the price table below. Provider-reported costs (OpenRouter
+  # returns one with the response) are assumed to use the same unit.
+  currency: USD
+  # Estimated price per 1M tokens, keyed by model name. Add
+  # "provider/model" to price the same model differently per provider, or
+  # "*" as a last-resort fallback. No prices are shipped because vendor prices
+  # and peak/off-peak rates change; an unlisted model is counted as unpriced
+  # rather than estimated at zero. Example (DeepSeek peak rates, 2026-11):
+  #   deepseek-flash:
+  #     input: 0.30
+  #     output: 1.20
+  #     cached_input: 0.006
+  prices: {}
+  # Provider balance snapshots are cached this long; Refresh forces a query.
+  balance_ttl_seconds: 300
+  balance_timeout_seconds: 8
+
 # Account system. Enabling auth creates users and sessions in the database.
 auth:
   enabled: true

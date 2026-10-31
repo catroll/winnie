@@ -3,6 +3,7 @@
 .cache/
 **/logs/
 data/logs/
+data/usage/
 data/*.db
 data/*.db-*
 data/meetings/

@@ -5,10 +5,17 @@ from __future__ import annotations
 import os
 
 from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
+from winnie_core.usage.ledger import UsageSink
 from winnie_core.config import LLMConfig
 
 
-def build_llm(config: LLMConfig) -> OpenAICompatibleLLM:
+def build_llm(
+    config: LLMConfig,
+    *,
+    usage: UsageSink | None = None,
+    capability: str = "",
+    provider: str = "config:llm",
+) -> OpenAICompatibleLLM:
     api_key = os.environ.get(config.api_key_env, "")
     if not api_key:
         raise RuntimeError(
@@ -24,4 +31,7 @@ def build_llm(config: LLMConfig) -> OpenAICompatibleLLM:
         temperature=config.temperature,
         max_retries=config.max_retries,
         retry_backoff_seconds=config.retry_backoff_seconds,
+        usage=usage,
+        capability=capability,
+        provider=provider,
     )

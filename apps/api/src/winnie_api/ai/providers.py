@@ -19,6 +19,7 @@ from winnie_assistant.fake import FakeChatModel
 from winnie_core.llm.base import ChatResult
 from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
 from winnie_core.types import AudioRef
+from winnie_core.usage.ledger import UsageSink
 from winnie_meetings.config import VolcengineASRConfig
 from winnie_meetings.integrations.asr.base import ASRProvider, ASRResult
 from winnie_meetings.integrations.asr.fake import FakeASRProvider, FakeRealtimeASR
@@ -92,6 +93,7 @@ def _build_openai(
     provider: ResolvedProvider,
     settings: Any,
     http: httpx.AsyncClient | None,
+    usage: UsageSink | None = None,
 ) -> OpenAICompatibleLLM:
     llm = settings.llm
     return OpenAICompatibleLLM(
@@ -104,6 +106,9 @@ def _build_openai(
         max_retries=llm.max_retries,
         retry_backoff_seconds=llm.retry_backoff_seconds,
         http=http,
+        usage=usage,
+        capability=provider.feature,
+        provider=provider.integration_name,
     )
 
 
@@ -117,10 +122,12 @@ class DynamicChatModel:
         settings: Any,
         ai: AISettingsService,
         http: httpx.AsyncClient | None,
+        usage: UsageSink | None = None,
     ) -> None:
         self.settings = settings
         self.ai = ai
         self.http = http
+        self.usage = usage
 
     @property
     def name(self) -> str:  # type: ignore[override]
@@ -139,7 +146,9 @@ class DynamicChatModel:
         if provider.kind == "fake":
             model: ChatModel = FakeChatModel()
         elif provider.kind == "openai":
-            model = _build_openai(provider, self.settings, self.http)
+            model = _build_openai(
+                provider, self.settings, self.http, self.usage
+            )
         else:
             raise AIProviderError(
                 f"assistant.chat cannot use a {provider.kind} integration; "
@@ -154,10 +163,12 @@ class DynamicTranslator:
         settings: Any,
         ai: AISettingsService,
         http: httpx.AsyncClient | None,
+        usage: UsageSink | None = None,
     ) -> None:
         self.settings = settings
         self.ai = ai
         self.http = http
+        self.usage = usage
 
     async def translate(
         self,
@@ -171,7 +182,7 @@ class DynamicTranslator:
             implementation: Translator = FakeTranslator()
         elif provider.kind == "openai":
             implementation = LLMTranslator(
-                _build_openai(provider, self.settings, self.http),
+                _build_openai(provider, self.settings, self.http, self.usage),
                 max_batch_chars=self.settings.llm.translation_batch_chars,
             )
         else:
@@ -188,10 +199,12 @@ class DynamicSummarizer:
         settings: Any,
         ai: AISettingsService,
         http: httpx.AsyncClient | None,
+        usage: UsageSink | None = None,
     ) -> None:
         self.settings = settings
         self.ai = ai
         self.http = http
+        self.usage = usage
 
     async def summarize(self, transcript: TranscriptView) -> MinutesDraft:
         provider = self.ai.resolve("meetings.summarize")
@@ -199,7 +212,7 @@ class DynamicSummarizer:
             implementation: Summarizer = FakeSummarizer()
         elif provider.kind == "openai":
             implementation = LLMSummarizer(
-                _build_openai(provider, self.settings, self.http),
+                _build_openai(provider, self.settings, self.http, self.usage),
                 max_chunk_chars=self.settings.llm.summary_chunk_chars,
             )
         else:

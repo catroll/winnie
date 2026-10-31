@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 from winnie_core.llm.base import ChatResult, LLMCompletion, ToolCall
 from winnie_core.types import Usage
+from winnie_core.usage.event import UsageEvent
+from winnie_core.usage.ledger import UsageSink
+from winnie_core.usage.tokens import parse_usage
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,9 @@ class OpenAICompatibleLLM:
         max_retries: int = 2,
         retry_backoff_seconds: float = 1.0,
         http: httpx.AsyncClient | None = None,
+        usage: UsageSink | None = None,
+        capability: str = "",
+        provider: str = "",
     ) -> None:
         if not base_url or not api_key or not model or model == "fake":
             raise ValueError(
@@ -56,6 +64,9 @@ class OpenAICompatibleLLM:
         self.max_retries = max_retries
         self.retry_backoff_seconds = retry_backoff_seconds
         self.http = http
+        self.usage = usage
+        self.capability = capability
+        self.provider = provider
 
     async def complete(self, messages: list[dict[str, Any]]) -> LLMCompletion:
         result = await self.chat(messages)
@@ -71,11 +82,20 @@ class OpenAICompatibleLLM:
         tools: list[dict[str, Any]] | None = None,
     ) -> ChatResult:
         """Return one assistant turn, including any tool calls it requested."""
+        started = time.perf_counter()
         client = self.http or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds, connect=30.0)
         )
         try:
             body = await self._post_with_retries(client, messages, tools)
+        except Exception as exc:
+            self._record(
+                started,
+                provider_model=self.model,
+                error=exc,
+                tools=tools,
+            )
+            raise
         finally:
             if self.http is None:
                 await client.aclose()
@@ -83,7 +103,20 @@ class OpenAICompatibleLLM:
         text = _message_text_or_none(body)
         tool_calls = _tool_calls(body)
         if not text and not tool_calls:
+            self._record(
+                started,
+                provider_model=str(body.get("model") or self.model),
+                error=RuntimeError("LLM response contained no text content"),
+                tools=tools,
+            )
             raise RuntimeError("LLM response contained no text content")
+        self._record(
+            started,
+            provider_model=str(body.get("model") or self.model),
+            usage=body.get("usage"),
+            tools=tools,
+            tool_calls=len(tool_calls),
+        )
         return ChatResult(
             text=text,
             tool_calls=tool_calls,
@@ -91,6 +124,42 @@ class OpenAICompatibleLLM:
             usage=_usage(body),
             message=_assistant_message(body),
         )
+
+    def _record(
+        self,
+        started: float,
+        *,
+        provider_model: str,
+        usage: Any = None,
+        error: BaseException | None = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_calls: int | None = None,
+    ) -> None:
+        """Append one ledger event. Recording never changes the call's result."""
+        if self.usage is None:
+            return
+        detail: dict[str, Any] = {"tools_offered": bool(tools)}
+        if tool_calls is not None:
+            detail["tool_calls"] = tool_calls
+        error_text = ""
+        if error is not None:
+            error_text = f"{type(error).__name__}: {error}"[:500]
+        event = UsageEvent.create(
+            tokens=parse_usage(usage) if usage is not None else None,
+            at=datetime.now(timezone.utc),
+            capability=self.capability or "internal.llm",
+            source="internal",
+            provider=self.provider,
+            model=provider_model,
+            status="error" if error is not None else "ok",
+            latency_ms=int((time.perf_counter() - started) * 1000),
+            error=error_text,
+            detail=detail,
+        )
+        try:
+            self.usage.record(event)
+        except Exception:  # noqa: BLE001 - telemetry must not break a call
+            logger.exception("failed to record LLM usage")
 
     async def _post_with_retries(
         self,

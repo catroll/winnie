@@ -10,6 +10,7 @@ import httpx
 
 from winnie_core.config import LLMConfig
 from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
+from winnie_core.usage.ledger import UsageSink
 
 from winnie_assistant.agent import AssistantAgent, ChatModel
 from winnie_assistant.config import AssistantConfig
@@ -38,10 +39,11 @@ def build_assistant_service(
     clock=None,
     model: ChatModel | None = None,
     model_name: str = "",
+    usage: UsageSink | None = None,
 ) -> AssistantService:
     timezone = _timezone(config.timezone)
     resolved_name = model_name or (config.model or llm.model or "fake").strip()
-    resolved_model = model or _build_model(resolved_name, llm, http)
+    resolved_model = model or _build_model(resolved_name, llm, http, usage)
     search = _build_search(config, http)
     index = (
         IndexClient(
@@ -135,7 +137,10 @@ def build_assistant_service(
 
 
 def _build_model(
-    model_name: str, llm: LLMConfig, http: httpx.AsyncClient
+    model_name: str,
+    llm: LLMConfig,
+    http: httpx.AsyncClient,
+    usage: UsageSink | None,
 ) -> ChatModel:
     if model_name == "fake":
         return FakeChatModel()
@@ -157,6 +162,8 @@ def _build_model(
         max_retries=llm.max_retries,
         retry_backoff_seconds=llm.retry_backoff_seconds,
         http=http,
+        usage=usage,
+        capability="assistant.chat",
     )
 
 

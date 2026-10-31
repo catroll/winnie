@@ -9,9 +9,15 @@ import httpx
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
+from winnie_core.usage.ledger import UsageSink
 from winnie_gateway.forward import forward_json_post, streaming_sse_response
 from winnie_gateway.record import InteractionRecorder, client_request_url
 from winnie_gateway.routes import Route
+from winnie_gateway.usage import (
+    extract_json_usage,
+    extract_stream_usage,
+    usage_observer,
+)
 
 
 def anthropic_upstream_headers(request: Request, *, default_version: str) -> dict[str, str]:
@@ -58,10 +64,19 @@ async def proxy_messages(
     request: Request,
     body: dict[str, Any],
     default_version: str,
+    usage: UsageSink | None = None,
 ) -> Response:
     stream = bool(body.get("stream"))
     upstream_url = f"{route.api_base()}/messages"
     headers = anthropic_upstream_headers(request, default_version=default_version)
+    observer = usage_observer(
+        usage=usage,
+        route=route,
+        model=str(body.get("model") or ""),
+        protocol="anthropic",
+        stream=stream,
+        endpoint="/v1/messages",
+    )
     prefix = recorder.begin(
         client_url=client_request_url(request),
         upstream_url=upstream_url,
@@ -87,6 +102,8 @@ async def proxy_messages(
             recorder=recorder,
             prefix=prefix,
             extract_text=_extract_anthropic_stream_text,
+            extract_tokens=extract_stream_usage,
+            on_outcome=observer,
         )
 
     return await forward_json_post(
@@ -97,6 +114,8 @@ async def proxy_messages(
         recorder=recorder,
         prefix=prefix,
         error_envelope=_anthropic_error,
+        extract_tokens=extract_json_usage,
+        on_outcome=observer,
     )
 
 

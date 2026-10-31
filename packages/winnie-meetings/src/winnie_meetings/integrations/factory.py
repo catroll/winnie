@@ -22,6 +22,7 @@ from winnie_meetings.integrations.asr.volcengine_stream import (
     VolcengineRealtimeASR,
 )
 from winnie_core.llm.factory import build_llm
+from winnie_core.usage.ledger import UsageSink
 from winnie_meetings.integrations.summarize.base import Summarizer
 from winnie_meetings.integrations.summarize.fake import FakeSummarizer
 from winnie_meetings.integrations.summarize.llm import LLMSummarizer
@@ -72,13 +73,15 @@ def build_realtime_asr_provider(config: MeetingsConfig) -> RealtimeASRProvider:
 def build_translator(
     config: MeetingsConfig,
     llm: LLMConfig,
+    *,
+    usage: UsageSink | None = None,
 ) -> Translator:
     name = config.translator
     if name == "fake":
         return FakeTranslator()
     if name == "openai_compatible":
         return LLMTranslator(
-            build_llm(llm),
+            build_llm(llm, usage=usage, capability="meetings.translate"),
             max_batch_chars=llm.translation_batch_chars,
         )
     raise ValueError(
@@ -90,13 +93,15 @@ def build_translator(
 def build_summarizer(
     config: MeetingsConfig,
     llm: LLMConfig,
+    *,
+    usage: UsageSink | None = None,
 ) -> Summarizer:
     name = config.summarizer
     if name == "fake":
         return FakeSummarizer()
     if name == "openai_compatible":
         return LLMSummarizer(
-            build_llm(llm),
+            build_llm(llm, usage=usage, capability="meetings.summarize"),
             max_chunk_chars=llm.summary_chunk_chars,
         )
     raise ValueError(

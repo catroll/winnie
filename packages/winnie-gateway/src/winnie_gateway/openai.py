@@ -9,9 +9,15 @@ import httpx
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 
+from winnie_core.usage.ledger import UsageSink
 from winnie_gateway.forward import forward_json_post, streaming_sse_response
 from winnie_gateway.record import InteractionRecorder, client_request_url
 from winnie_gateway.routes import Route
+from winnie_gateway.usage import (
+    extract_json_usage,
+    extract_stream_usage,
+    usage_observer,
+)
 
 
 def openai_upstream_headers(request: Request) -> dict[str, str]:
@@ -47,10 +53,19 @@ async def proxy_chat_completions(
     recorder: InteractionRecorder,
     request: Request,
     body: dict[str, Any],
+    usage: UsageSink | None = None,
 ) -> Response:
     stream = bool(body.get("stream"))
     upstream_url = f"{route.api_base()}/chat/completions"
     headers = openai_upstream_headers(request)
+    observer = usage_observer(
+        usage=usage,
+        route=route,
+        model=str(body.get("model") or ""),
+        protocol="openai",
+        stream=stream,
+        endpoint="/v1/chat/completions",
+    )
     prefix = recorder.begin(
         client_url=client_request_url(request),
         upstream_url=upstream_url,
@@ -75,6 +90,8 @@ async def proxy_chat_completions(
             recorder=recorder,
             prefix=prefix,
             extract_text=_extract_openai_stream_text,
+            extract_tokens=extract_stream_usage,
+            on_outcome=observer,
         )
 
     return await forward_json_post(
@@ -87,6 +104,8 @@ async def proxy_chat_completions(
         error_envelope=lambda msg: {
             "error": {"message": msg, "type": "proxy_error"},
         },
+        extract_tokens=extract_json_usage,
+        on_outcome=observer,
     )
 
 

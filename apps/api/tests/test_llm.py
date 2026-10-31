@@ -284,7 +284,7 @@ async def test_pipeline_uses_llm_adapters(meeting_settings, monkeypatch) -> None
 
     llm_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
-    def fake_build_llm(_settings):
+    def fake_build_llm(_settings, **_kwargs):
         return OpenAICompatibleLLM(
             base_url="https://llm.example/v1",
             api_key="secret",

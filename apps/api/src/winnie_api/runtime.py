@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from winnie_core.auth.models import AuthSession, LoginThrottle, User  # noqa: F401
 from winnie_core.auth.service import AuthService
 from winnie_core.db import create_all, create_engine, create_session_factory
+from winnie_core.usage.ledger import UsageSink
 from winnie_meetings.factory import build_meeting_service
 from winnie_meetings.models import Meeting  # noqa: F401  (metadata)
 from winnie_meetings.service import MeetingService
@@ -57,6 +58,7 @@ def build_runtime(
     *,
     ai: AISettingsService | None = None,
     http: httpx.AsyncClient | None = None,
+    usage: UsageSink | None = None,
 ) -> AppRuntime | None:
     if not (settings.auth.enabled or settings.meetings.enabled):
         return None
@@ -85,11 +87,16 @@ def build_runtime(
             asr=DynamicASRProvider(settings, ai, http) if ai is not None else None,
             realtime_asr=DynamicRealtimeASR(settings, ai) if ai is not None else None,
             translator=(
-                DynamicTranslator(settings, ai, http) if ai is not None else None
+                DynamicTranslator(settings, ai, http, usage)
+                if ai is not None
+                else None
             ),
             summarizer=(
-                DynamicSummarizer(settings, ai, http) if ai is not None else None
+                DynamicSummarizer(settings, ai, http, usage)
+                if ai is not None
+                else None
             ),
+            usage=usage,
         )
         if settings.meetings.enabled
         else None

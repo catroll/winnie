@@ -21,6 +21,7 @@ from winnie_knowledge.note import MeetingNoteWriter
 from winnie_meetings.service import MeetingService
 from winnie_core.storage import LocalStorage
 from winnie_core.config import JobsConfig, LLMConfig
+from winnie_core.usage.ledger import UsageSink
 from winnie_meetings.config import MeetingsConfig
 
 
@@ -36,6 +37,7 @@ def build_meeting_service(
     realtime_asr: RealtimeASRProvider | None = None,
     translator: Translator | None = None,
     summarizer: Summarizer | None = None,
+    usage: UsageSink | None = None,
 ) -> MeetingService:
     service = MeetingService(
         session_factory=session_factory,
@@ -49,10 +51,14 @@ def build_meeting_service(
             else build_realtime_asr_provider(config)
         ),
         translator=(
-            translator if translator is not None else build_translator(config, llm)
+            translator
+            if translator is not None
+            else build_translator(config, llm, usage=usage)
         ),
         summarizer=(
-            summarizer if summarizer is not None else build_summarizer(config, llm)
+            summarizer
+            if summarizer is not None
+            else build_summarizer(config, llm, usage=usage)
         ),
         note_writer=MeetingNoteWriter(notes_root),
     )

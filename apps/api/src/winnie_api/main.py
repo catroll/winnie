@@ -16,6 +16,7 @@ from winnie_assistant.factory import build_assistant_service
 from winnie_core.auth.capability import capability as auth_capability
 from winnie_core.capability import Capability, WinnieFramework
 from winnie_core.jobs.queue import ArqJobQueue
+from winnie_core.usage.ledger import UsageLedger
 from winnie_gateway.capability import capability as gateway_capability
 from winnie_meetings.capability import capability as meetings_capability
 
@@ -26,6 +27,8 @@ from winnie_api.ai.store import AISettingsService
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.settings import Settings, load_settings
+from winnie_api.usage.balances import BalanceService
+from winnie_api.usage.router import router as usage_router
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,11 @@ def create_app(
     """Build the application from independently registered capabilities."""
     resolved = settings or load_settings()
     owns_http = http is None
+    # One ledger for the whole process: internal model calls and gateway
+    # traffic append to the same files, so the console can report both.
+    usage_ledger = UsageLedger(
+        resolved.resolve_usage_root(), enabled=resolved.usage.enabled
+    )
     ai_settings = AISettingsService(resolved) if resolved.ai.enabled else None
     if ai_settings is not None:
         # Seed or validate the file before any service is built: a broken
@@ -50,6 +58,17 @@ def create_app(
         resolved,
         ai=ai_settings,
         http=http_client,
+        usage=usage_ledger,
+    )
+    balance_service = (
+        BalanceService(
+            ai=ai_settings,
+            http=http_client,
+            ttl_seconds=resolved.usage.balance_ttl_seconds,
+            timeout_seconds=resolved.usage.balance_timeout_seconds,
+        )
+        if ai_settings is not None
+        else None
     )
 
     @asynccontextmanager
@@ -61,6 +80,9 @@ def create_app(
             else app.state.gateway.route_table()
         )
         app.state.ai_settings = ai_settings
+        app.state.usage_ledger = usage_ledger
+        app.state.usage_prices = resolved.usage.price_table()
+        app.state.usage_balances = balance_service
         app.state.log_root = resolved.resolve_log_root()
         app.state.recorders = {}
         app.state.default_user_id = resolved.meetings.default_user_id
@@ -78,7 +100,9 @@ def create_app(
         if resolved.assistant.enabled:
             try:
                 model = (
-                    DynamicChatModel(resolved, ai_settings, http_client)
+                    DynamicChatModel(
+                        resolved, ai_settings, http_client, usage_ledger
+                    )
                     if ai_settings is not None
                     else None
                 )
@@ -90,6 +114,7 @@ def create_app(
                     http=http_client,
                     model=model,
                     model_name=getattr(model, "name", "") if model is not None else "",
+                    usage=usage_ledger,
                 )
                 await assistant.startup()
                 app.state.assistant_service = assistant
@@ -123,6 +148,9 @@ def create_app(
         app.include_router(index_router, prefix="/api/v1")
     if resolved.ai.enabled:
         app.include_router(ai_router, prefix="/api/v1")
+    # Recording telemetry is a host concern: it spans the gateway and every
+    # capability's internal model calls, so it is not owned by one capability.
+    app.include_router(usage_router, prefix="/api/v1")
     app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")
