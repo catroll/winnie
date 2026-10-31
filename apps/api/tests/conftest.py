@@ -16,6 +16,7 @@ from winnie_assistant.config import (
     MemoryConfig,
     SearchConfig,
     TasksConfig,
+    WeatherConfig,
 )
 from winnie_core.config import AuthConfig, JobsConfig
 from winnie_gateway.config import RouteConfig
@@ -260,6 +261,7 @@ def assistant_settings(tmp_path: Path) -> Settings:
             index=IndexConfig(enabled=False),
             memory=MemoryConfig(auto_distill=False),
             tasks=TasksConfig(enabled=True, tick_seconds=60),
+            weather=WeatherConfig(enabled=False),
         ),
     )
 

@@ -34,6 +34,7 @@ from winnie_assistant.memory import MemoryStore
 from winnie_assistant.news import NewsGateway
 from winnie_assistant.scheduler import AssistantScheduler, TaskDefinitionError
 from winnie_assistant.search import SearchProvider
+from winnie_assistant.weather import WeatherError, WeatherService
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +471,23 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "weather_forecast",
+            "description": (
+                "Read the configured location's forecast for today and tomorrow: "
+                "rain or snow, precipitation probability, the temperature trend "
+                "and any umbrella or clothing advice. Use it when the user asks "
+                "about the weather, whether to take an umbrella, or what to wear."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -512,6 +530,7 @@ class ToolBox:
         fetch_timeout_seconds: float = 20.0,
         local: LocalExecutor | None = None,
         news: NewsGateway | None = None,
+        weather: WeatherService | None = None,
     ) -> None:
         self.search = search
         self.index = index
@@ -523,10 +542,15 @@ class ToolBox:
         self.fetch_timeout_seconds = fetch_timeout_seconds
         self.local = local
         self.news = news
+        self.weather = weather
 
     @property
     def has_news_tools(self) -> bool:
         return self.news is not None
+
+    @property
+    def has_weather(self) -> bool:
+        return self.weather is not None
 
     @property
     def has_local_tools(self) -> bool:
@@ -586,6 +610,8 @@ class ToolBox:
                 output = await self._web_search(arguments)
             elif name == "fetch_page":
                 output = await self._fetch_page(arguments)
+            elif name == "weather_forecast":
+                output = await self._weather_forecast()
             elif name == "search_documents":
                 output = await self._search_documents(arguments)
             elif name == "read_document":
@@ -635,6 +661,15 @@ class ToolBox:
             lines.append(f"   {result.url}")
             lines.append(f"   {result.snippet}")
         return "\n".join(lines)
+
+    async def _weather_forecast(self) -> str:
+        if self.weather is None:
+            raise ToolError("weather is disabled")
+        try:
+            check = await self.weather.check()
+        except WeatherError as exc:
+            raise ToolError(str(exc)) from exc
+        return check.message
 
     async def _fetch_page(self, arguments: dict[str, Any]) -> str:
         url = str(arguments.get("url") or "").strip()

@@ -362,7 +362,7 @@ Working:
   `packages/winnie-chat`; the page at `/api/v1/assistant/ui` is phone-sized and
   needs no build step, and the console at `/chat` is the desktop surface.
 - The chat engine selects enabled skills and builds the system prompt from their
-  instructions. Six skills are registered: core, web, documents (the local
+  instructions. Seven skills are registered: core, web, weather, documents (the local
   index), memory, tasks and local (files/commands). The registry persists
   enable/disable state in `skills/skills.json`; the assistant only creates the
   conversation and records the blocks.
@@ -391,6 +391,11 @@ Working:
   (`schedule_task`, `list_tasks`, `cancel_task`); the model must confirm the
   schedule and content before creating one. Task runs cannot create tasks.
 - Web tools: `web_search` (Bing RSS) and `fetch_page` (SSRF-guarded).
+- The `weather` skill is on by default: `weather_forecast` answers weather
+  questions in chat, and a deterministic daily watch (07:00) fetches Open-Meteo
+  and records a notice (`source: weather`) only when the umbrella, clothing or
+  severe-weather advice changed. The console's Skills page toggles the tool and
+  the watch together.
 
 Verified:
 
@@ -403,6 +408,9 @@ Verified:
 - A manual task run finished in 6.7 s, wrote a task-sourced conversation with
   tool blocks and one `runs.jsonl` line; after a restart the task, next run,
   conversations and profile survived.
+- A live weather check returned in 0.9 s with the `rain` and
+  `temperature_drop` advisories; the notice asked for an umbrella and an extra
+  layer, and a real model turn called `weather_forecast` and cited Open-Meteo.
 - A disposable service with a scripted model exercised the local tools:
   `read_file`/`write_file` worked, a command stayed pending until the next
   "确认" turn, and both audit files were written.
@@ -469,12 +477,15 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **205 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **221 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
 | Tasks created in chat | DeepSeek turn, confirmation, `schedule_task` | `tasks/tasks.json` with model-written prompt and next run 07:30 |
 | Task execution | Manual run of the chat-created task | 6.7 s, `ok`, task conversation and one `runs.jsonl` line |
+| Weather watch | `POST /api/v1/assistant/weather/check` + Open-Meteo | 0.9 s; rain + temperature drop; notice conversation `source: weather`, assistant-only opening block |
+| Weather in chat | DeepSeek turn asking about tomorrow | called `weather_forecast`; umbrella and clothing advice with the source |
+| Weather feature toggle | `PUT /api/v1/assistant/skills/weather` | removed and restored the tool and watcher; state persisted in `skills/skills.json` |
 | Live file ASR | Doubao recording-file 2.0 on real audio | `ready`, one segment |
 | Live streaming ASR | Doubao SAUC 2.0 via the WebSocket | `ready` → partial → `你好。` → `final` |
 | Realtime final pass | `/meetings/{id}/audio` + `/transcribe` on a `realtime` meeting | `uploaded` → `ready` |
@@ -488,7 +499,7 @@ Open:
 | Local assistant tools | Disposable service with a scripted model | `read_file`/`write_file`; command pending until the next "确认" turn; file and command audit lines |
 | Local LLM review | `winnie-local` test suite | Whitelisted reads skipped the reviewer; non-whitelisted write/command allowed or denied; malformed JSON, timeout and provider errors denied; denied actions changed nothing |
 | Chat engine and skills | `winnie-chat` and API tests | Registry persistence and duplicate rejection; enabled-only schemas and prompt; disabled-tool rejection; scheduled filtering; skills list/toggle/persistence |
-| Admin skills page | TypeScript/Vite build + Firefox production preview | Page typechecks and builds; six skills listed with instructions; unavailable index and always-on core; web toggle persisted; light/dark/mobile |
+| Admin skills page | TypeScript/Vite build + Firefox production preview | Page typechecks and builds; seven skills listed with instructions; unavailable index and always-on core; web toggle persisted; light/dark/mobile |
 | Admin AI suppliers page | Firefox against a disposable API and `ai.yaml` | Fresh seed left model features unbound; DeepSeek gateway routes were grouped under one supplier; added a model through **Models**; created `ui-llm`, rebound `assistant.chat` (`source=admin`), deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
 | AI registry migration | `pytest` against hand-written v1/v2/v3 files | v1 split into gateway + internal API; v2 grouped under suppliers and collected models; v3 converted bindings to `{vendor, model}`; v4 removed the fake supplier; rewritten `version: 5` |
 | News pipeline | `pytest packages/winnie-news/tests` | 81 passed; six stages, fake model, file store, retry and duplicate-attach paths |

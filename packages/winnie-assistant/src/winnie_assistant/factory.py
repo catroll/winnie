@@ -34,6 +34,7 @@ from winnie_assistant.search import BingRSSSearch, FakeSearchProvider, SearchPro
 from winnie_assistant.service import AssistantService
 from winnie_assistant.skills import build_skills
 from winnie_assistant.tools import ToolBox
+from winnie_assistant.weather import WeatherService, WeatherWatch
 
 
 def build_assistant_service(
@@ -67,6 +68,12 @@ def build_assistant_service(
     commands = _build_commands(config, workspace, root)
     local = _build_local(
         config, root, workspace, commands, resolved_model, resolved_name
+    )
+
+    weather = (
+        WeatherService(config.weather, http=http, timezone=timezone)
+        if config.weather.enabled
+        else None
     )
 
     store = ConversationStore(root / "conversations")
@@ -121,6 +128,7 @@ def build_assistant_service(
         max_output_chars=config.max_tool_output_chars,
         local=local,
         news=news,
+        weather=weather,
     )
     registry = SkillRegistry(
         build_skills(toolbox),
@@ -131,6 +139,21 @@ def build_assistant_service(
         model=resolved_model,
         max_tool_rounds=config.max_tool_rounds,
         max_tool_output_chars=config.max_tool_output_chars,
+    )
+    weather_watch = (
+        WeatherWatch(
+            config=config.weather,
+            service=weather,
+            store=store,
+            registry=registry,
+            timezone=timezone,
+            state_path=root / ".state" / "weather.json",
+            http=http,
+            clock=clock,
+            tick_seconds=config.weather.tick_seconds,
+        )
+        if weather is not None
+        else None
     )
     agent = AssistantAgent(
         store=store,
@@ -154,6 +177,7 @@ def build_assistant_service(
         model_name=resolved_name,
         search=search,
         index=index,
+        weather_watch=weather_watch,
         timezone=timezone,
         clock=clock,
     )

@@ -166,6 +166,25 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+  # Default weather feature: a daily forecast check that records an umbrella,
+  # clothing or severe-weather notice only when the advice changed. The weather
+  # skill in the admin console turns both the chat tool and this watcher off.
+  weather:
+    enabled: true
+    location: 上海
+    latitude: 31.2304
+    longitude: 121.4737
+    # "every 3h" is also valid; duplicate advice is not sent twice a day.
+    schedule: daily 07:00
+    webhook: ""
+    rain_probability: 50
+    temperature_delta: 5
+    heat_threshold: 35
+    cold_threshold: 0
+    wind_threshold: 39
+    timeout_seconds: 15
+    webhook_timeout_seconds: 10
+    tick_seconds: 30
   # Local file and command tools. They are opt-in and audited. File tools stay
   # inside the configured roots; commands run as the API user and are not an OS
   # sandbox. Both require an explicit confirmation for overwrites and commands.

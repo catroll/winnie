@@ -65,6 +65,29 @@ class TasksConfig(BaseModel):
     webhook_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
 
 
+class WeatherConfig(BaseModel):
+    """The default weather watch: forecast, advisories and a daily notice."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    location: str = "上海"
+    latitude: float = 31.2304
+    longitude: float = 121.4737
+    # Daily check by default; "every 3h" is also valid. Duplicate advisories
+    # on the same day are not sent again.
+    schedule: str = "daily 07:00"
+    webhook: str = ""
+    rain_probability: int = Field(default=50, ge=0, le=100)
+    temperature_delta: float = Field(default=5.0, ge=1.0, le=20.0)
+    heat_threshold: float = Field(default=35.0, ge=20.0, le=50.0)
+    cold_threshold: float = Field(default=0.0, ge=-40.0, le=20.0)
+    wind_threshold: float = Field(default=39.0, ge=10.0, le=200.0)
+    timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
+    webhook_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
+    tick_seconds: float = Field(default=30.0, ge=5.0, le=600.0)
+
+
 class WorkspaceConfig(BaseModel):
     """Local files the assistant may inspect and change.
 
@@ -125,6 +148,7 @@ class AssistantConfig(BaseModel):
     index: IndexConfig = Field(default_factory=IndexConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    weather: WeatherConfig = Field(default_factory=WeatherConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     exec: ExecConfig = Field(default_factory=ExecConfig)
     local: LocalConfig = Field(default_factory=LocalConfig)

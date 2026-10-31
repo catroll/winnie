@@ -288,6 +288,7 @@ Skills are named bundles of tools, prompt instructions, permissions and policy.
 |---|---|---|
 | `core` | — | Persona and general rules; always on, not toggleable |
 | `web` | `web_search`, `fetch_page` | Bing RSS and the SSRF-guarded page fetcher |
+| `weather` | `weather_forecast` | Open-Meteo forecast, rules and the daily weather watch |
 | `documents` | `search_documents`, `read_document` | the `winnie-index` daemon |
 | `memory` | `remember` | `profile/*.md` |
 | `tasks` | `schedule_task`, `list_tasks`, `cancel_task` | `tasks/tasks.json`; chat only |
@@ -299,6 +300,7 @@ Tools and their inputs:
 |---|---|---|---|
 | web | `web_search` | `query`, `limit?` | numbered title / URL / snippet list |
 | web | `fetch_page` | `url` | readable text, truncated |
+| weather | `weather_forecast` | — | today/tomorrow forecast with umbrella, clothing, heat, wind and severe-weather advice |
 | documents | `search_documents` | `query`, `limit?` | `path:line-range`, heading, snippet, mtime |
 | documents | `read_document` | `path`, `from_line?`, `lines?` | the current text with a line header |
 | memory | `remember` | `category`, `text` | confirmation, or an error for an unknown category |
@@ -386,7 +388,79 @@ it when there are real branches (planner, subagents, retries by step). Moving
 the loop out of the assistant is also what makes "chat" a module rather than a
 side effect of the assistant's tool code.
 
-## 7. Scheduled tasks, managed in conversation
+## 7. Weather watch
+
+The weather watch is the first feature that is on by default. It has two halves,
+and the `weather` skill owns both:
+
+- `weather_forecast` lets the model answer "do I need an umbrella?" with the
+  same numbers and advice the watcher uses.
+- a deterministic daily check (07:00 by default) fetches the forecast and, only
+  when the advice changed since the last check, records a notice and optionally
+  POSTs a webhook.
+
+No model call is involved in the watcher. A daily check costs one HTTP request
+and cannot hallucinate a temperature.
+
+### Rules
+
+| Signal | Condition | Advice |
+|---|---|---|
+| rain | WMO rain code, probability at or above `rain_probability`, or at least 0.5 mm | take an umbrella |
+| snow | snow code or any snowfall | slippery, keep warm |
+| temperature drop | tomorrow's max is `temperature_delta` or more below today's | add clothes |
+| temperature rise | tomorrow's max is `temperature_delta` or more above today's | adjust clothing |
+| heat | today's max at or above `heat_threshold` | heat and hydration |
+| cold | today's min at or below `cold_threshold` | keep warm |
+| wind | either day's max wind at or above `wind_threshold` km/h | falling objects |
+| severe | WMO 65/67/75/82/86/95–99 | stay indoors if possible, watch official alerts |
+
+Advisories are composed into one short Chinese message with the two-day
+forecast, the advice list and the data source. The language follows the
+conversation, not the code.
+
+### Delivery
+
+- A notice is a conversation of its own: `source: weather`, `channel: weather`,
+  and the first block is an `assistant` message. Nothing pretends the owner
+  spoke, and the console's history can filter on the channel.
+- The webhook body is
+  `{"kind": "weather", "location", "title", "text", "conversation_id"}`.
+- The fingerprint is the date plus the sorted advisory kinds. The same advice is
+  not delivered twice on one day; a new kind (for example a wind warning that
+  appears in the afternoon) is delivered even though the morning notice exists.
+- `.state/weather.json` holds `next_run`, `last_run`, `last_status`, the
+  fingerprint and the last conversation id, so a restart neither duplicates nor
+  replays a notice.
+- `POST /assistant/weather/check` runs the check for the console or a test. It
+  records a notice when there is advice, but it does **not** move `next_run`;
+  testing at 06:00 must not cancel that morning's scheduled run.
+
+### Administration
+
+The Skills page is the feature list. The weather row shows its title,
+description, tool, `network` permission and availability; disabling it removes
+the tool from the model and makes the watcher skip its next due check. The
+location, schedule and thresholds are deployment configuration, not per-turn
+settings; a wrong city is a `config.yaml` change, not a chat command.
+
+### Data source and limits
+
+The forecast comes from [Open-Meteo](https://open-meteo.com): no key, global,
+and one request for yesterday, today and tomorrow. The live check on this host
+took 0.9 s for Shanghai and produced the rain and temperature-drop advisories.
+
+Official Chinese warning feeds were tried and rejected: the keyless
+`weather.com.cn` alarm endpoints answer `403`, and the commercial providers need
+a key. The `severe` row is therefore derived from WMO codes and thresholds, and
+the message says "留意官方预警" rather than claiming an official alert. A real
+alert feed is a provider-port follow-up, not a rewrite: add an `alerts` source to
+`WeatherService` and merge its items into the advisory list.
+
+One deployment watches one location. Per-user or multi-city watches need a
+settings surface the console does not have yet.
+
+## 8. Scheduled tasks, managed in conversation
 
 There is no configuration file to edit. The user says what they want; the
 assistant restates the schedule and the content, waits for an explicit yes, and
@@ -456,7 +530,7 @@ user can read them back:
   first, filterable by task and paged 25 at a time, with start time, duration,
   result, conversation id and both execution and delivery errors.
 
-## 8. HTTP API
+## 9. HTTP API
 
 Mounted under `/api/v1`. Authentication reuses the bearer sessions; when
 accounts are disabled the local owner is used.
@@ -471,6 +545,8 @@ accounts are disabled the local owner is used.
 | GET | `/assistant/memory` | profile files with entry counts and the digest |
 | POST | `/assistant/memory/distill` | run the distillation now |
 | GET | `/assistant/documents/search?q=` | index-backed search with provenance |
+| GET | `/assistant/weather` | the weather watch's schedule and last result |
+| POST | `/assistant/weather/check` | run the check now, without moving its schedule |
 | GET | `/assistant/tasks` | tasks plus persisted next-run state |
 | GET | `/assistant/tasks/runs` | recorded executions, newest first; `task_id`, `limit`, `offset` |
 | POST | `/assistant/tasks/{id}/run` | run a task now, without moving its schedule |
@@ -490,7 +566,7 @@ chat turn on it with `409`, because appending a human message to an unattended
 record would mix two kinds of turn and would re-enable the task-management tools
 under a scheduled prompt.
 
-## 9. Configuration
+## 10. Configuration
 
 Added to `apps/api/config.yaml`; defaults shown in `AssistantConfig`.
 
@@ -525,6 +601,21 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+  weather:
+    enabled: true
+    location: 上海
+    latitude: 31.2304
+    longitude: 121.4737
+    schedule: daily 07:00
+    webhook: ""
+    rain_probability: 50
+    temperature_delta: 5
+    heat_threshold: 35
+    cold_threshold: 0
+    wind_threshold: 39
+    timeout_seconds: 15
+    webhook_timeout_seconds: 10
+    tick_seconds: 30
   local:
     review:
       enabled: true
@@ -588,7 +679,7 @@ The provider and model are selected on the AI suppliers page; a fresh registry
 leaves `assistant.chat` unbound until a supplier model is configured. See
 [ai-providers.md](./ai-providers.md).
 
-## 10. Security and privacy
+## 11. Security and privacy
 
 - **Local files and commands are opt-in.** Conversations, profile notes and run
   history are under `assistant.root`. The file tools are confined to
@@ -649,11 +740,15 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
 - **Search terms.** The default web provider is Bing's RSS output, intended for
   personal, non-commercial aggregation. A paid search API can replace it
   through the `SearchProvider` port.
+- **Weather data.** The weather watch sends only the configured coordinates and
+  timezone to Open-Meteo; it sends no conversation text, file content or
+  identity. A weather notice is stored like any other conversation and can be
+  indexed by the local index.
 - **Sync.** The storage directory is under `~/Documents`; if that tree is
   synced, conversations leave the machine through the sync service. This is a
   consequence of the requested location, stated in the directory's README.
 
-## 11. Delivery plan
+## 12. Delivery plan
 
 | Step | Deliverable | Exit criteria | Status |
 |---|---|---|---|
@@ -663,6 +758,7 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
 | A4 | Chat page, docs, verification | Phone-sized page sends and renders; suite passes | Done |
 | A5 | Local file tools, LLM review and confirmed commands | List/read/write under the workspace; non-whitelisted actions pass an LLM review and a later confirmation; audit, review and protected paths | Done |
 | A6 | Dedicated chat engine and skill registry | `winnie-chat` owns the loop/prompt/skills; the assistant only persists; admin lists, inspects and toggles skills | Done |
+| A7 | Default weather watch | Daily forecast check writes an umbrella/clothing notice only when advice changed; the skill exposes the same forecast to chat; admin can switch it off | Done |
 
 Follow-ups after this slice, in order:
 
@@ -676,7 +772,7 @@ Follow-ups after this slice, in order:
 6. Sandbox commands with bubblewrap/firejail or a container, and decide
    whether scheduled tasks may ever use local tools (today they cannot).
 
-## 12. Verification
+## 13. Verification
 
 Automated:
 
@@ -708,13 +804,16 @@ and the real storage root:
 | Local tools | Disposable service with a scripted model: `read_file`/`write_file` worked; a command stayed pending until the next "确认" turn; the file and command audit lines were written |
 | Local review | Scripted reviewer in the test suite | Whitelisted reads skipped the reviewer; a non-whitelisted write/command was allowed or denied by the reviewer; a denied action changed nothing; malformed JSON, timeout and review errors denied |
 | Chat engine and skills | `winnie-chat` and API tests | Registry persistence/duplicates/filtering; enabled-only schemas and instructions; disabled-tool rejection; skills list/toggle/persistence |
-| Admin skills page | Firefox production preview | Six skills listed with tools/permissions/instructions; unavailable document index shown; core always on; web toggled off and on with persistence; light/dark/mobile with no horizontal overflow |
+| Admin skills page | Firefox production preview | Skills listed with tools/permissions/instructions; unavailable document index shown; core always on; web toggled off and on with persistence; light/dark/mobile with no horizontal overflow |
+| Weather check | `POST /assistant/weather/check` against Open-Meteo | 0.9 s; advisories `rain` and `temperature_drop`; notice message asked for an umbrella and an extra layer; conversation `source: weather`, `channel: weather`, assistant-only first block; `next_run` unchanged |
+| Weather in chat | DeepSeek turn asking about tomorrow | called `weather_forecast`; reply named the 86% probability, 13.4–20 °C, the 6.6 °C drop and Open-Meteo as the source |
+| Weather feature toggle | `PUT /assistant/skills/weather` | removed and restored the tool; state persisted in `skills/skills.json` |
 
 The local-tools check used a scripted model rather than a vendor model: the
 confirmation gate is in the tool layer, so the provider does not change the
 result.
 
-## 13. Open questions
+## 14. Open questions
 
 - Which push channel is the real one: ntfy, Telegram, or a self-hosted webhook?
   The tool accepts one URL; the default is unset.
@@ -732,6 +831,12 @@ result.
 - Which read-only commands belong on the default whitelist? The current batch is
   deliberately narrow; `git diff`/`log`/`show` are reviewed because a
   repository can configure helpers that execute.
+- Should the weather location and schedule be editable in the console instead of
+  `config.yaml`? Today the console toggles the feature; a city change is a
+  deployment change. Multi-location is the same question.
+- Should a weather notice respect quiet hours or a separate notification
+  channel? The default 07:00 check is meant to be the morning brief; a late
+  severe-weather update is currently only sent if a new advisory kind appears.
 - Should skills be loadable from `SKILL.md` files, or stay as code-registered
   manifests until there is a second consumer? Today they are registered by the
   assistant host; the admin only toggles them.

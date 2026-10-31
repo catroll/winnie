@@ -414,6 +414,14 @@ only from the `assistant.chat` binding; a fresh registry leaves it unbound until
 a supplier model is configured on the AI suppliers page. Web search uses Bing
 RSS by default and needs no key.
 
+The default `weather` skill adds `weather_forecast` and a daily watch. The
+watch fetches Open-Meteo for the configured location, applies the rain, snow,
+temperature and severe-weather rules, and records a notice only when the advice
+changed; the same tool answers weather questions in chat. `http://[::1]:8000/api/v1/assistant/weather`
+shows its schedule and last result, and `POST .../weather/check` runs it now.
+The `assistant.weather` block sets the location, schedule and thresholds. The
+Skills page toggles the whole feature.
+
 Local recall goes through `winnie-index` (`make index-serve`, listening on
 `127.0.0.1:8790`). With the daemon down, chat still works and the local-document
 tools report why they failed. `GET /api/v1/assistant/documents/search?q=` exposes
@@ -421,7 +429,8 @@ the same search for debugging.
 
 The chat loop and the skill registry live in `packages/winnie-chat`; the
 assistant composes them with its store, memory, scheduler and the local executor.
-Six skills are registered (core, web, documents, memory, tasks, local). The
+Skills are registered by the assistant (core, web, weather, documents, memory,
+tasks and local). The
 console `/skills` page and `GET /api/v1/assistant/skills` show them, and
 `PUT /api/v1/assistant/skills/{name}` toggles one; the state is persisted in
 `<root>/skills/skills.json`.

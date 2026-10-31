@@ -29,6 +29,7 @@ from winnie_assistant.scheduler import (
 )
 from winnie_assistant.search import SearchProvider
 from winnie_assistant.types import ChatReply
+from winnie_assistant.weather import WeatherRun, WeatherWatch
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class AssistantService:
         model_name: str,
         search: SearchProvider,
         index: IndexClient | None,
+        weather_watch: WeatherWatch | None,
         timezone: ZoneInfo,
         clock=None,
     ) -> None:
@@ -64,6 +66,7 @@ class AssistantService:
         self.model_name = model_name
         self.search = search
         self.index = index
+        self.weather_watch = weather_watch
         self.timezone = timezone
         self.clock = clock or (lambda: datetime.now(timezone))
         self._distill_task: asyncio.Task[None] | None = None
@@ -78,11 +81,15 @@ class AssistantService:
             await self.scheduler.start()
         else:
             await asyncio.to_thread(self.scheduler.reload, force=True)
+        if self.weather_watch is not None:
+            await self.weather_watch.start()
         if self.builder is not None and self.config.memory.auto_distill:
             self._schedule_distill()
 
     async def shutdown(self) -> None:
         await self.scheduler.stop()
+        if self.weather_watch is not None:
+            await self.weather_watch.stop()
         if self._distill_task is not None:
             self._distill_task.cancel()
             try:
@@ -124,6 +131,27 @@ class AssistantService:
 
     def set_skill_enabled(self, name: str, enabled: bool) -> SkillView:
         return self.registry.set_enabled(name, enabled)
+
+    # -- weather ---------------------------------------------------------
+
+    async def check_weather(self, *, force: bool = True) -> WeatherRun:
+        if self.weather_watch is None:
+            raise RuntimeError("weather is disabled")
+        return await self.weather_watch.run_now(force=force)
+
+    def weather_status(self) -> dict:
+        if self.weather_watch is None:
+            return {
+                "enabled": False,
+                "location": self.config.weather.location,
+                "schedule": self.config.weather.schedule,
+                "next_run": None,
+                "last_run": None,
+                "last_status": None,
+                "last_conversation_id": None,
+                "webhook": bool(self.config.weather.webhook),
+            }
+        return self.weather_watch.status()
 
     # -- local documents -------------------------------------------------
 
@@ -218,4 +246,5 @@ class AssistantService:
                 "tasks": len(self.scheduler.tasks),
                 "errors": self.scheduler.errors,
             },
+            "weather": self.weather_status(),
         }

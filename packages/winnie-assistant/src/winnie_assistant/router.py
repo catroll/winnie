@@ -36,6 +36,8 @@ from winnie_assistant.schemas import (
     TaskRead,
     TaskRunListRead,
     TaskRunRead,
+    WeatherCheckRead,
+    WeatherStatusRead,
 )
 from winnie_assistant.service import AssistantService
 
@@ -191,6 +193,38 @@ async def set_skill(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _skill_view(view)
+
+
+@router.get("/weather", response_model=WeatherStatusRead)
+async def weather_status(
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> WeatherStatusRead:
+    return WeatherStatusRead(**service.weather_status())
+
+
+@router.post("/weather/check", response_model=WeatherCheckRead)
+async def check_weather(
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> WeatherCheckRead:
+    """Run the check now, for the console or a manual test.
+
+    The manual path does not move the daily schedule; it is an inspection, not
+    a replacement for the scheduled run.
+    """
+    try:
+        run = await service.check_weather(force=True)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return WeatherCheckRead(
+        status=run.status,
+        message=run.message,
+        conversation_id=run.conversation_id,
+        advisories=list(run.advisories),
+        checked_at=run.checked_at,
+        error=run.error,
+    )
 
 
 @router.get("/memory", response_model=MemoryListRead)

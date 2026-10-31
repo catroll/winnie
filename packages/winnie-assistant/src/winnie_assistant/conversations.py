@@ -158,6 +158,52 @@ class ConversationStore:
             messages=(message,),
         )
 
+    async def create_notice(
+        self,
+        *,
+        title: str,
+        text: str,
+        source: str = "weather",
+        channel: str = "weather",
+        owner: str = "local",
+        now: datetime | None = None,
+    ) -> Conversation:
+        """Create a conversation started by the service, not by the user.
+
+        A weather notice has no user turn; the record opens with the assistant
+        message so nothing pretends the owner spoke.
+        """
+        created = now or datetime.now(timezone.utc)
+        stamp = created.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        conversation_id = f"{stamp}-{secrets.token_hex(3)}"
+        message = Message(role="assistant", text=text.strip(), at=created)
+        header = {
+            "id": conversation_id,
+            "title": title,
+            "created_at": format_time(created),
+            "source": source,
+            "channel": channel,
+            "owner": owner,
+        }
+        body = (
+            render_front_matter(header)
+            + f"\n# {title}\n"
+            + _render_block(message)
+        )
+        path = self.path_for(conversation_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(atomic_write, path, body)
+        return Conversation(
+            id=conversation_id,
+            title=title,
+            created_at=created,
+            source=source,
+            channel=channel,
+            owner=owner,
+            path=path,
+            messages=(message,),
+        )
+
     async def append(
         self,
         conversation_id: str,

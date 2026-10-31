@@ -808,3 +808,48 @@ English.
 schedule is not inside this repository, so `--root` / `WINNIE_SCHEDULE_ROOT`
 precede the default `~/Projects/Mine/WLB`, and a root without a `work/`
 directory is an error instead of an empty result.
+
+## Weather watch: deterministic, a skill, and honest about alerts (2026-11-01)
+
+**No model in the loop.** The daily check fetches a forecast, applies fixed
+rules and writes a notice. A model call would add cost, latency and a chance to
+invent a temperature for a message the owner may act on. The model still has a
+`weather_forecast` tool for conversational questions, and it reads the same
+numbers and advice the watcher used, so the two cannot disagree.
+
+**The feature is a skill.** `weather` is registered like `web` and `memory`, so
+the console's existing Skills page is the feature list: disabling the row removes
+the tool from the model and makes the watcher skip its next due check. A separate
+features registry would have duplicated enable/disable, persistence, the API and
+the page.
+
+**Open-Meteo, and derived warnings.** It needs no key, returned Shanghai in
+0.9 s, and covers the rain/snow/temperature rules directly. Official Chinese
+alarm endpoints were tried: `weather.com.cn/data/alarm/...` and
+`product.weather.com.cn/alarm/grepalarm_cn.php` answer `403`, and the commercial
+providers need a key. The `severe` advisory therefore comes from WMO codes
+(65/67/75/82/86/95–99) and the message says "留意官方预警" rather than claiming an
+official warning. A real alert feed is an additive `alerts` provider, not a
+rewrite.
+
+**Notices are conversations, not chat turns.** A notice is created with
+`source: weather`, `channel: weather` and an assistant message as the first
+block: there is no user turn to fake, and the console can filter the channel.
+Reusing the chat path would have required inventing a user message and would
+have run the model.
+
+**One advice per change per day.** The fingerprint is the date plus the sorted
+advisory kinds. Without it, a daily check that finds the same rain would create a
+notice every morning; with it, a genuinely new signal (a wind warning appearing
+later) still gets through.
+
+**A manual check does not move the schedule.** `POST /weather/check` is for the
+console and for tests. If it advanced `next_run`, checking at 06:00 would cancel
+that morning's scheduled notice. The watcher advances the schedule; the manual
+path does not.
+
+**Location and schedule are deployment configuration.** The console manages the
+feature list, not every setting. Changing the city is a `config.yaml` change,
+which keeps the first version to one location and avoids a settings UI that
+would have to be designed, validated and migrated before the feature has a
+second user.

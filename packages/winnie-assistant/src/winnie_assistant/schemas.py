@@ -159,3 +159,23 @@ class StatusRead(BaseModel):
     memory: dict
     index: dict
     scheduler: dict
+
+
+class WeatherStatusRead(BaseModel):
+    enabled: bool
+    location: str
+    schedule: str
+    next_run: str | None = None
+    last_run: str | None = None
+    last_status: str | None = None
+    last_conversation_id: str | None = None
+    webhook: bool = False
+
+
+class WeatherCheckRead(BaseModel):
+    status: str
+    message: str = ""
+    conversation_id: str = ""
+    advisories: list[str] = Field(default_factory=list)
+    checked_at: datetime
+    error: str = ""

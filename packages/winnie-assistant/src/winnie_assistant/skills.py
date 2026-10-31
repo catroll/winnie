@@ -44,6 +44,25 @@ search query or fetch URL.""",
     scheduled_safe=True,
 )
 
+WEATHER = SkillManifest(
+    name="weather",
+    title="Weather watch",
+    description=(
+        "Forecast checks with umbrella, clothing and severe-weather advice, "
+        "and a daily notice when something changes."
+    ),
+    instructions="""\
+Use weather_forecast when the user asks about today's or tomorrow's weather,
+rain or snow, what to wear, or whether to take an umbrella. Report the
+temperature range, the precipitation probability and any advisory, and say the
+data comes from Open-Meteo. The skill also runs a scheduled check that records a
+notice only when the advice changed; do not claim a notice was sent when it was
+not.""",
+    tools=("weather_forecast",),
+    permissions=("network",),
+    scheduled_safe=True,
+)
+
 DOCUMENTS = SkillManifest(
     name="documents",
     title="Document index",
@@ -206,6 +225,12 @@ def build_skills(toolbox: ToolBox) -> list[ToolboxSkill]:
     return [
         ToolboxSkill(CORE, toolbox),
         ToolboxSkill(WEB, toolbox),
+        ToolboxSkill(
+            WEATHER,
+            toolbox,
+            available=toolbox.weather is not None,
+            unavailable_reason="weather is disabled",
+        ),
         ToolboxSkill(
             DOCUMENTS,
             toolbox,

@@ -71,11 +71,14 @@ running it on a device with a live ASR key is still pending.
 
 The assistant capability is usable end to end: a phone-sized chat page at
 `/api/v1/assistant/ui` and a ChatGPT-like chat in the management console, a
-dedicated `winnie-chat` engine with a skill registry (web, document index,
-memory, scheduled tasks and local execution), append-only Markdown
+dedicated `winnie-chat` engine with a skill registry (web, weather, document
+index, memory, scheduled tasks and local execution), append-only Markdown
 conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
 those files and recalled through the local index service, and scheduled tasks
-the assistant creates and cancels when asked in conversation. It can also list,
+the assistant creates and cancels when asked in conversation. The weather watch
+is on by default: a daily forecast check records an umbrella or clothing notice
+only when the advice changes, and the same forecast is available in chat. The
+console's Skills page is the feature list and can switch any skill off. It can also list,
 read and write files under a configured workspace and run local commands after
 an LLM review and an explicit confirmation; the file and command tools are
 audited, whitelisted read-only operations skip the review, and the command
