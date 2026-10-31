@@ -59,3 +59,23 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
 4. **Verification:** Redis 8 + `arq winnie_api.jobs.worker.WorkerSettings`
    returned `arq status: ready` and three transcript segments; the same run
    printed `PONG` from `redis-cli`.
+
+## SQLite schema drift (2026-10-31)
+
+1. **Signal:** login worked, then `GET /api/v1/meetings` returned 500 with
+   `sqlite3.OperationalError: no such column: meetings.audio_deleted_at`. The
+   model and Alembic head both had the column; the local database did not.
+2. **Cause:** `database.auto_create_tables` creates missing *tables*, not missing
+   columns. This database was created before the `track_audio_deletion`
+   migration, so it never gained the column and had no `alembic_version` row.
+3. **Check:** `alembic current` printed no revision while `alembic heads` printed
+   `d0b5c759ab65`. Treat that combination as a database created outside
+   Alembic, not as "no migrations needed".
+4. **Fix:** back up the database, add the column with
+   `ALTER TABLE meetings ADD COLUMN audio_deleted_at DATETIME`, then
+   `alembic stamp head`. Do not run `upgrade head` from base: the other tables
+   already exist and the initial migration would fail on the first
+   `CREATE TABLE`.
+5. **Verification:** `alembic check` reports
+   `No new upgrade operations detected.` Re-run the failing endpoint after the
+   repair; a clean migration state alone is not proof that the query works.
