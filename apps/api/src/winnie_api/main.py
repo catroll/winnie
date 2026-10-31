@@ -13,6 +13,8 @@ from sqlalchemy import select, text
 
 from winnie_assistant.capability import capability as assistant_capability
 from winnie_assistant.factory import build_assistant_service
+from winnie_core.auth.admin_router import router as admin_users_router
+from winnie_core.auth.admin_service import AdminUserService
 from winnie_core.auth.capability import capability as auth_capability
 from winnie_core.auth.models import User
 from winnie_core.capability import Capability, WinnieFramework
@@ -139,6 +141,7 @@ def create_app(
         app.state.assistant_error = ""
         app.state.news_service = None
         app.state.news_error = ""
+        app.state.admin_user_service = None
         app.state.schedule_service = None
         app.state.schedule_error = ""
         if runtime is not None:
@@ -147,6 +150,12 @@ def create_app(
             app.state.meeting_service = runtime.meeting_service
             app.state.phone_service = runtime.phone_service
             app.state.push_service = runtime.push_service
+            # User management needs a database but not necessarily accounts:
+            # with auth disabled the local operator may still create accounts for
+            # a deployment that enables login later.
+            app.state.admin_user_service = AdminUserService(
+                session_factory=runtime.session_factory
+            )
         else:
             app.state.phone_service = None
             app.state.push_service = None
@@ -261,6 +270,10 @@ def create_app(
     # repository rather than a capability's service object.
     if resolved.schedule.enabled:
         app.include_router(schedule_router, prefix="/api/v1")
+    # Admin user management is a host concern too: it must exist whether or not
+    # the auth capability is registered, because an auth-disabled deployment
+    # still acts as an administrator.
+    app.include_router(admin_users_router, prefix="/api/v1")
     app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")

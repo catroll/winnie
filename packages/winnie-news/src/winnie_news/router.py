@@ -13,11 +13,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from winnie_core.auth.dependencies import get_user_id
+from winnie_core.auth.dependencies import admin_required
 from winnie_news.service import NewsService, NewsUnavailable, RunBusy, RunNotFound
 from winnie_news.store import RunRecord
 
-router = APIRouter(prefix="/news", tags=["news"])
+router = APIRouter(
+    prefix="/news",
+    tags=["news"],
+    dependencies=[Depends(admin_required)],
+)
 
 
 class RunCreate(BaseModel):
@@ -37,7 +41,6 @@ def get_service(request: Request) -> NewsService:
 @router.get("/status")
 async def status(
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     return service.status()
 
@@ -46,7 +49,6 @@ async def status(
 async def start_run(
     payload: RunCreate | None = None,
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> RunRecord:
     source_types = list(payload.source_types) if payload else []
     try:
@@ -61,7 +63,6 @@ async def start_run(
 async def list_runs(
     limit: int = Query(default=20, ge=1, le=200),
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> list[RunRecord]:
     return service.list_runs(limit=limit)
 
@@ -70,7 +71,6 @@ async def list_runs(
 async def get_run(
     run_id: str,
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> RunRecord:
     try:
         return service.get_run(run_id)
@@ -82,7 +82,6 @@ async def get_run(
 async def list_drafts(
     run_id: str,
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     try:
         service.get_run(run_id)
@@ -100,7 +99,6 @@ async def get_draft(
     run_id: str,
     event_id: str,
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     try:
         draft, review = service.draft(run_id, event_id)
@@ -114,7 +112,6 @@ async def regenerate_draft(
     run_id: str,
     event_id: str,
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     try:
         draft, review = await service.regenerate_draft(run_id, event_id)
@@ -135,7 +132,6 @@ async def get_draft_markdown(
     run_id: str,
     event_id: str,
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> PlainTextResponse:
     try:
         text = service.draft_markdown(run_id, event_id)
@@ -147,7 +143,6 @@ async def get_draft_markdown(
 @router.get("/sources")
 async def list_sources(
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     return service.source_health()
 
@@ -157,7 +152,6 @@ async def list_events(
     limit: int = Query(default=50, ge=1, le=500),
     status: str = Query(default=""),
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     events = service.list_events(limit=limit, status=status)
     return {"events": [_event_summary(event) for event in events]}
@@ -167,7 +161,6 @@ async def list_events(
 async def get_event(
     event_id: str,
     service: NewsService = Depends(get_service),
-    user_id: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     event = service.get_event(event_id)
     if event is None:

@@ -5,12 +5,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from winnie_core.auth.errors import UsernameTaken
 from winnie_core.auth.models import AuthSession, LoginThrottle, User
+from winnie_core.auth.roles import ROLE_ADMIN, ROLE_USER
 
 
 class AuthRepository:
@@ -35,11 +36,13 @@ class AuthRepository:
         username: str,
         password_hash: str,
         display_name: str | None,
+        role: str = ROLE_USER,
     ) -> User:
         user = User(
             username=username,
             password_hash=password_hash,
             display_name=display_name,
+            role=role,
         )
         self.session.add(user)
         try:
@@ -49,6 +52,82 @@ class AuthRepository:
             raise UsernameTaken(username) from exc
         await self.session.refresh(user)
         return user
+
+    async def save_user(self, user: User) -> User:
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
+    async def lock_active_admins(self) -> None:
+        """Serialize administrator demotions on databases that support row locks.
+
+        PostgreSQL (the production database) blocks a second demotion until the
+        first transaction commits, so two concurrent requests cannot each see
+        "one other administrator" and leave none. SQLite ignores ``FOR UPDATE``;
+        its writes are still serialized, and the guard is re-evaluated inside the
+        transaction that performs the update.
+        """
+        await self.session.execute(
+            select(User.id)
+            .where(User.role == ROLE_ADMIN, User.is_active.is_(True))
+            .with_for_update()
+        )
+
+    async def count_active_admins(
+        self,
+        *,
+        exclude_user_id: uuid.UUID | None = None,
+    ) -> int:
+        statement = (
+            select(func.count())
+            .select_from(User)
+            .where(User.role == ROLE_ADMIN, User.is_active.is_(True))
+        )
+        if exclude_user_id is not None:
+            statement = statement.where(User.id != exclude_user_id)
+        total = await self.session.scalar(statement)
+        return int(total or 0)
+
+    async def list_user_summaries(
+        self,
+        *,
+        query: str = "",
+        role: str | None = None,
+        is_active: bool | None = None,
+        now: datetime,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[tuple[User, datetime | None, int]], int]:
+        filters = _user_filters(query=query, role=role, is_active=is_active)
+        total = await self.session.scalar(
+            select(func.count()).select_from(User).where(*filters)
+        )
+        rows = (
+            await self.session.execute(
+                _summary_statement(now)
+                .where(*filters)
+                .order_by(User.created_at.asc(), User.username.asc())
+                .limit(limit)
+                .offset(offset)
+            )
+        ).all()
+        summaries = [(row[0], row[1], int(row[2] or 0)) for row in rows]
+        return summaries, int(total or 0)
+
+    async def get_user_summary(
+        self,
+        user_id: uuid.UUID,
+        *,
+        now: datetime,
+    ) -> tuple[User, datetime | None, int] | None:
+        row = (
+            await self.session.execute(
+                _summary_statement(now).where(User.id == user_id)
+            )
+        ).first()
+        if row is None:
+            return None
+        return row[0], row[1], int(row[2] or 0)
 
     async def update_password_hash(
         self,
@@ -174,6 +253,58 @@ class AuthRepository:
         )
         await self.session.commit()
         return int(result.rowcount or 0)
+
+
+def _user_filters(
+    *,
+    query: str,
+    role: str | None,
+    is_active: bool | None,
+) -> list:
+    """Filters shared by the list and its total count."""
+    filters: list = []
+    if query:
+        pattern = f"%{query.strip().lower()}%"
+        filters.append(
+            or_(
+                func.lower(User.username).like(pattern),
+                func.lower(func.coalesce(User.display_name, "")).like(pattern),
+            )
+        )
+    if role is not None:
+        filters.append(User.role == role)
+    if is_active is not None:
+        filters.append(User.is_active.is_(is_active))
+    return filters
+
+
+def _summary_statement(now: datetime):
+    """Users plus last-session and active-session aggregates.
+
+    Correlated subqueries keep the page query flat: a join with GROUP BY would
+    need every user column listed and would multiply rows if another aggregate
+    is added later.
+    """
+    last_session_at = (
+        select(
+            func.max(func.coalesce(AuthSession.last_used_at, AuthSession.created_at))
+        )
+        .where(AuthSession.user_id == User.id)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    active_sessions = (
+        select(func.count())
+        .select_from(AuthSession)
+        .where(AuthSession.user_id == User.id, AuthSession.expires_at > now)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    return select(
+        User,
+        last_session_at.label("last_session_at"),
+        active_sessions.label("active_sessions"),
+    )
 
 
 def _as_utc(value: datetime) -> datetime:

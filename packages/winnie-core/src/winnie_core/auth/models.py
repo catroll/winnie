@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
+from winnie_core.auth.roles import ROLE_USER
 from winnie_core.db import Base
 
 
@@ -22,6 +23,11 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # ``admin`` or ``user``; see winnie_core.auth.roles. The server default keeps
+    # direct SQL inserts and the migration's backfill on the safe side.
+    role: Mapped[str] = mapped_column(
+        String(16), default=ROLE_USER, server_default=ROLE_USER
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow

@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from winnie_core.auth.dependencies import get_user_id
+from winnie_core.auth.dependencies import admin_required
 from winnie_core.usage.event import UsageEvent
 from winnie_core.usage.ledger import UsageLedger
 from winnie_core.usage.pricing import PriceTable
@@ -22,7 +22,11 @@ from winnie_core.usage.report import filter_events, period, record_view, summari
 
 from winnie_api.usage.balances import BalanceService
 
-router = APIRouter(prefix="/usage", tags=["usage"])
+router = APIRouter(
+    prefix="/usage",
+    tags=["usage"],
+    dependencies=[Depends(admin_required)],
+)
 
 
 def _ledger(request: Request) -> UsageLedger:
@@ -81,7 +85,6 @@ def _generated_at() -> str:
 async def overview(
     request: Request,
     days: int = Query(default=7, ge=1, le=365),
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     """Totals plus by-day, by-capability and by-model breakdowns."""
     events, start, end = await _load(request, days)
@@ -103,7 +106,6 @@ async def records(
     provider: str = Query(default="", max_length=64),
     model: str = Query(default="", max_length=128),
     status: str = Query(default="", max_length=16),
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     """Recorded calls, newest first, with the cost that applies to each."""
     events, start, end = await _load(request, days)
@@ -129,7 +131,6 @@ async def records(
 @router.get("/balances")
 async def balances(
     request: Request,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     """Cached provider balances; the first read of a stale entry refreshes it."""
     return await _balances(request).snapshot(refresh=False)
@@ -138,6 +139,5 @@ async def balances(
 @router.post("/balances/refresh")
 async def refresh_balances(
     request: Request,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     return await _balances(request).snapshot(refresh=True)

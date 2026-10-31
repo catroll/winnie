@@ -2,7 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { AuthProvider } from './auth/AuthContext';
-import { PublicOnly, RequireAuth } from './auth/guards';
+import { PublicOnly, RequireAdmin, RequireAuth } from './auth/guards';
 import { AppLayout } from './components/AppLayout';
 import { AccountPage } from './pages/AccountPage';
 import { AIPage } from './pages/AIPage';
@@ -20,6 +20,7 @@ import { SchedulePage } from './pages/SchedulePage';
 import { SkillsPage } from './pages/SkillsPage';
 import { TasksPage } from './pages/TasksPage';
 import { UsagePage } from './pages/UsagePage';
+import { UsersPage } from './pages/UsersPage';
 
 export function App() {
   // Subscribe the whole tree to language changes: page labels are translated
@@ -50,6 +51,9 @@ export function App() {
             <Route path="/gateway" element={<RoutesPage />} />
             <Route path="/index" element={<IndexPage />} />
             <Route path="/account" element={<AccountPage />} />
+            <Route element={<RequireAdmin />}>
+              <Route path="/users" element={<UsersPage />} />
+            </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Route>

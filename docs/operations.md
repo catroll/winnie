@@ -2,7 +2,8 @@
 
 This page is the authoritative list of processes the project can run, the
 addresses they bind, and how to manage them locally. The API configuration
-lives in `apps/api/config.yaml`; this page does not repeat it.
+lives in `apps/api/config.yaml`; this page does not repeat it. The role model and
+the admin/operator route inventory are in [admin-api.md](./admin-api.md).
 
 ## Service inventory
 

@@ -23,11 +23,50 @@ export interface RouteList {
   routes: GatewayRoute[];
 }
 
+export type UserRole = 'admin' | 'user';
+
 export interface User {
   id: string;
   username: string;
   display_name: string | null;
+  role: UserRole;
   created_at: string;
+}
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  display_name: string | null;
+  role: UserRole;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  last_session_at: string | null;
+  active_sessions: number;
+}
+
+export interface AdminUserList {
+  items: AdminUser[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserCreate {
+  username: string;
+  display_name?: string | null;
+  role: UserRole;
+}
+
+export interface AdminUserUpdate {
+  display_name?: string | null;
+  role?: UserRole;
+  is_active?: boolean;
+}
+
+export interface TemporaryPassword {
+  user: AdminUser;
+  temporary_password: string;
 }
 
 export interface TokenResponse {
@@ -886,4 +925,93 @@ export interface PhoneSearchResponse {
   query: string;
   hits: PhoneSearchHit[];
   device_names: Record<string, string>;
+}
+
+/** The owner's weekly schedule: one Markdown file per week in a WLB tree. */
+export interface ScheduleLink {
+  text: string;
+  target: string;
+}
+
+export interface ScheduleEvent {
+  id: string;
+  scope: 'day' | 'week';
+  line: number;
+  done: boolean;
+  /** `MM/DD`, or null for a week-level item. */
+  date: string | null;
+  weekday: string | null;
+  every: boolean;
+  /** `HH:MM`, or null when the event has no time tag. */
+  start: string | null;
+  end: string | null;
+  tags: string[];
+  text: string;
+  links: ScheduleLink[];
+}
+
+export interface ScheduleDay {
+  date: string;
+  label: string;
+  heading: string;
+  line: number;
+  events: ScheduleEvent[];
+}
+
+export interface ScheduleSection {
+  title: string;
+  line: number;
+  events: ScheduleEvent[];
+}
+
+export type ScheduleLayout = 'canonical' | 'legacy';
+
+export interface ScheduleWeek {
+  file: string;
+  stem: string;
+  layout: ScheduleLayout;
+  editable: boolean;
+  title: string;
+  week: { monday: string; sunday: string; stem: string; label: string };
+  days: ScheduleDay[];
+  sections: ScheduleSection[];
+  related: Record<string, string>;
+  warnings: string[];
+}
+
+export interface ScheduleWeekPayload extends ScheduleWeek {
+  root: string;
+  today: string;
+}
+
+export interface ScheduleMutation {
+  changed: boolean;
+  message: string;
+  event: ScheduleEvent | null;
+  week: ScheduleWeekPayload;
+  removed?: string[];
+}
+
+export interface ScheduleEventInput {
+  date: string;
+  text: string;
+  time?: string | null;
+  weekday?: boolean;
+  every?: boolean;
+  tags?: string[];
+  done?: boolean;
+  week_scope?: boolean;
+  after?: string | null;
+}
+
+export interface ScheduleEventUpdate {
+  week: string;
+  id: string;
+  text?: string;
+  time?: string;
+  done?: boolean;
+  tags_add?: string[];
+  tags_remove?: string[];
+  note?: string;
+  move_to?: string;
 }

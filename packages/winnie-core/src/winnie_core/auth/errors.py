@@ -27,3 +27,11 @@ class LoginLocked(AuthError):
 
 class UserNotFound(AuthError):
     pass
+
+
+class LastActiveAdmin(AuthError):
+    """Refused because the change would leave no active administrator."""
+
+
+class SelfDeactivation(AuthError):
+    """Refused because an administrator may not deactivate their own account."""

@@ -27,6 +27,7 @@ keys.
 | **Schedule** | One week of the owner's Markdown schedule: the seven day sections with their events, the week-level items, times, tags and links; add an event to a day or to the week list, check it off, edit text and time, delete it, and move between weeks. Pre-2024 files render read-only |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
+| **Users** | Admin-only account list with search, role/status filters, pagination, user creation with a one-time temporary password, password reset, role changes, and activate/deactivate. The last active admin and self-deactivation are protected |
 | **Account** | Profile, session expiry and password change |
 
 The API scopes meetings to the authenticated account, so the console shows the
@@ -212,6 +213,9 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 
 ## Sessions and security
 
+- Accounts have an explicit `admin`/`user` role. The API enforces every
+  operator route with `403`; hiding a menu item is not the access control. A
+  `403` makes the console re-read `/auth/me` so a demotion reaches the UI.
 - The bearer token is kept in `sessionStorage`. **Remember me** moves it to
   `localStorage`; signing out or a `401` clears both.
 - The console never renders a token and never sends one anywhere except the
@@ -247,10 +251,9 @@ vendors named by the AI integrations.
 Deliberately not part of this app yet:
 
 - Recording and audio upload (the Android client owns the capture path).
-- Account creation and user management. Planned as **Administration → Users**
-  together with explicit admin/user roles and grouped navigation; until then
-  the first account is created through the API and later registration is
-  controlled by `auth.allow_registration`. See [docs/todo.md](../../docs/todo.md).
+- Hard-deleting an account, or email-based reset. Deactivation is the supported
+  removal path; a generated temporary password is shown once. Grouped
+  Workspace/Administration navigation is the remaining follow-up.
 - Creating, editing or cancelling scheduled tasks. The assistant owns
   `tasks/tasks.json` through the chat tools, so the console only reads it; a
   second writer would also have to synchronise the scheduler's next-run state.
@@ -272,8 +275,8 @@ Deliberately not part of this app yet:
   ledger re-prices history from that table.
 - Knowledge-base management, which is still planned.
 
-Planned next: an explicit admin/user role split with a grouped menu. The
-concrete acceptance criteria are in [docs/todo.md](../../docs/todo.md).
+Planned next: grouped Workspace/Administration navigation. The concrete
+acceptance criteria are in [docs/todo.md](../../docs/todo.md).
 
 ## Stack
 
@@ -292,7 +295,8 @@ React root and `white-space: pre-line` for transcript text.
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm run build       # typecheck + Vite production build
+npm run check:i18n  # every static tr() key exists in zh-CN
+npm run build       # key check + typecheck + Vite production build
 ```
 
 Behavioral verification is recorded in

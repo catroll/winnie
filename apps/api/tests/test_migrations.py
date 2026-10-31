@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from pathlib import Path
 
 import httpx
@@ -54,6 +55,15 @@ def _tables(db_path: Path) -> set[str]:
     return {row[0] for row in rows}
 
 
+def _columns(db_path: Path, table: str) -> set[str]:
+    connection = sqlite3.connect(db_path)
+    try:
+        rows = connection.execute(f"pragma table_info({table})").fetchall()
+    finally:
+        connection.close()
+    return {row[1] for row in rows}
+
+
 def test_upgrade_creates_expected_schema(migrated_database) -> None:
     _, config, db_path = migrated_database
     command.check(config)
@@ -69,6 +79,63 @@ def test_upgrade_creates_expected_schema(migrated_database) -> None:
         "usage_records",
         "users",
     } <= tables
+    assert "role" in _columns(db_path, "users")
+
+
+def test_upgrade_promotes_the_oldest_active_user(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db_path = tmp_path / "app.db"
+    config_path = _config_yaml(tmp_path, db_path)
+    monkeypatch.setenv("WINNIE_CONFIG", str(config_path))
+    config = Config(str(_API_ROOT / "alembic.ini"))
+
+    # Stop before the role revision, then insert users as they existed before it.
+    command.upgrade(config, "c0d5c0d23f3b")
+    rows = [
+        (uuid.uuid4().hex, "inactive", "2020-01-01 00:00:00", 0),
+        (uuid.uuid4().hex, "oldest-active", "2021-01-01 00:00:00", 1),
+        (uuid.uuid4().hex, "newer-active", "2022-01-01 00:00:00", 1),
+    ]
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.executemany(
+            "insert into users "
+            "(id, username, password_hash, display_name, is_active, "
+            " created_at, updated_at) "
+            "values (?, ?, 'hash', null, ?, ?, ?)",
+            [
+                (user_id, username, active, created, created)
+                for user_id, username, created, active in rows
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    command.upgrade(config, "head")
+
+    connection = sqlite3.connect(db_path)
+    try:
+        roles = dict(
+            connection.execute(
+                "select username, role from users"
+            ).fetchall()
+        )
+    finally:
+        connection.close()
+    assert roles == {
+        "inactive": "user",
+        "oldest-active": "admin",
+        "newer-active": "user",
+    }
+
+
+def test_downgrade_removes_the_role_column(migrated_database) -> None:
+    _, config, db_path = migrated_database
+    assert "role" in _columns(db_path, "users")
+    command.downgrade(config, "c0d5c0d23f3b")
+    assert "role" not in _columns(db_path, "users")
 
 
 def test_downgrade_removes_application_tables(migrated_database) -> None:
@@ -93,3 +160,6 @@ async def test_app_uses_migrated_schema_without_create_all(migrated_database) ->
                 json={"username": "migrated", "password": "correct horse battery"},
             )
             assert response.status_code == 201, response.text
+            # The bootstrap rule is schema-independent: the first registration
+            # on a migrated and empty table is the administrator.
+            assert response.json()["user"]["role"] == "admin"

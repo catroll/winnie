@@ -8,7 +8,12 @@ import {
   type ReactNode,
 } from 'react';
 
-import { ApiError, api, setUnauthorizedHandler } from '../api/client';
+import {
+  ApiError,
+  api,
+  setForbiddenHandler,
+  setUnauthorizedHandler,
+} from '../api/client';
 import type { User } from '../api/types';
 import {
   clearSession,
@@ -20,6 +25,8 @@ import {
 
 interface AuthContextValue {
   user: User | null;
+  /** True when the current account may use operator-only routes. */
+  isAdmin: boolean;
   expiresAt: string | null;
   /** True while the stored session is being validated against the API. */
   checking: boolean;
@@ -45,13 +52,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [flash, setFlash] = useState<string | null>(null);
 
   // A 401 on any authenticated request means the session is gone. Drop it and
-  // let the route guards send the user to the login page.
+  // let the route guards send the user to the login page. A 403 does not mean
+  // the session is invalid: re-read /me so a demotion takes effect in the UI
+  // as well as in the API.
   useEffect(() => {
     setUnauthorizedHandler(() => {
       clearSession();
       setState({ session: null, checking: false });
     });
-    return () => setUnauthorizedHandler(null);
+    setForbiddenHandler(() => {
+      void api
+        .me()
+        .then((user) => {
+          setState((current) => {
+            if (!current.session) return current;
+            const refreshed: StoredSession = { ...current.session, user };
+            writeSession(refreshed);
+            return { session: refreshed, checking: false };
+          });
+        })
+        .catch(() => {
+          // Keep the current session; a failed refresh must not sign the user
+          // out. The next request still gets 403 from the server.
+        });
+    });
+    return () => {
+      setUnauthorizedHandler(null);
+      setForbiddenHandler(null);
+    };
   }, []);
 
   // Validate the stored token once at startup. A network failure keeps the
@@ -140,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       user: state.session?.user ?? null,
+      isAdmin: state.session?.user.role === 'admin',
       expiresAt: state.session?.expiresAt ?? null,
       checking: state.checking,
       flash,

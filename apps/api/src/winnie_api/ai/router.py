@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from winnie_core.auth.dependencies import get_user_id
+from winnie_core.auth.dependencies import admin_required
 from winnie_llm import (
     AIConflict,
     AINotFound,
@@ -27,7 +27,11 @@ from winnie_llm import (
 
 from winnie_api.ai.routes import gateway_route_table
 
-router = APIRouter(prefix="/ai", tags=["ai"])
+router = APIRouter(
+    prefix="/ai",
+    tags=["ai"],
+    dependencies=[Depends(admin_required)],
+)
 
 
 def _service(request: Request) -> ProviderRegistry:
@@ -72,7 +76,6 @@ def _vendor_view(service: ProviderRegistry, vendor_id: str) -> dict[str, Any]:
 @router.get("/config")
 async def get_config(
     request: Request,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     """Suppliers, endpoints, models, feature bindings and runtime limits."""
     return _service(request).view()
@@ -82,7 +85,6 @@ async def get_config(
 async def create_vendor(
     request: Request,
     payload: VendorDraft,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     service = _service(request)
     try:
@@ -96,7 +98,6 @@ async def create_vendor(
 async def sync_vendor_models(
     request: Request,
     vendor_id: str,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     service = _service(request)
     try:
@@ -113,7 +114,6 @@ async def update_vendor(
     request: Request,
     vendor_id: str,
     payload: VendorDraft,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     service = _service(request)
     try:
@@ -127,7 +127,6 @@ async def update_vendor(
 async def create_integration(
     request: Request,
     payload: IntegrationDraft,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     service = _service(request)
     try:
@@ -143,7 +142,6 @@ async def update_integration(
     request: Request,
     integration_id: str,
     payload: IntegrationDraft,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     service = _service(request)
     try:
@@ -158,7 +156,6 @@ async def update_integration(
 async def delete_integration(
     request: Request,
     integration_id: str,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     service = _service(request)
     try:
@@ -173,7 +170,6 @@ async def delete_integration(
 async def set_runtime(
     request: Request,
     payload: ModelRuntimeConfig,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     runtime = _service(request).set_runtime(payload)
     return {"runtime": runtime.model_dump(mode="json")}
@@ -184,7 +180,6 @@ async def set_binding(
     request: Request,
     feature: str,
     payload: BindingDraft,
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     service = _service(request)
     try:

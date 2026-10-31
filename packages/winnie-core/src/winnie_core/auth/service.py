@@ -22,6 +22,7 @@ from winnie_core.auth.errors import (
 )
 from winnie_core.auth.models import User, utcnow
 from winnie_core.auth.repository import AuthRepository
+from winnie_core.auth.roles import ROLE_ADMIN, ROLE_USER
 from winnie_core.config import AuthConfig
 
 MIN_PASSWORD_LENGTH = 8
@@ -30,6 +31,21 @@ USERNAME_PATTERN = re.compile(r"^[a-z0-9_.-]{3,64}$")
 
 def normalize_username(username: str) -> str:
     return username.strip().lower()
+
+
+def validate_username(username: str) -> str:
+    """Normalize and validate an account name for both register and admin create."""
+    normalized = normalize_username(username)
+    if USERNAME_PATTERN.fullmatch(normalized) is None:
+        raise ValueError(
+            "username must be 3-64 characters of letters, digits, '.', '_' or '-'"
+        )
+    return normalized
+
+
+def generate_temporary_password() -> str:
+    """A one-time password for admin create/reset; shown once, never stored."""
+    return secrets.token_urlsafe(12)
 
 
 def hash_token(token: str) -> str:
@@ -57,20 +73,14 @@ class AuthService:
         password: str,
         display_name: str | None = None,
     ) -> tuple[User, str, datetime]:
-        normalized = normalize_username(username)
-        if USERNAME_PATTERN.fullmatch(normalized) is None:
-            raise ValueError(
-                "username must be 3-64 characters of letters, digits, '.', '_' or '-'"
-            )
+        normalized = validate_username(username)
         _validate_password(password)
 
         async with self._registration_lock:
             async with self.session_factory() as session:
                 repository = AuthRepository(session)
-                if (
-                    not self.config.allow_registration
-                    and await repository.count_users() > 0
-                ):
+                existing = await repository.count_users()
+                if not self.config.allow_registration and existing > 0:
                     raise RegistrationClosed(
                         "registration is closed; an account already exists"
                     )
@@ -81,6 +91,10 @@ class AuthService:
                     username=normalized,
                     password_hash=password_hash,
                     display_name=display_name,
+                    # Bootstrap: whoever registers on an empty table owns the
+                    # operator surface. Later registrations are ordinary users;
+                    # an administrator can promote them explicitly.
+                    role=ROLE_ADMIN if existing == 0 else ROLE_USER,
                 )
 
             token, expires_at = await self._issue_session(user.id)

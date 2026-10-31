@@ -11,6 +11,7 @@ const NAVIGATION = [
   { to: '/chat', label: 'Chat', icon: 'bi-chat-dots', end: false },
   { to: '/usage', label: 'LLM usage', icon: 'bi-graph-up-arrow', end: false },
   { to: '/news', label: 'News', icon: 'bi-newspaper', end: false },
+  { to: '/schedule', label: 'Schedule', icon: 'bi-calendar-week', end: false, adminOnly: true },
   { to: '/phone', label: 'Phone data', icon: 'bi-phone', end: false },
   { to: '/meetings', label: 'Meetings', icon: 'bi-camera-video', end: false },
   { to: '/tasks', label: 'Scheduled tasks', icon: 'bi-alarm', end: false },
@@ -18,6 +19,7 @@ const NAVIGATION = [
   { to: '/ai', label: 'AI providers', icon: 'bi-cpu', end: false },
   { to: '/index', label: 'Document index', icon: 'bi-journal-text', end: false },
   { to: '/gateway', label: 'Gateway routes', icon: 'bi-signpost-split', end: false },
+  { to: '/users', label: 'Users', icon: 'bi-people', end: false, adminOnly: true },
   { to: '/account', label: 'Account', icon: 'bi-person-gear', end: false },
 ];
 
@@ -26,7 +28,7 @@ function closeMobileSidebar() {
 }
 
 export function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
 
   // AdminLTE initialises its own widgets (push menu, treeview, colour mode,
@@ -206,7 +208,7 @@ export function AppLayout() {
               data-lte-toggle="treeview"
               data-accordion="false"
             >
-              {NAVIGATION.map((item) => (
+              {NAVIGATION.filter((item) => !item.adminOnly || isAdmin).map((item) => (
                 <li className="nav-item" key={item.to}>
                   <NavLink
                     to={item.to}

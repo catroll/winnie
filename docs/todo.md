@@ -216,34 +216,34 @@ handset has not run them yet.
 
 ### User management
 
-- [ ] Add an explicit `admin` / `user` role to `users` with an Alembic
+- [x] Add an explicit `admin` / `user` role to `users` with an Alembic
       migration. The first registered user becomes admin, later registrations
       are users, and an auth-disabled local deployment acts as admin. For an
       existing table, promote the oldest active user and document the backup.
-- [ ] Enforce the role server-side: `UserRead`, login and `GET /auth/me` return
+- [x] Enforce the role server-side: `UserRead`, login and `GET /auth/me` return
       it, and an `admin_required` dependency protects every `/api/v1/admin/*`
       route with `403` for non-admins. Never rely on hidden menu items for
       security.
-- [ ] Classify the existing API surface before gating it: operator-only routers
+- [x] Classify the existing API surface before gating it: operator-only routers
       (AI registry, gateway route inspection, document-index admin, news, global
       usage, users) require admin; meetings, chat, tasks, skills and account
       remain owner-scoped. Add a test that a normal user gets `403` on every
       operator route, not only on the new Users endpoint.
-- [ ] Treat the cached role as UI state only: refresh `/auth/me` on load and
+- [x] Treat the cached role as UI state only: refresh `/auth/me` on load and
       after a `403`, and drop the Administration UI immediately when the server
       no longer grants the role. The API is the authority on every request.
-- [ ] Add admin user APIs: list/search with pagination; create a user with a
+- [x] Add admin user APIs: list/search with pagination; create a user with a
       generated temporary password shown once; reset a password (revoke all
       sessions); activate/deactivate (deactivation revokes sessions); change
       display name and role. Refuse to demote or deactivate the last active
       admin, or to deactivate the caller's own account.
-- [ ] Add **Administration → Users**: table with username, display name, role,
+- [x] Add **Administration → Users**: table with username, display name, role,
       status, created date and last session; search; create and reset-password
       dialogs; role/status actions; and a clear `403` state when a non-admin
       opens the route directly.
-- [ ] Emit one structured log line per role/status/password change (`actor`,
+- [x] Emit one structured log line per role/status/password change (`actor`,
       `target`, `action`, `result`); never log a password or hash.
-- [ ] Tests: every admin route rejects a user, last-admin and self-deactivation
+- [x] Tests: every admin route rejects a user, last-admin and self-deactivation
       guards, session revocation after deactivate/reset, pagination/search, and
       admin/user menu visibility with a guarded route.
 

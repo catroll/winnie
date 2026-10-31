@@ -13,9 +13,13 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
-from winnie_core.auth.dependencies import get_user_id
+from winnie_core.auth.dependencies import admin_required
 
-router = APIRouter(prefix="/index", tags=["index"])
+router = APIRouter(
+    prefix="/index",
+    tags=["index"],
+    dependencies=[Depends(admin_required)],
+)
 
 
 def _client(request: Request) -> httpx.AsyncClient:
@@ -67,16 +71,12 @@ async def _forward(
 
 
 @router.get("/status")
-async def index_status(
-    request: Request, _: str = Depends(get_user_id)
-) -> dict[str, Any]:
+async def index_status(request: Request) -> dict[str, Any]:
     return await _forward(request, "GET", "/admin/status")
 
 
 @router.get("/config")
-async def index_config(
-    request: Request, _: str = Depends(get_user_id)
-) -> dict[str, Any]:
+async def index_config(request: Request) -> dict[str, Any]:
     return await _forward(request, "GET", "/admin/config")
 
 
@@ -84,7 +84,6 @@ async def index_config(
 async def save_index_config(
     request: Request,
     payload: dict[str, Any] = Body(...),
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     return await _forward(request, "PUT", "/admin/config", payload)
 
@@ -93,7 +92,6 @@ async def save_index_config(
 async def search_index(
     request: Request,
     payload: dict[str, Any] = Body(...),
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     return await _forward(request, "POST", "/admin/search", payload)
 
@@ -102,7 +100,6 @@ async def search_index(
 async def build_index(
     request: Request,
     payload: dict[str, Any] = Body(default_factory=dict),
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     return await _forward(request, "POST", "/admin/build", payload)
 
@@ -111,6 +108,5 @@ async def build_index(
 async def index_skill(
     request: Request,
     payload: dict[str, Any] = Body(default_factory=dict),
-    _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
     return await _forward(request, "POST", "/admin/skill", payload)

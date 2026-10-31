@@ -1,4 +1,8 @@
 import type {
+  AdminUser,
+  AdminUserCreate,
+  AdminUserList,
+  AdminUserUpdate,
   AIIntegration,
   AIIntegrationInput,
   AIProviderConfig,
@@ -33,6 +37,10 @@ import type {
   PhoneRangeQuery,
   PhoneSearchResponse,
   PhoneSummary,
+  ScheduleEventInput,
+  ScheduleEventUpdate,
+  ScheduleMutation,
+  ScheduleWeekPayload,
   NewsEventList,
   NewsRun,
   NewsRunDrafts,
@@ -42,6 +50,7 @@ import type {
   ModelRuntime,
   Readiness,
   RouteList,
+  TemporaryPassword,
   TokenResponse,
   Transcript,
   UsageBalanceList,
@@ -68,14 +77,20 @@ export class ApiError extends Error {
 }
 
 let unauthorizedHandler: (() => void) | null = null;
+let forbiddenHandler: (() => void) | null = null;
 
 /** Called when a request that carried a token is answered with 401. */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   unauthorizedHandler = handler;
 }
 
+/** Called on 403 so the console can re-read the role before hiding admin UI. */
+export function setForbiddenHandler(handler: (() => void) | null): void {
+  forbiddenHandler = handler;
+}
+
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
   /** Do not attach the bearer token; used by the login request. */
@@ -145,6 +160,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (response.status === 401 && token) {
     unauthorizedHandler?.();
+  }
+  if (response.status === 403 && token) {
+    forbiddenHandler?.();
   }
 
   if (!response.ok) {
@@ -301,6 +319,32 @@ export const api = {
     });
   },
 
+  scheduleWeek(date?: string): Promise<ScheduleWeekPayload> {
+    const query = date ? `?date=${encodeURIComponent(date)}` : '';
+    return request<ScheduleWeekPayload>(`/api/v1/schedule/week${query}`);
+  },
+
+  createScheduleEvent(input: ScheduleEventInput): Promise<ScheduleMutation> {
+    return request<ScheduleMutation>('/api/v1/schedule/events', {
+      method: 'POST',
+      body: input,
+    });
+  },
+
+  updateScheduleEvent(input: ScheduleEventUpdate): Promise<ScheduleMutation> {
+    return request<ScheduleMutation>('/api/v1/schedule/events', {
+      method: 'PATCH',
+      body: input,
+    });
+  },
+
+  deleteScheduleEvent(week: string, id: string): Promise<ScheduleMutation> {
+    const search = new URLSearchParams({ week, id });
+    return request<ScheduleMutation>(`/api/v1/schedule/events?${search.toString()}`, {
+      method: 'DELETE',
+    });
+  },
+
   assistantTasks(): Promise<AssistantTaskList> {
     return request<AssistantTaskList>('/api/v1/assistant/tasks');
   },
@@ -416,6 +460,49 @@ export const api = {
     return request<UsageBalanceList>('/api/v1/usage/balances/refresh', {
       method: 'POST',
     });
+  },
+
+
+  adminUsers(params: {
+    q?: string;
+    role?: string;
+    isActive?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<AdminUserList> {
+    return request<AdminUserList>(
+      `/api/v1/admin/users${queryString({
+        q: params.q,
+        role: params.role,
+        is_active: params.isActive,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    );
+  },
+
+  createAdminUser(payload: AdminUserCreate): Promise<TemporaryPassword> {
+    return request<TemporaryPassword>('/api/v1/admin/users', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  updateAdminUser(
+    userId: string,
+    payload: AdminUserUpdate,
+  ): Promise<AdminUser> {
+    return request<AdminUser>(`/api/v1/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: payload,
+    });
+  },
+
+  resetAdminUserPassword(userId: string): Promise<TemporaryPassword> {
+    return request<TemporaryPassword>(
+      `/api/v1/admin/users/${userId}/reset-password`,
+      { method: 'POST' },
+    );
   },
 
   login(username: string, password: string): Promise<TokenResponse> {

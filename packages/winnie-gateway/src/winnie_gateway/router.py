@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from winnie_core.auth.dependencies import admin_required
 from winnie_gateway.anthropic import proxy_anthropic_models, proxy_messages
 from winnie_gateway.openai import proxy_chat_completions, proxy_models
 from winnie_gateway.record import InteractionRecorder
@@ -79,7 +80,7 @@ def _anthropic_bad_request(message: str) -> dict[str, Any]:
     }
 
 
-@router.get("/routes")
+@router.get("/routes", dependencies=[Depends(admin_required)])
 async def list_routes(request: Request) -> dict[str, Any]:
     table: dict[str, Route] = request.app.state.routes_table
     return {
