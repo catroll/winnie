@@ -1,4 +1,9 @@
-"""Minimal OpenAI-compatible chat client for internal jobs."""
+"""Minimal OpenAI-compatible chat client for internal jobs.
+
+The same client serves two callers: single-shot completions (translation,
+minutes) and tool-calling turns (the assistant). Tool support is opt-in: when
+no tools are passed, the request body is identical to what it always was.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from winnie_core.llm.base import LLMCompletion
+from winnie_core.llm.base import ChatResult, LLMCompletion, ToolCall
 from winnie_core.types import Usage
 
 logger = logging.getLogger(__name__)
@@ -19,9 +24,9 @@ RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 class OpenAICompatibleLLM:
     """Call a `/chat/completions` endpoint directly, never through the gateway.
 
-    This keeps internal meeting jobs independent from the transparent proxy's
-    request logging and from client-supplied vendor keys. Transient transport
-    errors and retryable HTTP statuses are retried with exponential backoff.
+    This keeps internal jobs independent from the transparent proxy's request
+    logging and from client-supplied vendor keys. Transient transport errors and
+    retryable HTTP statuses are retried with exponential backoff.
     """
 
     def __init__(
@@ -52,38 +57,55 @@ class OpenAICompatibleLLM:
         self.retry_backoff_seconds = retry_backoff_seconds
         self.http = http
 
-    async def complete(self, messages: list[dict[str, str]]) -> LLMCompletion:
+    async def complete(self, messages: list[dict[str, Any]]) -> LLMCompletion:
+        result = await self.chat(messages)
+        return LLMCompletion(
+            text=result.text,
+            model=result.model,
+            usage=result.usage,
+        )
+
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> ChatResult:
+        """Return one assistant turn, including any tool calls it requested."""
         client = self.http or httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout_seconds, connect=30.0)
         )
         try:
-            body = await self._post_with_retries(client, messages)
+            body = await self._post_with_retries(client, messages, tools)
         finally:
             if self.http is None:
                 await client.aclose()
 
-        text = _message_text(body)
-        usage = body.get("usage") or {}
-        quantity = usage.get("total_tokens")
-        if quantity is None:
-            quantity = int(usage.get("prompt_tokens") or 0) + int(
-                usage.get("completion_tokens") or 0
-            )
-        return LLMCompletion(
+        text = _message_text_or_none(body)
+        tool_calls = _tool_calls(body)
+        if not text and not tool_calls:
+            raise RuntimeError("LLM response contained no text content")
+        return ChatResult(
             text=text,
+            tool_calls=tool_calls,
             model=str(body.get("model") or self.model),
-            usage=Usage(
-                provider="openai-compatible",
-                unit="token",
-                quantity=float(quantity or 0),
-            ),
+            usage=_usage(body),
+            message=_assistant_message(body),
         )
 
     async def _post_with_retries(
         self,
         client: httpx.AsyncClient,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_output_tokens,
+        }
+        if tools:
+            payload["tools"] = tools
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             retry_after: float | None = None
@@ -94,12 +116,7 @@ class OpenAICompatibleLLM:
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={
-                        "model": self.model,
-                        "messages": messages,
-                        "temperature": self.temperature,
-                        "max_tokens": self.max_output_tokens,
-                    },
+                    json=payload,
                 )
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_error = exc
@@ -166,11 +183,15 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
         return None
 
 
-def _message_text(body: dict[str, Any]) -> str:
+def _first_message(body: dict[str, Any]) -> dict[str, Any]:
     choices = body.get("choices") or []
     if not choices:
         raise RuntimeError("LLM response contained no choices")
-    message = choices[0].get("message") or {}
+    return choices[0].get("message") or {}
+
+
+def _message_text_or_none(body: dict[str, Any]) -> str:
+    message = _first_message(body)
     content = message.get("content")
     if isinstance(content, str) and content.strip():
         return content
@@ -183,4 +204,52 @@ def _message_text(body: dict[str, Any]) -> str:
         text = "".join(parts).strip()
         if text:
             return text
-    raise RuntimeError("LLM response contained no text content")
+    return ""
+
+
+def _tool_calls(body: dict[str, Any]) -> tuple[ToolCall, ...]:
+    message = _first_message(body)
+    calls: list[ToolCall] = []
+    for index, raw in enumerate(message.get("tool_calls") or []):
+        if not isinstance(raw, dict):
+            continue
+        function = raw.get("function") or {}
+        name = str(function.get("name") or "").strip()
+        if not name:
+            continue
+        arguments = function.get("arguments")
+        if not isinstance(arguments, str):
+            arguments = "{}" if arguments is None else str(arguments)
+        calls.append(
+            ToolCall(
+                id=str(raw.get("id") or f"call_{index}"),
+                name=name,
+                arguments=arguments,
+            )
+        )
+    return tuple(calls)
+
+
+def _assistant_message(body: dict[str, Any]) -> dict[str, Any]:
+    message = _first_message(body)
+    replay: dict[str, Any] = {
+        "role": "assistant",
+        "content": message.get("content"),
+    }
+    if message.get("tool_calls"):
+        replay["tool_calls"] = message["tool_calls"]
+    return replay
+
+
+def _usage(body: dict[str, Any]) -> Usage:
+    usage = body.get("usage") or {}
+    quantity = usage.get("total_tokens")
+    if quantity is None:
+        quantity = int(usage.get("prompt_tokens") or 0) + int(
+            usage.get("completion_tokens") or 0
+        )
+    return Usage(
+        provider="openai-compatible",
+        unit="token",
+        quantity=float(quantity or 0),
+    )
