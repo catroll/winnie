@@ -79,7 +79,7 @@ Success for the current phase:
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: meetings, transcripts/minutes, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: meetings, transcripts/minutes, assistant scheduled tasks, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
@@ -229,6 +229,9 @@ Working:
 - Meetings: paginated list; detail with stage, processing error, transcript and
   translations, structured minutes, Markdown/TXT export, minutes regeneration
   and deletion.
+- Scheduled tasks: the assistant-created definitions with schedule, active or
+  paused state, next and last run, last result and error, prompt, webhook target,
+  ignored definitions and the scheduler's timezone. The page is read-only.
 - Gateway routes: protocol, upstream, API base and proxy paths from the running
   configuration.
 - Account: profile, session expiry and password change. A password change
@@ -237,8 +240,9 @@ Working:
 
 Boundary:
 
-- Read-and-operate only: recording, audio upload, account registration and
-  route editing stay in the Android client, the API and `config.yaml`.
+- Read-and-operate only: recording, audio upload, account registration, task
+  creation/cancellation and route editing stay in the Android client, the
+  assistant chat, the API and `config.yaml`.
 - Same-origin by default (Vite proxy in development, reverse proxy in
   production); the API has no CORS middleware.
 - The bearer token is kept in `sessionStorage`, or `localStorage` with
@@ -251,6 +255,8 @@ Verified:
   and detail, transcript/minutes, export, regenerate, delete, routes, account,
   password change and re-sign-in, dark mode, the mobile sidebar, and redirect to
   login after the server session was revoked.
+- The scheduled-tasks page was checked against a disposable assistant root with
+  active, paused, failing and ignored definitions, in light and dark mode.
 
 Open:
 
@@ -259,7 +265,7 @@ Open:
 - Production serving (reverse proxy plus SPA fallback) is documented in
   `apps/admin/README.md`, but no deployment configuration is checked in.
 - The knowledge-base UI remains planned; this console only covers meetings,
-  routes and the account.
+  scheduled tasks, routes and the account.
 
 ### 5.7 Knowledge base — Partial
 
@@ -347,6 +353,7 @@ Open:
 | API liveness | `curl http://[::1]:8000/healthz` | `{"status":"ok","version":"0.1.0"}` |
 | Admin console build | `cd apps/admin && npm run build` | TypeScript + Vite build passed |
 | Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
+| Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; light and dark passed |
 
 Not yet verified:
 

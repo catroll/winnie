@@ -75,9 +75,10 @@ conversation. Its default `assistant.model` is `fake` until
 
 The AdminLTE management console in `apps/admin` operates the same data in a
 browser: sign in, dashboard, meeting list and detail, transcript and minutes,
-Markdown/TXT export, regenerate and delete, gateway route inspection, and
-account/password management. It is read-and-operate only — recording and upload
-stay in the Android client.
+Markdown/TXT export, regenerate and delete, assistant scheduled tasks, gateway
+route inspection, and account/password management. It is read-and-operate only —
+recording and upload stay in the Android client, and scheduled tasks are created
+and cancelled through the assistant chat.
 
 ### Quick start
 
