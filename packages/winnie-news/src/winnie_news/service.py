@@ -117,9 +117,30 @@ class NewsService:
 
     # ------------------------------------------------------------ status
 
+    def model_readiness(self) -> dict[str, Any] | None:
+        """Ask the model adapter whether every purpose can make a call.
+
+        The package knows no vendor; an adapter that can answer does, and one
+        that cannot is treated as ready so a simple test double still works.
+        """
+        check = getattr(self.llm, "readiness", None)
+        if not callable(check):
+            return None
+        try:
+            return check()
+        except Exception as exc:  # noqa: BLE001 - a broken check is a failed check
+            return {
+                "ready": False,
+                "features": [],
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
     @property
     def ready(self) -> bool:
-        return self.llm is not None
+        if self.llm is None:
+            return False
+        readiness = self.model_readiness()
+        return bool(readiness.get("ready", False)) if readiness is not None else True
 
     @property
     def active_run(self) -> str | None:
@@ -129,6 +150,7 @@ class NewsService:
         return {
             "enabled": self.config.enabled,
             "ready": self.ready,
+            "model": self.model_readiness(),
             "llm": getattr(self.llm, "name", "") if self.llm is not None else "",
             "search": getattr(self.search, "name", "") if self.search is not None else "",
             "active_run": self._active,
@@ -145,10 +167,7 @@ class NewsService:
         if not self.config.enabled:
             raise NewsUnavailable("news is disabled (news.enabled is false)")
         if not self.ready:
-            raise NewsUnavailable(
-                "no model is bound for news; choose one on the AI providers page "
-                "(bindings news.extract, news.write, news.review)"
-            )
+            raise NewsUnavailable(_unusable_reason(self.model_readiness()))
         run = RunRecord(
             id=new_run_id(),
             created_at=now_iso(),
@@ -367,3 +386,22 @@ class NewsService:
 
     def get_event(self, event_id: str) -> Event | None:
         return self.event_store.events.get(event_id)
+
+def _unusable_reason(readiness: dict[str, Any] | None) -> str:
+    """One sentence naming the concrete fix for an unusable model binding."""
+    if not readiness:
+        return (
+            "no model is bound for news; choose one on the AI providers page "
+            "(bindings news.extract, news.write, news.review)"
+        )
+    errors: list[str] = []
+    if readiness.get("error"):
+        errors.append(str(readiness["error"]))
+    for feature in readiness.get("features") or []:
+        error = str(feature.get("error") or "")
+        if error and error not in errors:
+            errors.append(error)
+    if errors:
+        return "news cannot run: " + "; ".join(errors)
+    return "news has no usable model; check the news bindings in Admin -> AI suppliers"
+

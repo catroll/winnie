@@ -25,6 +25,9 @@ _FEATURE_BY_PURPOSE = {
     "news.review": "news.review",
 }
 
+# Checked together: a run needs all three before it can finish.
+_NEWS_FEATURES = ("news.extract", "news.write", "news.review")
+
 
 class DynamicNewsLLM:
     name = "configured"
@@ -46,6 +49,52 @@ class DynamicNewsLLM:
         except AIProviderError:
             return "unavailable"
         return provider.model or provider.integration_name
+
+    def readiness(self) -> dict[str, Any]:
+        """Whether every news purpose can actually make a call.
+
+        A resolution failure (no binding, removed supplier, model not in the
+        catalog) and a missing supplier key are different problems, but both
+        make a run impossible and both are knowable before a batch is
+        collected. Returning them here lets the service refuse the run with the
+        concrete fix instead of failing at the first extraction.
+        """
+        features: list[dict[str, Any]] = []
+        for feature in _NEWS_FEATURES:
+            try:
+                provider = self.registry.resolve(feature)
+            except AIProviderError as exc:
+                features.append(
+                    {"feature": feature, "ready": False, "error": str(exc)}
+                )
+                continue
+            needs_key = provider.kind != "fake"
+            key_ready = not needs_key or self.registry.keys.present(provider.vendor)
+            features.append(
+                {
+                    "feature": feature,
+                    "ready": key_ready,
+                    "vendor": provider.vendor,
+                    "vendor_label": provider.vendor_label,
+                    "model": provider.model,
+                    "kind": provider.kind,
+                    "key_env": provider.key_env if needs_key else "",
+                    "key_present": key_ready,
+                    "error": (
+                        ""
+                        if key_ready
+                        else (
+                            f"{provider.key_env} is not set for supplier "
+                            f"{provider.vendor!r}; add it to "
+                            f"{self.registry.keys.path}"
+                        )
+                    ),
+                }
+            )
+        return {
+            "ready": all(feature["ready"] for feature in features),
+            "features": features,
+        }
 
     async def complete(
         self, messages: list[dict[str, Any]], *, purpose: str = ""

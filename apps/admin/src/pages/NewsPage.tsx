@@ -13,8 +13,25 @@ import { PageHeader } from '../components/PageHeader';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 
+interface ModelFeatureReadiness {
+  feature: string;
+  ready: boolean;
+  error?: string;
+}
+
+/**
+ * The API now reports why a binding cannot be used (no binding, removed
+ * supplier, missing supplier key). Kept local until the shared type catches up;
+ * the field is additive and older responses omit it.
+ */
+interface ModelReadiness {
+  ready: boolean;
+  error?: string;
+  features?: ModelFeatureReadiness[];
+}
+
 interface NewsData {
-  status: NewsStatus;
+  status: NewsStatus & { model?: ModelReadiness | null };
   runs: NewsRun[];
   sources: NewsSourceList;
 }
@@ -84,6 +101,10 @@ export function NewsPage() {
     [runs, selectedRunId],
   );
   const running = runs.some((run) => run.status === 'running');
+  const modelError =
+    loaded?.status.model?.features?.find((feature) => feature.error)?.error ??
+    loaded?.status.model?.error ??
+    '';
 
   // A run continues in the API process; poll while work is in flight and while
   // the page is open so stage progress is visible without a manual reload.
@@ -209,9 +230,13 @@ export function NewsPage() {
               {!loaded.status.ready ? (
                 <div className="alert alert-warning" role="alert">
                   <i className="bi bi-exclamation-triangle-fill me-2" aria-hidden="true" />
-                  No model is bound for news. Bind <code>news.extract</code>,{' '}
-                  <code>news.write</code> and <code>news.review</code> on the{' '}
-                  <a href="/ai">AI providers</a> page before starting a run.
+                  News cannot run yet. Bind <code>news.extract</code>,{' '}
+                  <code>news.write</code> and <code>news.review</code> to a supplier on
+                  the <a href="/ai">AI providers</a> page and set that supplier&rsquo;s
+                  API key.
+                  {modelError ? (
+                    <p className="mb-0 mt-1 small font-monospace">{modelError}</p>
+                  ) : null}
                 </div>
               ) : null}
 

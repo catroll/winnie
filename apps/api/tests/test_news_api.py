@@ -83,7 +83,8 @@ def _settings(tmp_path: Path) -> Settings:
 
 
 @asynccontextmanager
-async def opened(tmp_path: Path):
+async def opened_app(tmp_path: Path):
+    """Yield the test client and the app, so a test can rebind a feature."""
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500)
 
@@ -123,8 +124,14 @@ async def opened(tmp_path: Path):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            yield client
+            yield client, app
     await http.aclose()
+
+
+@asynccontextmanager
+async def opened(tmp_path: Path):
+    async with opened_app(tmp_path) as (client, _app):
+        yield client
 
 
 async def test_status_and_a_full_run(tmp_path: Path) -> None:
@@ -317,3 +324,37 @@ async def test_regeneration_of_a_missing_draft_is_404(tmp_path: Path) -> None:
             f"/api/v1/news/runs/{run['id']}/drafts/evt_nope/regenerate"
         )
         assert response.status_code == 404
+
+
+async def test_a_missing_supplier_key_blocks_a_run(tmp_path: Path) -> None:
+    async with opened_app(tmp_path) as (client, app):
+        ai = app.state.ai_settings
+        ai.create_vendor(
+            VendorDraft(
+                id="keyless",
+                label="Keyless",
+                models=[{"id": "m1"}],
+            )
+        )
+        ai.create_integration(
+            IntegrationDraft(
+                name="keyless-openai",
+                label="Keyless OpenAI",
+                vendor="keyless",
+                kind="openai",
+                base_url="https://example.invalid",
+                gateway=False,
+            )
+        )
+        for feature in ("news.extract", "news.write", "news.review"):
+            ai.set_binding(feature, BindingDraft(vendor="keyless", model="m1"))
+
+        status = (await client.get("/api/v1/news/status")).json()
+        assert status["ready"] is False
+        assert status["model"]["ready"] is False
+        errors = [entry["error"] for entry in status["model"]["features"]]
+        assert any("KEYLESS_API_KEY" in error for error in errors)
+
+        refused = await client.post("/api/v1/news/runs", json={})
+        assert refused.status_code == 503
+        assert "KEYLESS_API_KEY" in refused.json()["detail"]

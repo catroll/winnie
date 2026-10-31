@@ -228,10 +228,16 @@ supplier model:
 | `news.review` | Draft review |
 
 A fresh registry leaves every model feature unbound, news included. Add a
-supplier and its API key in the console, sync its models, then bind all three;
-an unbound feature fails the clean stage with `feature news.extract has no
-model`, which the run record reports. Rebinding takes effect on the next run,
-without a restart. See [ai-providers.md](./ai-providers.md).
+supplier and its API key in the console, sync its models, then bind all three.
+Rebinding takes effect on the next run, without a restart. See
+[ai-providers.md](./ai-providers.md).
+
+A binding is not the same as a usable model. `GET /api/v1/news/status` reports
+each news purpose with its supplier, model and missing key, and `ready` is false
+when any of the three is unbound or its supplier key is absent. Starting a run
+in that state returns `503` naming the exact variable to set — before a single
+source is fetched, instead of failing at the first extraction ten seconds
+later. A service without a readiness probe (a test double) is treated as ready.
 
 ## HTTP API
 
@@ -239,7 +245,7 @@ All routes require the bearer token when accounts are enabled.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/news/status` | Readiness, bindings, event/run counts, active run |
+| GET | `/api/v1/news/status` | Readiness, per-feature model usability, counts, active run |
 | POST | `/api/v1/news/runs` | Start a run (`202`); `409` if one is active |
 | GET | `/api/v1/news/runs` | Recent runs |
 | GET | `/api/v1/news/runs/{id}` | One run with stage status and stats |

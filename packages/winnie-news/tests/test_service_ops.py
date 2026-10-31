@@ -171,3 +171,43 @@ async def test_regenerate_rejects_an_unknown_event(tmp_path) -> None:
     run = await service.run_now()
     with pytest.raises(Exception, match="not in the event store"):
         await service.regenerate_draft(run.id, "evt_missing")
+
+
+class UnusableLLM:
+    """An adapter that knows its supplier key is missing."""
+
+    name = "unusable"
+
+    def readiness(self) -> dict:
+        return {
+            "ready": False,
+            "features": [
+                {
+                    "feature": "news.extract",
+                    "ready": False,
+                    "error": "DEEPSEEK_API_KEY is not set for supplier 'deepseek'",
+                }
+            ],
+        }
+
+    async def complete(self, messages, *, purpose=""):
+        raise AssertionError("a run must not call an unusable model")
+
+
+@pytest.mark.asyncio
+async def test_an_unusable_model_blocks_a_run_and_names_the_fix(tmp_path) -> None:
+    service = NewsService(
+        NewsConfig(enabled=True, root=str(tmp_path)),
+        llm=UnusableLLM(),
+        material_source=lambda **kwargs: material_batch(),
+    )
+    await service.startup()
+
+    status = service.status()
+    assert status["ready"] is False
+    assert status["model"]["features"][0]["error"].startswith("DEEPSEEK_API_KEY")
+
+    with pytest.raises(Exception, match="DEEPSEEK_API_KEY"):
+        await service.run_now()
+    # Refused before a run directory or a material fetch was created.
+    assert service.list_runs() == []
