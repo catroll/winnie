@@ -5,9 +5,9 @@ A small web management console for a personal Winnie instance. It is built on
 adds no new backend service.
 
 It is for looking at and operating what the API already knows: your meetings,
-their transcripts and minutes, the assistant's scheduled tasks, and the
-configured model-gateway routes. It is not a recording client and it does not
-store vendor API keys.
+their transcripts and minutes, the assistant's scheduled tasks and their run
+history, and the configured model-gateway routes. It is not a recording client
+and it does not store vendor API keys.
 
 ## What you can do
 
@@ -16,7 +16,7 @@ store vendor API keys.
 | **Dashboard** | Meeting count, configured routes, API version and readiness, plus the five most recent meetings |
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
-| **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state |
+| **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every route from `apps/api/config.yaml`, with protocol, upstream, API base and proxy paths |
 | **Account** | Profile, session expiry and password change |
@@ -96,8 +96,9 @@ Deliberately not part of this app yet:
 - Creating, editing or cancelling scheduled tasks. The assistant owns
   `tasks/tasks.json` through the chat tools, so the console only reads it; a
   second writer would also have to synchronise the scheduler's next-run state.
-  The page shows the last persisted result per task, not the full run log,
-  which stays in `tasks/runs.jsonl`.
+  The task table shows the last persisted result and the Run history card pages
+  through `tasks/runs.jsonl` (newest first, filterable by task); the log remains
+  the only store.
 - Editing routes from the browser (they are read from `apps/api/config.yaml`).
 - Browsing gateway request logs (they stay on disk under `data/logs/`).
 - Knowledge-base management, which is still planned.

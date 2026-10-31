@@ -144,12 +144,17 @@ state, duplicating a path that already works conversationally. The console's job
 here is to make an unattended mechanism inspectable, which is exactly the gap a
 chat-only task list leaves.
 
-**One result, not the log.** The page shows the last persisted result per task
-and says so; the full history stays in `tasks/runs.jsonl`. Adding a read
-endpoint for the log is a small, additive follow-up. Reading the log from the
-browser is not an option because the file is on the API host, and copying the
-history into the task definition would make the definition file grow without
-bound.
+**One result inline, the log on request.** The task table shows the last
+persisted result; the Run history card reads
+`GET /api/v1/assistant/tasks/runs` with a task filter and offset pagination, so
+every execution is inspectable. `tasks/runs.jsonl` remains the only store: the
+endpoint scans it and keeps only the requested page in a bounded deque, so a long
+log costs a scan, not unbounded memory. The response carries `total` and
+`skipped` (malformed lines), so the page can say how much history exists and
+whether a partial line was ignored. Copying runs into the task definition was
+rejected: it would grow the definition without bound and create a second source
+of truth. Reading the file directly from the browser was rejected because the
+file is on the API host.
 
 **Status route is optional.** The page also reads `/assistant/status` for the
 timezone and the scheduler's running flag, but tolerates that call failing: the

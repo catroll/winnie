@@ -232,6 +232,9 @@ Working:
 - Scheduled tasks: the assistant-created definitions with schedule, active or
   paused state, next and last run, last result and error, prompt, webhook target,
   ignored definitions and the scheduler's timezone. The page is read-only.
+- Run history: every recorded execution, newest first, filterable by task and
+  paged 25 at a time, with start time, duration, result, conversation id and both
+  execution and delivery errors.
 - Gateway routes: protocol, upstream, API base and proxy paths from the running
   configuration.
 - Account: profile, session expiry and password change. A password change
@@ -353,7 +356,7 @@ Open:
 | API liveness | `curl http://[::1]:8000/healthz` | `{"status":"ok","version":"0.1.0"}` |
 | Admin console build | `cd apps/admin && npm run build` | TypeScript + Vite build passed |
 | Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
-| Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; light and dark passed |
+| Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
 
 Not yet verified:
 

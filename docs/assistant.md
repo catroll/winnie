@@ -363,7 +363,10 @@ user can read them back:
   down, nothing runs; the run history is on disk so a gap is visible.
 - The admin console reads the same definitions at `/tasks`: schedule, active or
   paused state, next and last run, last result, prompt and webhook target. It is
-  read-only; creation and cancellation stay with the chat tools above.
+  read-only; creation and cancellation stay with the chat tools above. The same
+  page lists every recorded execution from `GET /assistant/tasks/runs`, newest
+  first, filterable by task and paged 25 at a time, with start time, duration,
+  result, conversation id and both execution and delivery errors.
 
 ## 8. HTTP API
 
@@ -379,6 +382,7 @@ accounts are disabled the local owner is used.
 | POST | `/assistant/memory/distill` | run the distillation now |
 | GET | `/assistant/documents/search?q=` | index-backed search with provenance |
 | GET | `/assistant/tasks` | tasks plus persisted next-run state |
+| GET | `/assistant/tasks/runs` | recorded executions, newest first; `task_id`, `limit`, `offset` |
 | POST | `/assistant/tasks/{id}/run` | run a task now, without moving its schedule |
 | GET | `/assistant/ui` | mobile-friendly chat page |
 | GET | `/assistant/status` | model, search, index, root, counts, scheduler state |
