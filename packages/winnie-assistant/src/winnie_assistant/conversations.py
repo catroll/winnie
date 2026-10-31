@@ -43,6 +43,10 @@ class InvalidConversationId(Exception):
     """The id is malformed or would escape the conversation directory."""
 
 
+class ConversationReadOnly(Exception):
+    """The conversation records an automated run and cannot accept a chat turn."""
+
+
 @dataclass(frozen=True)
 class Message:
     role: Role
@@ -57,6 +61,7 @@ class Conversation:
     title: str
     created_at: datetime
     source: str
+    channel: str
     owner: str
     path: Path
     messages: tuple[Message, ...]
@@ -68,6 +73,7 @@ class ConversationSummary:
     title: str
     created_at: datetime
     source: str
+    channel: str
     message_count: int
     preview: str
 
@@ -108,6 +114,7 @@ class ConversationStore:
         *,
         first_message: str,
         source: str = "chat",
+        channel: str = "api",
         task_id: str = "",
         owner: str = "local",
         title: str | None = None,
@@ -127,6 +134,7 @@ class ConversationStore:
             "title": resolved_title,
             "created_at": format_time(created),
             "source": source,
+            "channel": channel,
             "owner": owner,
         }
         if task_id:
@@ -144,6 +152,7 @@ class ConversationStore:
             title=resolved_title,
             created_at=created,
             source=source,
+            channel=channel,
             owner=owner,
             path=path,
             messages=(message,),
@@ -182,13 +191,25 @@ class ConversationStore:
             raise ConversationNotFound(conversation_id)
         return _parse(path, path.read_text(encoding="utf-8"))
 
-    def list(self, *, limit: int | None = 20) -> list[ConversationSummary]:
+    def list(
+        self,
+        *,
+        limit: int | None = 20,
+        offset: int = 0,
+        channel: str | None = None,
+    ) -> list[ConversationSummary]:
         paths = sorted(self.root.glob("*/*.md"), reverse=True)
         summaries: list[ConversationSummary] = []
+        skipped = 0
         for path in paths:
             if not _ID.match(path.stem):
                 continue
             conversation = _parse(path, path.read_text(encoding="utf-8"))
+            if channel and conversation.channel != channel:
+                continue
+            if skipped < offset:
+                skipped += 1
+                continue
             preview = next(
                 (
                     collapse_whitespace(message.text)
@@ -203,6 +224,7 @@ class ConversationStore:
                     title=conversation.title,
                     created_at=conversation.created_at,
                     source=conversation.source,
+                    channel=conversation.channel,
                     message_count=len(conversation.messages),
                     preview=preview[:160],
                 )
@@ -211,8 +233,17 @@ class ConversationStore:
                 break
         return summaries
 
-    def count(self) -> int:
-        return sum(1 for path in self.root.glob("*/*.md") if _ID.match(path.stem))
+    def count(self, *, channel: str | None = None) -> int:
+        if channel is None:
+            return sum(
+                1 for path in self.root.glob("*/*.md") if _ID.match(path.stem)
+            )
+        return sum(
+            1
+            for path in self.root.glob("*/*.md")
+            if _ID.match(path.stem)
+            and _parse(path, path.read_text(encoding="utf-8")).channel == channel
+        )
 
     async def get_or_create(
         self,
@@ -220,17 +251,21 @@ class ConversationStore:
         first_message: str,
         conversation_id: str | None,
         source: str,
+        channel: str = "api",
         task_id: str = "",
         owner: str = "local",
         title: str | None = None,
     ) -> Conversation:
         if conversation_id:
             conversation = self.get(conversation_id)
+            if conversation.source == "task" and source != "task":
+                raise ConversationReadOnly(conversation_id)
             await self.append(conversation_id, "user", first_message)
             return self.get(conversation_id)
         return await self.create(
             first_message=first_message,
             source=source,
+            channel=channel,
             task_id=task_id,
             owner=owner,
             title=title,
@@ -260,6 +295,12 @@ def _parse(path: Path, text: str) -> Conversation:
     title = str(header.get("title") or "").strip()
     created_at = _header_time(header.get("created_at"))
     source = str(header.get("source") or "chat")
+    # `source` is who started the turn (chat or task); `channel` is where it
+    # arrived (admin, web, api, task). Files written before channels existed
+    # have no channel, so the source is the best available fallback.
+    channel = str(header.get("channel") or "").strip()
+    if not channel:
+        channel = "task" if source == "task" else "api"
     owner = str(header.get("owner") or "local")
 
     messages: list[Message] = []
@@ -303,6 +344,7 @@ def _parse(path: Path, text: str) -> Conversation:
         title=title or "Untitled",
         created_at=created_at,
         source=source,
+        channel=channel,
         owner=owner,
         path=path,
         messages=tuple(messages),

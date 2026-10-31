@@ -79,3 +79,22 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
 5. **Verification:** `alembic check` reports
    `No new upgrade operations detected.` Re-run the failing endpoint after the
    repair; a clean migration state alone is not proof that the query works.
+
+## Optional overrides must be resolved before they reach collaborators (2026-11-01)
+
+1. **Signal.** Every assistant turn returned
+   `502 model call failed: 'NoneType' object has no attribute 'chat'`, while the
+   assistant started cleanly and `/status` reported the configured model.
+2. **Cause.** `build_assistant_service` gained optional `model` and `model_name`
+   parameters for tests. It resolved them into `resolved_model`, but the
+   `AssistantAgent` and `MemoryBuilder` were still constructed with the raw
+   `model` parameter. With no override that value is `None`, so only the
+   production path broke; a test that injected a model would have passed.
+3. **Check.** Search the factory for the raw parameter after introducing a
+   resolved value:
+   `grep -n 'model=' packages/winnie-assistant/src/winnie_assistant/factory.py`.
+   Every collaborator that needs a model must receive the resolved object.
+   The API-level test fixture (`create_app` → `assistant_client`) is the guard:
+   it exercises the default path, not the injection seam.
+4. **Verification.** `POST /api/v1/assistant/chat` returned a reply and the
+   console chat rendered it after the fix; the assistant suites pass.

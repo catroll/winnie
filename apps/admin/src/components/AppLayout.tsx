@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 
 const NAVIGATION = [
   { to: '/', label: 'Dashboard', icon: 'bi-speedometer2', end: true },
+  { to: '/chat', label: 'Chat', icon: 'bi-chat-dots', end: false },
   { to: '/meetings', label: 'Meetings', icon: 'bi-camera-video', end: false },
   { to: '/tasks', label: 'Scheduled tasks', icon: 'bi-alarm', end: false },
   { to: '/index', label: 'Document index', icon: 'bi-journal-text', end: false },

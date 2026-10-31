@@ -278,3 +278,45 @@ export interface AssistantStatus {
   index: { enabled: boolean; url: string };
   scheduler: { running: boolean; tasks: number; errors: string[] };
 }
+
+/** Assistant conversations, whichever channel they started from. */
+
+export type AssistantMessageRole = 'user' | 'assistant' | 'tool';
+
+export interface AssistantMessage {
+  role: AssistantMessageRole;
+  name: string;
+  text: string;
+  at: string;
+}
+
+export interface AssistantConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  source: string;
+  channel: string;
+  message_count: number;
+  preview: string;
+}
+
+export interface AssistantConversationList {
+  items: AssistantConversationSummary[];
+  total: number;
+}
+
+export interface AssistantConversation {
+  id: string;
+  title: string;
+  created_at: string;
+  source: string;
+  channel: string;
+  messages: AssistantMessage[];
+}
+
+export interface AssistantChatResponse {
+  conversation_id: string;
+  reply: string;
+  tools_used: string[];
+  usage_tokens: number;
+}

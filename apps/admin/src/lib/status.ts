@@ -72,3 +72,21 @@ export function stageLabel(stage: string | null): string | null {
   };
   return labels[stage] ?? stage;
 }
+
+const CONVERSATION_CHANNELS: Record<string, StatusMeta> = {
+  admin: { label: 'Console', badge: 'text-bg-primary' },
+  web: { label: 'Mobile web', badge: 'text-bg-info' },
+  api: { label: 'API', badge: 'text-bg-secondary' },
+  task: { label: 'Scheduled task', badge: 'text-bg-warning' },
+  chat: { label: 'Chat', badge: 'text-bg-secondary' },
+};
+
+/** Where an assistant conversation arrived from. */
+export function conversationChannel(channel: string): StatusMeta {
+  return (
+    CONVERSATION_CHANNELS[channel] ?? {
+      label: channel || 'Unknown',
+      badge: 'text-bg-secondary',
+    }
+  );
+}

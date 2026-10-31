@@ -136,6 +136,7 @@ id: 20261101T021500Z-3f9a
 title: "明天的出行安排"
 created_at: 2026-11-01T10:15:00+08:00
 source: chat
+channel: admin
 owner: local
 ---
 
@@ -161,6 +162,11 @@ owner: local
 - Tool blocks are part of the record: they explain which search result or local
   document an answer came from, and they are what the index chunks.
 - `source` is `chat` or `task`; task runs also record `task: <id>`.
+- `channel` records where the turn arrived: `admin` (the console), `web` (the
+  phone page), `api` (a direct API client) or `task`. `source` says who started
+  the turn, `channel` says where it came from; a future Telegram or ntfy
+  adapter is a new channel, not a new source. A file written before channels
+  existed falls back to `api`, or to `task` for a task-sourced file.
 - The front matter is the only mutable part. Appends never rewrite earlier
   blocks.
 
@@ -375,8 +381,8 @@ accounts are disabled the local owner is used.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/assistant/chat` | send `{message, conversation_id?}`, get the reply |
-| GET | `/assistant/conversations` | recent conversations, newest first |
+| POST | `/assistant/chat` | send `{message, conversation_id?, channel?}`, get the reply |
+| GET | `/assistant/conversations` | recent conversations, newest first; `limit`, `offset`, `channel` |
 | GET | `/assistant/conversations/{id}` | full transcript (tool blocks included) |
 | GET | `/assistant/memory` | profile files with entry counts and the digest |
 | POST | `/assistant/memory/distill` | run the distillation now |
@@ -388,8 +394,17 @@ accounts are disabled the local owner is used.
 | GET | `/assistant/status` | model, search, index, root, counts, scheduler state |
 
 The chat response is non-streaming in this slice. Streaming is an additive
-change behind the same route (SSE), and the page is written so it can switch
-without moving state.
+change behind the same route (SSE), and both chat surfaces are written so they
+can switch without moving state.
+
+The console chat at `/chat` and the phone page at `/assistant/ui` call the same
+route. The console tags its turns `channel: admin`, the phone page `web`, a
+direct caller defaults to `api`, and the scheduler writes `task`. The console's
+history sidebar lists all four, filters by channel, and opens any transcript
+with its tool blocks. A task-run conversation is read-only: the API rejects a
+chat turn on it with `409`, because appending a human message to an unattended
+record would mix two kinds of turn and would re-enable the task-management tools
+under a scheduled prompt.
 
 ## 9. Configuration
 
@@ -487,12 +502,13 @@ Follow-ups after this slice, in order:
 Automated:
 
 ```bash
-cd apps/api && .venv/bin/python -m pytest -q    # 128 passed
+cd apps/api && .venv/bin/python -m pytest -q    # 134 passed
 ```
 
-Covers the conversation store, profile files and digest, distillation
-idempotency, the index client, the tool loop with a fake model, task creation
-and cancellation, scheduler arithmetic and the HTTP routes.
+Covers the conversation store (including channel recording, filtering and the
+task-run read-only guard), profile files and digest, distillation idempotency,
+the index client, the tool loop with a fake model, task creation and
+cancellation, scheduler arithmetic and the HTTP routes.
 
 Live, on 2026-11-01, with DeepSeek, Bing RSS, `winnie-index` on `127.0.0.1:8790`
 and the real storage root:
@@ -506,6 +522,7 @@ and the real storage root:
 | Recall | the reply cited `Winnie/profile/preferences.md:7` after `search_documents` + `read_document` |
 | Task run | manual run finished in 6.7 s, status `ok`, task-sourced conversation with tool blocks, one `runs.jsonl` line |
 | Restart | task, next run, conversations and profile entries survived |
+| Console chat | Firefox against a disposable API and assistant root: login, new chat, four-channel history, channel filter, task record read-only, tool trace, light/dark and mobile with no horizontal overflow |
 
 ## 13. Open questions
 

@@ -11,7 +11,7 @@ infrastructure below it exists to serve the assistant.
 | **Assistant** | Chat, web search, scheduled tasks and long-term memory built from local files | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
-| **Management console** | Web view of meetings, transcripts, minutes and gateway routes | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
@@ -64,17 +64,20 @@ upload, transcript and minutes — and is verified against the local backend;
 running it on a device with a live ASR key is still pending.
 
 The assistant capability is usable end to end: a phone-sized chat page at
-`/api/v1/assistant/ui`, a bounded tool loop with web and local-document search,
-append-only Markdown conversations under `~/Documents/Mine/Winnie`, long-term
-memory distilled from those files and recalled through the local index service,
-and scheduled tasks the assistant creates and cancels when asked in
-conversation. Its default `assistant.model` is `fake` until
+`/api/v1/assistant/ui` and a ChatGPT-like chat in the management console, a
+bounded tool loop with web and local-document search, append-only Markdown
+conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
+those files and recalled through the local index service, and scheduled tasks
+the assistant creates and cancels when asked in conversation. Every conversation
+records its channel, so the console history also covers the phone page, direct
+API clients and unattended task runs. Its default `assistant.model` is `fake` until
 `WINNIE_LLM_API_KEY` is set. Design, decisions and operating notes are in
 [docs/assistant.md](./docs/assistant.md); the index is in
 [docs/knowledge-index.md](./docs/knowledge-index.md).
 
 The AdminLTE management console in `apps/admin` operates the same data in a
-browser: sign in, dashboard, meeting list and detail, transcript and minutes,
+browser: sign in, dashboard, assistant chat with the full cross-channel
+conversation history, meeting list and detail, transcript and minutes,
 Markdown/TXT export, regenerate and delete, assistant scheduled tasks and their
 run history, gateway route inspection, and account/password management. It is
 read-and-operate only — recording and upload stay in the Android client, and

@@ -97,6 +97,7 @@ class AssistantService:
         *,
         conversation_id: str | None = None,
         source: str = "chat",
+        channel: str = "api",
         task_id: str = "",
         title: str | None = None,
     ) -> ChatReply:
@@ -104,6 +105,7 @@ class AssistantService:
             text,
             conversation_id=conversation_id,
             source=source,
+            channel=channel,
             task_id=task_id,
             title=title,
         )
@@ -173,6 +175,7 @@ class AssistantService:
         return await self.chat(
             task.prompt,
             source="task",
+            channel="task",
             task_id=task.id,
             title=task.title,
         )

@@ -10,3 +10,18 @@
 .winnie-pre-line {
   white-space: pre-line;
 }
+
+/*
+ * AdminLTE pins .direct-chat-messages at 250px, the height its own demo uses.
+ * A conversation needs the rest of the pane, so only that height is changed;
+ * the bubbles, timestamps and colours stay AdminLTE's.
+ */
+.winnie-chat .direct-chat-messages {
+  height: clamp(22rem, 62vh, 46rem);
+}
+
+/* The history list scrolls under a fixed channel filter. */
+.winnie-chat-history {
+  max-height: clamp(22rem, 62vh, 46rem);
+  overflow-y: auto;
+}

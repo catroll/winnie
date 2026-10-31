@@ -11,6 +11,7 @@ from winnie_core.auth.dependencies import get_user_id
 from winnie_assistant.agent import AssistantModelError
 from winnie_assistant.conversations import (
     ConversationNotFound,
+    ConversationReadOnly,
     InvalidConversationId,
 )
 from winnie_assistant.index_client import IndexUnavailable
@@ -80,9 +81,15 @@ async def chat(
         reply = await service.chat(
             payload.message.strip(),
             conversation_id=payload.conversation_id,
+            channel=payload.channel,
         )
     except (InvalidConversationId, ConversationNotFound) as exc:
         raise HTTPException(status_code=404, detail="conversation not found") from exc
+    except ConversationReadOnly as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="a scheduled task run is read-only; start a new conversation",
+        ) from exc
     except AssistantModelError as exc:
         raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc
     return ChatResponse(
@@ -96,10 +103,12 @@ async def chat(
 @router.get("/conversations", response_model=ConversationListRead)
 async def list_conversations(
     limit: int = Query(default=20, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    channel: str | None = Query(default=None, max_length=32),
     service: AssistantService = Depends(get_service),
     _: str = Depends(get_user_id),
 ) -> ConversationListRead:
-    summaries = service.store.list(limit=limit)
+    summaries = service.store.list(limit=limit, offset=offset, channel=channel)
     return ConversationListRead(
         items=[
             ConversationSummaryRead(
@@ -107,12 +116,13 @@ async def list_conversations(
                 title=summary.title,
                 created_at=summary.created_at,
                 source=summary.source,
+                channel=summary.channel,
                 message_count=summary.message_count,
                 preview=summary.preview,
             )
             for summary in summaries
         ],
-        total=service.store.count(),
+        total=service.store.count(channel=channel),
     )
 
 
@@ -131,6 +141,7 @@ async def get_conversation(
         title=conversation.title,
         created_at=conversation.created_at,
         source=conversation.source,
+        channel=conversation.channel,
         messages=[
             MessageRead(role=message.role, name=message.name, text=message.text, at=message.at)
             for message in conversation.messages

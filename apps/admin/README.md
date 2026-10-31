@@ -5,15 +5,17 @@ A small web management console for a personal Winnie instance. It is built on
 adds no new backend service.
 
 It is for looking at and operating what the API already knows: your meetings,
-their transcripts and minutes, the assistant's scheduled tasks and their run
-history, and the configured model-gateway routes. It is not a recording client
-and it does not store vendor API keys.
+their transcripts and minutes, the assistant chat and every conversation it has
+recorded, the assistant's scheduled tasks and their run history, and the
+configured model-gateway routes. It is not a recording client and it does not
+store vendor API keys.
 
 ## What you can do
 
 | Page | What it shows |
 |------|---------------|
 | **Dashboard** | Meeting count, configured routes, API version and readiness, plus the five most recent meetings |
+| **Chat** | A ChatGPT-like conversation with the assistant, plus the full history from every channel: console, phone page, API clients and scheduled task runs. Filter by channel, reopen any transcript including its tool blocks, and send from the console |
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
@@ -23,6 +25,30 @@ and it does not store vendor API keys.
 
 The API scopes meetings to the authenticated account, so the console shows the
 same data the Android client does for that user.
+
+## Assistant chat and conversation history
+
+`/chat` is the console's chat surface. It calls the same
+`POST /api/v1/assistant/chat` route as the phone page, so a conversation is one
+Markdown file regardless of where it started. The history sidebar lists all
+four channels:
+
+| Channel | Where it came from |
+|---------|--------------------|
+| **Console** | This page |
+| **Mobile web** | `/api/v1/assistant/ui` on a phone |
+| **API** | A direct API caller, and files written before channels existed |
+| **Scheduled task** | An unattended task run |
+
+The filter is server-side. Selecting a conversation shows its full transcript,
+including `tool:` blocks as collapsible trace entries. A console reply is
+non-streaming: the page shows a thinking indicator and then re-reads the file so
+the recorded tool calls appear. A task-run record is read-only; the API rejects a
+chat turn on it with `409`, and the composer is replaced with a notice.
+
+The chat is available when `assistant.enabled` is true in
+`apps/api/config.yaml`; otherwise the history request explains why it cannot
+load.
 
 ## Quick start
 
@@ -100,7 +126,9 @@ Deliberately not part of this app yet:
   through `tasks/runs.jsonl` (newest first, filterable by task); the log remains
   the only store.
 - Editing routes from the browser (they are read from `apps/api/config.yaml`).
-- Browsing gateway request logs (they stay on disk under `data/logs/`).
+- Browsing the raw gateway request logs (they stay on disk under `data/logs/`).
+  The assistant history is a different record: the conversation Markdown the
+  assistant wrote, not a proxy request log.
 - Knowledge-base management, which is still planned.
 
 ## Stack

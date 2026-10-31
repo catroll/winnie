@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
     conversation_id: str | None = None
+    # Where the turn arrived. `task` is reserved for the scheduler; a chat
+    # client cannot claim to be one. The default keeps older clients working.
+    channel: Literal["admin", "web", "api"] = "api"
 
 
 class ChatResponse(BaseModel):
@@ -32,6 +35,7 @@ class ConversationSummaryRead(BaseModel):
     title: str
     created_at: datetime
     source: str
+    channel: str
     message_count: int
     preview: str
 
@@ -46,6 +50,7 @@ class ConversationRead(BaseModel):
     title: str
     created_at: datetime
     source: str
+    channel: str
     messages: list[MessageRead]
 
 

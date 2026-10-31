@@ -4,6 +4,7 @@ import { AuthProvider } from './auth/AuthContext';
 import { PublicOnly, RequireAuth } from './auth/guards';
 import { AppLayout } from './components/AppLayout';
 import { AccountPage } from './pages/AccountPage';
+import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { IndexPage } from './pages/IndexPage';
 import { LoginPage } from './pages/LoginPage';
@@ -24,6 +25,8 @@ export function App() {
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/chat/:conversationId" element={<ChatPage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/tasks" element={<TasksPage />} />

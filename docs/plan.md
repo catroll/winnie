@@ -79,7 +79,7 @@ Success for the current phase:
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: meetings, transcripts/minutes, assistant scheduled tasks, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: assistant chat and conversation history, meetings, transcripts/minutes, scheduled tasks, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
@@ -226,6 +226,10 @@ Working:
   `/api/v1/auth/me`, and sign-out through `/api/v1/auth/logout`.
 - Dashboard: meeting count, configured routes, API version and readiness, and
   the five most recent meetings.
+- Chat: a ChatGPT-like conversation with the assistant, plus the full history
+  from every channel (console, phone page, API and scheduled task runs),
+  filterable by channel. Any transcript can be reopened, including its tool
+  blocks; a task-run record is read-only.
 - Meetings: paginated list; detail with stage, processing error, transcript and
   translations, structured minutes, Markdown/TXT export, minutes regeneration
   and deletion.
@@ -243,9 +247,10 @@ Working:
 
 Boundary:
 
-- Read-and-operate only: recording, audio upload, account registration, task
-  creation/cancellation and route editing stay in the Android client, the
-  assistant chat, the API and `config.yaml`.
+- Read-and-operate only: recording and audio upload stay in the Android client,
+  task creation/cancellation stays in the assistant chat, and account creation
+  and route edits stay with the API and `config.yaml`. The console chat writes
+  through the assistant API, not into the files directly.
 - Same-origin by default (Vite proxy in development, reverse proxy in
   production); the API has no CORS middleware.
 - The bearer token is kept in `sessionStorage`, or `localStorage` with
@@ -260,6 +265,11 @@ Verified:
   login after the server session was revoked.
 - The scheduled-tasks page was checked against a disposable assistant root with
   active, paused, failing and ignored definitions, in light and dark mode.
+- The chat page was checked in Firefox against a disposable API and assistant
+  root: sign-in, a new console conversation, the four-channel history and its
+  filter, a task-run record with no composer, a transcript with a collapsed
+  `web_search` block, light and dark mode, and a 390 px viewport with no
+  horizontal overflow.
 
 Open:
 
@@ -267,8 +277,10 @@ Open:
   database copy.
 - Production serving (reverse proxy plus SPA fallback) is documented in
   `apps/admin/README.md`, but no deployment configuration is checked in.
-- The knowledge-base UI remains planned; this console only covers meetings,
-  scheduled tasks, routes and the account.
+- The knowledge-base UI remains planned; this console only covers the assistant
+  chat, meetings, scheduled tasks, routes and the account.
+- Chat replies are non-streaming; the page shows a thinking indicator and
+  re-reads the file after the reply. SSE is the next additive step.
 
 ### 5.7 Knowledge base — Partial
 
@@ -302,7 +314,11 @@ Open:
 Working:
 
 - `POST /api/v1/assistant/chat` runs a bounded tool loop; the page at
-  `/api/v1/assistant/ui` is phone-sized and needs no build step.
+  `/api/v1/assistant/ui` is phone-sized and needs no build step, and the console
+  at `/chat` is the desktop surface.
+- Each conversation records where it started (`channel`: `admin`, `web`, `api`
+  or `task`); the console filters the history by channel and opens task runs
+  read-only.
 - Files live in `~/Documents/Mine/Winnie`: append-only conversations, profile
   notes per memory category, `tasks/tasks.json` and `tasks/runs.jsonl`. The
   directory is created on startup with a README explaining the layout.
@@ -328,7 +344,7 @@ Verified:
 - A manual task run finished in 6.7 s, wrote a task-sourced conversation with
   tool blocks and one `runs.jsonl` line; after a restart the task, next run,
   conversations and profile survived.
-- `128 passed` in the backend suite.
+- `134 passed` in the backend suite.
 
 Open:
 
@@ -342,7 +358,7 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **128 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **134 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -357,6 +373,7 @@ Open:
 | Admin console build | `cd apps/admin && npm run build` | TypeScript + Vite build passed |
 | Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
 | Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
+| Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
 
 Not yet verified:
 

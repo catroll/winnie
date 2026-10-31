@@ -188,7 +188,11 @@
       try {
         const response = await request("/chat", {
           method: "POST",
-          body: JSON.stringify({ message: text, conversation_id: conversationId }),
+          body: JSON.stringify({
+            message: text,
+            conversation_id: conversationId,
+            channel: "web",
+          }),
         });
         typing.remove();
         if (response.status === 401) {

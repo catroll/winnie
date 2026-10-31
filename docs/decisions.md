@@ -228,7 +228,10 @@ real model is `assistant.model: ""` plus the key in the environment.
 than a panel in `apps/admin`. The console is a separate, still-uncommitted
 deliverable, and the chat page must work on a phone over the LAN with no build
 step. It stores the bearer token in `localStorage` and uses `textContent` for
-rendering, so model output cannot inject markup.
+rendering, so model output cannot inject markup. *(Superseded in part: the
+console was committed later and now has its own chat page; see
+[Admin console: assistant chat and channel-tagged conversations](#admin-console-assistant-chat-and-channel-tagged-conversations-2026-11-01).
+The phone page remains because it needs no build step and is the LAN surface.)*
 
 
 ## Assistant: index-backed memory and conversation-managed tasks (2026-11-01)
@@ -284,3 +287,44 @@ real request would be surface area without a user.
 the same turn. Everything else waits for the index sweep (300 s by default) or a
 build. Promising immediate recall would be false; the conversation history
 covers the gap for the current session.
+
+## Admin console: assistant chat and channel-tagged conversations (2026-11-01)
+
+**Two chat surfaces, one route.** `/chat` in the console and
+`/api/v1/assistant/ui` on a phone both call `POST /api/v1/assistant/chat`. The
+console version was added because the console is now committed and is where the
+owner works at a desk; the phone page stays because it needs no build step.
+Neither surface owns state: the conversation file is the record, so a reply
+starts in the console and can be read from the phone.
+
+**`channel` is separate from `source`.** `source` already meant who started the
+turn (`chat` or `task`). Adding the transport to the same field would have made
+a future Telegram adapter a new *source* and broken the scheduler's
+`source == "task"` rule. `channel` records where the turn arrived (`admin`,
+`web`, `api`, `task`) in the front matter, so the file is self-describing and
+the history filter needs no database. The field is client-declared; that is
+acceptable for a single-user instance where it is a label, not an access
+boundary. `task` is reserved for the scheduler and rejected by the chat schema.
+
+**Task runs are read-only in the console.** A task-sourced conversation is the
+record of an unattended run. Appending a human turn would mix two kinds of
+record and would run the model with the scheduled prompt and without the
+task-management tools. The store rejects the append (`ConversationReadOnly`,
+`409` from the API) and the console disables the composer rather than relying on
+the UI alone.
+
+**Non-streaming is deliberate for this slice.** ChatGPT-like layout is the
+requirement; token-by-token rendering is not. A turn waits for the stored reply
+and shows a thinking indicator, then re-reads the transcript so tool blocks the
+chat response does not return are visible. SSE remains an additive change behind
+the same route.
+
+**Plain text, not Markdown rendering.** The reply is rendered with
+`white-space: pre-line` and React text nodes. A Markdown renderer would add a
+dependency and an injection surface for a personal console whose record is
+already readable; the stored file remains the faithful view.
+
+**AdminLTE's `direct-chat` is reused.** It supplies the bubbles, timestamps,
+avatars and float direction. Its `.direct-chat-messages` is fixed at `250px`
+because that is the height of AdminLTE's own demo, so one additive rule sets a
+usable `clamp()` height; no other chat CSS or component layer was added.

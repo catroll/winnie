@@ -76,3 +76,29 @@ prompts automatically. The React handler correctly saw `false` and did nothing.
 `POST /alert/accept`), or set `unhandledPromptBehavior` to `accept`. When
 changing these destructive actions, keep the test's prompt handling in mind:
 "No dialog found" is not evidence the action did not fire.
+
+## Firefox BiDi `setViewport` wants `context`, not `contexts`
+
+**Signal.** The first chat verification run passed every interaction and then
+failed at the screenshot step:
+
+```
+"invalid argument", "message": "At least one of \"context\" or \"userContexts\"
+arguments should be provided"
+```
+
+The call was `browsingContext.setViewport` with `contexts: [context]`.
+
+**Cause.** The installed Firefox 157 accepts the singular `context` (or
+`userContexts`) for this command even though the sibling commands use
+`contexts` in other revisions of the protocol. The error names the accepted
+keys, so it is a parameter-shape problem, not a browser or session failure.
+
+**Fix.** Use `{ context, viewport: { width, height }, devicePixelRatio: 1 }`.
+`browsingContext.captureScreenshot` and `browsingContext.navigate` also take the
+singular `context`, so one variable works for all three.
+
+**Check.** Before the screenshot, assert the viewport actually changed by
+reading `getComputedStyle` of a `vh`-sized element (the chat pane was `620px` at
+1440×1000 and `523px` at 390×844). A failed `setViewport` would leave the
+default 800×600 and the screenshot would still look plausible.

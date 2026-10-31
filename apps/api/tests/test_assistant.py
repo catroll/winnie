@@ -60,11 +60,13 @@ async def test_chat_records_tool_trace_and_continues_the_conversation(
     stored = files[0].read_text(encoding="utf-8")
     assert "## tool:web_search ·" in stored
     assert "source: \"chat\"" in stored
+    assert "channel: \"api\"" in stored
 
     listing = await assistant_client.get("/api/v1/assistant/conversations")
     assert listing.status_code == 200
     assert listing.json()["total"] == 1
     assert listing.json()["items"][0]["title"]
+    assert listing.json()["items"][0]["channel"] == "api"
 
 
 async def test_remember_writes_a_profile_file(
@@ -144,6 +146,10 @@ async def test_tasks_are_created_and_run_through_chat(
     )
     assert detail.status_code == 200
     assert detail.json()["source"] == "task"
+    assert detail.json()["channel"] == "task"
+
+    blocked = await _chat(assistant_client, "继续", conversation_id)
+    assert blocked.status_code == 409, blocked.text
 
     runs = (
         assistant_settings.resolve_assistant_root() / "tasks" / "runs.jsonl"
@@ -157,6 +163,48 @@ async def test_tasks_are_created_and_run_through_chat(
     assert remaining.json()["tasks"] == []
     payload = json.loads(stored.read_text(encoding="utf-8"))
     assert payload["tasks"] == []
+
+
+async def test_conversation_channels_are_recorded_and_filtered(
+    assistant_client: httpx.AsyncClient,
+) -> None:
+    admin = await assistant_client.post(
+        "/api/v1/assistant/chat",
+        json={"message": "from the console", "channel": "admin"},
+    )
+    assert admin.status_code == 200, admin.text
+    web = await assistant_client.post(
+        "/api/v1/assistant/chat",
+        json={"message": "from the phone", "channel": "web"},
+    )
+    assert web.status_code == 200, web.text
+
+    listing = await assistant_client.get(
+        "/api/v1/assistant/conversations", params={"channel": "admin"}
+    )
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert body["total"] == 1
+    assert body["items"][0]["channel"] == "admin"
+    assert body["items"][0]["id"] == admin.json()["conversation_id"]
+
+    everything = await assistant_client.get("/api/v1/assistant/conversations")
+    assert everything.json()["total"] == 2
+    assert {item["channel"] for item in everything.json()["items"]} == {
+        "admin",
+        "web",
+    }
+
+    detail = await assistant_client.get(
+        f"/api/v1/assistant/conversations/{admin.json()['conversation_id']}"
+    )
+    assert detail.json()["channel"] == "admin"
+
+    rejected = await assistant_client.post(
+        "/api/v1/assistant/chat",
+        json={"message": "spoofed", "channel": "task"},
+    )
+    assert rejected.status_code == 422
 
 
 async def test_documents_search_uses_the_local_index(tmp_path) -> None:

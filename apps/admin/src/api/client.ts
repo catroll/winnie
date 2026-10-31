@@ -1,4 +1,7 @@
 import type {
+  AssistantChatResponse,
+  AssistantConversation,
+  AssistantConversationList,
   AssistantStatus,
   AssistantTaskList,
   AssistantTaskRunList,
@@ -221,6 +224,44 @@ export const api = {
     return request<AssistantTaskRunList>(
       `/api/v1/assistant/tasks/runs${query ? `?${query}` : ''}`,
     );
+  },
+
+  assistantConversations(params: {
+    limit?: number;
+    offset?: number;
+    channel?: string;
+  } = {}): Promise<AssistantConversationList> {
+    const search = new URLSearchParams();
+    if (params.limit !== undefined) {
+      search.set('limit', String(params.limit));
+    }
+    if (params.offset !== undefined) {
+      search.set('offset', String(params.offset));
+    }
+    if (params.channel) {
+      search.set('channel', params.channel);
+    }
+    const query = search.toString();
+    return request<AssistantConversationList>(
+      `/api/v1/assistant/conversations${query ? `?${query}` : ''}`,
+    );
+  },
+
+  assistantConversation(conversationId: string): Promise<AssistantConversation> {
+    return request<AssistantConversation>(
+      `/api/v1/assistant/conversations/${encodeURIComponent(conversationId)}`,
+    );
+  },
+
+  assistantChat(payload: {
+    message: string;
+    conversation_id?: string;
+    channel: 'admin' | 'web' | 'api';
+  }): Promise<AssistantChatResponse> {
+    return request<AssistantChatResponse>('/api/v1/assistant/chat', {
+      method: 'POST',
+      body: payload,
+    });
   },
 
   login(username: string, password: string): Promise<TokenResponse> {
