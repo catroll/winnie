@@ -54,7 +54,7 @@ help: ## Show this help
 	@printf '  ANDROID_HOME=%s\n' '$(ANDROID_HOME)'
 	@printf '  ADMIN_API_TARGET=%s\n' '$(ADMIN_API_TARGET)'
 	@printf '\nLocal environment: %s (gitignored)\n' '$(ENV_FILE)'
-	@printf '  WINNIE_LLM_API_KEY, VOLCENGINE_ASR_API_KEY  API secrets\n'
+	@printf '  DEEPSEEK_API_KEY, VOLCENGINE_ASR_API_KEY  API secrets\n'
 	@printf '  WINNIE_PUBLIC_URL                           Android default server URL\n'
 	@printf 'Without WINNIE_PUBLIC_URL the APK falls back to http://10.0.2.2:8000.\n'
 

@@ -32,7 +32,7 @@ status are in [plan.md](./plan.md).
       option for accented or heavily code-switched audio.
 - [ ] Record the first real meeting: upload, transcribe, translate, minutes,
       export. Fix provider payload or timestamp assumptions found there.
-- [x] Smoke-test the internal LLM path with a real `WINNIE_LLM_API_KEY`:
+- [x] Smoke-test the internal LLM path with a real `DEEPSEEK_API_KEY`:
       two-line translation preserved order and length, structured minutes
       returned topics/action items, and usage was 109 and 365 tokens. An invalid
       model returned `RuntimeError` with the provider's HTTP 400 message. Prompt

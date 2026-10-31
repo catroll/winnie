@@ -603,7 +603,7 @@ integrations:
   label: Deepseek Openai
   kind: openai
   base_url: https://api.deepseek.com
-  api_key_env: WINNIE_LLM_API_KEY
+  api_key_env: DEEPSEEK_API_KEY
   default_model: deepseek-chat
   enabled: true
   options: {}
@@ -657,7 +657,7 @@ bindings:
     assert by_name["deepseek-openai"]["default_model"] == ""
     assert by_name["deepseek-openai"]["label"] == "DeepSeek (OpenAI-compatible)"
     assert by_name["deepseek-openai"]["gateway"] is True
-    assert by_name["internal-llm"]["api_key_env"] == "WINNIE_LLM_API_KEY"
+    assert by_name["internal-llm"]["api_key_env"] == "DEEPSEEK_API_KEY"
     assert by_name["internal-llm"]["gateway"] is False
     assert by_name["internal-llm"]["default_model"] == "deepseek-chat"
 

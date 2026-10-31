@@ -424,7 +424,7 @@ can be a public proxy route (`gateway: true`), an internal provider
 (`gateway: false`, `api_key_env` set), or both. The first version of the seed
 matched a route by base URL and reused it as the internal LLM, which put the
 server-side key on a public route and made `deepseek-openai` look like it
-required `WINNIE_LLM_API_KEY`. v2 always creates a separate `internal-llm`
+required the old `llm.api_key_env` value. v2 always creates a separate `internal-llm`
 record with `gateway: false`; the route keeps `api_key_env: ""` and forwards the
 client's key. A v1 file is migrated in place on the next read. The alternative —
 one record with a per-role key — was rejected because the two roles can use

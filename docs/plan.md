@@ -538,7 +538,7 @@ Ordered by dependency and risk, not by novelty:
 
 2. **Close M3 validation.**
    - Add the bilingual fixture (local only, never committed).
-   - Enable real translation and summarization with `WINNIE_LLM_API_KEY`.
+   - Enable real translation and summarization with `DEEPSEEK_API_KEY`.
    - Record a real meeting, fix timestamp/language/prompt issues, measure
      latency, tokens and cost.
    - Exit criteria: a real bilingual meeting produces a useful transcript,
@@ -594,7 +594,7 @@ jobs; see [operations](./operations.md).
 Local secrets are in `apps/api/.env` (gitignored):
 
 - `VOLCENGINE_ASR_API_KEY` — file and streaming Doubao ASR.
-- `WINNIE_LLM_API_KEY` — only needed when `translator`/`summarizer` are
+- `DEEPSEEK_API_KEY` — read by the DeepSeek supplier API; only needed when a feature is bound to it
   `openai_compatible`.
 - `WINNIE_PUBLIC_URL` — build-time default server address for the APK.
 

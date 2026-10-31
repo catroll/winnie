@@ -277,14 +277,14 @@ async def test_command_runner_respects_allow_and_scrubs_env(
     with pytest.raises(LocalToolError, match="not in exec.allow"):
         runner.plan([sys.executable, "-c", "pass"])
 
-    monkeypatch.setenv("WINNIE_LLM_API_KEY", "super-secret")
+    monkeypatch.setenv("WINNIE_TEST_SECRET", "super-secret")
     # The allowlist is empty here so the interpreter can run.
     unrestricted = _runner(tmp_path)
     plan = unrestricted.plan(
         [
             sys.executable,
             "-c",
-            "import os; print(os.environ.get('WINNIE_LLM_API_KEY'))",
+            "import os; print(os.environ.get('WINNIE_TEST_SECRET'))",
         ],
         "",
     )

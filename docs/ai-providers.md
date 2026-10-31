@@ -150,6 +150,12 @@ A value pasted into the `api_key_env` field is rejected by validation. Set the
 key in the process environment (directly or through `apps/api/.env`) and restart
 the API or worker: a running process keeps the environment it was started with.
 
+The key belongs to the **supplier API**, not to a feature. A feature bound to a
+model inherits the key of that model's supplier; two features using the same
+supplier share it. To use a different key, add another supplier entry (for
+example `deepseek-work`), give it its own `api_key_env`, and bind the relevant
+features to a model from that supplier.
+
 Gateway paths still forward the client's own vendor key. The environment
 variable matters for internal jobs and the assistant, which call the supplier
 directly. A gateway-only record is never a feature target; the internal API
