@@ -18,15 +18,29 @@ class SearchConfig(BaseModel):
     timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
 
 
-class MemoryConfig(BaseModel):
-    """Long-term memory built from conversation files."""
+class IndexConfig(BaseModel):
+    """The local document index that serves the assistant's memory.
+
+    The index owns tokenisation, chunking and freshness; the assistant only
+    sends queries and reads documents back. It is a separate loopback daemon
+    because the same index serves other agents.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    # Extra read-only Markdown roots indexed for retrieval (for example
-    # ../../personal). Nothing is ever written to them.
-    extra_roots: list[str] = Field(default_factory=list)
+    url: str = "http://127.0.0.1:8790"
+    token_env: str = "WINNIE_INDEX_TOKEN"
+    timeout_seconds: float = Field(default=5.0, ge=1.0, le=60.0)
+    limit: int = Field(default=8, ge=1, le=50)
+
+
+class MemoryConfig(BaseModel):
+    """Long-term memory notes, distilled from conversation files."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
     # Pinned memory is always in the system prompt; this bounds its size.
     digest_chars: int = Field(default=2000, ge=0, le=20000)
     auto_distill: bool = True
@@ -35,12 +49,14 @@ class MemoryConfig(BaseModel):
 
 
 class TasksConfig(BaseModel):
-    """Scheduled task definitions and the in-process scheduler."""
+    """Assistant-managed scheduled tasks and the in-process scheduler."""
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    file: str = "tasks.yaml"
+    # Relative to the assistant root. The assistant writes this file; do not
+    # edit it by hand, ask the assistant to create or cancel a task.
+    file: str = "tasks/tasks.json"
     tick_seconds: float = Field(default=30.0, ge=2.0, le=3600.0)
     # A missed run older than this is skipped instead of replayed.
     catch_up_seconds: int = Field(default=3600, ge=0, le=86400)
@@ -53,7 +69,9 @@ class AssistantConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    root: str = "../../data/assistant"
+    # The assistant's memory and conversation files live with the owner's
+    # documents, so the local index service can index them.
+    root: str = "~/Documents/Mine/Winnie"
     timezone: str = "Asia/Shanghai"
     # Empty means: reuse llm.base_url, llm.model and llm.api_key_env.
     model: str = ""
@@ -61,5 +79,6 @@ class AssistantConfig(BaseModel):
     max_tool_rounds: int = Field(default=4, ge=1, le=10)
     max_tool_output_chars: int = Field(default=4000, ge=200, le=20000)
     search: SearchConfig = Field(default_factory=SearchConfig)
+    index: IndexConfig = Field(default_factory=IndexConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)

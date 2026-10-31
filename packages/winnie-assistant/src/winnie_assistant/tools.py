@@ -2,7 +2,7 @@
 
 Every tool returns plain text that is safe to put in the model context: no
 exceptions escape, no response is unbounded, and no tool has a side effect
-outside the memory directory.
+outside the assistant's memory directory.
 """
 
 from __future__ import annotations
@@ -19,7 +19,9 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from winnie_assistant.index_client import IndexClient, IndexUnavailable
 from winnie_assistant.memory import MemoryStore
+from winnie_assistant.scheduler import AssistantScheduler, TaskDefinitionError
 from winnie_assistant.search import SearchProvider
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,8 @@ _TAG = re.compile(r"<[^>]+>")
 _SPACE = re.compile(r"[ \t\r\f\v]+")
 _BLANK_LINES = re.compile(r"\n{3,}")
 
+TASK_MANAGEMENT_TOOLS = frozenset({"schedule_task", "list_tasks", "cancel_task"})
+
 
 class ToolError(RuntimeError):
     """A tool call that cannot be completed for a reportable reason."""
@@ -45,9 +49,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "web_search",
             "description": (
-                "Search the web for current information. Use it when the answer "
-                "depends on facts after your training data, or on news, weather, "
-                "prices or anything time-sensitive. Cite the result URL you used."
+                "Search the public web for current information: news, weather, "
+                "prices or anything after your training data. Cite the result "
+                "URL you used."
             ),
             "parameters": {
                 "type": "object",
@@ -70,8 +74,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "fetch_page",
             "description": (
-                "Fetch one public http(s) page and return its readable text. Use it "
-                "after a search when the snippet is not enough."
+                "Fetch one public http(s) page and return its readable text. Use "
+                "it after a web search when the snippet is not enough."
             ),
             "parameters": {
                 "type": "object",
@@ -86,17 +90,19 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "memory_search",
+            "name": "search_documents",
             "description": (
-                "Search the user's long-term memory: preferences, people, projects, "
-                "decisions and earlier facts. Use it whenever the user refers to "
-                "themselves or to something said before."
+                "Search the owner's local documents: their notes, projects, and "
+                "the assistant's own memory and past conversations (paths under "
+                "Winnie/). Use it whenever the user refers to something said, "
+                "written or decided before. Returns path, heading, line range "
+                "and a snippet; cite path:line."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20},
                 },
                 "required": ["query"],
                 "additionalProperties": False,
@@ -106,11 +112,36 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "memory_remember",
+            "name": "read_document",
             "description": (
-                "Store one durable fact in long-term memory. Use it only when the "
-                "user asks you to remember something, or states a stable "
-                "preference, identity fact or relationship."
+                "Read a local document returned by search_documents, optionally "
+                "a line window. The index revalidates the file before returning "
+                "it, so the text is current."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path as returned by search_documents.",
+                    },
+                    "from_line": {"type": "integer", "minimum": 1},
+                    "lines": {"type": "integer", "minimum": 1, "maximum": 200},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember",
+            "description": (
+                "Store one durable fact in long-term memory (a Markdown file the "
+                "owner can edit). Use it when the user asks you to remember "
+                "something, or states a stable preference, identity fact or "
+                "relationship."
             ),
             "parameters": {
                 "type": "object",
@@ -140,7 +171,88 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "schedule_task",
+            "description": (
+                "Create a recurring task that runs on its own and writes the "
+                "result to a conversation. Only call this after the user has "
+                "explicitly agreed to the schedule and to what the task should "
+                "do; never create one from a passing remark. Schedule forms: "
+                "'every 15m' (minimum 5m), 'daily 07:30', 'weekly mon 09:00'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Short label."},
+                    "schedule": {
+                        "type": "string",
+                        "description": "e.g. 'daily 07:30' or 'every 2h'.",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": (
+                            "The instruction the task runs at each fire time, "
+                            "written as a message to yourself."
+                        ),
+                    },
+                    "webhook": {
+                        "type": "string",
+                        "description": (
+                            "Optional http(s) URL that receives the result, for "
+                            "phone delivery."
+                        ),
+                    },
+                },
+                "required": ["title", "schedule", "prompt"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tasks",
+            "description": "List scheduled tasks with id, schedule, next run and last status.",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_task",
+            "description": (
+                "Cancel one scheduled task by id. Confirm which task with the "
+                "user first; this deletes it and its schedule."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Task id from list_tasks."}
+                },
+                "required": ["id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
+
+
+def tool_schemas(*, task_management: bool = True) -> list[dict[str, Any]]:
+    """Tool schemas for a turn.
+
+    A task run must not create more tasks, so management tools are left out of
+    scheduled turns; that removes the recursive-schedule failure mode instead
+    of asking the model to behave.
+    """
+    if task_management:
+        return list(TOOL_SCHEMAS)
+    return [
+        schema
+        for schema in TOOL_SCHEMAS
+        if schema["function"]["name"] not in TASK_MANAGEMENT_TOOLS
+    ]
 
 
 class ToolBox:
@@ -148,29 +260,52 @@ class ToolBox:
         self,
         *,
         search: SearchProvider,
+        index: IndexClient | None,
         memory: MemoryStore | None,
+        scheduler: AssistantScheduler | None,
         http: httpx.AsyncClient,
+        tasks_enabled: bool = True,
         max_output_chars: int = 4000,
         fetch_timeout_seconds: float = 20.0,
     ) -> None:
         self.search = search
+        self.index = index
         self.memory = memory
+        self.scheduler = scheduler
         self.http = http
+        self.tasks_enabled = tasks_enabled
         self.max_output_chars = max_output_chars
         self.fetch_timeout_seconds = fetch_timeout_seconds
 
     async def execute(
-        self, name: str, arguments: dict[str, Any], *, conversation_id: str
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        conversation_id: str,
+        allow_task_management: bool = True,
     ) -> str:
         try:
+            if name in TASK_MANAGEMENT_TOOLS and not allow_task_management:
+                raise ToolError(
+                    "scheduled tasks cannot be managed from inside a task run"
+                )
             if name == "web_search":
                 output = await self._web_search(arguments)
             elif name == "fetch_page":
                 output = await self._fetch_page(arguments)
-            elif name == "memory_search":
-                output = self._memory_search(arguments)
-            elif name == "memory_remember":
-                output = self._memory_remember(arguments, conversation_id)
+            elif name == "search_documents":
+                output = await self._search_documents(arguments)
+            elif name == "read_document":
+                output = await self._read_document(arguments)
+            elif name == "remember":
+                output = self._remember(arguments, conversation_id)
+            elif name == "schedule_task":
+                output = await self._schedule_task(arguments)
+            elif name == "list_tasks":
+                output = self._list_tasks()
+            elif name == "cancel_task":
+                output = await self._cancel_task(arguments)
             else:
                 raise ToolError(f"unknown tool: {name}")
         except ToolError as exc:
@@ -180,7 +315,7 @@ class ToolBox:
             return f"ERROR: {type(exc).__name__}: {exc}"
         return _truncate(output, self.max_output_chars)
 
-    # -- tools -----------------------------------------------------------
+    # -- web -------------------------------------------------------------
 
     async def _web_search(self, arguments: dict[str, Any]) -> str:
         query = str(arguments.get("query") or "").strip()
@@ -235,34 +370,124 @@ class ToolBox:
             return text
         raise ToolError("too many redirects")
 
-    def _memory_search(self, arguments: dict[str, Any]) -> str:
+    # -- local documents -------------------------------------------------
+
+    async def _search_documents(self, arguments: dict[str, Any]) -> str:
+        if self.index is None:
+            raise ToolError(
+                "the local index is disabled; set assistant.index.enabled to use it"
+            )
         query = str(arguments.get("query") or "").strip()
         if not query:
-            raise ToolError("memory_search requires a non-empty query")
-        if self.memory is None:
-            raise ToolError("memory is disabled")
-        limit = _as_int(arguments.get("limit"), default=5, minimum=1, maximum=10)
-        hits = self.memory.search(query, limit)
+            raise ToolError("search_documents requires a non-empty query")
+        limit = _as_int(arguments.get("limit"), default=8, minimum=1, maximum=20)
+        try:
+            hits = await self.index.search(query, limit=limit)
+        except IndexUnavailable as exc:
+            raise ToolError(str(exc)) from exc
         if not hits:
-            return "No memory entry matched that query."
-        return "\n".join(
-            f"- [{hit.entry.relpath}:{hit.entry.line}] {hit.entry.text}"
-            for hit in hits
-        )
+            return "No local document matched that query."
+        lines: list[str] = []
+        for index, hit in enumerate(hits, start=1):
+            heading = f" — {hit.heading}" if hit.heading else ""
+            lines.append(
+                f"{index}. {hit.path}:{hit.start_line}-{hit.end_line}{heading}"
+                f" (modified {hit.mtime})"
+            )
+            lines.append(f"   {hit.snippet}")
+            if hit.also_at:
+                lines.append(f"   also at: {', '.join(hit.also_at)}")
+        return "\n".join(lines)
 
-    def _memory_remember(
-        self, arguments: dict[str, Any], conversation_id: str
-    ) -> str:
+    async def _read_document(self, arguments: dict[str, Any]) -> str:
+        if self.index is None:
+            raise ToolError(
+                "the local index is disabled; set assistant.index.enabled to use it"
+            )
+        path = str(arguments.get("path") or "").strip()
+        if not path:
+            raise ToolError("read_document requires a path")
+        from_line = _as_int(arguments.get("from_line"), default=1, minimum=1, maximum=100000)
+        lines = arguments.get("lines")
+        try:
+            document = await self.index.read(
+                path,
+                from_line=from_line,
+                lines=_as_int(lines, default=0, minimum=1, maximum=200) if lines else None,
+            )
+        except IndexUnavailable as exc:
+            raise ToolError(str(exc)) from exc
+        text = str(document.get("text") or "")
+        if not text.strip():
+            return f"{path}: no readable text"
+        start = int(document.get("from_line") or from_line)
+        total = int(document.get("total_lines") or 0)
+        header = f"{path} lines {start}-{start + text.count(chr(10))} of {total}"
+        if document.get("fresh") is False:
+            header += " (reindexed just now)"
+        return f"{header}\n\n{text}"
+
+    # -- memory ----------------------------------------------------------
+
+    def _remember(self, arguments: dict[str, Any], conversation_id: str) -> str:
         if self.memory is None:
             raise ToolError("memory is disabled")
         category = str(arguments.get("category") or "").strip()
         text = str(arguments.get("text") or "").strip()
         if not text:
-            raise ToolError("memory_remember requires text")
+            raise ToolError("remember requires text")
         added = self.memory.append(
             category, text, source=f"chat:{conversation_id}"
         )
         return "Remembered." if added else "That fact is already in memory."
+
+    # -- scheduled tasks -------------------------------------------------
+
+    async def _schedule_task(self, arguments: dict[str, Any]) -> str:
+        scheduler = self._scheduler()
+        try:
+            task, next_run = await scheduler.create_task(
+                title=str(arguments.get("title") or ""),
+                schedule=str(arguments.get("schedule") or ""),
+                prompt=str(arguments.get("prompt") or ""),
+                webhook=str(arguments.get("webhook") or ""),
+            )
+        except TaskDefinitionError as exc:
+            raise ToolError(str(exc)) from exc
+        return (
+            f"Created task {task.id} ({task.title}) with schedule '{task.schedule}'."
+            f" Next run: {next_run or 'pending'}. Tell the user the id so they can"
+            " cancel it later."
+        )
+
+    def _list_tasks(self) -> str:
+        scheduler = self._scheduler()
+        if not scheduler.tasks:
+            return "No scheduled tasks."
+        lines = []
+        for task in scheduler.tasks:
+            state = scheduler.state_for(task.id)
+            lines.append(
+                f"- {task.id} · {task.title} · {task.schedule}"
+                f" · next {state.get('next_run') or 'disabled'}"
+                f" · last {state.get('last_status') or 'never'}"
+            )
+        return "\n".join(lines)
+
+    async def _cancel_task(self, arguments: dict[str, Any]) -> str:
+        scheduler = self._scheduler()
+        task_id = str(arguments.get("id") or "").strip()
+        if not task_id:
+            raise ToolError("cancel_task requires an id")
+        removed = await scheduler.delete_task(task_id)
+        if not removed:
+            raise ToolError(f"no scheduled task with id {task_id}")
+        return f"Cancelled task {task_id}."
+
+    def _scheduler(self) -> AssistantScheduler:
+        if self.scheduler is None or not self.tasks_enabled:
+            raise ToolError("scheduled tasks are disabled in the configuration")
+        return self.scheduler
 
 
 async def assert_public_url(url: str) -> None:

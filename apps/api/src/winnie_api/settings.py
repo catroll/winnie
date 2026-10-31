@@ -71,9 +71,6 @@ class Settings(BaseModel):
     def resolve_assistant_root(self) -> Path:
         return _resolve_path(self.assistant.root)
 
-    def resolve_assistant_memory_roots(self) -> list[Path]:
-        return [_resolve_path(value) for value in self.assistant.memory.extra_roots]
-
     def resolve_assistant_tasks_file(self) -> Path:
         path = Path(self.assistant.tasks.file)
         if path.is_absolute():
@@ -95,7 +92,7 @@ class Settings(BaseModel):
 
 
 def _resolve_path(value: str) -> Path:
-    path = Path(value)
+    path = Path(value).expanduser()
     if not path.is_absolute():
         path = (_API_ROOT / path).resolve()
     return path

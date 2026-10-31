@@ -15,9 +15,14 @@ from winnie_assistant.agent import AssistantAgent, ChatModel
 from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
 from winnie_assistant.fake import FakeChatModel
+from winnie_assistant.index_client import IndexClient
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.memory_builder import MemoryBuilder
-from winnie_assistant.scheduler import AssistantScheduler, ScheduledTask
+from winnie_assistant.scheduler import (
+    AssistantScheduler,
+    ScheduledTask,
+    TaskStore,
+)
 from winnie_assistant.search import BingRSSSearch, FakeSearchProvider, SearchProvider
 from winnie_assistant.service import AssistantService
 from winnie_assistant.tools import ToolBox
@@ -28,7 +33,6 @@ def build_assistant_service(
     config: AssistantConfig,
     llm: LLMConfig,
     root: Path,
-    extra_memory_roots: list[Path],
     tasks_file: Path,
     http: httpx.AsyncClient,
     clock=None,
@@ -37,31 +41,27 @@ def build_assistant_service(
     model_name = (config.model or llm.model or "fake").strip()
     model = _build_model(model_name, llm, http)
     search = _build_search(config, http)
+    index = (
+        IndexClient(
+            url=config.index.url,
+            http=http,
+            token_env=config.index.token_env,
+            timeout_seconds=config.index.timeout_seconds,
+            limit=config.index.limit,
+        )
+        if config.index.enabled
+        else None
+    )
 
     store = ConversationStore(root / "conversations")
     memory = (
         MemoryStore(
-            root / "memory",
-            extra_roots=tuple(extra_memory_roots),
+            root / "profile",
+            label="profile",
             digest_chars=config.memory.digest_chars,
         )
         if config.memory.enabled
         else None
-    )
-    toolbox = ToolBox(
-        search=search,
-        memory=memory,
-        http=http,
-        max_output_chars=config.max_tool_output_chars,
-    )
-    agent = AssistantAgent(
-        store=store,
-        memory=memory,
-        toolbox=toolbox,
-        model=model,
-        config=config,
-        timezone=timezone,
-        clock=clock,
     )
     builder = (
         MemoryBuilder(
@@ -84,7 +84,7 @@ def build_assistant_service(
 
     scheduler = AssistantScheduler(
         runner=runner,
-        tasks_path=tasks_file,
+        tasks=TaskStore(tasks_file),
         state_path=root / ".state" / "scheduler.json",
         runs_path=root / "tasks" / "runs.jsonl",
         timezone=timezone,
@@ -94,6 +94,24 @@ def build_assistant_service(
         http=http,
         clock=clock,
         background=config.tasks.enabled,
+    )
+    toolbox = ToolBox(
+        search=search,
+        index=index,
+        memory=memory,
+        scheduler=scheduler,
+        http=http,
+        tasks_enabled=config.tasks.enabled,
+        max_output_chars=config.max_tool_output_chars,
+    )
+    agent = AssistantAgent(
+        store=store,
+        memory=memory,
+        toolbox=toolbox,
+        model=model,
+        config=config,
+        timezone=timezone,
+        clock=clock,
     )
     service = AssistantService(
         config=config,
@@ -106,6 +124,7 @@ def build_assistant_service(
         model=model,
         model_name=model_name,
         search=search,
+        index=index,
         timezone=timezone,
         clock=clock,
     )

@@ -4,19 +4,11 @@ from datetime import datetime, timezone
 
 import pytest
 
-from winnie_assistant.memory import MemoryStore, tokenize
+from winnie_assistant.memory import MemoryStore
 
 
-def test_tokenizer_handles_latin_and_chinese() -> None:
-    tokens = tokenize("Python asyncio 帮助 处理 I/O")
-    assert "python" in tokens
-    assert "asyncio" in tokens
-    assert "帮助" in tokens
-    assert "处理" in tokens
-
-
-def test_append_dedupes_and_searches(tmp_path) -> None:
-    memory = MemoryStore(tmp_path)
+def test_append_dedupes_and_lists_files(tmp_path) -> None:
+    memory = MemoryStore(tmp_path, label="profile")
     now = datetime(2026, 11, 1, tzinfo=timezone.utc)
 
     assert memory.append("preferences", "用户喜欢简短回答。", source="chat:1", now=now)
@@ -24,16 +16,16 @@ def test_append_dedupes_and_searches(tmp_path) -> None:
     assert memory.append("projects", "正在做 Winnie 助理。", source="chat:1", now=now)
 
     files = {file.relpath: file for file in memory.files()}
-    assert set(files) == {"preferences.md", "projects.md"}
-    assert files["preferences.md"].pinned is True
-    assert files["projects.md"].pinned is False
+    assert set(files) == {"profile/preferences.md", "profile/projects.md"}
+    assert files["profile/preferences.md"].pinned is True
+    assert files["profile/projects.md"].pinned is False
 
-    hits = memory.search("简短回答")
-    assert hits
-    assert hits[0].entry.category == "preferences"
-    assert hits[0].entry.text == "用户喜欢简短回答。"
-    assert hits[0].entry.source == "chat:1"
-    assert "简短回答" in hits[0].snippet
+    entries = {(entry.category, entry.text) for entry in memory.entries}
+    assert ("preferences", "用户喜欢简短回答。") in entries
+    assert ("projects", "正在做 Winnie 助理。") in entries
+    preference = next(e for e in memory.entries if e.category == "preferences")
+    assert preference.source == "chat:1"
+    assert preference.entry_date == "2026-11-01"
 
 
 def test_pinned_digest_excludes_unpinned_categories(tmp_path) -> None:
@@ -49,7 +41,7 @@ def test_pinned_digest_excludes_unpinned_categories(tmp_path) -> None:
 def test_manual_edits_are_obeyed_on_refresh(tmp_path) -> None:
     memory = MemoryStore(tmp_path)
     memory.append("preferences", "用户喜欢简短回答。", source="chat:1")
-    assert memory.search("简短回答")
+    assert any(entry.text == "用户喜欢简短回答。" for entry in memory.entries)
 
     (tmp_path / "preferences.md").write_text(
         "---\ncategory: preferences\npinned: true\n---\n"
@@ -58,22 +50,20 @@ def test_manual_edits_are_obeyed_on_refresh(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    assert memory.search("简短回答") == []
-    hits = memory.search("喝茶")
-    assert hits[0].entry.text == "用户喜欢喝茶"
-    assert hits[0].entry.source == "manual"
+    entries = memory.entries
+    assert [entry.text for entry in entries] == ["用户喜欢喝茶"]
+    assert entries[0].source == "manual"
 
 
-def test_extra_roots_are_read_only_sources(tmp_path) -> None:
-    notes = tmp_path / "notes"
-    notes.mkdir()
-    (notes / "family.md").write_text("# Family\n- 妻子不吃香菜\n", encoding="utf-8")
-
-    memory = MemoryStore(tmp_path / "memory", extra_roots=(notes,))
-    hits = memory.search("香菜")
-    assert hits
-    assert hits[0].entry.relpath == "notes/family.md"
-    assert not (tmp_path / "memory" / "family.md").exists()
+def test_pinned_front_matter_can_pin_a_usually_unpinned_file(tmp_path) -> None:
+    memory = MemoryStore(tmp_path)
+    (tmp_path / "projects.md").write_text(
+        "---\ncategory: projects\npinned: true\n---\n"
+        "# Projects\n"
+        "- [2026-11-01] Winnie 助理\n",
+        encoding="utf-8",
+    )
+    assert "Winnie 助理" in memory.digest()
 
 
 def test_digest_is_bounded(tmp_path) -> None:

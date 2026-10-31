@@ -7,28 +7,37 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from winnie_assistant.agent import ChatReply
 from winnie_assistant.scheduler import (
     AssistantScheduler,
     TaskDefinitionError,
+    TaskStore,
     parse_schedule,
 )
+from winnie_assistant.types import ChatReply
 
 TZ = ZoneInfo("Asia/Shanghai")
-TASKS = """\
-timezone: Asia/Shanghai
-tasks:
-  - id: brief
-    title: Morning brief
-    schedule: daily 07:30
-    prompt: Say hi
-    enabled: true
-"""
+BRIEF = {
+    "id": "brief",
+    "title": "Morning brief",
+    "schedule": "daily 07:30",
+    "prompt": "Say hi",
+    "enabled": True,
+    "webhook": "",
+    "created_at": "2026-11-01T00:00:00+08:00",
+}
 
 
-def _scheduler(tmp_path, clock, calls, *, catch_up=3600, http=None, tasks=TASKS):
-    tasks_path = tmp_path / "tasks.yaml"
-    tasks_path.write_text(tasks, encoding="utf-8")
+def _write_tasks(tmp_path, tasks):
+    path = tmp_path / "tasks.json"
+    path.write_text(
+        json.dumps({"version": 1, "tasks": tasks}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _scheduler(tmp_path, clock, calls, *, catch_up=3600, http=None, tasks=None):
+    path = _write_tasks(tmp_path, tasks or [])
 
     async def runner(task):
         calls.append(task.id)
@@ -36,7 +45,7 @@ def _scheduler(tmp_path, clock, calls, *, catch_up=3600, http=None, tasks=TASKS)
 
     return AssistantScheduler(
         runner=runner,
-        tasks_path=tasks_path,
+        tasks=TaskStore(path),
         state_path=tmp_path / "state.json",
         runs_path=tmp_path / "tasks" / "runs.jsonl",
         timezone=TZ,
@@ -74,7 +83,7 @@ def test_parse_schedule_forms() -> None:
 async def test_daily_task_runs_once_and_advances(tmp_path) -> None:
     clock = [datetime(2026, 11, 1, 7, 0, tzinfo=TZ)]
     calls: list[str] = []
-    scheduler = _scheduler(tmp_path, clock, calls)
+    scheduler = _scheduler(tmp_path, clock, calls, tasks=[BRIEF])
 
     await scheduler.start()
     assert scheduler.state_for("brief")["next_run"] == "2026-11-01T07:30:00+08:00"
@@ -100,7 +109,7 @@ async def test_a_missed_run_is_skipped_instead_of_replayed(tmp_path) -> None:
     )
     clock = [datetime(2026, 11, 1, 10, 31, tzinfo=TZ)]
     calls: list[str] = []
-    scheduler = _scheduler(tmp_path, clock, calls)
+    scheduler = _scheduler(tmp_path, clock, calls, tasks=[BRIEF])
 
     await scheduler.start()
     assert await scheduler.tick(clock[0]) == []
@@ -113,7 +122,7 @@ async def test_a_missed_run_is_skipped_instead_of_replayed(tmp_path) -> None:
 async def test_manual_run_does_not_move_the_schedule(tmp_path) -> None:
     clock = [datetime(2026, 11, 1, 7, 0, tzinfo=TZ)]
     calls: list[str] = []
-    scheduler = _scheduler(tmp_path, clock, calls)
+    scheduler = _scheduler(tmp_path, clock, calls, tasks=[BRIEF])
     await scheduler.start()
     before = scheduler.state_for("brief")["next_run"]
 
@@ -134,8 +143,8 @@ async def test_webhook_delivery_posts_the_reply(tmp_path) -> None:
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     clock = [datetime(2026, 11, 1, 7, 31, tzinfo=TZ)]
-    tasks = TASKS + '    webhook: https://hook.example/brief\n'
-    scheduler = _scheduler(tmp_path, clock, [], http=client, tasks=tasks)
+    task = {**BRIEF, "webhook": "https://hook.example/brief"}
+    scheduler = _scheduler(tmp_path, clock, [], http=client, tasks=[task])
     try:
         await scheduler.start()
         run = await scheduler.run_now("brief")
@@ -152,11 +161,55 @@ async def test_webhook_delivery_posts_the_reply(tmp_path) -> None:
 
 async def test_invalid_tasks_are_reported_not_fatal(tmp_path) -> None:
     clock = [datetime(2026, 11, 1, 7, 0, tzinfo=TZ)]
-    tasks = TASKS + (
-        "  - id: Broken Id\n    schedule: daily 07:30\n    prompt: nope\n"
-        "  - id: second\n    schedule: hourly\n    prompt: nope\n"
-    )
+    tasks = [
+        {"id": "Broken Id", "schedule": "daily 07:30", "prompt": "nope"},
+        {"id": "second", "schedule": "hourly", "prompt": "nope"},
+        BRIEF,
+    ]
     scheduler = _scheduler(tmp_path, clock, [], tasks=tasks)
     await scheduler.start()
     assert [task.id for task in scheduler.tasks] == ["brief"]
     assert len(scheduler.errors) == 2
+
+
+async def test_tasks_are_created_and_cancelled_at_runtime(tmp_path) -> None:
+    clock = [datetime(2026, 11, 1, 7, 0, tzinfo=TZ)]
+    calls: list[str] = []
+    scheduler = _scheduler(tmp_path, clock, calls)
+    await scheduler.start()
+
+    task, next_run = await scheduler.create_task(
+        title="喝水提醒",
+        schedule="daily 07:30",
+        prompt="提醒我喝水",
+    )
+    assert next_run == "2026-11-01T07:30:00+08:00"
+    assert scheduler.find(task.id) is not None
+
+    stored = json.loads((tmp_path / "tasks.json").read_text(encoding="utf-8"))
+    assert stored["tasks"][0]["id"] == task.id
+    assert stored["tasks"][0]["title"] == "喝水提醒"
+
+    clock[0] = datetime(2026, 11, 1, 7, 31, tzinfo=TZ)
+    runs = await scheduler.tick(clock[0])
+    assert [run.task_id for run in runs] == [task.id]
+    assert calls == [task.id]
+
+    assert await scheduler.delete_task(task.id) is True
+    assert scheduler.find(task.id) is None
+    assert scheduler.state_for(task.id) == {}
+    assert await scheduler.delete_task(task.id) is False
+    stored = json.loads((tmp_path / "tasks.json").read_text(encoding="utf-8"))
+    assert stored["tasks"] == []
+
+
+async def test_creating_a_task_with_a_bad_schedule_is_rejected(tmp_path) -> None:
+    clock = [datetime(2026, 11, 1, 7, 0, tzinfo=TZ)]
+    scheduler = _scheduler(tmp_path, clock, [])
+    await scheduler.start()
+    with pytest.raises(TaskDefinitionError):
+        await scheduler.create_task(
+            title="bad", schedule="hourly", prompt="nope"
+        )
+    with pytest.raises(TaskDefinitionError):
+        await scheduler.create_task(title="bad", schedule="daily 07:30", prompt="")

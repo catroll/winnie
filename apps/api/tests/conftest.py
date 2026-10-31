@@ -12,6 +12,7 @@ from winnie_api.main import create_app
 from winnie_api.settings import DatabaseConfig, Settings
 from winnie_assistant.config import (
     AssistantConfig,
+    IndexConfig,
     MemoryConfig,
     SearchConfig,
     TasksConfig,
@@ -257,8 +258,9 @@ def assistant_settings(tmp_path: Path) -> Settings:
             timezone="Asia/Shanghai",
             model="fake",
             search=SearchConfig(provider="fake"),
+            index=IndexConfig(enabled=False),
             memory=MemoryConfig(auto_distill=False),
-            tasks=TasksConfig(enabled=False),
+            tasks=TasksConfig(enabled=True, tick_seconds=60),
         ),
     )
 

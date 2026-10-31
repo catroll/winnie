@@ -1,15 +1,14 @@
-"""Long-term memory stored as editable Markdown, indexed in process.
+"""Long-term memory notes stored as editable Markdown.
 
-The files are the truth; this module builds a lexical index from them at
-startup and after every write. A deleted or edited entry is obeyed on the next
-refresh, which is what makes manual correction meaningful.
+The notes are the durable artefacts: one file per category, one bullet per
+fact, with provenance in an HTML comment. Retrieval is **not** implemented
+here; the local index service indexes these files and answers searches over
+them, so the assistant keeps one retrieval implementation instead of two.
 """
 
 from __future__ import annotations
 
-import math
 import re
-from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -39,8 +38,6 @@ CATEGORIES = (
 # stable facts that change how every answer is phrased or what it may not do.
 PINNED_CATEGORIES = frozenset({"identity", "preferences", "constraints"})
 
-_ASCII_WORD = re.compile(r"[a-z0-9_]+")
-_CJK_RUN = re.compile(r"[\u3400-\u9fff]+")
 _COMMENT = re.compile(r"<!--\s*source:\s*(?P<source>.*?)\s*-->")
 _DATE_PREFIX = re.compile(r"^\[(?P<date>\d{4}-\d{2}-\d{2})\]\s*")
 
@@ -58,13 +55,6 @@ class MemoryEntry:
 
 
 @dataclass(frozen=True)
-class MemoryHit:
-    entry: MemoryEntry
-    score: float
-    snippet: str
-
-
-@dataclass(frozen=True)
 class MemoryFile:
     relpath: str
     category: str
@@ -72,23 +62,6 @@ class MemoryFile:
     entries: int
     pinned: bool
     updated: str
-
-
-def tokenize(text: str) -> list[str]:
-    """Word tokens for Latin text, character bigrams for CJK.
-
-    Chinese has no spaces, and a personal corpus does not justify a segmenter
-    dependency; overlapping bigrams are a good enough unit for retrieval and
-    they keep the implementation inspectable.
-    """
-    lowered = text.lower()
-    tokens = [word for word in _ASCII_WORD.findall(lowered) if len(word) > 1]
-    for run in _CJK_RUN.findall(lowered):
-        if len(run) == 1:
-            tokens.append(run)
-        else:
-            tokens.extend(run[index : index + 2] for index in range(len(run) - 1))
-    return tokens
 
 
 def normalize(text: str) -> str:
@@ -100,18 +73,17 @@ class MemoryStore:
         self,
         root: Path,
         *,
-        extra_roots: tuple[Path, ...] = (),
+        label: str = "profile",
         digest_chars: int = 2000,
     ) -> None:
         self.root = root
-        self.extra_roots = tuple(path for path in extra_roots if path.is_dir())
+        self.label = label
         self.digest_chars = digest_chars
         self._entries: list[MemoryEntry] = []
         self._files: list[MemoryFile] = []
-        self._idf: dict[str, float] = {}
         self._fingerprint: tuple | None = None
 
-    # -- index -----------------------------------------------------------
+    # -- index of the notes themselves ------------------------------------
 
     def refresh(self) -> None:
         fingerprint = self._scan_fingerprint()
@@ -119,42 +91,24 @@ class MemoryStore:
             return
         entries: list[MemoryEntry] = []
         files: list[MemoryFile] = []
-        for root, writable in [(self.root, True), *[(p, False) for p in self.extra_roots]]:
-            for path in sorted(root.rglob("*.md")):
-                if any(part.startswith(".") for part in path.relative_to(root).parts):
-                    continue
-                relpath = self._relpath(path, root, writable)
-                parsed, meta = _parse_file(path, relpath, writable)
-                entries.extend(parsed)
-                files.append(meta)
+        for path in sorted(self.root.glob("*.md")):
+            relpath = f"{self.label}/{path.name}"
+            parsed, meta = _parse_file(path, relpath)
+            entries.extend(parsed)
+            files.append(meta)
         self._entries = entries
         self._files = files
-        document_frequency: Counter[str] = Counter()
-        for entry in entries:
-            document_frequency.update(set(tokenize(entry.text)) | set(tokenize(entry.title)))
-        total = max(len(entries), 1)
-        self._idf = {
-            token: math.log((total + 1) / (count + 1)) + 1.0
-            for token, count in document_frequency.items()
-        }
         self._fingerprint = fingerprint
 
     def _scan_fingerprint(self) -> tuple:
         items: list[tuple[str, int, int]] = []
-        for root in (self.root, *self.extra_roots):
-            if not root.is_dir():
+        for path in sorted(self.root.glob("*.md")):
+            try:
+                stat = path.stat()
+            except OSError:
                 continue
-            for path in sorted(root.rglob("*.md")):
-                try:
-                    stat = path.stat()
-                except OSError:
-                    continue
-                items.append((str(path), stat.st_mtime_ns, stat.st_size))
+            items.append((str(path), stat.st_mtime_ns, stat.st_size))
         return tuple(items)
-
-    def _relpath(self, path: Path, root: Path, writable: bool) -> str:
-        relative = path.relative_to(root).as_posix()
-        return relative if writable else f"{root.name}/{relative}"
 
     @property
     def entries(self) -> tuple[MemoryEntry, ...]:
@@ -165,35 +119,7 @@ class MemoryStore:
         self.refresh()
         return list(self._files)
 
-    # -- retrieval -------------------------------------------------------
-
-    def search(self, query: str, limit: int = 5) -> list[MemoryHit]:
-        self.refresh()
-        tokens = tokenize(query)
-        if not tokens:
-            return []
-        phrase = normalize(query)
-        scored: list[tuple[float, MemoryEntry]] = []
-        for entry in self._entries:
-            haystack = normalize(entry.text)
-            counts = {token: haystack.count(token) for token in tokens}
-            hits = {token: count for token, count in counts.items() if count}
-            if not hits:
-                continue
-            score = sum(
-                (1.0 + math.log(count)) * self._idf.get(token, 1.0)
-                for token, count in hits.items()
-            )
-            if phrase and phrase in haystack:
-                score += 3.0
-            if any(token in normalize(entry.title) for token in tokens):
-                score += 1.5
-            scored.append((score, entry))
-        scored.sort(key=lambda item: -item[0])
-        return [
-            MemoryHit(entry=entry, score=round(score, 3), snippet=_snippet(entry.text, tokens))
-            for score, entry in scored[:limit]
-        ]
+    # -- prompt digest ----------------------------------------------------
 
     def digest(self, limit: int | None = None) -> str:
         """The pinned memory that is always placed in the system prompt."""
@@ -222,7 +148,7 @@ class MemoryStore:
                 used += len(line) + 1
         return "\n".join(lines)
 
-    # -- writes ----------------------------------------------------------
+    # -- writes -----------------------------------------------------------
 
     def append(
         self,
@@ -265,9 +191,7 @@ class MemoryStore:
         return True
 
 
-def _parse_file(
-    path: Path, relpath: str, writable: bool
-) -> tuple[list[MemoryEntry], MemoryFile]:
+def _parse_file(path: Path, relpath: str) -> tuple[list[MemoryEntry], MemoryFile]:
     text = path.read_text(encoding="utf-8")
     header, body = split_front_matter(text)
     stem = path.stem
@@ -355,17 +279,3 @@ def _entry(
         source=source,
         entry_date=entry_date,
     )
-
-
-def _snippet(text: str, tokens: list[str], width: int = 120) -> str:
-    lowered = text.lower()
-    positions = [lowered.find(token) for token in tokens]
-    found = [position for position in positions if position >= 0]
-    start = max(0, (min(found) if found else 0) - width // 3)
-    snippet = text[start : start + width].strip()
-    if start > 0:
-        snippet = "…" + snippet
-    if start + width < len(text):
-        snippet = snippet + "…"
-    return snippet
-

@@ -12,13 +12,16 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from winnie_assistant.agent import AssistantAgent, ChatModel, ChatReply
+from winnie_assistant.agent import AssistantAgent, ChatModel
 from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
+from winnie_assistant.index_client import IndexClient, IndexHit
+from winnie_assistant.layout import ensure_layout
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.memory_builder import DistillResult, MemoryBuilder
 from winnie_assistant.scheduler import AssistantScheduler, ScheduledTask, TaskRun
 from winnie_assistant.search import SearchProvider
+from winnie_assistant.types import ChatReply
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,7 @@ class AssistantService:
         model: ChatModel,
         model_name: str,
         search: SearchProvider,
+        index: IndexClient | None,
         timezone: ZoneInfo,
         clock=None,
     ) -> None:
@@ -50,6 +54,7 @@ class AssistantService:
         self.model = model
         self.model_name = model_name
         self.search = search
+        self.index = index
         self.timezone = timezone
         self.clock = clock or (lambda: datetime.now(timezone))
         self._distill_task: asyncio.Task[None] | None = None
@@ -57,7 +62,7 @@ class AssistantService:
     # -- lifecycle -------------------------------------------------------
 
     async def startup(self) -> None:
-        await asyncio.to_thread(self.root.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(ensure_layout, self.root)
         if self.memory is not None:
             await asyncio.to_thread(self.memory.refresh)
         if self.config.tasks.enabled:
@@ -100,6 +105,15 @@ class AssistantService:
         if self.builder is not None and self.config.memory.auto_distill:
             self._schedule_distill()
         return reply
+
+    # -- local documents -------------------------------------------------
+
+    async def search_documents(
+        self, query: str, *, limit: int | None = None
+    ) -> list[IndexHit]:
+        if self.index is None:
+            raise RuntimeError("the local index is disabled")
+        return await self.index.search(query, limit=limit)
 
     # -- memory ----------------------------------------------------------
 
@@ -155,11 +169,16 @@ class AssistantService:
             "model": self.model_name,
             "search": self.search.name,
             "timezone": self.timezone.key,
+            "root": str(self.root),
             "conversations": self.store.count(),
             "memory": {
                 "enabled": self.memory is not None,
                 "entries": memory_entries,
                 "files": memory_files,
+            },
+            "index": {
+                "enabled": self.index is not None,
+                "url": self.index.url if self.index is not None else "",
             },
             "scheduler": {
                 "running": self.config.tasks.enabled,

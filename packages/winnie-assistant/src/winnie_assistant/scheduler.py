@@ -1,9 +1,9 @@
-"""Declarative scheduled tasks and the in-process scheduler.
+"""Assistant-managed scheduled tasks and the in-process scheduler.
 
-Definitions live in ``tasks.yaml``, which the user edits. Runtime state (the
-next run and the last outcome) lives in ``.state/scheduler.json`` so a restart
-does not replay a task, and every execution appends one line to
-``tasks/runs.jsonl``.
+Tasks are created and cancelled **through conversation**, so ``tasks.json`` is
+written by the assistant, not by hand. The file is still plain JSON on disk:
+the record is inspectable, and a restart replays nothing because the next-run
+state lives beside it. Every execution appends one line to ``runs.jsonl``.
 """
 
 from __future__ import annotations
@@ -12,17 +12,16 @@ import asyncio
 import json
 import logging
 import re
-from collections.abc import Awaitable, Callable
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 import httpx
-import yaml
 
-from winnie_assistant.agent import ChatReply
+from winnie_assistant.types import ChatReply
 from winnie_assistant.files import atomic_write
 
 logger = logging.getLogger(__name__)
@@ -34,9 +33,11 @@ WEEKLY = re.compile(r"^weekly\s+(mon|tue|wed|thu|fri|sat|sun)\s+(\d{1,2}):(\d{2}
 WEEKDAYS = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 MIN_INTERVAL_MINUTES = 5
 
+SCHEMA_VERSION = 1
+
 
 class TaskDefinitionError(ValueError):
-    """A task in tasks.yaml is unusable; the rest of the file still loads."""
+    """A task is unusable; the caller reports it instead of writing it."""
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class ScheduledTask:
     enabled: bool
     webhook: str
     parsed: Schedule
+    created_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -91,7 +93,7 @@ class TaskRun:
 
 
 def parse_schedule(value: str) -> Schedule:
-    text = value.strip().lower()
+    text = " ".join(value.strip().lower().split())
     match = EVERY.match(text)
     if match:
         count = int(match.group(1))
@@ -125,28 +127,24 @@ def _validate_time(hour: int, minute: int, value: str) -> None:
         raise TaskDefinitionError(f"schedule '{value}' is not a valid time")
 
 
-class TaskFile:
-    """Load and validate ``tasks.yaml`` without failing the whole service."""
+class TaskStore:
+    """Read and write ``tasks/tasks.json``; the assistant owns this file."""
 
-    def __init__(self, path: Path, default_timezone: str) -> None:
+    def __init__(self, path: Path) -> None:
         self.path = path
-        self.default_timezone = default_timezone
 
-    def load(self) -> tuple[ZoneInfo, list[ScheduledTask], list[str]]:
-        timezone = _load_timezone(self.default_timezone)
+    def load(self) -> tuple[list[ScheduledTask], list[str]]:
         if not self.path.is_file():
-            return timezone, [], []
+            return [], []
         try:
-            raw = yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
-        except (OSError, yaml.YAMLError) as exc:
-            return timezone, [], [f"tasks file is unreadable: {exc}"]
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return [], [f"tasks file is unreadable: {exc}"]
         if not isinstance(raw, dict):
-            return timezone, [], ["tasks file must be a mapping"]
-
-        timezone = _load_timezone(str(raw.get("timezone") or self.default_timezone))
-        entries = raw.get("tasks") or []
+            return [], ["tasks file must be a JSON object"]
+        entries = raw.get("tasks")
         if not isinstance(entries, list):
-            return timezone, [], ["tasks must be a list"]
+            return [], ["tasks must be a list"]
 
         tasks: list[ScheduledTask] = []
         errors: list[str] = []
@@ -162,23 +160,55 @@ class TaskFile:
                 continue
             seen.add(task.id)
             tasks.append(task)
-        return timezone, tasks, errors
+        return tasks, errors
+
+    def save(self, tasks: list[ScheduledTask], *, now: datetime) -> None:
+        payload = {
+            "version": SCHEMA_VERSION,
+            "updated_at": now.isoformat(timespec="seconds"),
+            "tasks": [
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "schedule": task.schedule,
+                    "prompt": task.prompt,
+                    "enabled": task.enabled,
+                    "webhook": task.webhook,
+                    "created_at": task.created_at,
+                }
+                for task in tasks
+            ],
+        }
+        atomic_write(
+            self.path,
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        )
+
+    def new_id(self, title: str, existing: list[ScheduledTask]) -> str:
+        words = re.findall(r"[a-z0-9]+", title.lower())
+        slug = "-".join(words)[:40].strip("-") or "task"
+        if len(slug) < 3:
+            # A title of only digits (for example "7点") leaves a one-character
+            # slug; prefix it so the id stays readable and matchable.
+            slug = f"task-{slug}"
+        taken = {task.id for task in existing}
+        for _ in range(16):
+            candidate = f"{slug}-{secrets.token_hex(3)}"
+            if candidate not in taken:
+                return candidate
+        raise TaskDefinitionError("could not allocate a task id")
 
 
 def _parse_task(entry: Any, index: int) -> ScheduledTask:
     if not isinstance(entry, dict):
-        raise TaskDefinitionError(f"task #{index + 1} must be a mapping")
+        raise TaskDefinitionError(f"task #{index + 1} must be an object")
     task_id = str(entry.get("id") or "").strip()
     if not TASK_ID.match(task_id):
-        raise TaskDefinitionError(
-            f"task #{index + 1} needs a lowercase id matching {TASK_ID.pattern}"
-        )
+        raise TaskDefinitionError(f"task #{index + 1} has an invalid id")
     schedule = str(entry.get("schedule") or "").strip()
     prompt = str(entry.get("prompt") or "").strip()
-    if not schedule:
-        raise TaskDefinitionError(f"task {task_id} has no schedule")
-    if not prompt:
-        raise TaskDefinitionError(f"task {task_id} has no prompt")
+    if not schedule or not prompt:
+        raise TaskDefinitionError(f"task {task_id} needs a schedule and a prompt")
     webhook = str(entry.get("webhook") or "").strip()
     if webhook and not webhook.startswith(("http://", "https://")):
         raise TaskDefinitionError(f"task {task_id} webhook must be http(s)")
@@ -193,22 +223,16 @@ def _parse_task(entry: Any, index: int) -> ScheduledTask:
         enabled=enabled,
         webhook=webhook,
         parsed=parse_schedule(schedule),
+        created_at=str(entry.get("created_at") or ""),
     )
-
-
-def _load_timezone(name: str) -> ZoneInfo:
-    try:
-        return ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise TaskDefinitionError(f"unknown timezone: {name}") from None
 
 
 class AssistantScheduler:
     def __init__(
         self,
         *,
-        runner: Callable[[ScheduledTask], Awaitable[ChatReply]],
-        tasks_path: Path,
+        runner,
+        tasks: TaskStore,
         state_path: Path,
         runs_path: Path,
         timezone: ZoneInfo,
@@ -216,11 +240,11 @@ class AssistantScheduler:
         catch_up_seconds: int = 3600,
         webhook_timeout_seconds: float = 10.0,
         http: httpx.AsyncClient | None = None,
-        clock: Callable[[], datetime] | None = None,
+        clock=None,
         background: bool = True,
     ) -> None:
         self.runner = runner
-        self.task_file = TaskFile(tasks_path, timezone.key)
+        self.task_store = tasks
         self.state_path = state_path
         self.runs_path = runs_path
         self.timezone = timezone
@@ -235,6 +259,7 @@ class AssistantScheduler:
         self._state: dict[str, dict[str, Any]] = {}
         self._mtime: float | None = None
         self._loop: asyncio.Task[None] | None = None
+        self._mutation = asyncio.Lock()
 
     # -- lifecycle -------------------------------------------------------
 
@@ -242,7 +267,9 @@ class AssistantScheduler:
         self.reload(force=True)
         self.sync(self.clock())
         if self.background:
-            self._loop = asyncio.create_task(self._run_loop(), name="assistant-scheduler")
+            self._loop = asyncio.create_task(
+                self._run_loop(), name="assistant-scheduler"
+            )
 
     async def stop(self) -> None:
         if self._loop is not None:
@@ -255,14 +282,13 @@ class AssistantScheduler:
 
     def reload(self, *, force: bool = False) -> None:
         try:
-            mtime = self.task_file.path.stat().st_mtime
+            mtime = self.task_store.path.stat().st_mtime
         except OSError:
             mtime = None
         if not force and mtime == self._mtime:
             return
         self._mtime = mtime
-        timezone, tasks, errors = self.task_file.load()
-        self.timezone = timezone
+        tasks, errors = self.task_store.load()
         self.tasks = tasks
         self.errors = errors
         for error in errors:
@@ -271,6 +297,67 @@ class AssistantScheduler:
 
     def find(self, task_id: str) -> ScheduledTask | None:
         return next((task for task in self.tasks if task.id == task_id), None)
+
+    # -- management through conversation ---------------------------------
+
+    async def create_task(
+        self,
+        *,
+        title: str,
+        schedule: str,
+        prompt: str,
+        webhook: str = "",
+    ) -> tuple[ScheduledTask, str | None]:
+        title = title.strip()
+        prompt = prompt.strip()
+        if not title:
+            raise TaskDefinitionError("the task needs a title")
+        if not prompt:
+            raise TaskDefinitionError("the task needs a prompt to run")
+        webhook = webhook.strip()
+        if webhook and not webhook.startswith(("http://", "https://")):
+            raise TaskDefinitionError("the webhook must be an http(s) URL")
+        parsed = parse_schedule(schedule)
+        now = self.clock()
+        async with self._mutation:
+            tasks, errors = self.task_store.load()
+            if errors:
+                raise TaskDefinitionError(
+                    "the tasks file has errors; refusing to overwrite it: "
+                    + "; ".join(errors)
+                )
+            task = ScheduledTask(
+                id=self.task_store.new_id(title, tasks),
+                title=title,
+                schedule=schedule.strip(),
+                prompt=prompt,
+                enabled=True,
+                webhook=webhook,
+                parsed=parsed,
+                created_at=now.isoformat(timespec="seconds"),
+            )
+            tasks.append(task)
+            self.task_store.save(tasks, now=now)
+            self.reload(force=True)
+            self.sync(now)
+            return task, self.state_for(task.id).get("next_run")
+
+    async def delete_task(self, task_id: str) -> bool:
+        async with self._mutation:
+            tasks, errors = self.task_store.load()
+            if errors:
+                raise TaskDefinitionError(
+                    "the tasks file has errors; refusing to overwrite it: "
+                    + "; ".join(errors)
+                )
+            remaining = [task for task in tasks if task.id != task_id]
+            if len(remaining) == len(tasks):
+                return False
+            now = self.clock()
+            self.task_store.save(remaining, now=now)
+            self.reload(force=True)
+            self.sync(now)
+            return True
 
     # -- scheduling ------------------------------------------------------
 

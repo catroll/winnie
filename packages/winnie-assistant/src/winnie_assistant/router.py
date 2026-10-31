@@ -13,6 +13,7 @@ from winnie_assistant.conversations import (
     ConversationNotFound,
     InvalidConversationId,
 )
+from winnie_assistant.index_client import IndexUnavailable
 from winnie_assistant.schemas import (
     ChatRequest,
     ChatResponse,
@@ -20,10 +21,10 @@ from winnie_assistant.schemas import (
     ConversationRead,
     ConversationSummaryRead,
     DistillRead,
+    DocumentHitRead,
+    DocumentSearchRead,
     MemoryFileRead,
-    MemoryHitRead,
     MemoryListRead,
-    MemorySearchRead,
     MessageRead,
     StatusRead,
     TaskListRead,
@@ -159,25 +160,32 @@ async def list_memory(
     )
 
 
-@router.get("/memory/search", response_model=MemorySearchRead)
-async def search_memory(
+@router.get("/documents/search", response_model=DocumentSearchRead)
+async def search_documents(
     q: str = Query(min_length=1, max_length=200),
-    limit: int = Query(default=5, ge=1, le=20),
+    limit: int = Query(default=8, ge=1, le=20),
     service: AssistantService = Depends(get_service),
     _: str = Depends(get_user_id),
-) -> MemorySearchRead:
-    memory = _memory(service)
-    hits = memory.search(q, limit)
-    return MemorySearchRead(
+) -> DocumentSearchRead:
+    """Search the local index, which covers the assistant's own files too."""
+    try:
+        hits = await service.search_documents(q, limit=limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except IndexUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return DocumentSearchRead(
         query=q,
         hits=[
-            MemoryHitRead(
-                path=hit.entry.relpath,
-                category=hit.entry.category,
-                text=hit.entry.text,
-                line=hit.entry.line,
+            DocumentHitRead(
+                path=hit.path,
+                root=hit.root,
+                heading=hit.heading,
+                start_line=hit.start_line,
+                end_line=hit.end_line,
                 snippet=hit.snippet,
-                score=hit.score,
+                mtime=hit.mtime,
+                also_at=list(hit.also_at),
             )
             for hit in hits
         ],

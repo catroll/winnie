@@ -64,18 +64,20 @@ class MemoryListRead(BaseModel):
     digest: str
 
 
-class MemoryHitRead(BaseModel):
+class DocumentHitRead(BaseModel):
     path: str
-    category: str
-    text: str
-    line: int
+    root: str
+    heading: str
+    start_line: int
+    end_line: int
     snippet: str
-    score: float
+    mtime: str
+    also_at: list[str] = Field(default_factory=list)
 
 
-class MemorySearchRead(BaseModel):
+class DocumentSearchRead(BaseModel):
     query: str
-    hits: list[MemoryHitRead]
+    hits: list[DocumentHitRead]
 
 
 class DistillRead(BaseModel):
@@ -116,6 +118,8 @@ class StatusRead(BaseModel):
     model: str
     search: str
     timezone: str
+    root: str
     conversations: int
     memory: dict
+    index: dict
     scheduler: dict

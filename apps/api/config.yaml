@@ -114,11 +114,12 @@ jobs:
   redis_url: ""
 
 # Personal assistant: chat, web search, scheduled tasks and local memory.
-# Conversations and memory are Markdown under ../../data/assistant; the files
-# are the source of truth and the service can be restarted without losing them.
+# Memory and conversations are Markdown under the assistant root, next to the
+# owner's documents so the local index service can index them. The files are
+# the source of truth and the service can be restarted without losing them.
 assistant:
   enabled: true
-  root: ../../data/assistant
+  root: ~/Documents/Mine/Winnie
   timezone: Asia/Shanghai
   # "fake" answers deterministically and needs no API key. Set it to "" to
   # reuse llm.model, which requires WINNIE_LLM_API_KEY in the environment.
@@ -132,17 +133,26 @@ assistant:
     endpoint: https://cn.bing.com/search
     max_results: 5
     timeout_seconds: 15
+  # The local document index serves recall over the assistant's files and the
+  # owner's other documents. It is a separate loopback daemon; see
+  # `make index-serve`. Disable it and search_documents reports why.
+  index:
+    enabled: true
+    url: http://127.0.0.1:8790
+    token_env: WINNIE_INDEX_TOKEN
+    timeout_seconds: 5
+    limit: 8
   memory:
     enabled: true
-    # Extra read-only Markdown roots indexed for retrieval, e.g. ../../personal.
-    extra_roots: []
     digest_chars: 2000
     auto_distill: true
     max_facts_per_run: 12
     max_fact_chars: 500
   tasks:
     enabled: true
-    file: tasks.yaml
+    # Written by the assistant when a task is created in conversation; do not
+    # edit it by hand.
+    file: tasks/tasks.json
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10

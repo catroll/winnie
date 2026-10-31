@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
+
 import httpx
-import pytest
 
 from winnie_api.main import create_app
 from winnie_api.settings import DatabaseConfig, Settings
-from winnie_assistant.config import AssistantConfig, MemoryConfig, SearchConfig, TasksConfig
+from winnie_assistant.config import (
+    AssistantConfig,
+    IndexConfig,
+    MemoryConfig,
+    SearchConfig,
+    TasksConfig,
+)
 from winnie_core.config import AuthConfig, JobsConfig
 
 
@@ -60,32 +67,29 @@ async def test_chat_records_tool_trace_and_continues_the_conversation(
     assert listing.json()["items"][0]["title"]
 
 
-async def test_chat_remember_writes_a_memory_file(
+async def test_remember_writes_a_profile_file(
     assistant_client: httpx.AsyncClient,
     assistant_settings: Settings,
 ) -> None:
     response = await _chat(assistant_client, "记住我喜欢简短回答")
     assert response.status_code == 200, response.text
-    assert response.json()["tools_used"] == ["memory_remember"]
+    assert response.json()["tools_used"] == ["remember"]
 
     listing = await assistant_client.get("/api/v1/assistant/memory")
     assert listing.status_code == 200, listing.text
     files = listing.json()["files"]
-    assert [file["path"] for file in files] == ["preferences.md"]
+    assert [file["path"] for file in files] == ["profile/preferences.md"]
     assert files[0]["entries"] == 1
-    assert files[0]["pinned"] is True
 
-    path = assistant_settings.resolve_assistant_root() / "memory" / "preferences.md"
+    path = assistant_settings.resolve_assistant_root() / "profile" / "preferences.md"
     text = path.read_text(encoding="utf-8")
     assert "我喜欢简短回答" in text
     assert "<!-- source: chat:" in text
 
-    hits = await assistant_client.get(
-        "/api/v1/assistant/memory/search", params={"q": "简短"}
+    documents = await assistant_client.get(
+        "/api/v1/assistant/documents/search", params={"q": "简短"}
     )
-    assert hits.status_code == 200
-    assert hits.json()["hits"][0]["text"] == "我喜欢简短回答"
-    assert hits.json()["hits"][0]["path"] == "preferences.md"
+    assert documents.status_code == 409
 
 
 async def test_distillation_is_idempotent(
@@ -103,8 +107,116 @@ async def test_distillation_is_idempotent(
 
     memory = await assistant_client.get("/api/v1/assistant/memory")
     assert memory.json()["entries"] == 1
-    text = memory.json()["files"][0]["path"]
-    assert text == "preferences.md"
+    assert memory.json()["files"][0]["path"] == "profile/preferences.md"
+
+
+async def test_tasks_are_created_and_run_through_chat(
+    assistant_client: httpx.AsyncClient,
+    assistant_settings: Settings,
+) -> None:
+    response = await _chat(assistant_client, "每天早上7点半提醒我喝水")
+    assert response.status_code == 200, response.text
+    assert response.json()["tools_used"] == ["schedule_task"]
+
+    listing = await assistant_client.get("/api/v1/assistant/tasks")
+    assert listing.status_code == 200, listing.text
+    tasks = listing.json()["tasks"]
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["schedule"] == "daily 07:30"
+    assert task["next_run"]
+    assert task["last_status"] is None
+
+    stored = assistant_settings.resolve_assistant_root() / "tasks" / "tasks.json"
+    assert stored.is_file()
+    payload = json.loads(stored.read_text(encoding="utf-8"))
+    assert payload["tasks"][0]["id"] == task["id"]
+    assert payload["tasks"][0]["prompt"] == "每天早上7点半提醒我喝水"
+
+    run = await assistant_client.post(f"/api/v1/assistant/tasks/{task['id']}/run")
+    assert run.status_code == 200, run.text
+    assert run.json()["status"] == "ok"
+    conversation_id = run.json()["conversation_id"]
+    assert conversation_id
+
+    detail = await assistant_client.get(
+        f"/api/v1/assistant/conversations/{conversation_id}"
+    )
+    assert detail.status_code == 200
+    assert detail.json()["source"] == "task"
+
+    runs = (
+        assistant_settings.resolve_assistant_root() / "tasks" / "runs.jsonl"
+    ).read_text(encoding="utf-8")
+    assert json.loads(runs.splitlines()[0])["status"] == "ok"
+
+    cancelled = await _chat(assistant_client, f"取消任务 {task['id']}")
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["tools_used"] == ["cancel_task"]
+    remaining = await assistant_client.get("/api/v1/assistant/tasks")
+    assert remaining.json()["tasks"] == []
+    payload = json.loads(stored.read_text(encoding="utf-8"))
+    assert payload["tasks"] == []
+
+
+async def test_documents_search_uses_the_local_index(tmp_path) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.host == "index.invalid" and request.url.path == "/search":
+            return httpx.Response(
+                200,
+                json={
+                    "query": "部署",
+                    "results": [
+                        {
+                            "path": "Winnie/profile/preferences.md",
+                            "root": "Documents/Mine",
+                            "heading": "Preferences",
+                            "start_line": 3,
+                            "end_line": 3,
+                            "snippet": "先给结论，再展开。",
+                            "score": -1.5,
+                            "mtime": "2026-11-01T00:00:00+00:00",
+                            "also_at": [],
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(500)
+
+    settings = Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={},
+        assistant=AssistantConfig(
+            enabled=True,
+            root=str(tmp_path / "assistant"),
+            model="fake",
+            search=SearchConfig(provider="fake"),
+            index=IndexConfig(enabled=True, url="http://index.invalid:8790"),
+            memory=MemoryConfig(auto_distill=False),
+            tasks=TasksConfig(enabled=False),
+        ),
+    )
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    app = create_app(settings=settings, http=http)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get(
+                    "/api/v1/assistant/documents/search", params={"q": "部署"}
+                )
+                assert response.status_code == 200, response.text
+                hits = response.json()["hits"]
+                assert hits[0]["path"] == "Winnie/profile/preferences.md"
+                assert hits[0]["start_line"] == 3
+                assert seen[0].url.path == "/search"
+                assert json.loads(seen[0].content)["query"] == "部署"
+    finally:
+        await http.aclose()
 
 
 async def test_unknown_and_malformed_conversation_ids_are_404(
@@ -123,12 +235,15 @@ async def test_unknown_and_malformed_conversation_ids_are_404(
 
 async def test_status_and_chat_page(
     assistant_client: httpx.AsyncClient,
+    assistant_settings: Settings,
 ) -> None:
     status = await assistant_client.get("/api/v1/assistant/status")
     assert status.status_code == 200, status.text
     body = status.json()
     assert body["model"] == "fake"
     assert body["search"] == "fake"
+    assert body["index"]["enabled"] is False
+    assert body["root"] == str(assistant_settings.resolve_assistant_root())
     assert body["memory"]["enabled"] is True
     assert body["scheduler"]["tasks"] == 0
 
@@ -150,6 +265,7 @@ async def test_assistant_routes_require_a_token_when_auth_is_enabled(
             root=str(tmp_path / "assistant"),
             model="fake",
             search=SearchConfig(provider="fake"),
+            index=IndexConfig(enabled=False),
             memory=MemoryConfig(auto_distill=False),
             tasks=TasksConfig(enabled=False),
         ),
@@ -174,3 +290,20 @@ async def test_assistant_routes_require_a_token_when_auth_is_enabled(
             page = await client.get("/api/v1/assistant/ui")
             assert page.status_code == 200
     await http.aclose()
+
+
+async def test_a_task_run_cannot_create_tasks(
+    assistant_client: httpx.AsyncClient,
+) -> None:
+    created = await _chat(assistant_client, "每天早上7点半提醒我喝水")
+    assert created.status_code == 200
+    tasks = (await assistant_client.get("/api/v1/assistant/tasks")).json()["tasks"]
+    assert len(tasks) == 1
+    task = tasks[0]
+
+    run = await assistant_client.post(f"/api/v1/assistant/tasks/{task['id']}/run")
+    assert run.status_code == 200, run.text
+    assert run.json()["status"] == "ok"
+
+    after = (await assistant_client.get("/api/v1/assistant/tasks")).json()["tasks"]
+    assert [item["id"] for item in after] == [task["id"]]

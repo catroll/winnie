@@ -63,7 +63,6 @@ def create_app(
                     config=resolved.assistant,
                     llm=resolved.llm,
                     root=resolved.resolve_assistant_root(),
-                    extra_memory_roots=resolved.resolve_assistant_memory_roots(),
                     tasks_file=resolved.resolve_assistant_tasks_file(),
                     http=app.state.http,
                 )
