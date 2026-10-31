@@ -6,9 +6,9 @@ adds no new backend service.
 
 It is for looking at and operating what the API already knows: your meetings,
 their transcripts and minutes, the assistant chat and every conversation it has
-recorded, the assistant's scheduled tasks and their run history, and the
-configured model-gateway routes. It is not a recording client and it does not
-store vendor API keys.
+recorded, the assistant's scheduled tasks and their run history, and the AI
+providers every AI-using feature calls. It is not a recording client and it does
+not store vendor API keys.
 
 ## What you can do
 
@@ -19,8 +19,9 @@ store vendor API keys.
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
+| **AI providers** | Add, edit and delete vendor integrations (OpenAI-compatible, Anthropic, Volcengine ASR, deterministic fake); choose the provider and model for the assistant, transcription, translation and minutes; see each provider's gateway paths and whether its environment key is set |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
-| **Gateway routes** | Every route from `apps/api/config.yaml`, with protocol, upstream, API base and proxy paths |
+| **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
 | **Account** | Profile, session expiry and password change |
 
 The API scopes meetings to the authenticated account, so the console shows the
@@ -49,6 +50,31 @@ chat turn on it with `409`, and the composer is replaced with a notice.
 The chat is available when `assistant.enabled` is true in
 `apps/api/config.yaml`; otherwise the history request explains why it cannot
 load.
+
+## AI providers
+
+`/ai` owns the vendor registry. On first start the API seeds
+`data/ai.yaml` from the existing `routes`, `llm`, `meetings` and `assistant`
+configuration, then the console is authoritative. Each feature selects one
+integration and an optional model:
+
+| Feature | What it drives |
+|---|---|
+| Assistant chat | Replies, tool calls and memory distillation |
+| Meeting transcription | File ASR and live captions |
+| Meeting translation | Non-local transcript segments |
+| Meeting minutes | Structured summary, decisions and action items |
+
+Adding an OpenAI-compatible or Anthropic provider exposes a gateway route at
+`/{name}/v1/...` on the next save. A provider change takes effect on the next
+model call; no API restart is needed. Deleting a provider resets its features to
+their `config.yaml` fallback.
+
+The page never receives or stores a vendor key. `api_key_env` is the *name* of
+an environment variable, and the table shows whether it is currently set; the
+API process reads the value when it builds the provider. The full model,
+first-start precedence and the HTTP API are in
+[docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## Quick start
 
@@ -109,8 +135,9 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 - Changing the password revokes every server-side session, including the one in
   the browser, so the console returns to the login page with a notice.
 - Meeting text is rendered as text, not HTML.
-- Vendor keys are not entered or stored here. Gateway routes only show the
-  configured upstreams.
+- Vendor keys are not entered or stored here. The AI providers page stores the
+  *name* of an environment variable per provider and only reports whether the
+  API process can see it. Gateway routes show the configured upstreams.
 
 ## Scope
 
@@ -125,7 +152,11 @@ Deliberately not part of this app yet:
   The task table shows the last persisted result and the Run history card pages
   through `tasks/runs.jsonl` (newest first, filterable by task); the log remains
   the only store.
-- Editing routes from the browser (they are read from `apps/api/config.yaml`).
+- Editing the AI provider registry outside the console. `data/ai.yaml` is
+  written atomically and validated on load, but the console is the supported
+  editor; a hand-edited file is only read.
+- Entering vendor API keys in the browser. They stay in the API process
+  environment; the console can only choose which variable a provider names.
 - Browsing the raw gateway request logs (they stay on disk under `data/logs/`).
   The assistant history is a different record: the conversation Markdown the
   assistant wrote, not a proxy request log.

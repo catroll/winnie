@@ -1,4 +1,7 @@
 import type {
+  AIIntegration,
+  AIIntegrationInput,
+  AIProviderConfig,
   AssistantChatResponse,
   AssistantConversation,
   AssistantConversationList,
@@ -195,6 +198,44 @@ export const api = {
 
   indexSkill(action: 'install' | 'check'): Promise<{ ok: boolean; path: string }> {
     return request('/api/v1/index/skill', { method: 'POST', body: { action } });
+  },
+
+  aiConfig(): Promise<AIProviderConfig> {
+    return request<AIProviderConfig>('/api/v1/ai/config');
+  },
+
+  createAIIntegration(
+    input: AIIntegrationInput,
+  ): Promise<{ integration: AIIntegration }> {
+    return request('/api/v1/ai/integrations', { method: 'POST', body: input });
+  },
+
+  updateAIIntegration(
+    integrationId: string,
+    input: AIIntegrationInput,
+  ): Promise<{ integration: AIIntegration }> {
+    return request(`/api/v1/ai/integrations/${encodeURIComponent(integrationId)}`, {
+      method: 'PUT',
+      body: input,
+    });
+  },
+
+  deleteAIIntegration(
+    integrationId: string,
+  ): Promise<{ name: string; cleared_features: string[] }> {
+    return request(`/api/v1/ai/integrations/${encodeURIComponent(integrationId)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  setAIFeature(
+    feature: string,
+    binding: { integration_id: string | null; model: string },
+  ): Promise<{ feature: string; binding: { integration_id: string | null; model: string } }> {
+    return request(`/api/v1/ai/features/${encodeURIComponent(feature)}`, {
+      method: 'PUT',
+      body: binding,
+    });
   },
 
   assistantTasks(): Promise<AssistantTaskList> {

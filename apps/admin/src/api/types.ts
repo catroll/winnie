@@ -320,3 +320,66 @@ export interface AssistantChatResponse {
   tools_used: string[];
   usage_tokens: number;
 }
+
+/** Admin-managed AI providers and the features that use them. */
+
+export type AIProviderKind = 'openai' | 'anthropic' | 'volcengine_asr' | 'fake';
+
+export interface AIIntegration {
+  id: string;
+  name: string;
+  label: string;
+  kind: AIProviderKind;
+  kind_label: string;
+  base_url: string;
+  api_key_env: string;
+  api_key_present: boolean;
+  default_model: string;
+  enabled: boolean;
+  options: Record<string, unknown>;
+  used_by: string[];
+  gateway_paths: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIIntegrationInput {
+  name: string;
+  label: string;
+  kind: AIProviderKind;
+  base_url: string;
+  api_key_env: string;
+  default_model: string;
+  enabled: boolean;
+  options: Record<string, unknown>;
+}
+
+export interface AIFeature {
+  key: string;
+  label: string;
+  description: string;
+  kinds: AIProviderKind[];
+  requires_model: boolean;
+  integration_id: string | null;
+  model: string;
+  source: 'admin' | 'config';
+  integration_name: string;
+  config_default: string;
+}
+
+export interface AIKind {
+  kind: AIProviderKind;
+  label: string;
+  description: string;
+  gateway: boolean;
+  requires_base_url: boolean;
+  features: string[];
+}
+
+export interface AIProviderConfig {
+  path: string;
+  integrations: AIIntegration[];
+  features: AIFeature[];
+  kinds: AIKind[];
+  updated_at: string;
+}

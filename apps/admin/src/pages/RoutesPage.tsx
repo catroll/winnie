@@ -13,8 +13,10 @@ export function RoutesPage() {
         <div className="container-fluid">
           <div className="alert alert-info" role="note">
             <i className="bi bi-info-circle-fill me-2" aria-hidden="true" />
-            Routes are read from <code>apps/api/config.yaml</code>. Winnie never stores vendor API
-            keys: clients pass their own key on every request to the proxy path.
+            OpenAI and Anthropic providers managed on <strong>AI providers</strong> appear
+            here as routes; disable or delete one there to remove its path. Winnie never
+            stores vendor API keys: clients pass their own key on every request to the
+            proxy path.
           </div>
 
           {result.status === 'loading' ? (

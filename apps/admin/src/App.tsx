@@ -4,6 +4,7 @@ import { AuthProvider } from './auth/AuthContext';
 import { PublicOnly, RequireAuth } from './auth/guards';
 import { AppLayout } from './components/AppLayout';
 import { AccountPage } from './pages/AccountPage';
+import { AIPage } from './pages/AIPage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { IndexPage } from './pages/IndexPage';
@@ -30,6 +31,7 @@ export function App() {
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/ai" element={<AIPage />} />
             <Route path="/gateway" element={<RoutesPage />} />
             <Route path="/index" element={<IndexPage />} />
             <Route path="/account" element={<AccountPage />} />
