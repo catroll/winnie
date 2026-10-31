@@ -6,9 +6,10 @@ status are in [plan.md](./plan.md).
 
 ## P0 — first real meeting and bilingual fixture
 
-> `VOLCENGINE_ASR_API_KEY` is configured in the gitignored `apps/api/.env`
-> for this checkout. Restart the API after changing it (`make restart`):
-> `uvicorn --reload` watches Python files, not the environment file.
+> `VOLCENGINE_ASR_API_KEY` is configured in the gitignored
+> `packages/winnie-llm/.env` for this checkout; `winnie-llm` is the only reader.
+> Restart the API after changing it (`make restart`): `uvicorn --reload` watches
+> Python files, not the environment file.
 
 - [x] Verify the new-console API-key auth against the live endpoint: a valid
       `X-Api-Key` is accepted, while a bogus one returns
@@ -104,6 +105,39 @@ status are in [plan.md](./plan.md).
       without a worker.
 - [x] Add a session cleanup job for expired `auth_sessions`; the arq worker
       schedules it daily and a standalone CLI is available for cron.
+
+## P1 — phone data
+
+The sync and the confirmed-write path are implemented and unit-tested; a real
+handset has not run them yet. These are the next concrete steps.
+
+- [ ] Run the client on a physical phone and verify every permission path:
+      runtime grants, the notification-access grant, "allow all the time"
+      location, a vendor calendar provider insert/update/delete, and
+      WorkManager surviving a reboot and a process kill.
+- [ ] Add a phone page to the admin console: devices, counts, last sync, the
+      recent records per kind, and the same delete-on-server action.
+- [ ] Poll approved commands on a short interval separate from the data sync,
+      so a confirmed calendar change or SMS does not wait up to 30 minutes.
+- [ ] Report SMS delivery: the current result means "submitted to the carrier".
+      Use the `SmsManager` sent/delivered `PendingIntent`s and report the final
+      state, and show a clear error when `SEND_SMS` is revoked.
+- [ ] Propagate SMS and call-log deletions and edits. The `_ID` cursor cannot
+      see them; a periodic `_ID` snapshot diff against `GET /devices/{id}/ids`
+      would, at a few hundred KB for a large history.
+- [ ] Expand recurring calendar events through `Instances` while keeping a
+      stable event id for writes, so the assistant can answer "what is on
+      Thursday" for a weekly meeting.
+- [ ] Move message/notification search to FTS if a device accumulates years of
+      data; `LIKE` is fine for the current volumes but does not scale.
+- [ ] Decide on a long-lived device token. Background sync currently dies with
+      the 30-day account session and records "session expired"; a scoped,
+      revocable device credential would fix it without weakening account auth.
+- [ ] Evaluate encryption at rest for the phone tables (SQLCipher or encrypted
+      body columns + a derived search index) before recommending the feature to
+      anyone who syncs SMS over a public network.
+- [ ] If the owner wants it, capture MMS subject and part metadata without the
+      media itself.
 
 ## P2 — accounts and security
 

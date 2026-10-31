@@ -1,12 +1,12 @@
-"""LLM-backed structured minutes over an OpenAI-compatible chat endpoint."""
+"""LLM-backed structured minutes over the winnie-llm chat client."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from winnie_core.llm.json import parse_json_value
-from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
+from winnie_core.types import Usage
+from winnie_llm import ChatClient, parse_json_value
 from winnie_meetings.integrations.summarize.base import (
     ActionItem,
     Decision,
@@ -17,13 +17,12 @@ from winnie_meetings.integrations.summarize.base import (
     TranscriptLine,
     TranscriptView,
 )
-from winnie_core.types import Usage
 
 
 class LLMSummarizer(Summarizer):
     def __init__(
         self,
-        llm: OpenAICompatibleLLM,
+        llm: ChatClient,
         *,
         max_chunk_chars: int = 24000,
     ) -> None:

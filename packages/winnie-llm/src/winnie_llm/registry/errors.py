@@ -1,4 +1,4 @@
-"""Errors raised while resolving admin-managed AI providers."""
+"""Errors raised while resolving a supplier model for a feature."""
 
 from __future__ import annotations
 

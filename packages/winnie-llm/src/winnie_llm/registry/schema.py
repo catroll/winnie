@@ -18,14 +18,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from winnie_core.config import ModelRuntimeConfig
-
-from winnie_meetings.config import VolcengineASRConfig
+from winnie_llm.asr.config import VolcengineASRConfig
+from winnie_llm.runtime import ModelRuntimeConfig
 
 IntegrationKind = Literal["openai", "anthropic", "volcengine_asr", "fake"]
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
-_ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # A gateway route is a path prefix under the API root, so these names would
 # collide with the host's own endpoints.
@@ -220,18 +218,6 @@ def _validate_name(value: str) -> str:
     return name
 
 
-def _validate_env_name(value: str) -> str:
-    name = value.strip()
-    if not name:
-        return ""
-    if not _ENV_RE.fullmatch(name):
-        raise ValueError(
-            "api_key_env is the name of an environment variable, not the key "
-            "itself (for example DEEPSEEK_API_KEY)"
-        )
-    return name
-
-
 def _validate_url(value: str, *, kind: IntegrationKind) -> str:
     url = value.strip()
     if not url:
@@ -349,7 +335,6 @@ class IntegrationInput(BaseModel):
     vendor: str = ""
     kind: IntegrationKind
     base_url: str = ""
-    api_key_env: str = ""
     default_model: str = ""
     enabled: bool = True
     # Whether an OpenAI/Anthropic endpoint is exposed as a gateway route.
@@ -375,11 +360,6 @@ class IntegrationInput(BaseModel):
             )
         return name
 
-    @field_validator("api_key_env")
-    @classmethod
-    def _env(cls, value: str) -> str:
-        return _validate_env_name(value)
-
     @field_validator("base_url")
     @classmethod
     def _base_url(cls, value: str, info: Any) -> str:
@@ -396,8 +376,8 @@ class IntegrationInput(BaseModel):
         spec = KIND_BY_KEY[self.kind]
         if spec.requires_base_url and not self.base_url:
             raise ValueError(f"{spec.label} requires a base_url")
-        if self.kind == "fake" and (self.api_key_env or self.default_model):
-            raise ValueError("fake integrations do not use an API key or model")
+        if self.kind == "fake" and self.default_model:
+            raise ValueError("fake integrations do not use a model")
         if not spec.gateway:
             self.gateway = False
         self.options = _normalize_options(self.kind, self.options)
@@ -456,8 +436,9 @@ class AIState(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    version: int = 2
-    # Shared tuning only; provider base URL/model/key belong to an integration.
+    version: int = 6
+    # Shared tuning only; provider base URL/model belong to an integration and
+    # the key belongs to winnie-llm/.env.
     runtime: ModelRuntimeConfig = Field(default_factory=ModelRuntimeConfig)
     # Supplier -> endpoints -> models. The same vendor can contribute several
     # endpoint records (protocol/role), but it is one supplier in the console.
@@ -467,7 +448,7 @@ class AIState(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> AIState:
-        if self.version not in (1, 2, 3, 4, 5):
+        if self.version not in (1, 2, 3, 4, 5, 6):
             raise ValueError(f"unsupported ai settings version: {self.version}")
 
         vendor_ids: set[str] = set()
@@ -543,7 +524,6 @@ class AIState(BaseModel):
                     and integration.enabled
                     and not integration.gateway
                     and integration.kind in feature.kinds
-                    and (integration.kind != "openai" or integration.api_key_env)
                 ]
                 if not candidates:
                     raise ValueError(
@@ -567,11 +547,6 @@ class AIState(BaseModel):
                 model = binding.model or integration.default_model
                 if integration.kind != "fake" and not model:
                     raise ValueError(f"feature {key} needs a model")
-            if integration.kind == "openai" and not integration.api_key_env:
-                raise ValueError(
-                    f"feature {key} is bound to {integration.name!r}, which has "
-                    "no api_key_env; set one or choose an internal provider"
-                )
             if self.version >= 3 and binding.model:
                 vendor = vendors_by_id[integration.vendor]
                 if not any(model.id == binding.model for model in vendor.models):
@@ -595,6 +570,15 @@ class AIState(BaseModel):
 
 
 @dataclass(frozen=True)
+class RouteEntry:
+    """A gateway route derived from an OpenAI/Anthropic integration."""
+
+    name: str
+    protocol: Literal["openai", "anthropic"]
+    base_url: str
+
+
+@dataclass(frozen=True)
 class ResolvedProvider:
     """Everything a dynamic adapter needs to build one real provider."""
 
@@ -606,6 +590,9 @@ class ResolvedProvider:
     vendor_label: str
     kind: IntegrationKind
     base_url: str
-    api_key_env: str
+    # The variable name is derived from the supplier; the value stays in
+    # packages/winnie-llm/.env and is read by the registry when it builds a
+    # client.
+    key_env: str
     model: str
     options: dict[str, Any]

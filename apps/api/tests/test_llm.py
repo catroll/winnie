@@ -7,7 +7,7 @@ import re
 import httpx
 import pytest
 
-from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
+from winnie_llm import ChatClient
 from winnie_meetings.integrations.summarize.base import TranscriptLine, TranscriptView
 from winnie_meetings.integrations.summarize.llm import LLMSummarizer
 from winnie_meetings.integrations.translate.llm import LLMTranslator
@@ -18,8 +18,8 @@ def _llm(
     *,
     model: str = "test-model",
     **kwargs,
-) -> OpenAICompatibleLLM:
-    return OpenAICompatibleLLM(
+) -> ChatClient:
+    return ChatClient(
         base_url="https://llm.example/v1",
         api_key="secret",
         model=model,
@@ -155,7 +155,7 @@ async def test_summarizer_parses_structured_minutes() -> None:
             },
         )
 
-    llm = OpenAICompatibleLLM(
+    llm = ChatClient(
         base_url="https://llm.example/v1",
         api_key="secret",
         model="test-model",

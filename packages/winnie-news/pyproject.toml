@@ -7,10 +7,12 @@ dependencies = [
     "httpx>=0.28.0",
     "pydantic>=2.13.0",
     "winnie-core",
+    "winnie-llm",
 ]
 
 [tool.uv.sources]
 winnie-core = { path = "../winnie-core", editable = true }
+winnie-llm = { path = "../winnie-llm", editable = true }
 
 [build-system]
 requires = ["hatchling"]

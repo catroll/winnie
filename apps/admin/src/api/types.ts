@@ -385,7 +385,6 @@ export interface AIIntegrationInput {
   vendor: string;
   kind: AIProviderKind;
   base_url: string;
-  api_key_env: string;
   default_model: string;
   enabled: boolean;
   gateway: boolean;
@@ -427,6 +426,8 @@ export interface AIKind {
 
 export interface AIProviderConfig {
   path: string;
+  /** Where supplier key values are read from (packages/winnie-llm/.env). */
+  env_path: string;
   runtime: ModelRuntime;
   vendors: AIVendor[];
   integrations: AIIntegration[];

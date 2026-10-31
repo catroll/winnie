@@ -12,11 +12,13 @@ dependencies = [
     "python-multipart>=0.0.32",
     "winnie-core",
     "winnie-knowledge",
+    "winnie-llm",
 ]
 
 [tool.uv.sources]
 winnie-core = { path = "../winnie-core", editable = true }
 winnie-knowledge = { path = "../winnie-knowledge", editable = true }
+winnie-llm = { path = "../winnie-llm", editable = true }
 
 [build-system]
 requires = ["hatchling"]

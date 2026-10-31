@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from winnie_meetings.integrations.asr.base import ASRProvider, ASRResult, ASRSegment
-from winnie_meetings.integrations.asr.realtime import (
+from winnie_core.types import AudioRef, Usage
+from winnie_llm.asr.base import ASRProvider, ASRResult, ASRSegment
+from winnie_llm.asr.realtime import (
     RealtimeEvent,
     StreamStarted,
     TranscriptUpdate,
 )
-from winnie_core.types import AudioRef, Usage
 
 
 class FakeASRProvider(ASRProvider):

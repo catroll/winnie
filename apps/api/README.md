@@ -5,7 +5,9 @@ accounts, and the file-first meeting-notes backend; knowledge APIs are added
 incrementally.
 
 - Host and composition root: `src/winnie_api/main.py`
-- Framework package: `packages/winnie-core` (auth, DB, storage, jobs, LLM)
+- Framework package: `packages/winnie-core` (auth, DB, storage, jobs)
+- Model access: `packages/winnie-llm` (chat, ASR, supplier registry and the
+  only place vendor keys are read)
 - Gateway package: `packages/winnie-gateway`
 - Meetings package: `packages/winnie-meetings`
 - Assistant package: `packages/winnie-assistant` (conversations, memory, tasks)
@@ -15,8 +17,8 @@ incrementally.
 - News pipeline package: `packages/winnie-news` (mounted as `/api/v1/news`;
   design and operations in [docs/news.md](../../docs/news.md))
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
-- Admin-managed AI registry: `data/ai.yaml` (gitignored), served by
-  `src/winnie_api/ai/` and edited through the console
+- Supplier registry: `data/ai.yaml` (gitignored), owned by
+  `packages/winnie-llm` and exposed by `src/winnie_api/ai/` for the console
 - Tests: `tests/`, using a fake upstream instead of real vendor keys
 
 ## Run
@@ -26,8 +28,9 @@ IPv6, and sources an optional `apps/api/.env`; `make help` lists the overridable
 variables. Use `API_HOST=0.0.0.0` for an IPv4-only network. `make start`
 starts the API, index and admin console; `make stop` and `make restart` manage
 that whole stack. Scope a command to the API with `SERVICES=api`, for example
-`make stop SERVICES=api`. Restart after editing `apps/api/.env`: `uvicorn
---reload` watches Python files, not the environment file.
+`make stop SERVICES=api`. Restart after editing `apps/api/.env` or
+`packages/winnie-llm/.env`: `uvicorn --reload` watches Python files, not the
+environment files.
 
 ```bash
 # Edit config.yaml as needed.
@@ -175,8 +178,8 @@ endpoint:
 `meetings.asr_provider` and `meetings.volcengine`, then writes `data/ai.yaml`.
 There is no `llm` block, `assistant.model`, `meetings.translator` or
 `meetings.summarizer`: the registry is the only model choice. Routes seed as
-`gateway: true` endpoints with an empty `api_key_env` and are grouped under their
-supplier (`deepseek-openai` → DeepSeek). No fake supplier ships: every model
+`gateway: true` endpoints and are grouped under their supplier
+(`deepseek-openai` → DeepSeek). No fake supplier ships: every model
 feature starts unbound until the owner adds a supplier API, syncs its models and
 chooses one. ASR follows the legacy `asr_provider` value. After that file exists
 the console is authoritative. An unbound feature has no model and fails with a
@@ -191,8 +194,14 @@ gateway-only record cannot serve a feature; only the internal API can. A
 gateway route and an internal API, and bindings are repointed. A `version: 2`
 file is grouped under suppliers and its models are collected. A `version: 3`
 file is converted to `{vendor, model}` bindings; a `version: 4` file drops the
-seeded fake supplier and clears its bindings. The result is `version: 5`.
-Removing a model that a binding or endpoint default still uses is rejected.
+seeded fake supplier and clears its bindings; a `version: 5` file loses the
+stored key variable and becomes `version: 6`. Removing a model that a binding or
+endpoint default still uses is rejected.
+
+The registry and every vendor client belong to `packages/winnie-llm`. The
+console API here is only the HTTP surface. Keys are not part of the registry:
+`winnie-llm` derives the variable from the supplier id and reads it from
+`packages/winnie-llm/.env`.
 
 Shared model limits (timeout, token cap, temperature, retries, chunk sizes) live
 in the registry's `runtime` section and are edited from the console. They apply
@@ -231,8 +240,7 @@ curl -s -X POST http://[::1]:8000/api/v1/ai/integrations \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"deepseek-internal","label":"DeepSeek API","vendor":"deepseek",
-       "kind":"openai","base_url":"https://api.deepseek.com",
-       "api_key_env":"DEEPSEEK_API_KEY","gateway":false}'
+       "kind":"openai","base_url":"https://api.deepseek.com","gateway":false}'
 
 curl -s -X POST http://[::1]:8000/api/v1/ai/vendors/deepseek/models/sync \
   -H "Authorization: Bearer $TOKEN"
@@ -245,8 +253,9 @@ curl -s -X PUT http://[::1]:8000/api/v1/ai/features/assistant.chat \
 
 Set `"gateway": true` to expose an OpenAI/Anthropic endpoint at
 `/{name}/v1/...`; the client supplies its own vendor key on those paths. An
-internal-only endpoint uses `api_key_env` for the assistant and meetings. The
-registry stores the variable name, never the key. A feature binding names a
+internal-only endpoint takes its key from `packages/winnie-llm/.env`, where the
+variable is derived from the supplier id. The registry stores neither the key
+nor its variable name. A feature binding names a
 model from the supplier catalog; an unknown model is rejected. The supplier's
 internal API is the only thing used for a model call; gateway routes are
 separate. A change applies on the next model call, and the arq worker re-reads
@@ -283,9 +292,9 @@ rates cannot be expressed in one row. An unlisted model is counted as unpriced
 instead of estimated at zero. A provider-reported cost (`usage.cost`, for
 example on OpenRouter) takes precedence.
 
-Balances are queried only for integrations whose `api_key_env` is set, and only
-when the vendor exposes an endpoint: DeepSeek, OpenRouter, Kimi/Moonshot and
-SiliconFlow. Gateway clients pass their own key, so proxied traffic is recorded
+Balances are queried only for integrations whose supplier has a key in
+`packages/winnie-llm/.env`, and only when the vendor exposes an endpoint:
+DeepSeek, OpenRouter, Kimi/Moonshot and SiliconFlow. Gateway clients pass their own key, so proxied traffic is recorded
 but not covered by a server-side balance.
 
 | Method | Path | Purpose |
@@ -310,19 +319,19 @@ binding. It does not seed a model: translation and minutes start unbound.
 After that first start, choose models on the AI suppliers page; there is no YAML
 fallback for a model feature.
 
-For Doubao ASR, export the key named by the integration (default
-`VOLCENGINE_ASR_API_KEY`):
+For Doubao ASR, put the key in `packages/winnie-llm/.env`:
 
 ```bash
-export VOLCENGINE_ASR_API_KEY=...
+# packages/winnie-llm/.env
+VOLCENGINE_ASR_API_KEY=...
 ```
 
 This is the API key from the current Volcengine console, sent as `X-Api-Key`.
 The legacy APP ID + Access Token pair is no longer accepted.
 
-For real translation and structured minutes, add a supplier API and a model
-with a base URL and an `api_key_env`, sync its models, export that variable,
-and bind both `meetings.translate` and `meetings.summarize` to the model. Timeouts,
+For real translation and structured minutes, add a supplier API and a model,
+put the supplier's key in `packages/winnie-llm/.env`, sync its models, and bind
+both `meetings.translate` and `meetings.summarize` to the model. Timeouts,
 retries and chunk sizes come from the registry's **Model runtime** card, not
 from `config.yaml`.
 
@@ -357,7 +366,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ## Smoke test
 
-The same `DEEPSEEK_API_KEY` exercises both protocol routes:
+The same `DEEPSEEK_API_KEY` (from `packages/winnie-llm/.env`) exercises both
+protocol routes for internal calls; gateway routes still take the client's key:
 
 | Route | Protocol | Path |
 |-------|----------|------|

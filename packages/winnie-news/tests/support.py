@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from typing import Any
 
-from winnie_core.llm.base import LLMCompletion
+from winnie_llm import LLMCompletion
 from winnie_core.types import Usage
 
 

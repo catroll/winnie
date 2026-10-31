@@ -1,0 +1,54 @@
+"""Supplier registry: which model serves which feature, and how to reach it."""
+
+from winnie_llm.registry.errors import AIConflict, AINotFound, AIProviderError
+from winnie_llm.registry.schema import (
+    AIState,
+    BindingDraft,
+    BindingRecord,
+    FeatureSpec,
+    FEATURE_BY_KEY,
+    FEATURES,
+    IntegrationDraft,
+    IntegrationKind,
+    IntegrationRecord,
+    KindSpec,
+    KINDS,
+    KIND_BY_KEY,
+    ModelRecord,
+    ResolvedProvider,
+    RouteEntry,
+    VendorDraft,
+    VendorRecord,
+    infer_vendor,
+    vendor_label_for,
+)
+from winnie_llm.registry.seed import SeedInput, SeedRoute
+from winnie_llm.registry.store import ProviderRegistry
+
+__all__ = [
+    "AIConflict",
+    "AINotFound",
+    "AIProviderError",
+    "AIState",
+    "BindingDraft",
+    "BindingRecord",
+    "FEATURE_BY_KEY",
+    "FEATURES",
+    "FeatureSpec",
+    "IntegrationDraft",
+    "IntegrationKind",
+    "IntegrationRecord",
+    "KIND_BY_KEY",
+    "KINDS",
+    "KindSpec",
+    "ModelRecord",
+    "ProviderRegistry",
+    "ResolvedProvider",
+    "RouteEntry",
+    "SeedInput",
+    "SeedRoute",
+    "VendorDraft",
+    "VendorRecord",
+    "infer_vendor",
+    "vendor_label_for",
+]

@@ -12,7 +12,9 @@ import httpx
 from arq import cron
 from arq.connections import RedisSettings
 
-from winnie_api.ai.store import AISettingsService
+from winnie_llm import ApiKeys, ProviderRegistry
+
+from winnie_api.ai.seed import seed_input
 from winnie_api.jobs.tasks import (
     cleanup_expired_audio,
     cleanup_expired_sessions,
@@ -24,7 +26,15 @@ from winnie_api.settings import get_settings
 
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
-    ai = AISettingsService(settings) if settings.ai.enabled else None
+    ai = (
+        ProviderRegistry(
+            settings.resolve_ai_path(),
+            keys=ApiKeys.load(),
+            seed=seed_input(settings),
+        )
+        if settings.ai.enabled
+        else None
+    )
     if ai is not None:
         ai.load()
     http = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0))

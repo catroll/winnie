@@ -133,11 +133,10 @@ logs, optional worker/Redis/PostgreSQL and production shape are documented in
 foreground for development. `make api` uses `uv` and falls back to
 `apps/api/.venv` when `uv` is not on `PATH`; run `cd apps/api && uv sync` first
 on a fresh checkout. It sources
-`apps/api/.env` when that file exists — gitignored, and only a local
-convenience: the application itself reads secrets from the process environment.
-That file also supplies `WINNIE_PUBLIC_URL`, the default server address baked
-into the Android APK; start from `apps/api/.env.example`. `make android` needs a
-JDK and the Android SDK; see
+`apps/api/.env` when that file exists — gitignored, and only for local
+non-secret settings: it supplies `WINNIE_PUBLIC_URL`, the default server address
+baked into the Android APK; start from `apps/api/.env.example`. `make android`
+needs a JDK and the Android SDK; see
 [apps/android/README.md](./apps/android/README.md). `make admin` needs the
 console's dependencies first: run `cd apps/admin && npm install`; see
 [apps/admin/README.md](./apps/admin/README.md).
@@ -156,14 +155,16 @@ headers. Routing, configuration and request examples are in
 
 Accounts and meeting notes are mounted under `/api/v1` when enabled in
 `apps/api/config.yaml`. The first account can register, then login to receive a
-bearer token. To transcribe with Doubao, export
-`VOLCENGINE_ASR_API_KEY` (the API key from the current Volcengine console)
-before starting the API. To use a real model for the assistant, translation or
-minutes, add an OpenAI-compatible provider on the AI providers page, export the
-environment variable it names, and restart the API. Provider selection and
-first-start behaviour are in [docs/ai-providers.md](./docs/ai-providers.md); the
-meeting integration design and endpoint list are in
-[docs/meetings.md](./docs/meetings.md).
+bearer token. Every model vendor call — chat, transcription and live captions — is made by
+`packages/winnie-llm`, and every vendor key lives in
+`packages/winnie-llm/.env` (gitignored; start from
+`packages/winnie-llm/.env.example`). No other module reads or stores a key. To
+transcribe with Doubao, put `VOLCENGINE_ASR_API_KEY` there; to use a real model
+for the assistant, translation or minutes, add an OpenAI-compatible provider on
+the AI providers page and put its key in the same file, then restart the API.
+Provider selection and first-start behaviour are in
+[docs/ai-providers.md](./docs/ai-providers.md); the meeting integration design
+and endpoint list are in [docs/meetings.md](./docs/meetings.md).
 
 ## Roadmap
 

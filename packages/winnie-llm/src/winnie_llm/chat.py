@@ -1,8 +1,12 @@
-"""Minimal OpenAI-compatible chat client for internal jobs.
+"""OpenAI-compatible chat access.
 
-The same client serves two callers: single-shot completions (translation,
-minutes) and tool-calling turns (the assistant). Tool support is opt-in: when
-no tools are passed, the request body is identical to what it always was.
+This is the only chat client in the repository. Capabilities (assistant,
+meetings, news) receive a resolved client or a small protocol and never build an
+HTTP request to a model vendor themselves.
+
+The same client serves single-shot completions and tool-calling turns; tool
+support is opt-in, so a request without tools is byte-for-byte what it always
+was.
 """
 
 from __future__ import annotations
@@ -10,12 +14,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
-from winnie_core.llm.base import ChatResult, LLMCompletion, ToolCall
 from winnie_core.types import Usage
 from winnie_core.usage.event import UsageEvent
 from winnie_core.usage.ledger import UsageSink
@@ -26,12 +30,47 @@ logger = logging.getLogger(__name__)
 RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 
 
-class OpenAICompatibleLLM:
-    """Call a `/chat/completions` endpoint directly, never through the gateway.
+@dataclass(frozen=True)
+class LLMCompletion:
+    text: str
+    model: str
+    usage: Usage
 
-    This keeps internal jobs independent from the transparent proxy's request
-    logging and from client-supplied vendor keys. Transient transport errors and
-    retryable HTTP statuses are retried with exponential backoff.
+
+@dataclass(frozen=True)
+class ToolCall:
+    """One function call requested by the model.
+
+    ``arguments`` is the raw JSON string the provider returned; parsing it is
+    the caller's job so a malformed payload becomes a visible tool error rather
+    than a crash inside the client.
+    """
+
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True)
+class ChatResult:
+    """A full assistant turn, including any tool calls it requested.
+
+    ``message`` is the provider's assistant message, replayed verbatim when the
+    tool results are sent back. ``text`` is empty when the turn is tool-only.
+    """
+
+    text: str
+    tool_calls: tuple[ToolCall, ...]
+    model: str
+    usage: Usage
+    message: dict[str, Any]
+
+
+class ChatClient:
+    """Call a ``/chat/completions`` endpoint.
+
+    Transient transport errors and retryable HTTP statuses are retried with
+    exponential backoff. Usage recording never changes the call's result.
     """
 
     def __init__(

@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from winnie_meetings.integrations.asr.volcengine import VolcengineASRProvider
+from winnie_llm import VolcengineASRProvider
 from winnie_core.types import AudioRef
 
 

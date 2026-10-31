@@ -97,7 +97,6 @@ async def test_integration_crud_drives_the_gateway_route_table(tmp_path: Path) -
             "label": "My LLM",
             "kind": "openai",
             "base_url": "https://llm.example.com",
-            "api_key_env": "MY_LLM_KEY",
             "default_model": "model-1",
             "enabled": True,
         }
@@ -149,7 +148,6 @@ async def test_feature_binding_validates_kind_model_and_delete(
                 "name": "work-llm",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
-                "api_key_env": "WORK_LLM_KEY",
                 "default_model": "model-1",
                 "gateway": False,
             },
@@ -185,7 +183,6 @@ async def test_feature_binding_validates_kind_model_and_delete(
                 "name": "no-model",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
-                "api_key_env": "NO_MODEL_KEY",
                 "gateway": False,
             },
         )
@@ -241,6 +238,8 @@ async def test_invalid_integration_is_rejected(tmp_path: Path) -> None:
                 "name": "pasted-key",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
+                # A pasted key is an unknown field now; the registry has no
+                # place to put one.
                 "api_key_env": "sk-pasted-secret",
             },
         )
@@ -282,7 +281,7 @@ async def test_assistant_chat_uses_the_bound_integration(
     monkeypatch,
     upstream,
 ) -> None:
-    monkeypatch.setenv("WINNIE_TEST_LLM_KEY", "secret-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     settings = _assistant_settings(tmp_path, tmp_path / "ai.yaml")
     async with _open(settings, upstream) as client:
         seeded = await client.get("/api/v1/ai/config")
@@ -294,7 +293,6 @@ async def test_assistant_chat_uses_the_bound_integration(
                 "name": "mock-llm",
                 "kind": "openai",
                 "base_url": "https://fake.openai",
-                "api_key_env": "WINNIE_TEST_LLM_KEY",
                 "default_model": "fake-openai-model",
                 "gateway": False,
             },
@@ -338,7 +336,7 @@ async def test_assistant_reports_a_missing_api_key_environment(
     monkeypatch,
     upstream,
 ) -> None:
-    monkeypatch.delenv("WINNIE_TEST_MISSING_KEY", raising=False)
+    monkeypatch.delenv("MISSING_KEY_API_KEY", raising=False)
     settings = _assistant_settings(tmp_path, tmp_path / "ai.yaml")
     async with _open(settings, upstream) as client:
         created = await client.post(
@@ -346,8 +344,7 @@ async def test_assistant_reports_a_missing_api_key_environment(
             json={
                 "name": "missing-key",
                 "kind": "openai",
-                "base_url": "https://fake.openai",
-                "api_key_env": "WINNIE_TEST_MISSING_KEY",
+                "base_url": "https://missing.example.com",
                 "default_model": "fake-openai-model",
                 "gateway": False,
             },
@@ -362,7 +359,7 @@ async def test_assistant_reports_a_missing_api_key_environment(
             "/api/v1/assistant/chat", json={"message": "ping"}
         )
         assert reply.status_code == 502, reply.text
-        assert "WINNIE_TEST_MISSING_KEY" in reply.json()["detail"]
+        assert "MISSING_KEY_API_KEY" in reply.json()["detail"]
 
 
 async def test_meeting_translation_uses_the_bound_integration(
@@ -396,7 +393,7 @@ async def test_meeting_translation_uses_the_bound_integration(
                 )
         return httpx.Response(500, json={"error": "unexpected request"})
 
-    monkeypatch.setenv("WINNIE_TEST_LLM_KEY", "secret-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     settings = Settings(
         log_root=str(tmp_path / "logs"),
         routes={},
@@ -421,7 +418,6 @@ async def test_meeting_translation_uses_the_bound_integration(
                 "name": "translate-llm",
                 "kind": "openai",
                 "base_url": "https://fake.openai",
-                "api_key_env": "WINNIE_TEST_LLM_KEY",
                 "default_model": "fake-openai-model",
                 "gateway": False,
             },
@@ -512,7 +508,6 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
                 "name": "bound-llm",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
-                "api_key_env": "BOUND_LLM_KEY",
                 "default_model": "model-1",
                 "gateway": False,
             },
@@ -543,7 +538,6 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
                 "name": "bound-llm",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
-                "api_key_env": "BOUND_LLM_KEY",
                 "default_model": "",
                 "gateway": False,
             },
@@ -577,7 +571,7 @@ async def test_fresh_seed_leaves_model_choice_to_the_console(
     # No llm block exists, so the seed cannot and must not invent an internal
     # provider. The console owns that choice.
     assert "internal-llm" not in by_name
-    assert by_name["deepseek-openai"]["api_key_env"] == ""
+    assert by_name["deepseek-openai"]["api_key_env"] == "DEEPSEEK_API_KEY"
     assert by_name["deepseek-openai"]["gateway"] is True
     assert by_name["deepseek-openai"]["label"] == "DeepSeek (OpenAI-compatible)"
 
@@ -643,7 +637,10 @@ bindings:
         routes = (await client.get("/routes")).json()["routes"]
 
     stored = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert stored["version"] == 5
+    assert stored["version"] == 6
+    # Version 6 removed the stored key variable; the derived name is only a
+    # view, never part of the file.
+    assert all("api_key_env" not in item for item in stored["integrations"])
     by_name = {item["name"]: item for item in config["integrations"]}
     vendors = {item["id"]: item for item in config["vendors"]}
     assert "fake" not in by_name
@@ -653,7 +650,7 @@ bindings:
     assert [model["id"] for model in vendors["deepseek"]["models"]] == [
         "deepseek-chat"
     ]
-    assert by_name["deepseek-openai"]["api_key_env"] == ""
+    assert by_name["deepseek-openai"]["api_key_env"] == "DEEPSEEK_API_KEY"
     assert by_name["deepseek-openai"]["default_model"] == ""
     assert by_name["deepseek-openai"]["label"] == "DeepSeek (OpenAI-compatible)"
     assert by_name["deepseek-openai"]["gateway"] is True
@@ -701,7 +698,6 @@ async def test_a_gateway_only_provider_cannot_serve_an_internal_feature(
                 "name": "internal-only",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
-                "api_key_env": "INTERNAL_KEY",
                 "default_model": "model-1",
                 "gateway": False,
             },
@@ -785,7 +781,6 @@ async def test_supplier_groups_endpoints_models_and_bindings(tmp_path: Path) -> 
                 "vendor": "deepseek",
                 "kind": "openai",
                 "base_url": "https://api.deepseek.com/v1",
-                "api_key_env": "TEST_DEEPSEEK_KEY",
                 "default_model": "deepseek-chat",
                 "gateway": False,
             },
@@ -862,7 +857,6 @@ async def test_feature_binding_is_a_model_reference(tmp_path: Path) -> None:
                 "vendor": "deepseek",
                 "kind": "openai",
                 "base_url": "https://api.deepseek.com/v1",
-                "api_key_env": "TEST_DEEPSEEK_KEY",
                 "default_model": "deepseek-chat",
                 "gateway": False,
             },
@@ -891,7 +885,7 @@ async def test_feature_binding_is_a_model_reference(tmp_path: Path) -> None:
 async def test_supplier_model_sync_fetches_the_model_list(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("TEST_DEEPSEEK_KEY", "secret")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "secret")
     calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -922,7 +916,6 @@ async def test_supplier_model_sync_fetches_the_model_list(
                 "vendor": "deepseek",
                 "kind": "openai",
                 "base_url": "https://api.deepseek.com",
-                "api_key_env": "TEST_DEEPSEEK_KEY",
                 "gateway": False,
             },
         )

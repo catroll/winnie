@@ -10,8 +10,7 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from winnie_meetings.integrations.asr.base import ASRProvider
-from winnie_meetings.integrations.asr.realtime import RealtimeASRProvider
+from winnie_llm.asr import ASRProvider, RealtimeASRProvider
 from winnie_meetings.integrations.summarize.base import (
     MinutesDraft,
     Summarizer,

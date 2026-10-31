@@ -4,10 +4,9 @@ The adapter submits a locally stored file as base64 to the big-model
 recording-file API, then polls the query endpoint until the result is ready.
 The credential is a single API key issued by the current console and sent as
 ``X-Api-Key``; the older console's APP ID + Access Token pair
-(``X-Api-App-Key`` + ``X-Api-Access-Key``) is not supported. The key is read
-from the environment by the factory:
-
-    VOLCENGINE_ASR_API_KEY
+(``X-Api-App-Key`` + ``X-Api-Access-Key``) is not supported. The key is resolved
+by :mod:`winnie_llm.registry` from ``packages/winnie-llm/.env`` and passed to
+this adapter; the adapter never reads the environment.
 
 The endpoint and header names are vendor-specific. Keep the request/response
 mapping in this module so a future vendor can be added behind the same port
@@ -23,11 +22,10 @@ from pathlib import Path
 
 import httpx
 
-from winnie_meetings.integrations.asr.base import ASRProvider, ASRResult, ASRSegment
 from winnie_core.types import AudioRef, Usage
+from winnie_llm.asr.base import ASRProvider, ASRResult, ASRSegment
 
 DEFAULT_BASE_URL = "https://openspeech.bytedance.com"
-API_KEY_ENV = "VOLCENGINE_ASR_API_KEY"
 SUCCESS = "20000000"
 PROCESSING = {"20000001", "20000002"}
 
@@ -131,8 +129,8 @@ class VolcengineASRProvider(ASRProvider):
     def _require_credentials(self) -> None:
         if not self.api_key:
             raise RuntimeError(
-                "Volcengine ASR API key is missing; set "
-                f"{API_KEY_ENV}"
+                "Volcengine ASR API key is missing; add VOLCENGINE_ASR_API_KEY "
+                "to packages/winnie-llm/.env"
             )
 
     def _headers(

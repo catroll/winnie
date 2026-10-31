@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from winnie_core.llm.json import parse_json_value
+from winnie_llm import parse_json_value
 
 from winnie_assistant.agent import ChatModel
 from winnie_assistant.config import AssistantConfig

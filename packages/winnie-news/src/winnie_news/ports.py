@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from winnie_core.llm.base import LLMCompletion
+from winnie_llm import LLMCompletion
 
 
 class LLMPort(Protocol):

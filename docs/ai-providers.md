@@ -11,14 +11,18 @@ model list. A feature never selects a supplier or an endpoint.
 - Console page: **AI suppliers** (`/ai` in the admin app)
 - API prefix: `/api/v1/ai`
 - State file: `data/ai.yaml` by default (gitignored)
-- No vendor keys are stored: the supplier API names an environment variable
+- Owner: `packages/winnie-llm` (`winnie_llm.registry`); `apps/api` only exposes
+  the HTTP console below
+- No vendor keys are stored here: they live in `packages/winnie-llm/.env` and
+  the variable is derived from the supplier id
 
 ## Concepts
 
 A **supplier** is the vendor (`deepseek`, `openai`, `qwen`, `anthropic`,
 `volcengine`) and owns:
 
-- one **API endpoint** for internal calls: base URL, key variable and protocol;
+- one **API endpoint** for internal calls: base URL and protocol (the key is
+  not part of the record);
 - a **model catalog**;
 - zero or more **gateway routes** — public `/{name}/v1/...` proxy paths that
   forward the client's own vendor key.
@@ -89,7 +93,7 @@ On the first start with `ai.enabled: true`, Winnie writes `data/ai.yaml` from th
 remaining YAML inputs:
 
 - every entry under `routes` becomes an `openai` or `anthropic` **gateway
-  route** with `api_key_env: ""`; routes are grouped under their supplier
+  route**; routes are grouped under their supplier
   (`deepseek-openai` → **DeepSeek**);
 - `meetings.volcengine` supplies the endpoint/options for a `volcengine-asr`
   supplier API; `meetings.asr_provider: volcengine` seeds the ASR binding to
@@ -139,31 +143,43 @@ A `version: 4` registry is cleaned up: the seeded fake integration and vendor ar
 removed, bindings to them are cleared, and features without a configured model
 stay unbound. The file becomes `version: 5`. No fake supplier is created again.
 
+A `version: 5` registry is migrated to `version: 6`: the stored `api_key_env`
+field is removed from every endpoint, and the variable name is derived from the
+supplier id at call time. The file becomes `version: 6`.
+
 ## API keys
 
-The registry never stores a key. `api_key_env` is the *name* of an environment
-variable, for example `DEEPSEEK_API_KEY`; the API process reads the value when it
-calls the supplier. The console shows the variable and whether it is set, but
-never renders the value.
+The registry never stores a key and no longer names a variable either. All
+vendor credentials live in `packages/winnie-llm/.env`, which is read only by the
+`winnie-llm` package:
 
-A value pasted into the `api_key_env` field is rejected by validation. Set the
-key in the process environment (directly or through `apps/api/.env`) and restart
-the API or worker: a running process keeps the environment it was started with.
+| Supplier | Variable |
+|---|---|
+| `deepseek` | `DEEPSEEK_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `anthropic` | `ANTHROPIC_API_KEY` |
+| `qwen` | `DASHSCOPE_API_KEY` |
+| `volcengine` | `VOLCENGINE_ASR_API_KEY` |
+| any other supplier id | `<SUPPLIER>_API_KEY` |
 
-The key belongs to the **supplier API**, not to a feature. A feature bound to a
-model inherits the key of that model's supplier; two features using the same
-supplier share it. To use a different key, add another supplier entry (for
-example `deepseek-work`), give it its own `api_key_env`, and bind the relevant
-features to a model from that supplier.
+A key belongs to a **supplier**, not a feature or a feature binding: every model
+of that supplier shares it. To use a second account for the same vendor, add a
+supplier such as `deepseek-work` and put `DEEPSEEK_WORK_API_KEY` in the same
+file.
 
-Gateway paths still forward the client's own vendor key. The environment
-variable matters for internal jobs and the assistant, which call the supplier
-directly. A gateway-only record is never a feature target; the internal API
-button/config is separate.
+Start from `packages/winnie-llm/.env.example`. The console shows the derived
+variable name and whether it is set, but never renders the value; a pasted key
+in the registry JSON is rejected as an unknown field. Restart the API or worker
+after editing the file: a running process does not re-read it.
 
-New supplier APIs get a conventional suggestion from their name
-(`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `DASHSCOPE_API_KEY`,
-`ANTHROPIC_API_KEY`, `VOLCENGINE_ASR_API_KEY`); the field remains editable.
+A process-environment variable of the same name overrides the file, which keeps
+CI and one-off runs possible. `WINNIE_LLM_ENV_FILE` points the loader at another
+file; the API tests use it so the checkout's real keys never reach a test.
+
+Gateway paths still forward the client's own vendor key. The environment file
+matters for internal jobs and the assistant, which call the supplier directly. A
+gateway-only record is never a feature target; the internal API button/config is
+separate.
 
 ## Changes take effect without a restart
 
@@ -212,7 +228,6 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/ai/integrations \
     "vendor": "deepseek",
     "kind": "openai",
     "base_url": "https://api.deepseek.com/v1",
-    "api_key_env": "DEEPSEEK_API_KEY",
     "gateway": false
   }'
 
@@ -236,17 +251,16 @@ supplier.
   loudly with the path and the validation error instead of silently falling
   back. Use the console for normal changes.
 - The file is written atomically (temporary file plus rename) with mode `0600`.
-- The file is `version: 5`. A `version: 1`, `2`, `3` or `4` file is migrated in
-  place on the next read; back it up first if it contains manual edits.
+- The file is `version: 6`. A `version: 1`–`5` file is migrated in place on the
+  next read; back it up first if it contains manual edits.
 - Multiple API processes share the file. The process that handled the console
   write refreshes its gateway table immediately; another process only re-reads
   bindings/runtime on the next resolution and does not rebuild its gateway
   table, which is why keeping the API at one worker remains the simple
   deployment. A TTL reload or a shared revision is a follow-up
   ([todo](./todo.md)).
-- `volcengine_asr` options are validated by the capability's own
-  `VolcengineASRConfig`, so ranges and defaults do not drift between the console
-  and the adapter.
+- `volcengine_asr` options are validated by `winnie_llm.asr.VolcengineASRConfig`,
+  so ranges and defaults do not drift between the console and the adapter.
 - Supplier marks are adapted from the WLB newapi `vendor-icons.js` catalog
   (`DeepSeek`, `OpenAI`, Alibaba/Qwen, Anthropic, ByteDance/Volcengine, with a
   monogram fallback). They are static inline SVG, so the admin needs no icon

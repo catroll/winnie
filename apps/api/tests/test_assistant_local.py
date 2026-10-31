@@ -35,7 +35,7 @@ from winnie_local import (
 )
 from winnie_assistant.search import FakeSearchProvider
 from winnie_assistant.tools import ToolBox
-from winnie_core.llm.base import ChatResult, ToolCall
+from winnie_llm import ChatResult, ToolCall
 from winnie_core.types import Usage
 
 

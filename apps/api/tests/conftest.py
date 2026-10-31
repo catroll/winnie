@@ -23,6 +23,15 @@ from winnie_gateway.config import RouteConfig
 from winnie_meetings.config import MeetingsConfig
 
 
+@pytest.fixture(autouse=True)
+def isolate_llm_environment(monkeypatch, tmp_path: Path) -> None:
+    """Never let this checkout's real ``winnie-llm/.env`` reach a test.
+
+    A test that needs a key sets ``<VENDOR>_API_KEY`` through ``monkeypatch``.
+    """
+    monkeypatch.setenv("WINNIE_LLM_ENV_FILE", str(tmp_path / "winnie-llm.env"))
+
+
 class FakeUpstream:
     """Record requests and return deterministic OpenAI/Anthropic responses."""
 

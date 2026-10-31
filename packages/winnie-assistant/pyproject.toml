@@ -11,12 +11,14 @@ dependencies = [
     "winnie-core",
     "winnie-chat",
     "winnie-local",
+    "winnie-llm",
 ]
 
 [tool.uv.sources]
 winnie-core = { path = "../winnie-core", editable = true }
 winnie-chat = { path = "../winnie-chat", editable = true }
 winnie-local = { path = "../winnie-local", editable = true }
+winnie-llm = { path = "../winnie-llm", editable = true }
 
 [build-system]
 requires = ["hatchling"]

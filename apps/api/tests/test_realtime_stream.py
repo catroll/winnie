@@ -10,13 +10,13 @@ from starlette.websockets import WebSocketDisconnect
 
 from winnie_api.main import create_app
 from winnie_api.settings import Settings
-from winnie_meetings.integrations.asr.fake import FakeRealtimeASR
-from winnie_meetings.integrations.asr.realtime import (
+from winnie_llm import FakeRealtimeASR
+from winnie_llm import (
     RealtimeASRError,
     StreamStarted,
     TranscriptUpdate,
 )
-from winnie_meetings.integrations.asr.volcengine_stream import (
+from winnie_llm.asr.volcengine_stream import (
     _audio_packet,
     _full_client_request,
     _parse_frame,

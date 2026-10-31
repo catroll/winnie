@@ -1519,6 +1519,7 @@ dependencies = [
     { name = "winnie-core" },
     { name = "winnie-gateway" },
     { name = "winnie-knowledge" },
+    { name = "winnie-llm" },
     { name = "winnie-local" },
     { name = "winnie-meetings" },
     { name = "winnie-news" },
@@ -1549,6 +1550,7 @@ requires-dist = [
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-gateway", editable = "../../packages/winnie-gateway" },
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
+    { name = "winnie-llm", editable = "../../packages/winnie-llm" },
     { name = "winnie-local", editable = "../../packages/winnie-local" },
     { name = "winnie-meetings", editable = "../../packages/winnie-meetings" },
     { name = "winnie-news", editable = "../../packages/winnie-news" },
@@ -1571,6 +1573,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "winnie-chat" },
     { name = "winnie-core" },
+    { name = "winnie-llm" },
     { name = "winnie-local" },
 ]
 
@@ -1582,6 +1585,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "winnie-chat", editable = "../../packages/winnie-chat" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
+    { name = "winnie-llm", editable = "../../packages/winnie-llm" },
     { name = "winnie-local", editable = "../../packages/winnie-local" },
 ]
 
@@ -1591,10 +1595,14 @@ version = "0.1.0"
 source = { editable = "../../packages/winnie-chat" }
 dependencies = [
     { name = "winnie-core" },
+    { name = "winnie-llm" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "winnie-core", editable = "../../packages/winnie-core" }]
+requires-dist = [
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
+    { name = "winnie-llm", editable = "../../packages/winnie-llm" },
+]
 
 [[package]]
 name = "winnie-core"
@@ -1644,6 +1652,33 @@ version = "0.1.0"
 source = { editable = "../../packages/winnie-knowledge" }
 
 [[package]]
+name = "winnie-llm"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-llm" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "websockets" },
+    { name = "winnie-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "websockets", specifier = ">=17.0" },
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.1" },
+]
+
+[[package]]
 name = "winnie-local"
 version = "0.1.0"
 source = { editable = "../../packages/winnie-local" }
@@ -1667,6 +1702,7 @@ dependencies = [
     { name = "websockets" },
     { name = "winnie-core" },
     { name = "winnie-knowledge" },
+    { name = "winnie-llm" },
 ]
 
 [package.metadata]
@@ -1679,6 +1715,7 @@ requires-dist = [
     { name = "websockets", specifier = ">=17.0" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
+    { name = "winnie-llm", editable = "../../packages/winnie-llm" },
 ]
 
 [[package]]
@@ -1689,6 +1726,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "winnie-core" },
+    { name = "winnie-llm" },
 ]
 
 [package.metadata]
@@ -1696,6 +1734,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pydantic", specifier = ">=2.13.0" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
+    { name = "winnie-llm", editable = "../../packages/winnie-llm" },
 ]
 
 [package.metadata.requires-dev]

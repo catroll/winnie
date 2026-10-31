@@ -12,8 +12,8 @@ import json
 import re
 from typing import Any
 
-from winnie_core.llm.base import LLMCompletion
 from winnie_core.types import Usage
+from winnie_llm import LLMCompletion
 
 from .aggregate.cards import heuristic_card
 from .aggregate.models import normalize_event_type

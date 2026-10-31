@@ -1,7 +1,5 @@
-"""Admin-managed AI providers and feature bindings."""
+"""HTTP surface for the supplier registry owned by ``winnie-llm``."""
 
 from __future__ import annotations
 
-from winnie_api.ai.store import AISettingsService
-
-__all__ = ["AISettingsService"]
+__all__: list[str] = []

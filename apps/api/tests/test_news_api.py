@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 
-from winnie_api.ai.schema import BindingDraft, IntegrationDraft, VendorDraft
+from winnie_llm import BindingDraft, IntegrationDraft, VendorDraft
 from winnie_api.main import create_app
 from winnie_assistant.config import AssistantConfig, SearchConfig as AssistantSearchConfig
 from winnie_api.settings import AIConfig, Settings

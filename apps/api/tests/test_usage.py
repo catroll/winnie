@@ -13,11 +13,10 @@ import httpx
 import pytest
 
 from winnie_api.ai.providers import DynamicTranslator
-from winnie_api.ai.schema import BindingDraft, IntegrationDraft
-from winnie_api.ai.store import AISettingsService
+from winnie_llm import ApiKeys, BindingDraft, IntegrationDraft, ProviderRegistry
 from winnie_api.main import create_app
 from winnie_api.settings import AIConfig, DatabaseConfig, RouteConfig, Settings
-from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
+from winnie_llm import ChatClient
 from winnie_core.usage.config import ModelPriceConfig, UsageConfig
 from winnie_core.usage.event import UsageEvent
 from winnie_core.usage.ledger import UsageLedger
@@ -295,7 +294,7 @@ async def test_internal_client_records_a_call_and_its_error(tmp_path: Path) -> N
             },
         )
 
-    llm = OpenAICompatibleLLM(
+    llm = ChatClient(
         base_url="https://llm.example/v1",
         api_key="secret",
         model="deepseek-flash",
@@ -564,15 +563,15 @@ async def test_balances_query_the_four_supported_providers(
         tmp_path,
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
     )
-    for env in ("DEEPSEEK_KEY", "OPENROUTER_KEY", "MOONSHOT_KEY", "SILICONFLOW_KEY"):
+    for env in ("DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "SILICONFLOW_API_KEY"):
         monkeypatch.setenv(env, "secret-key")
 
     async with _open(settings, _balance_handler(calls)) as client:
         inputs = [
-            ("deepseek", "https://api.deepseek.com", "DEEPSEEK_KEY"),
-            ("openrouter", "https://openrouter.ai/api", "OPENROUTER_KEY"),
-            ("moonshot", "https://api.moonshot.ai", "MOONSHOT_KEY"),
-            ("siliconflow", "https://api.siliconflow.cn", "SILICONFLOW_KEY"),
+            ("deepseek", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+            ("openrouter", "https://openrouter.ai/api", "OPENROUTER_API_KEY"),
+            ("moonshot", "https://api.moonshot.ai", "MOONSHOT_API_KEY"),
+            ("siliconflow", "https://api.siliconflow.cn", "SILICONFLOW_API_KEY"),
         ]
         for name, base_url, env in inputs:
             created = await client.post(
@@ -582,7 +581,6 @@ async def test_balances_query_the_four_supported_providers(
                     "label": name.title(),
                     "kind": "openai",
                     "base_url": base_url,
-                    "api_key_env": env,
                     "default_model": "model-1",
                     "enabled": True,
                 },
@@ -628,7 +626,7 @@ async def test_balances_report_a_missing_key(
         tmp_path,
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
     )
-    monkeypatch.delenv("MISSING_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     async with _open(settings, _balance_handler({})) as client:
         await client.post(
             "/api/v1/ai/integrations",
@@ -636,7 +634,6 @@ async def test_balances_report_a_missing_key(
                 "name": "deepseek",
                 "kind": "openai",
                 "base_url": "https://api.deepseek.com",
-                "api_key_env": "MISSING_KEY",
                 "default_model": "model-1",
             },
         )
@@ -648,7 +645,7 @@ async def test_balances_report_a_missing_key(
     )
     assert item["supported"] is True
     assert item["total"] == ""
-    assert "MISSING_KEY" in item["error"]
+    assert "DEEPSEEK_API_KEY" in item["error"]
 
 
 # -- dynamic adapters ------------------------------------------------------
@@ -661,8 +658,8 @@ async def test_dynamic_translator_records_the_bound_integration(
         tmp_path,
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
     )
-    monkeypatch.setenv("TEST_LLM_KEY", "secret")
-    ai = AISettingsService(settings)
+    monkeypatch.setenv("BOUND_LLM_API_KEY", "secret")
+    ai = ProviderRegistry(settings.resolve_ai_path(), keys=ApiKeys.load())
     ai.load()
     record = ai.create_integration(
         IntegrationDraft(
@@ -670,7 +667,6 @@ async def test_dynamic_translator_records_the_bound_integration(
             label="Bound LLM",
             kind="openai",
             base_url="https://llm.example",
-            api_key_env="TEST_LLM_KEY",
             default_model="deepseek-flash",
             gateway=False,
         )

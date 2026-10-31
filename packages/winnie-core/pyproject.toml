@@ -1,7 +1,7 @@
 [project]
 name = "winnie-core"
 version = "0.1.0"
-description = "Winnie framework: auth, database, storage, jobs and internal LLM access"
+description = "Winnie framework: auth, database, storage and jobs"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.141.0",

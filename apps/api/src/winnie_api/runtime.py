@@ -22,7 +22,7 @@ from winnie_api.ai.providers import (
     DynamicSummarizer,
     DynamicTranslator,
 )
-from winnie_api.ai.store import AISettingsService
+from winnie_llm import ProviderRegistry
 from winnie_api.settings import Settings
 
 
@@ -56,7 +56,7 @@ class AppRuntime:
 def build_runtime(
     settings: Settings,
     *,
-    ai: AISettingsService | None = None,
+    ai: ProviderRegistry | None = None,
     http: httpx.AsyncClient | None = None,
     usage: UsageSink | None = None,
 ) -> AppRuntime | None:

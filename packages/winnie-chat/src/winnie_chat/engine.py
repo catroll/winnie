@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
-from winnie_core.llm.base import ChatResult as ModelResult
+from winnie_llm import ChatResult as ModelResult
 
 from winnie_chat.models import ChatResult, ChatTurn, SkillContext
 from winnie_chat.prompt import build_system_prompt

@@ -406,7 +406,8 @@ class Summarizer(Protocol):
   `meetings.volcengine` seed the first ASR integration/binding; translation,
   minutes and the assistant are bound on the AI providers page. There is no
   `llm`, `translator` or `summarizer` key in `config.yaml`. Credentials come from
-  environment variables (`VOLCENGINE_ASR_API_KEY`, and the variable named by each
+  `packages/winnie-llm/.env` (`VOLCENGINE_ASR_API_KEY`, and the variable derived
+from each supplier id;
   integration), never from YAML committed to Git. The Doubao key is a single
   new-console API key sent as `X-Api-Key`; the old APP ID + Access Token pair is
   not supported.
@@ -483,7 +484,8 @@ With the shipped `ai.enabled: true`, the `meetings.asr_provider` and
 `meetings.volcengine` values above are first-start seeds for `data/ai.yaml`;
 afterwards the AI suppliers page selects the live ASR binding. Translation and
 minutes start unbound and must be bound to a supplier model there. Secrets
-(`VOLCENGINE_ASR_API_KEY` and the key named by each integration) come from the
+(`VOLCENGINE_ASR_API_KEY` and the key derived from each supplier id) come from
+`packages/winnie-llm/.env`, read by `winnie-llm` rather than the capability and
 environment. Unknown YAML keys are rejected at startup. Production should use
 PostgreSQL and run `uv run alembic upgrade head` with the same `WINNIE_CONFIG`
 before setting `database.auto_create_tables: false`. A database created by
@@ -697,7 +699,7 @@ Implemented:
 - OpenAI-compatible LLM adapters for batched translation and structured
   minutes, selected with the `meetings.translate` / `meetings.summarize` binding
   on the AI providers page; the key comes from the bound integration's
-  `api_key_env`. Transient transport/HTTP failures are retried with backoff and
+  `winnie_llm.asr`. Transient transport/HTTP failures are retried with backoff and
   `Retry-After` support; long transcripts use chunked map-reduce summarization.
 - Provider ports for ASR, translation and summarization; deterministic fakes for
   tests and demos.

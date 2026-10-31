@@ -1,19 +1,18 @@
-"""LLM-backed translator over an OpenAI-compatible chat endpoint."""
+"""LLM-backed translator over the winnie-llm chat client."""
 
 from __future__ import annotations
 
 import json
 
-from winnie_core.llm.json import parse_json_value
-from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
-from winnie_meetings.integrations.translate.base import TranslationResult, Translator
 from winnie_core.types import Usage
+from winnie_llm import ChatClient, parse_json_value
+from winnie_meetings.integrations.translate.base import TranslationResult, Translator
 
 
 class LLMTranslator(Translator):
     def __init__(
         self,
-        llm: OpenAICompatibleLLM,
+        llm: ChatClient,
         *,
         max_batch_chars: int = 6000,
     ) -> None:

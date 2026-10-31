@@ -13,7 +13,6 @@ as "not supported" rather than guessed at.
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
@@ -24,8 +23,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from winnie_api.ai.schema import IntegrationRecord
-from winnie_api.ai.store import AISettingsService
+from winnie_llm import IntegrationRecord, ProviderRegistry
 
 
 @dataclass(frozen=True)
@@ -264,7 +262,7 @@ class BalanceService:
     def __init__(
         self,
         *,
-        ai: AISettingsService,
+        ai: ProviderRegistry,
         http: httpx.AsyncClient,
         ttl_seconds: float = 300.0,
         timeout_seconds: float = 8.0,
@@ -331,18 +329,14 @@ class BalanceService:
                 ),
             )
         base = replace(base, endpoint=f"{_origin(integration.base_url)}{adapter.path}")
-        if not integration.api_key_env:
-            return replace(
-                base,
-                error="set api_key_env on the integration to query the balance",
-            )
-        api_key = os.environ.get(integration.api_key_env, "").strip()
+        key_name = self.ai.keys.env_name(integration.vendor)
+        api_key = self.ai.keys.get(integration.vendor)
         if not api_key:
             return replace(
                 base,
                 error=(
-                    f"environment variable {integration.api_key_env} is empty; "
-                    "export it and restart the API"
+                    f"{key_name} is not set for supplier "
+                    f"{integration.vendor!r}; add it to {self.ai.keys.path}"
                 ),
             )
         try:

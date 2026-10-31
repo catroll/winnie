@@ -1,9 +1,10 @@
-"""Read, validate and persist the admin-managed AI registry.
+"""Read, validate and persist the supplier registry, and build clients.
 
 One small YAML file keeps the state. It is read on demand (a changed mtime is
 picked up automatically, so an arq worker sees a console change without a
-restart) and written atomically. The file holds no secrets: ``api_key_env`` is
-the *name* of an environment variable, never a key.
+restart) and written atomically. The file holds no credentials: API keys live in
+``packages/winnie-llm/.env`` and are resolved from the supplier id when a client
+is built.
 """
 
 from __future__ import annotations
@@ -18,10 +19,16 @@ import httpx
 import yaml
 from pydantic import ValidationError
 
-from winnie_gateway.routes import Route
-
-from winnie_api.ai.errors import AIConflict, AINotFound, AIProviderError
-from winnie_api.ai.schema import (
+from winnie_llm.asr.base import ASRProvider
+from winnie_llm.asr.config import VolcengineASRConfig
+from winnie_llm.asr.fake import FakeASRProvider, FakeRealtimeASR
+from winnie_llm.asr.realtime import RealtimeASRProvider
+from winnie_llm.asr.volcengine import VolcengineASRProvider
+from winnie_llm.asr.volcengine_stream import VolcengineRealtimeASR
+from winnie_llm.chat import ChatClient
+from winnie_llm.keys import ApiKeys, MissingApiKey
+from winnie_llm.registry.errors import AIConflict, AINotFound, AIProviderError
+from winnie_llm.registry.schema import (
     AIState,
     BindingDraft,
     BindingRecord,
@@ -33,30 +40,37 @@ from winnie_api.ai.schema import (
     KIND_BY_KEY,
     ModelRecord,
     ResolvedProvider,
+    RouteEntry,
     VendorDraft,
     VendorRecord,
     infer_vendor,
     utcnow,
     vendor_label_for,
 )
-from winnie_api.ai.seed import migrate_state, seed_state
-
-from winnie_core.config import ModelRuntimeConfig
+from winnie_llm.registry.seed import SeedInput, migrate_state, seed_state
+from winnie_llm.runtime import ModelRuntimeConfig
 
 _HEADER = (
-    "# Winnie AI providers and feature bindings.\n"
+    "# Winnie AI suppliers and feature bindings.\n"
     "# Written by the admin console at /api/v1/ai; use the console rather than\n"
-    "# editing this file. API keys are never stored here: api_key_env names an\n"
-    "# environment variable that the API process reads at call time.\n"
+    "# editing this file. API keys are never stored here: they live in\n"
+    "# packages/winnie-llm/.env and are derived from the supplier id.\n"
 )
 
 
-class AISettingsService:
-    """Own the file, expose CRUD, and resolve a feature to one provider."""
+class ProviderRegistry:
+    """Own the file, expose CRUD, and build clients for a feature."""
 
-    def __init__(self, settings: Any) -> None:
-        self.settings = settings
-        self.path: Path = settings.resolve_ai_path()
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        keys: ApiKeys | None = None,
+        seed: SeedInput | None = None,
+    ) -> None:
+        self.path = Path(path)
+        self.keys = keys if keys is not None else ApiKeys.load()
+        self.seed = seed or SeedInput()
         self._lock = threading.RLock()
         self._state: AIState | None = None
         self._mtime_ns: int | None = None
@@ -64,13 +78,35 @@ class AISettingsService:
     # -- lifecycle -------------------------------------------------------
 
     def load(self) -> None:
-        """Load the file, or seed it from config.yaml on first start."""
+        """Load the file, or seed it from the host's seed input on first start."""
         with self._lock:
             if not self.path.is_file():
-                state = seed_state(self.settings)
+                state = seed_state(self.seed)
                 self._write(state)
                 return
             self._read()
+
+    @staticmethod
+    def _strip_legacy_keys(raw: dict[str, Any]) -> dict[str, str]:
+        """Remove the v5 ``api_key_env`` field and return it for migration.
+
+        Version 6 derives the variable from the supplier id. An older file
+        still carries the field, so it must be dropped before validation; its
+        value is the only way to recognise a v1 combined internal route.
+        """
+        legacy: dict[str, str] = {}
+        integrations = raw.get("integrations")
+        if not isinstance(integrations, list):
+            return legacy
+        for item in integrations:
+            if not isinstance(item, dict):
+                continue
+            value = item.pop("api_key_env", "")
+            if isinstance(value, str) and value.strip():
+                name = item.get("name")
+                if isinstance(name, str):
+                    legacy[name] = value.strip()
+        return legacy
 
     def _read(self) -> None:
         try:
@@ -81,13 +117,16 @@ class AISettingsService:
             ) from exc
         if raw is None:
             raise AIProviderError(f"AI settings file is empty: {self.path}")
+        if not isinstance(raw, dict):
+            raise AIProviderError(f"invalid AI settings at {self.path}: not a mapping")
+        legacy_keys = self._strip_legacy_keys(raw)
         try:
             state = AIState.model_validate(raw)
         except Exception as exc:  # noqa: BLE001 - pydantic's message is the detail
             raise AIProviderError(
                 f"invalid AI settings at {self.path}: {exc}"
             ) from exc
-        if migrate_state(state):
+        if migrate_state(state, legacy_keys):
             try:
                 state = AIState.model_validate(state.model_dump(mode="json"))
             except ValidationError as exc:
@@ -168,8 +207,6 @@ class AISettingsService:
                 continue
             if integration.kind not in kinds:
                 continue
-            if integration.kind == "openai" and not integration.api_key_env:
-                continue
             return integration
         return None
 
@@ -228,13 +265,14 @@ class AISettingsService:
             vendor_label=vendor.label,
             kind=integration.kind,
             base_url=integration.base_url,
-            api_key_env=integration.api_key_env,
+            key_env=self.keys.env_name(vendor.id),
             model=model,
             options=dict(integration.options),
         )
 
-    def route_table(self) -> dict[str, Route]:
-        table: dict[str, Route] = {}
+    def route_entries(self) -> list[RouteEntry]:
+        """Gateway routes the host should expose for the current state."""
+        entries: list[RouteEntry] = []
         for integration in self.state().integrations:
             if not integration.enabled:
                 continue
@@ -242,12 +280,14 @@ class AISettingsService:
                 continue
             if not integration.gateway:
                 continue
-            table[integration.name] = Route(
-                name=integration.name,
-                protocol=integration.kind,
-                base_url=integration.base_url,
+            entries.append(
+                RouteEntry(
+                    name=integration.name,
+                    protocol=integration.kind,
+                    base_url=integration.base_url,
+                )
             )
-        return table
+        return entries
 
     def runtime(self) -> ModelRuntimeConfig:
         return self.state().runtime
@@ -258,6 +298,89 @@ class AISettingsService:
             state.runtime = runtime
             self._commit(state)
             return runtime
+
+    # -- clients ---------------------------------------------------------
+
+    def _key(self, provider: ResolvedProvider) -> str:
+        try:
+            return self.keys.require(provider.vendor)
+        except MissingApiKey as exc:
+            raise AIProviderError(str(exc)) from exc
+
+    def chat_for(
+        self,
+        feature: str,
+        *,
+        http: httpx.AsyncClient | None = None,
+        usage: Any = None,
+    ) -> ChatClient:
+        """One OpenAI-compatible client bound to a feature's supplier model."""
+        provider = self.resolve(feature)
+        if provider.kind != "openai":
+            raise AIProviderError(
+                f"{feature} cannot use a {provider.kind} supplier; choose an "
+                "OpenAI-compatible one in Admin -> AI suppliers"
+            )
+        runtime = self.runtime()
+        return ChatClient(
+            base_url=_openai_base(provider.base_url),
+            api_key=self._key(provider),
+            model=provider.model,
+            timeout_seconds=runtime.timeout_seconds,
+            max_output_tokens=runtime.max_output_tokens,
+            temperature=runtime.temperature,
+            max_retries=runtime.max_retries,
+            retry_backoff_seconds=runtime.retry_backoff_seconds,
+            http=http,
+            usage=usage,
+            capability=provider.feature,
+            provider=provider.integration_name,
+        )
+
+    def asr_for(
+        self,
+        feature: str,
+        *,
+        http: httpx.AsyncClient | None = None,
+    ) -> ASRProvider:
+        """A recording-file speech client bound to a feature's supplier model."""
+        provider = self.resolve(feature)
+        if provider.kind == "fake":
+            return FakeASRProvider()
+        if provider.kind != "volcengine_asr":
+            raise AIProviderError(
+                f"{feature} cannot use a {provider.kind} supplier; choose "
+                "Volcengine ASR in Admin -> AI suppliers"
+            )
+        config = _volcengine_config(provider)
+        return VolcengineASRProvider(
+            api_key=self._key(provider),
+            base_url=config.base_url,
+            resource_id=config.resource_id,
+            model_name=config.model_name,
+            max_inline_bytes=config.max_inline_mb * 1024 * 1024,
+            poll_interval_seconds=config.poll_interval_seconds,
+            poll_timeout_seconds=config.poll_timeout_seconds,
+            http=http,
+        )
+
+    def realtime_asr_for(self, feature: str) -> RealtimeASRProvider:
+        """A streaming speech client bound to a feature's supplier model."""
+        provider = self.resolve(feature)
+        if provider.kind == "fake":
+            return FakeRealtimeASR()
+        if provider.kind != "volcengine_asr":
+            raise AIProviderError(
+                f"{feature} cannot use a {provider.kind} supplier; choose "
+                "Volcengine ASR in Admin -> AI suppliers"
+            )
+        config = _volcengine_config(provider)
+        return VolcengineRealtimeASR(
+            api_key=self._key(provider),
+            endpoint=config.stream_endpoint,
+            resource_id=config.stream_resource_id,
+            model_name=config.model_name,
+        )
 
     async def sync_models(
         self, vendor_id: str, http: httpx.AsyncClient | None = None
@@ -274,15 +397,14 @@ class AISettingsService:
             raise AIProviderError(
                 f"supplier {vendor.label!r} has no OpenAI-compatible API endpoint"
             )
-        if not integration.base_url or not integration.api_key_env:
+        if not integration.base_url:
             raise AIProviderError(
-                f"supplier {vendor.label!r} needs a base URL and API key variable"
+                f"supplier {vendor.label!r} needs a base URL for model sync"
             )
-        api_key = os.environ.get(integration.api_key_env, "").strip()
-        if not api_key:
-            raise AIProviderError(
-                f"environment variable {integration.api_key_env} is not set"
-            )
+        try:
+            api_key = self.keys.require(vendor.id)
+        except MissingApiKey as exc:
+            raise AIProviderError(str(exc)) from exc
         base = integration.base_url.rstrip("/")
         url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
         own_client = http is None
@@ -377,6 +499,9 @@ class AISettingsService:
         state = self.state()
         return {
             "path": str(self.path),
+            # Where the key values live. The console shows this instead of
+            # asking anyone to paste a key into the registry.
+            "env_path": str(self.keys.path),
             "runtime": state.runtime.model_dump(mode="json"),
             "vendors": [
                 self._vendor_view(vendor, state) for vendor in state.vendors
@@ -432,12 +557,8 @@ class AISettingsService:
             "internal_integration_id": internal.id if internal is not None else "",
             "kind": internal.kind if internal is not None else "",
             "base_url": internal.base_url if internal is not None else "",
-            "api_key_env": internal.api_key_env if internal is not None else "",
-            "api_key_present": bool(
-                internal is not None
-                and internal.api_key_env
-                and os.environ.get(internal.api_key_env, "").strip()
-            ),
+            "api_key_env": self.keys.env_name(vendor.id),
+            "api_key_present": self.keys.present(vendor.id),
             "enabled": internal.enabled if internal is not None else False,
         }
 
@@ -467,10 +588,8 @@ class AISettingsService:
             **integration.model_dump(mode="json"),
             "kind_label": kind.label,
             "vendor_label": vendor.label if vendor is not None else integration.vendor,
-            "api_key_present": bool(
-                integration.api_key_env
-                and os.environ.get(integration.api_key_env, "").strip()
-            ),
+            "api_key_env": self.keys.env_name(integration.vendor),
+            "api_key_present": self.keys.present(integration.vendor),
             "used_by": sorted(used_by),
             "gateway_paths": paths,
         }
@@ -640,7 +759,6 @@ class AISettingsService:
                     if item.vendor == record.vendor
                     and item.enabled
                     and item.kind in spec.kinds
-                    and (item.kind != "openai" or item.api_key_env)
                 ]
                 if not candidates:
                     raise AIProviderError(
@@ -741,3 +859,27 @@ class AISettingsService:
             state.bindings[feature] = binding
             self._commit(state)
             return binding
+
+
+def _openai_base(value: str) -> str:
+    base = value.strip().rstrip("/")
+    if not base.endswith("/v1"):
+        base = f"{base}/v1"
+    return base
+
+
+def _volcengine_config(provider: ResolvedProvider) -> VolcengineASRConfig:
+    options = dict(provider.options)
+    if "base_url" in options:
+        # Older seed files may carry it here; the integration field wins.
+        options.pop("base_url")
+    merged = {
+        "base_url": provider.base_url or VolcengineASRConfig().base_url,
+        **options,
+    }
+    try:
+        return VolcengineASRConfig.model_validate(merged)
+    except Exception as exc:  # noqa: BLE001 - pydantic's message is the detail
+        raise AIProviderError(
+            f"invalid Volcengine ASR options on {provider.integration_name!r}: {exc}"
+        ) from exc

@@ -1,8 +1,10 @@
-"""Console API for the admin-managed AI provider registry.
+"""Console API for the supplier registry.
 
 Mounted at ``/api/v1/ai`` when ``ai.enabled`` is true. Every mutation refreshes
 the in-process gateway route table, so a provider added in the console is
-reachable at ``/{name}/v1/...`` without a restart.
+reachable at ``/{name}/v1/...`` without a restart. The registry itself, its
+credentials and every vendor client belong to ``winnie-llm``; this module is
+only the HTTP surface.
 """
 
 from __future__ import annotations
@@ -12,16 +14,23 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from winnie_core.auth.dependencies import get_user_id
-from winnie_core.config import ModelRuntimeConfig
+from winnie_llm import (
+    AIConflict,
+    AINotFound,
+    AIProviderError,
+    BindingDraft,
+    IntegrationDraft,
+    ModelRuntimeConfig,
+    ProviderRegistry,
+    VendorDraft,
+)
 
-from winnie_api.ai.errors import AIConflict, AINotFound, AIProviderError
-from winnie_api.ai.schema import BindingDraft, IntegrationDraft, VendorDraft
-from winnie_api.ai.store import AISettingsService
+from winnie_api.ai.routes import gateway_route_table
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
-def _service(request: Request) -> AISettingsService:
+def _service(request: Request) -> ProviderRegistry:
     service = getattr(request.app.state, "ai_settings", None)
     if service is None:
         raise HTTPException(
@@ -39,13 +48,13 @@ def _error(exc: AIProviderError) -> HTTPException:
     return HTTPException(status_code=400, detail=str(exc))
 
 
-def _refresh_routes(request: Request, service: AISettingsService) -> None:
+def _refresh_routes(request: Request, service: ProviderRegistry) -> None:
     if hasattr(request.app.state, "routes_table"):
-        request.app.state.routes_table = service.route_table()
+        request.app.state.routes_table = gateway_route_table(service)
 
 
 def _integration_view(
-    service: AISettingsService, integration_id: str
+    service: ProviderRegistry, integration_id: str
 ) -> dict[str, Any]:
     for integration in service.view()["integrations"]:
         if integration["id"] == integration_id:
@@ -53,7 +62,7 @@ def _integration_view(
     raise HTTPException(status_code=404, detail="integration not found")
 
 
-def _vendor_view(service: AISettingsService, vendor_id: str) -> dict[str, Any]:
+def _vendor_view(service: ProviderRegistry, vendor_id: str) -> dict[str, Any]:
     for vendor in service.view()["vendors"]:
         if vendor["id"] == vendor_id:
             return vendor

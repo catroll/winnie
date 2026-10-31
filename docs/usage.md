@@ -119,9 +119,10 @@ is USD, which matches the vendors that return a cost.
 ## Provider balances
 
 A balance is a property of the *account and key*, not of a model call. The
-console queries it only for integrations that name an `api_key_env` whose value
-is set in the API process environment. The adapter is chosen by the
-integration's host, because the endpoint is a property of the vendor:
+console queries it only for integrations whose supplier has a key in
+`packages/winnie-llm/.env` (the same key the model calls use; balances are read
+through `winnie-llm`'s key store, never a second copy). The adapter is chosen by
+the integration's host, because the endpoint is a property of the vendor:
 
 | Vendor | Host | Endpoint | Displayed |
 |---|---|---|---|

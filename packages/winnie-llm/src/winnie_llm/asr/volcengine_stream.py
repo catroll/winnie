@@ -30,7 +30,7 @@ from typing import Any
 
 import websockets
 
-from winnie_meetings.integrations.asr.realtime import (
+from winnie_llm.asr.realtime import (
     RealtimeASRError,
     RealtimeEvent,
     StreamStarted,
@@ -88,8 +88,8 @@ class VolcengineRealtimeASR:
     ) -> AsyncIterator[RealtimeEvent]:
         if not self.api_key:
             raise RealtimeASRError(
-                "Volcengine streaming ASR key is missing; set "
-                "VOLCENGINE_ASR_API_KEY"
+                "Volcengine streaming ASR key is missing; add "
+                "VOLCENGINE_ASR_API_KEY to packages/winnie-llm/.env"
             )
 
         headers = {

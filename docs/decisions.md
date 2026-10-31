@@ -3,6 +3,42 @@
 Architecture and dependency choices that are not obvious from the code. Each
 entry records the alternative that was rejected and why.
 
+## One module for every model vendor, keys in its own `.env` (2026-11-01)
+
+**Decision.** `packages/winnie-llm` owns every vendor call — OpenAI-compatible
+chat and tool calls, recording-file ASR and streaming captions — plus the
+supplier/model/feature registry that used to live in `apps/api/src/winnie_api/ai`.
+Vendor credentials live in `packages/winnie-llm/.env`, and the variable is
+derived from the supplier id (`deepseek` → `DEEPSEEK_API_KEY`, an unknown id →
+`<SUPPLIER>_API_KEY`). The registry stores neither a key nor a variable name.
+
+**Why.** The calling code had drifted into four places: `winnie-core.llm` owned
+the chat client, `winnie-meetings` owned both ASR adapters, `apps/api` built
+clients from the registry, and `apps/api/news` and the meeting adapters each
+constructed their own. Adding a provider meant editing several packages, and
+each integration carried an `api_key_env` whose value only the API process
+happened to have. A capability could not be tested or reused without knowing how
+the host loaded its environment.
+
+**Rejected: keep the registry in the host and move only the clients.** It would
+have left provider selection and key naming split across two packages, so
+"which model does this feature use, and with which key" would still require
+reading both. Moving the registry made the module deep enough to own the whole
+question; the host keeps only the HTTP console and the first-start seed.
+
+**Rejected: keep `api_key_env` per integration.** Two integrations for one
+vendor could then point at two variables, but nothing owned the set of names:
+a typo produced a runtime "variable is empty" instead of a startup-visible
+mapping, and the console had to ask the owner to invent a name. The fixed
+mapping makes the console show the exact variable and whether it is set, and
+makes a second account a different supplier id (`deepseek-work` →
+`DEEPSEEK_WORK_API_KEY`).
+
+**Migration.** A `version: 5` registry still contains `api_key_env`; the loader
+strips it before validation and rewrites the file as `version: 6`. A v1 file's
+combined internal route is still recognised from that legacy value, so the
+existing migration chain keeps working.
+
 ## Android client (2026-10-31)
 
 **Stack.** Kotlin 2.4.21, Jetpack Compose with Material 3, a single
@@ -384,15 +420,17 @@ endpoints. The trade-off is that a supplier can have only one internal API for a
 given protocol; that is intentional, because multiple credentials for the same
 supplier would be a second account, not a second model.
 
-**Keys stay in the environment.** An endpoint stores `api_key_env`, the name
-of a variable, and the console shows whether it is set. Pasting a key into that
-field fails validation. The alternative — encrypting keys in the registry — was
-rejected for this slice: it needs a master-key lifecycle, a new dependency, a
-rotation procedure and a re-encryption migration, for a single-user instance
-whose deployment already passes secrets through the environment. Keeping the
-existing rule ("secrets come from the process environment") also means a key
-can never be returned by an API response or appear in a browser. The cost is
-explicit: rotating a key needs an API restart.
+**Keys moved to the winnie-llm environment (superseding the earlier
+`api_key_env` rule).** The key-value file is `packages/winnie-llm/.env`, read
+only by `winnie-llm`; the variable name is derived from the supplier id, so the
+registry stores neither the key nor its name. The alternative — keeping a key
+variable per integration — was rejected because a typo became a runtime "variable
+is empty", the console had to ask the owner to invent a name, and capability
+packages had no way to know which environment the host would load. The old
+alternative, encrypting keys in the registry, stays rejected for the same
+reasons as before: a master-key lifecycle and a re-encryption migration are too
+much for a single-user instance. A key still never appears in an API response or
+in a browser. The cost is unchanged: rotating a key needs an API restart.
 
 **Resolution is per call, not per process.** The assistant, meeting service and
 worker are built once, but their provider ports are thin wrappers that resolve
@@ -408,7 +446,7 @@ in the operations doc.
 `meetings.summarizer`. Keeping them meant the console could say one thing while
 a fresh start silently used another, and the old `llm` block was the only way to
 configure the internal model. They are gone: the registry is the only source for
-base URL, key variable, model and binding. A fresh registry leaves model
+base URL, model and binding. A fresh registry leaves model
 features unbound; the owner adds a supplier API and model in the console. Runtime
 limits (timeouts, retries, token caps, chunk sizes) move with the choice into
 `data/ai.yaml` as a `runtime` section, editable in the console. The v1 migration
@@ -417,16 +455,14 @@ the only evidence of the old `llm` configuration; it is then a normal endpoint.
 v2 files are grouped under suppliers and their endpoint defaults/bound models
 become the supplier model catalog; v3 files are converted to `{vendor, model}`
 bindings; v4 files have their fake supplier removed and fake bindings cleared;
-the schema is version 5.
+the schema is version 6, with the key variable removed.
 
 **Gateway exposure is separate from server-side credentials.** A vendor endpoint
 can be a public proxy route (`gateway: true`), an internal provider
-(`gateway: false`, `api_key_env` set), or both. The first version of the seed
-matched a route by base URL and reused it as the internal LLM, which put the
-server-side key on a public route and made `deepseek-openai` look like it
-required the old `llm.api_key_env` value. v2 always creates a separate `internal-llm`
-record with `gateway: false`; the route keeps `api_key_env: ""` and forwards the
-client's key. A v1 file is migrated in place on the next read. The alternative —
+(`gateway: false`), or both. The first version of the seed matched a route by
+base URL and reused it as the internal LLM, which put the server-side key on a
+public route. v2 always creates a separate `internal-llm` record with
+`gateway: false`; the route stores no key and forwards the client's key. A v1 file is migrated in place on the next read. The alternative —
 one record with a per-role key — was rejected because the two roles can use
 different keys, different owners and different lifetimes; a single `api_key_env`
 cannot express that, and combining them is what caused the original confusion.
@@ -443,7 +479,7 @@ prefix; the supplier `id` is the grouping key and the models are shared.
 **Kind/model and credentials are validated at the binding.** An ASR endpoint
 cannot serve `assistant.chat`, an OpenAI-compatible endpoint with no model
 cannot serve a model feature, a model must be in the supplier catalog, and a
-gateway-only OpenAI endpoint (no `api_key_env`) cannot serve an internal feature.
+gateway-only OpenAI endpoint cannot serve an internal feature.
 Catching that while the binding is saved gives the user an immediate, named
 error instead of a failed meeting pipeline later. The same validation runs on
 load, so a hand-edited file fails loudly. Removing a model that an endpoint

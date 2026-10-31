@@ -1,8 +1,8 @@
 # Developer entry points for Winnie.
 #
-# `make api` sources apps/api/.env when it exists, as a local convenience. The
-# application itself never reads that file: it takes secrets from the process
-# environment, so exported variables work just as well.
+# `make api` sources apps/api/.env when it exists for non-secret local settings
+# (the Android default URL). Vendor API keys are read only by winnie-llm from
+# packages/winnie-llm/.env; no other module sees them.
 
 SHELL := /usr/bin/env bash
 
@@ -55,9 +55,11 @@ help: ## Show this help
 	@printf '  ANDROID_HOME=%s\n' '$(ANDROID_HOME)'
 	@printf '  ADMIN_API_TARGET=%s\n' '$(ADMIN_API_TARGET)'
 	@printf '\nLocal environment: %s (gitignored)\n' '$(ENV_FILE)'
-	@printf '  DEEPSEEK_API_KEY, VOLCENGINE_ASR_API_KEY  API secrets\n'
-	@printf '  WINNIE_PUBLIC_URL                           Android default server URL\n'
+	@printf '  WINNIE_PUBLIC_URL  Android default server URL\n'
 	@printf 'Without WINNIE_PUBLIC_URL the APK falls back to http://10.0.2.2:8000.\n'
+	@printf '\nVendor API keys: %s (gitignored, read by winnie-llm only)\n' 'packages/winnie-llm/.env'
+	@printf '  DEEPSEEK_API_KEY, OPENAI_API_KEY, DASHSCOPE_API_KEY,\n'
+	@printf '  ANTHROPIC_API_KEY, VOLCENGINE_ASR_API_KEY\n'
 
 api: ## Run the API on [::]:8000, reachable over IPv6, with reload enabled
 	@cd '$(API_DIR)' && \

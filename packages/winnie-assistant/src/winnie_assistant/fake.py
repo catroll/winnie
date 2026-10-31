@@ -10,8 +10,8 @@ import json
 import re
 from typing import Any
 
-from winnie_core.llm.base import ChatResult, ToolCall
 from winnie_core.types import Usage
+from winnie_llm import ChatResult, ToolCall
 
 DEFAULT_FACTS = [
     {

@@ -23,7 +23,7 @@ from fastapi import (
 )
 
 from winnie_core.auth.dependencies import get_user_id
-from winnie_meetings.integrations.asr.realtime import (
+from winnie_llm.asr import (
     RealtimeASRError,
     StreamStarted,
     TranscriptUpdate,

@@ -6,11 +6,11 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from winnie_meetings.integrations.asr.base import ASRProvider
-from winnie_meetings.integrations.asr.realtime import RealtimeASRProvider
-from winnie_meetings.integrations.factory import (
-    build_asr_provider,
-    build_realtime_asr_provider,
+from winnie_llm.asr import (
+    ASRProvider,
+    FakeASRProvider,
+    FakeRealtimeASR,
+    RealtimeASRProvider,
 )
 from winnie_meetings.integrations.summarize.base import Summarizer
 from winnie_meetings.integrations.summarize.fake import FakeSummarizer
@@ -40,12 +40,10 @@ def build_meeting_service(
         session_factory=session_factory,
         config=config,
         storage=LocalStorage(meetings_root),
-        asr=asr if asr is not None else build_asr_provider(config),
-        realtime_asr=(
-            realtime_asr
-            if realtime_asr is not None
-            else build_realtime_asr_provider(config)
-        ),
+        # Without a registry the capability still runs offline; a real
+        # provider is always injected by the host, never read from config.
+        asr=asr if asr is not None else FakeASRProvider(),
+        realtime_asr=realtime_asr if realtime_asr is not None else FakeRealtimeASR(),
         translator=translator if translator is not None else FakeTranslator(),
         summarizer=summarizer if summarizer is not None else FakeSummarizer(),
         note_writer=MeetingNoteWriter(notes_root),

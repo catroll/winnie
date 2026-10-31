@@ -29,7 +29,6 @@ interface FormState {
   new_vendor_label: string;
   kind: AIProviderKind;
   base_url: string;
-  api_key_env: string;
   default_model: string;
   enabled: boolean;
   gateway: boolean;
@@ -65,7 +64,6 @@ const BLANK_FORM: FormState = {
   new_vendor_label: '',
   kind: 'openai',
   base_url: '',
-  api_key_env: '',
   default_model: '',
   enabled: true,
   gateway: true,
@@ -88,7 +86,6 @@ function formFromIntegration(integration: AIIntegration): FormState {
     new_vendor_label: '',
     kind: integration.kind,
     base_url: integration.base_url,
-    api_key_env: integration.api_key_env,
     default_model: integration.default_model,
     enabled: integration.enabled,
     gateway: integration.gateway,
@@ -102,7 +99,6 @@ function formForKind(kind: AIProviderKind, current: FormState): FormState {
       ...current,
       kind,
       base_url: current.base_url || 'https://openspeech.bytedance.com',
-      api_key_env: current.api_key_env || 'VOLCENGINE_ASR_API_KEY',
       default_model: current.default_model || 'bigmodel',
       gateway: false,
       options: { ...VOLCENGINE_DEFAULTS, ...current.options },
@@ -133,33 +129,11 @@ function toInput(form: FormState, vendor: string): AIIntegrationInput {
     vendor,
     kind: form.kind,
     base_url: form.base_url.trim(),
-    api_key_env: form.api_key_env.trim(),
     default_model: defaultModel,
     enabled: form.enabled,
     gateway: form.gateway,
     options,
   };
-}
-
-/** A conventional key variable for a vendor name; empty for an unknown one. */
-function suggestedKeyEnv(name: string): string {
-  const value = name.toLowerCase();
-  if (value.includes('deepseek')) {
-    return 'DEEPSEEK_API_KEY';
-  }
-  if (value.includes('qwen') || value.includes('dashscope')) {
-    return 'DASHSCOPE_API_KEY';
-  }
-  if (value.includes('openai')) {
-    return 'OPENAI_API_KEY';
-  }
-  if (value.includes('anthropic')) {
-    return 'ANTHROPIC_API_KEY';
-  }
-  if (value.includes('volcengine') || value.includes('doubao')) {
-    return 'VOLCENGINE_ASR_API_KEY';
-  }
-  return '';
 }
 
 export function AIPage() {
@@ -210,13 +184,7 @@ export function AIPage() {
       if (!current) {
         return current;
       }
-      const draft = { ...current.draft, ...patch };
-      // Suggest a conventional variable from the vendor name, but never
-      // overwrite a value the user already entered.
-      if (patch.name !== undefined && !draft.api_key_env.trim()) {
-        draft.api_key_env = suggestedKeyEnv(patch.name);
-      }
-      return { ...current, draft };
+      return { ...current, draft: { ...current.draft, ...patch } };
     });
   };
 
@@ -419,7 +387,9 @@ export function AIPage() {
   const gatewayRoutes = integrations.filter(
     (integration) => integration.gateway_paths.length > 0,
   ).length;
-  const keyed = integrations.filter((integration) => integration.api_key_env);
+  // A gateway route forwards the caller's key, so only an internal endpoint
+  // reads one from winnie-llm/.env.
+  const keyed = integrations.filter((integration) => !integration.gateway);
   const keysPresent = keyed.filter((integration) => integration.api_key_present);
   const disabled = busy !== null;
 
@@ -455,8 +425,9 @@ export function AIPage() {
                 on the next model call without restarting the API. This registry is
                 the only model choice: <code>config.yaml</code> has no{' '}
                 <code>llm</code> block. API keys are <strong>not</strong> stored
-                here: each endpoint names an environment variable that the API
-                process reads.
+                here: <code>winnie-llm</code> reads them from{' '}
+                <code>{data.env_path}</code> and derives the variable from the
+                supplier id.
               </div>
 
               <div className="row g-3 mb-3">
@@ -517,13 +488,13 @@ export function AIPage() {
                           ? '0'
                           : `${keysPresent.length}/${keyed.length}`}
                       </h3>
-                      <p>Keys in environment</p>
+                      <p>Keys configured</p>
                     </div>
                     <i className="small-box-icon bi bi-key" aria-hidden="true" />
                     <span className="small-box-footer">
                       {keyed.length === 0
                         ? 'No provider reads a server-side key'
-                        : `${keysPresent.length} of ${keyed.length} named environment variables are set`}
+                        : `${keysPresent.length} of ${keyed.length} internal endpoints have a key in winnie-llm/.env`}
                     </span>
                   </div>
                 </div>
@@ -847,8 +818,7 @@ export function AIPage() {
                                 (item) =>
                                   item.vendor === vendor.id &&
                                   !item.gateway &&
-                                  feature.kinds.includes(item.kind) &&
-                                  (item.kind !== 'openai' || item.api_key_env),
+                                  feature.kinds.includes(item.kind),
                               );
                               if (!internal) {
                                 return null;
@@ -1655,26 +1625,6 @@ function IntegrationEditor({
                           : draft.kind === 'anthropic'
                             ? 'Anthropic API root; /v1 is added when missing.'
                             : 'OpenAI-compatible: the part before /v1; it is added automatically when missing.'}
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label" htmlFor="ai-key-env">
-                        API key environment variable
-                      </label>
-                      <input
-                        id="ai-key-env"
-                        className="form-control font-monospace"
-                        value={draft.api_key_env}
-                        onChange={(event) =>
-                          onChange({ api_key_env: event.target.value })
-                        }
-                        placeholder="DEEPSEEK_API_KEY"
-                        disabled={busy}
-                      />
-                      <div className="form-text">
-                        {isVolcengine
-                          ? 'The API process reads this variable for recording-file and streaming ASR.'
-                          : 'The name, not the key. Required for internal features; a gateway-only provider can leave it empty.'}
                       </div>
                     </div>
                     {!isVolcengine ? (

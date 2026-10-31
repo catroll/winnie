@@ -15,7 +15,7 @@ from winnie_chat import (
     SkillManifest,
     SkillRegistry,
 )
-from winnie_core.llm.base import ChatResult, ToolCall
+from winnie_llm import ChatResult, ToolCall
 from winnie_core.types import Usage
 
 

@@ -35,7 +35,8 @@ routes:
 # first start the routes, LLM, ASR and assistant values above are imported
 # into the registry file; afterwards the console (Admin -> AI providers) is
 # authoritative and this block only says where that file lives. API keys are
-# never written there: each provider names an environment variable.
+# never written there: winnie-llm derives the variable from the supplier id and
+# reads it from packages/winnie-llm/.env.
 ai:
   enabled: true
   path: ../../data/ai.yaml
@@ -95,9 +96,10 @@ meetings:
   # This seeds the first ASR binding; the AI providers page owns it afterwards.
   asr_provider: volcengine
   prompt_version: v1
-  # Doubao big-model recording-file ASR. The API key comes from the
-  # VOLCENGINE_ASR_API_KEY environment variable (new-console API key, sent as
-  # X-Api-Key); appid/access-token from the old console are not supported.
+  # Doubao big-model recording-file ASR. The API key comes from
+  # packages/winnie-llm/.env (VOLCENGINE_ASR_API_KEY, the new-console API key,
+  # sent as X-Api-Key); appid/access-token from the old console are not
+  # supported. This block only supplies endpoint defaults for the first seed.
   volcengine:
     base_url: https://openspeech.bytedance.com
     # The model line: volc.seedasr.auc (2.0, current), volc.bigasr.auc (1.0).

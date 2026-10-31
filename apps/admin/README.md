@@ -21,7 +21,7 @@ not store vendor API keys.
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
 | **LLM usage** | Recorded model calls with token classes, latency, status and cost; breakdowns by day, feature and model; provider balances with a refresh; the configured price table |
-| **AI suppliers** | Manage suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether the environment key is set |
+| **AI suppliers** | Manage suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether `winnie-llm/.env` supplies the supplier key |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
 | **Account** | Profile, session expiry and password change |
@@ -105,8 +105,9 @@ There is no provider/endpoint dropdown in the feature table:
 
 A gateway route is a separate record with a `Gateway route` switch. It is
 reachable at `/{name}/v1/...` and forwards the client's vendor key; it is never
-a feature target. The supplier API is edited with **API** and called by the
-assistant/meetings with `api_key_env`. Seeded routes have no server-side key.
+a feature target. The supplier API is edited with **API**; its key is read by
+`winnie-llm` from `packages/winnie-llm/.env`, where the variable is derived from
+the supplier id. Seeded routes have no server-side key.
 
 **Sync models** fetches the supplier's `/models` list with that key; **Models**
 is the manual fallback. Supplier marks are inline SVGs adapted from the WLB
@@ -117,9 +118,10 @@ retry and chunk limits. They apply to the next call. A model/supplier change
 takes effect on the next model call; no API restart is needed. Removing the
 supplier API unbinds its features; there is no `config.yaml` fallback, so choose
 a replacement before using them again. The page never receives or stores a
-vendor key: `api_key_env` is the *name* of an environment variable, and the
-header shows whether it is currently set. The full model, first-start behaviour
-(including the `version: 1` → `2` → `3` → `4` migration) and the HTTP API are in
+vendor key: `winnie-llm` derives the variable from the supplier id, reads it from
+`packages/winnie-llm/.env`, and the header shows the variable and whether it is
+set. The full model, first-start behaviour (including the `version: 1`–`6`
+migration) and the HTTP API are in
 [docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## Quick start
@@ -182,9 +184,10 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 - Changing the password revokes every server-side session, including the one in
   the browser, so the console returns to the login page with a notice.
 - Meeting text is rendered as text, not HTML.
-- Vendor keys are not entered or stored here. The AI providers page stores the
-  *name* of an environment variable per provider and only reports whether the
-  API process can see it. Gateway routes show the configured upstreams.
+- Vendor keys are not entered or stored here. The AI suppliers page shows the
+  variable `winnie-llm` derives from each supplier and whether
+  `packages/winnie-llm/.env` supplies it. Gateway routes show the configured
+  upstreams.
 
 ## LLM usage page
 
@@ -220,8 +223,9 @@ Deliberately not part of this app yet:
 - Editing the AI provider registry outside the console. `data/ai.yaml` is
   written atomically and validated on load, but the console is the supported
   editor; a hand-edited file is only read.
-- Entering vendor API keys in the browser. They stay in the API process
-  environment; the console can only choose which variable a provider names.
+- Entering vendor API keys in the browser. They stay in
+  `packages/winnie-llm/.env` and are read only by `winnie-llm`; the console can
+  only show whether the derived variable is set.
 - Browsing the raw gateway request logs (they stay on disk under `data/logs/`).
   The assistant history is a different record: the conversation Markdown the
   assistant wrote, not a proxy request log. **LLM usage** is a third record:

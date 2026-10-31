@@ -343,8 +343,9 @@ Working:
 - `make start`, `make status`, `make stop`, `make restart` manage the API,
   index and admin console as one stack; `make api`, `make index-serve` and
   `make admin` remain foreground development commands.
-- Secrets come from the process environment; `make api` loads the gitignored
-  `apps/api/.env` as a local convenience.
+- Vendor keys live in `packages/winnie-llm/.env`; `winnie-llm` is the only
+  reader. `make api` loads the gitignored `apps/api/.env` for non-secret local
+  settings such as the Android default URL.
 
 Open:
 
@@ -602,15 +603,19 @@ and PID files live under `.cache/logs/` and `.cache/run/`. The arq worker is
 not part of the default stack because the checked-in configuration uses inline
 jobs; see [operations](./operations.md).
 
-Local secrets are in `apps/api/.env` (gitignored):
+Local settings are in `apps/api/.env` (gitignored):
 
-- `VOLCENGINE_ASR_API_KEY` — file and streaming Doubao ASR.
-- `DEEPSEEK_API_KEY` — read by the DeepSeek supplier API; only needed when a feature is bound to it
-  `openai_compatible`.
 - `WINNIE_PUBLIC_URL` — build-time default server address for the APK.
 
-Changing `.env` requires `make restart`; `uvicorn --reload` watches Python
-files, not the environment file.
+Vendor keys are in `packages/winnie-llm/.env` (gitignored), the only file
+anything reads a key from:
+
+- `VOLCENGINE_ASR_API_KEY` — file and streaming Doubao ASR.
+- `DEEPSEEK_API_KEY` — read by the DeepSeek supplier API; only needed when a
+  feature is bound to it.
+
+Changing either file requires `make restart`; `uvicorn --reload` watches Python
+files, not the environment files.
 
 ## 10. References
 

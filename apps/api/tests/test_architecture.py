@@ -10,19 +10,29 @@ PACKAGES = Path(__file__).resolve().parents[3] / "packages"
 
 ALLOWED = {
     "winnie-core": {"winnie_core"},
+    # The one module that talks to model vendors. It owns the supplier
+    # registry and the credentials, and imports no capability.
+    "winnie-llm": {"winnie_core", "winnie_llm"},
     "winnie-gateway": {"winnie_core", "winnie_gateway"},
     "winnie-knowledge": {"winnie_knowledge"},
-    "winnie-meetings": {"winnie_core", "winnie_knowledge", "winnie_meetings"},
+    "winnie-meetings": {
+        "winnie_core",
+        "winnie_knowledge",
+        "winnie_llm",
+        "winnie_meetings",
+    },
     # winnie-local is a shared execution layer (like winnie-core), not a
     # capability. It may be used by the assistant; it imports no capability.
     "winnie-local": {"winnie_local"},
-    "winnie-chat": {"winnie_core", "winnie_chat"},
+    "winnie-chat": {"winnie_core", "winnie_llm", "winnie_chat"},
     "winnie-assistant": {
         "winnie_core",
+        "winnie_llm",
         "winnie_assistant",
         "winnie_chat",
         "winnie_local",
     },
+    "winnie-news": {"winnie_core", "winnie_llm", "winnie_news"},
 }
 
 

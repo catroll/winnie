@@ -1,0 +1,34 @@
+[project]
+name = "winnie-llm"
+version = "0.1.0"
+description = "Winnie model access: credentials, suppliers, chat and speech clients"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28.0",
+    "pydantic>=2.13.0",
+    "pyyaml>=6.0.3",
+    "websockets>=17.0",
+    "winnie-core",
+]
+
+[tool.uv.sources]
+winnie-core = { path = "../winnie-core", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/winnie_llm"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

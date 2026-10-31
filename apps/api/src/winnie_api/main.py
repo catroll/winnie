@@ -21,14 +21,16 @@ from winnie_gateway.capability import capability as gateway_capability
 from winnie_meetings.capability import capability as meetings_capability
 from winnie_news.capability import capability as news_capability
 from winnie_news.service import NewsService
+from winnie_llm import ApiKeys, ProviderRegistry
 
 from winnie_api import __version__
 from winnie_api.ai.providers import DynamicChatModel
+from winnie_api.ai.routes import gateway_route_table
+from winnie_api.ai.seed import seed_input
 from winnie_api.news.gateway import NewsGatewayAdapter
 from winnie_api.news.llm import DynamicNewsLLM
 from winnie_api.news.search import build_news_search
 from winnie_api.ai.router import router as ai_router
-from winnie_api.ai.store import AISettingsService
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.settings import Settings, load_settings
@@ -51,7 +53,15 @@ def create_app(
     usage_ledger = UsageLedger(
         resolved.resolve_usage_root(), enabled=resolved.usage.enabled
     )
-    ai_settings = AISettingsService(resolved) if resolved.ai.enabled else None
+    ai_settings = (
+        ProviderRegistry(
+            resolved.resolve_ai_path(),
+            keys=ApiKeys.load(),
+            seed=seed_input(resolved),
+        )
+        if resolved.ai.enabled
+        else None
+    )
     if ai_settings is not None:
         # Seed or validate the file before any service is built: a broken
         # registry should fail startup loudly, not surface on the first chat.
@@ -80,7 +90,7 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.gateway = resolved.gateway_config()
         app.state.routes_table = (
-            ai_settings.route_table()
+            gateway_route_table(ai_settings)
             if ai_settings is not None
             else app.state.gateway.route_table()
         )
