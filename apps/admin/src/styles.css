@@ -1,0 +1,12 @@
+/*
+ * AdminLTE fills the viewport itself, but in a SPA the body's child is the
+ * React root rather than `.app-wrapper` / `.login-box`; keep it full height.
+ */
+#root {
+  min-height: 100vh;
+}
+
+/* Transcript text keeps the provider's line breaks. */
+.winnie-pre-line {
+  white-space: pre-line;
+}

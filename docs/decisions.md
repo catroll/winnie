@@ -80,3 +80,54 @@ failure rather than a lost recording. Persisting live segments would remove the
 second call and is a deliberate follow-up, not an oversight. Live captions are
 also the reason the meeting row is created at record start; discarding deletes
 that draft, and a process death can leave an empty draft until recovery lands.
+
+## Management console: AdminLTE 4 on Vite + React (2026-11-01)
+
+**Template.** AdminLTE 4.10.0, the current release (published 2026-10-01), with
+Bootstrap 5.3.8, Bootstrap Icons 1.13.2 and self-hosted Source Sans 3.
+AdminLTE 3 was rejected because it is the older jQuery line; 4 is the maintained
+Bootstrap 5 line and needs no jQuery. The console uses AdminLTE's own layout,
+login box, cards, small boxes, nav tabs, colour-mode control and accessibility
+helpers. Application CSS is limited to a full-height React root and
+`white-space: pre-line` for transcript text: AdminLTE's static pages put
+`.app-wrapper` or `.login-box` directly under `<body>`, while a SPA puts the
+React root there instead. No custom theme or component layer was added.
+
+**Application shell.** Vite 8.3.5, React 19.3.1, React Router 7.18.5,
+TypeScript 7.0.2. React is the management-UI stack already recorded in the
+project; AdminLTE supplies the visual system rather than a React component
+library. Vanilla TypeScript was rejected because the console has enough state
+(session validation, pagination, tabs, independent async errors) that a
+component model keeps the code readable. A component library such as shadcn/ui
+was rejected because it would replace AdminLTE rather than use it.
+
+**API boundary.** Same-origin only by default. In development Vite proxies
+`/api`, `/healthz`, `/readyz` and `/routes`; in production a reverse proxy must
+do the same. The API has no CORS middleware, and adding it for a personal
+console would widen the attack surface for no gain. `VITE_API_BASE_URL` exists
+for a deliberate cross-origin deployment, but its README records the CORS
+prerequisite.
+
+**Session.** The opaque bearer token lives in `sessionStorage`; **Remember me**
+moves it to `localStorage`. No cookies means no CSRF surface. The token is never
+rendered or logged. A 401 from an authenticated request clears both stores and
+the route guard returns to login. Changing the password revokes every server
+session, including the current one, so the console signs out and explains why on
+the login page.
+
+**Scope.** The console lists, reads, exports, regenerates and deletes existing
+meetings, and inspects gateway routes. Recording and upload stay in the Android
+client; account creation and route edits stay with the API/config. This keeps it
+an operator view instead of a second capture path.
+
+**Time handling.** SQLite stores meeting timestamps without an offset, so the
+client treats a timestamp with no zone designator as UTC before formatting it in
+the browser's local time. `expires_at` already carries `Z`.
+
+**Verification.** `npm run build` (TypeScript 7 plus Vite 8) and a real Firefox
+session against the API verified password login, dashboard data, meeting list
+and detail, transcript/minutes tabs, Markdown export, minutes regeneration,
+meeting deletion, gateway routes, the account page, password change and
+re-sign-in, dark mode, the mobile sidebar, and redirect to login after the
+server session was revoked. There is no committed frontend test suite yet; the
+browser checks were run against a disposable copy of the database.

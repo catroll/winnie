@@ -11,6 +11,7 @@ infrastructure below it exists to serve the assistant.
 | **Assistant** | Scheduling, development help and everyday tasks, orchestrated on top of the layers below | Planned |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
@@ -61,6 +62,12 @@ flow with live captions — sign in, record, watch provisional captions, stop,
 upload, transcript and minutes — and is verified against the local backend;
 running it on a device with a live ASR key is still pending.
 
+The AdminLTE management console in `apps/admin` operates the same data in a
+browser: sign in, dashboard, meeting list and detail, transcript and minutes,
+Markdown/TXT export, regenerate and delete, gateway route inspection, and
+account/password management. It is read-and-operate only — recording and upload
+stay in the Android client.
+
 ### Quick start
 
 ```bash
@@ -68,6 +75,7 @@ make api        # [::]:8000, reachable over IPv6, reload enabled
 make stop       # stop the API listening on API_PORT
 make restart    # stop, then start again with the current environment
 make android    # debug APK for the Android client
+make admin      # admin console at http://127.0.0.1:5173
 make help       # targets and overridable variables
 ```
 
@@ -78,7 +86,9 @@ convenience: the application itself reads secrets from the process environment.
 That file also supplies `WINNIE_PUBLIC_URL`, the default server address baked
 into the Android APK; start from `apps/api/.env.example`. `make android` needs a
 JDK and the Android SDK; see
-[apps/android/README.md](./apps/android/README.md).
+[apps/android/README.md](./apps/android/README.md). `make admin` needs the
+console's dependencies first: run `cd apps/admin && npm install`; see
+[apps/admin/README.md](./apps/admin/README.md).
 
 Then check the proxy:
 
@@ -107,8 +117,8 @@ export `WINNIE_LLM_API_KEY`. The integration design and endpoint list are in
    real recordings; evaluate a second ASR vendor on bilingual audio; run the
    Android client on a device; foreground-service live captions and reconnect;
    then cross-meeting search.
-2. **Knowledge base** — Git-backed Markdown, management UI, classification and
-   tagging, re-indexing, retrieval-augmented chat.
+2. **Knowledge base** — Git-backed Markdown, knowledge-base UI, classification
+   and tagging, re-indexing, retrieval-augmented chat.
 3. **Assistant capabilities** — scheduling, development assistance and everyday
    tasks, composed over the knowledge base and the gateway.
 4. **Production readiness** — migrations, queue-backed background work,
@@ -128,7 +138,7 @@ including the ASR evaluation and provider verification, are in
 | Meeting storage | Local disk behind a `Storage` port |
 | ASR | Volcengine Doubao (big-model recording file) |
 | Translation and minutes | OpenAI-compatible chat model via an internal LLM client |
-| Management UI | Vite + React |
+| Management UI | Vite + React + AdminLTE 4 |
 | Android client | Kotlin, Jetpack Compose, OkHttp, kotlinx.serialization |
 | Knowledge source | Git-managed Markdown |
 | Vector index | Qdrant |
@@ -144,6 +154,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [apps/api/README.md](./apps/api/README.md) — backend layout, running and tests
 - [apps/android/README.md](./apps/android/README.md) — Android MVP: build, run and limitations
+- [apps/admin/README.md](./apps/admin/README.md) — management console: pages, serving and security
 
 ## License
 

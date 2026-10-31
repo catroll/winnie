@@ -1,0 +1,254 @@
+import type {
+  Health,
+  Meeting,
+  MeetingList,
+  Minutes,
+  Readiness,
+  RouteList,
+  TokenResponse,
+  Transcript,
+  User,
+} from './types';
+import { getToken } from '../auth/storage';
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: string;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(status: number, detail: string, retryAfterSeconds: number | null = null) {
+    super(detail);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+/** Called when a request that carried a token is answered with 401. */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
+interface RequestOptions {
+  method?: 'GET' | 'POST' | 'DELETE';
+  body?: unknown;
+  signal?: AbortSignal;
+  /** Do not attach the bearer token; used by the login request. */
+  anonymous?: boolean;
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) {
+    return null;
+  }
+  const seconds = Number(header);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds) : null;
+}
+
+function describeDetail(payload: unknown, fallback: string): string {
+  if (payload && typeof payload === 'object' && 'detail' in payload) {
+    const detail = (payload as { detail: unknown }).detail;
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) =>
+          item && typeof item === 'object' && 'msg' in item
+            ? String((item as { msg: unknown }).msg)
+            : null,
+        )
+        .filter((message): message is string => Boolean(message));
+      if (messages.length > 0) {
+        return messages.join('; ');
+      }
+    }
+  }
+  return fallback;
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const headers = new Headers({ Accept: 'application/json' });
+  const body =
+    options.body === undefined ? undefined : JSON.stringify(options.body);
+  if (body !== undefined) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const token = options.anonymous ? null : getToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: options.method ?? 'GET',
+      headers,
+      body,
+      signal: options.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new ApiError(
+      0,
+      'Cannot reach the Winnie API. Check that the server is running and reachable.',
+    );
+  }
+
+  if (response.status === 401 && token) {
+    unauthorizedHandler?.();
+  }
+
+  if (!response.ok) {
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      // A non-JSON error body still carries a useful status.
+    }
+    throw new ApiError(
+      response.status,
+      describeDetail(payload, `Request failed with HTTP ${response.status}.`),
+      parseRetryAfter(response.headers.get('Retry-After')),
+    );
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
+}
+
+function parseFilename(header: string | null, fallback: string): string {
+  if (!header) {
+    return fallback;
+  }
+  const quoted = /filename="([^"]+)"/i.exec(header);
+  if (quoted?.[1]) {
+    return quoted[1];
+  }
+  const bare = /filename=([^;]+)/i.exec(header);
+  return bare?.[1]?.trim() || fallback;
+}
+
+export const api = {
+  health(): Promise<Health> {
+    return request<Health>('/healthz');
+  },
+
+  readiness(): Promise<Readiness> {
+    return request<Readiness>('/readyz');
+  },
+
+  routes(): Promise<RouteList> {
+    return request<RouteList>('/routes');
+  },
+
+  login(username: string, password: string): Promise<TokenResponse> {
+    return request<TokenResponse>('/api/v1/auth/login', {
+      method: 'POST',
+      body: { username, password },
+      anonymous: true,
+    });
+  },
+
+  me(): Promise<User> {
+    return request<User>('/api/v1/auth/me');
+  },
+
+  logout(): Promise<void> {
+    return request<void>('/api/v1/auth/logout', { method: 'POST' });
+  },
+
+  changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    return request<void>('/api/v1/auth/password', {
+      method: 'POST',
+      body: { current_password: currentPassword, new_password: newPassword },
+    });
+  },
+
+  listMeetings(limit: number, offset: number): Promise<MeetingList> {
+    return request<MeetingList>(
+      `/api/v1/meetings?limit=${limit}&offset=${offset}`,
+    );
+  },
+
+  getMeeting(meetingId: string): Promise<Meeting> {
+    return request<Meeting>(`/api/v1/meetings/${meetingId}`);
+  },
+
+  getTranscript(meetingId: string): Promise<Transcript> {
+    return request<Transcript>(`/api/v1/meetings/${meetingId}/transcript`);
+  },
+
+  getMinutes(meetingId: string): Promise<Minutes> {
+    return request<Minutes>(`/api/v1/meetings/${meetingId}/minutes`);
+  },
+
+  regenerateMinutes(meetingId: string): Promise<Minutes> {
+    return request<Minutes>(
+      `/api/v1/meetings/${meetingId}/minutes/regenerate`,
+      { method: 'POST' },
+    );
+  },
+
+  deleteMeeting(meetingId: string): Promise<void> {
+    return request<void>(`/api/v1/meetings/${meetingId}`, { method: 'DELETE' });
+  },
+
+  async exportMeeting(
+    meetingId: string,
+    format: 'markdown' | 'txt',
+  ): Promise<{ blob: Blob; filename: string }> {
+    const token = getToken();
+    const headers = new Headers();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_BASE}/api/v1/meetings/${meetingId}/export?format=${format}`,
+        { headers },
+      );
+    } catch {
+      throw new ApiError(
+        0,
+        'Cannot reach the Winnie API. Check that the server is running and reachable.',
+      );
+    }
+
+    if (response.status === 401 && token) {
+      unauthorizedHandler?.();
+    }
+    if (!response.ok) {
+      let payload: unknown = null;
+      try {
+        payload = await response.json();
+      } catch {
+        // Ignore a non-JSON error body.
+      }
+      throw new ApiError(
+        response.status,
+        describeDetail(payload, `Export failed with HTTP ${response.status}.`),
+      );
+    }
+
+    return {
+      blob: await response.blob(),
+      filename: parseFilename(
+        response.headers.get('Content-Disposition'),
+        `meeting.${format === 'markdown' ? 'md' : 'txt'}`,
+      ),
+    };
+  },
+};

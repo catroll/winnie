@@ -9,12 +9,15 @@ SHELL := /usr/bin/env bash
 ROOT := $(CURDIR)
 API_DIR := $(ROOT)/apps/api
 ANDROID_DIR := $(ROOT)/apps/android
+ADMIN_DIR := $(ROOT)/apps/admin
 ENV_FILE ?= $(API_DIR)/.env
 
 API_HOST ?= ::
 API_PORT ?= 8000
 API_RELOAD ?= 1
 API_RELOAD_FLAG := $(if $(filter 1 true yes on,$(API_RELOAD)),--reload,)
+# The admin dev server proxies its API prefixes to this address.
+ADMIN_API_TARGET ?= http://127.0.0.1:$(API_PORT)
 # $HOME/.cache is read-only here, so keep the uv cache in the checkout.
 UV_CACHE_DIR ?= $(ROOT)/.cache/uv
 
@@ -27,7 +30,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android stop restart
+.PHONY: help api android admin admin-build stop restart
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -36,6 +39,7 @@ help: ## Show this help
 	@printf '  API_HOST=%s API_PORT=%s API_RELOAD=%s\n' '$(API_HOST)' '$(API_PORT)' '$(API_RELOAD)'
 	@printf '  JAVA_HOME=%s\n' '$(JAVA_HOME)'
 	@printf '  ANDROID_HOME=%s\n' '$(ANDROID_HOME)'
+	@printf '  ADMIN_API_TARGET=%s\n' '$(ADMIN_API_TARGET)'
 	@printf '\nLocal environment: %s (gitignored)\n' '$(ENV_FILE)'
 	@printf '  WINNIE_LLM_API_KEY, VOLCENGINE_ASR_API_KEY  API secrets\n'
 	@printf '  WINNIE_PUBLIC_URL                           Android default server URL\n'
@@ -100,6 +104,23 @@ stop: ## Stop the API listening on API_PORT
 
 restart: stop ## Stop the API, then start it again with the current environment
 	@$(MAKE) --no-print-directory api
+
+admin: ## Run the admin console at http://127.0.0.1:5173
+	@test -d '$(ADMIN_DIR)/node_modules' || { \
+		printf 'error: admin dependencies are not installed\n' >&2; \
+		printf '       run: cd apps/admin && npm install\n' >&2; \
+		exit 1; \
+	}
+	@printf 'Admin console: http://127.0.0.1:5173 (API proxy %s)\n' '$(ADMIN_API_TARGET)'
+	@cd '$(ADMIN_DIR)' && VITE_API_PROXY_TARGET='$(ADMIN_API_TARGET)' npm run dev
+
+admin-build: ## Build the admin console into apps/admin/dist
+	@test -d '$(ADMIN_DIR)/node_modules' || { \
+		printf 'error: admin dependencies are not installed\n' >&2; \
+		printf '       run: cd apps/admin && npm install\n' >&2; \
+		exit 1; \
+	}
+	@cd '$(ADMIN_DIR)' && npm run build
 
 android: ## Build the debug APK at apps/android/app/build/outputs/apk/debug/
 	@test -d '$(JAVA_HOME)' || { printf 'error: JAVA_HOME not found: %s\n' '$(JAVA_HOME)' >&2; exit 1; }

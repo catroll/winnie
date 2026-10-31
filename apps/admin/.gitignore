@@ -1,0 +1,8 @@
+# Dependencies and build output (reproducible from package.json)
+node_modules/
+dist/
+.vite/
+
+# Local overrides
+.env
+.env.local

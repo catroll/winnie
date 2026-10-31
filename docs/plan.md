@@ -49,7 +49,8 @@ Success for the current phase:
 
 ### Out of scope for now
 
-- Multi-tenant SaaS, billing, quotas and an admin console.
+- Multi-tenant SaaS, billing, quotas and a multi-tenant admin console. The
+  single-user operator console in `apps/admin` is in scope.
 - A Go BFF or a second independently deployed service.
 - Speaker diarization, real-time translation of live captions, and mobile
   background recording before the current path is validated.
@@ -78,6 +79,7 @@ Success for the current phase:
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
+| Console | Browser console: meetings, transcripts/minutes, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
@@ -213,7 +215,52 @@ Open:
   labels, certificate pinning.
 - The meeting language is fixed to `zh` in the Android MVP.
 
-### 5.6 Knowledge base — Partial
+### 5.6 Management console — MVP done
+
+Working:
+
+- AdminLTE 4 console in `apps/admin`, built with Vite, React and TypeScript; no
+  separate backend service.
+- Password sign-in through `/api/v1/auth/login`, session validation through
+  `/api/v1/auth/me`, and sign-out through `/api/v1/auth/logout`.
+- Dashboard: meeting count, configured routes, API version and readiness, and
+  the five most recent meetings.
+- Meetings: paginated list; detail with stage, processing error, transcript and
+  translations, structured minutes, Markdown/TXT export, minutes regeneration
+  and deletion.
+- Gateway routes: protocol, upstream, API base and proxy paths from the running
+  configuration.
+- Account: profile, session expiry and password change. A password change
+  revokes every session and returns to login with a notice.
+- AdminLTE's own colour-mode control (light/dark/auto) and responsive sidebar.
+
+Boundary:
+
+- Read-and-operate only: recording, audio upload, account registration and
+  route editing stay in the Android client, the API and `config.yaml`.
+- Same-origin by default (Vite proxy in development, reverse proxy in
+  production); the API has no CORS middleware.
+- The bearer token is kept in `sessionStorage`, or `localStorage` with
+  **Remember me**; it is never rendered or sent anywhere except the API.
+
+Verified:
+
+- `npm run build` passes TypeScript 7 and Vite 8.
+- A real Firefox session against the API covered login, dashboard, meeting list
+  and detail, transcript/minutes, export, regenerate, delete, routes, account,
+  password change and re-sign-in, dark mode, the mobile sidebar, and redirect to
+  login after the server session was revoked.
+
+Open:
+
+- No committed frontend test suite; the browser checks ran against a disposable
+  database copy.
+- Production serving (reverse proxy plus SPA fallback) is documented in
+  `apps/admin/README.md`, but no deployment configuration is checked in.
+- The knowledge-base UI remains planned; this console only covers meetings,
+  routes and the account.
+
+### 5.7 Knowledge base — Partial
 
 - `winnie-knowledge` writes a Markdown note for finished minutes, with
   summary/decisions/actions only.
@@ -221,7 +268,7 @@ Open:
   and retrieval are not implemented.
 - This is the next product milestone after meeting hardening (M5).
 
-### 5.7 Operations — Partial
+### 5.8 Operations — Partial
 
 Working:
 
@@ -251,6 +298,8 @@ Open:
 | Android JVM tests | `./gradlew testDebugUnitTest` | Passed |
 | Android APK | `make android` | `app-debug.apk` built |
 | API liveness | `curl http://[::1]:8000/healthz` | `{"status":"ok","version":"0.1.0"}` |
+| Admin console build | `cd apps/admin && npm run build` | TypeScript + Vite build passed |
+| Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
 
 Not yet verified:
 
@@ -268,6 +317,7 @@ Not yet verified:
 | Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Enable `openai_compatible` with `WINNIE_LLM_API_KEY`; run a real bilingual meeting |
 | No long bilingual fixture | Provider quality, timestamps and cost are unmeasured | Add a local-only 10–30 minute fixture and an evaluation harness |
 | Knowledge base is only a note sink | Minutes cannot yet be browsed, corrected or retrieved | M5: Git write, index, browse/edit/search |
+| Admin console has no automated tests | Its flows are only checked manually | Add a Vitest/Playwright suite when the console grows beyond these pages |
 | SQLite + inline jobs in the current checkout | Not a production topology | PostgreSQL, arq worker, reverse proxy, backups |
 | Stale domain `A` record | IPv4 to the domain can resolve to a different host | Remove it or set it to the LAN address; verify the router's inbound rules |
 | No speaker diarization or export/share on Android | Limited usefulness for multi-speaker meetings | Follow-ups after M4 hardening |
