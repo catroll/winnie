@@ -10,8 +10,9 @@ infrastructure below it exists to serve the assistant.
 |-------|-------------------|--------|
 | **Assistant** | Chat, web search, scheduled tasks, long-term memory and opt-in local file/command tools | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
+| **News production** | Six-stage pipeline from public sources to a sourced, reviewed draft, with console and assistant access | **Core implemented** |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
-| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, AI providers, LLM usage and gateway routes | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, news runs and drafts, AI providers, LLM usage and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
@@ -85,6 +86,17 @@ on the AI providers page. Design, decisions and operating notes are in
 [docs/assistant.md](./docs/assistant.md); the index is in
 [docs/knowledge-index.md](./docs/knowledge-index.md).
 
+The news pipeline in `packages/winnie-news` collects RSS, Tencent and tophub
+material, cleans and extracts it, groups reports of one event, searches for
+missing coverage, writes one draft per event and reviews it — returning concrete
+feedback to the writer at most twice before marking a draft for a person. A run,
+its stage progress and every draft (JSON and Markdown) live under `data/news`;
+the console's News page and the assistant's `news` skill operate the same
+service, and the three model purposes resolve through the AI providers page. It
+was verified end to end against real RSS sources with the deterministic fake
+model; a real writing model on a full batch is still unmeasured. Design,
+contracts and limits are in [docs/news.md](./docs/news.md).
+
 The AdminLTE management console in `apps/admin` operates the same data in a
 browser: sign in, dashboard, assistant chat with the full cross-channel
 conversation history, chat skills, meeting list and detail, transcript and
@@ -104,6 +116,7 @@ make stop       # stop the API listening on API_PORT
 make restart    # stop, then start again with the current environment
 make android    # debug APK for the Android client
 make admin      # admin console at http://127.0.0.1:5173
+make news-fetch # collect news material to /tmp/winnie-news-material.json
 make help       # targets and overridable variables
 ```
 
@@ -152,7 +165,10 @@ meeting integration design and endpoint list are in
 3. **Assistant capabilities** — first slice done: chat, web search, memory and
    scheduled tasks. Streaming, task creation from chat, vector retrieval and a
    worker for 24/7 task execution remain.
-4. **Production readiness** — migrations, queue-backed background work,
+4. **News production** — first slice done: material to reviewed draft, console
+   page and assistant skill. A worker-backed run, per-draft regeneration,
+   sanitised Markdown rendering and a real-model quality comparison remain.
+5. **Production readiness** — migrations, queue-backed background work,
    retention and backups, deployment hardening.
 
 Details and design rationale are in [DESIGN.md](./DESIGN.md). Concrete follow-ups,
@@ -175,6 +191,7 @@ including the ASR evaluation and provider verification, are in
 | Vector index | Qdrant |
 | Async jobs | Redis + arq (inline queue for local development) |
 | Model access | LiteLLM over OpenAI-compatible APIs |
+| News pipeline | Python package, stdlib collectors, JSON file store |
 
 ## Documentation
 
@@ -183,6 +200,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/openai-proxy.md](./docs/openai-proxy.md) — gateway contract, configuration and examples
 - [docs/usage.md](./docs/usage.md) — what the usage ledger records, pricing, provider balances and limits
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
+- [docs/news.md](./docs/news.md) — news pipeline: stages, contracts, configuration and limits
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan
 - [docs/brand.md](./docs/brand.md) — the woodpecker mark: app icon and console icon geometry, palette and regeneration

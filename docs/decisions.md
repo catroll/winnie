@@ -692,3 +692,58 @@ into the path data so a `VectorDrawable` needs no group transform and no
 Robolectric: this machine has no emulator, and a malformed icon fails silently
 (the build stays green and the launcher falls back to a default), so the test is
 the only thing that would notice.
+
+## News is a capability built from a ported prototype (2026-11-01)
+
+**Ported, not rewritten from the docs.** The pipeline started as the WLB
+`tools/news` prototype: working collectors, a material contract, an event-card
+aggregator and a documented six-stage design. The collectors were ported with
+their tests; the stages were rewritten behind ports. Reimplementing RSS/Atom
+parsing and the tophub JSONP handling from a description would have discarded
+the only part that is genuinely fiddly.
+
+**The schema is `winnie.news.*`, not `wlb.news.*`.** The old prefix names a
+repository that no longer produces the data. A versioned contract is worth
+keeping; a foreign namespace is not.
+
+**LangGraph and LangChain are gone.** The prototype's seven-node graph is a
+linear sequence with one branch (commit / verify / new). Plain async functions
+express it with less state plumbing, and `langgraph` plus `langchain_openai`
+would be two dependencies for control flow that the tests already pin. If a
+future stage needs real fan-out with checkpointing, that trade can be revisited
+on evidence.
+
+**DeepSeek-specific code is gone.** The model is an `LLMPort` with a purpose;
+the host resolves `news.extract`, `news.write` and `news.review` through the AI
+registry on every call. Extraction, writing and review can therefore use
+different models, and a rebind takes effect on the next run. New registry
+features are bound to the fake by a version-4 migration: a missing binding makes
+resolution raise and the console cannot create a binding, so the capability
+would be permanently unusable.
+
+**The event store is a JSON file.** Recall is an in-memory inverted index
+rebuilt on load. A personal deployment holds thousands of events; a file the
+owner can read, copy and diff is worth more than a schema, and it avoids a
+second database to keep in sync. A run is a directory of JSON plus Markdown, so
+a stage can be replayed without the service.
+
+**One search integration.** The search stage reuses `assistant.search` rather
+than adding a second provider and key. Search results are leads: only URLs with
+a usable snippet reach the writer, and the writer may cite only URLs that were
+in its input.
+
+**The assistant reaches news through a protocol.** `winnie-assistant` defines
+`NewsGateway`; the host adapts `NewsService` to it. The alternative — importing
+`winnie-news` from the assistant — would make two capabilities depend on each
+other and would keep a news tool in the schema after the pipeline is disabled.
+The price is one adapter file and an optional constructor argument.
+
+**Publishing is out of scope.** The pipeline ends at a reviewed Markdown file.
+The review verdict is a gate for a person, not permission to post: `passed`
+means ready for human publication and `needs_human` means a decision is needed.
+Publishing needs its own target, credentials and audit trail.
+
+**The console shows Markdown source.** A rendered draft needs a Markdown
+renderer plus a sanitizer, because the text is model output derived from
+untrusted articles. Showing the source costs readability and closes an XSS
+class; a sanitised renderer is a follow-up with its own tests.

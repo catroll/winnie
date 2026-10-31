@@ -11,6 +11,7 @@ API_DIR := $(ROOT)/apps/api
 ANDROID_DIR := $(ROOT)/apps/android
 INDEX_DIR := $(ROOT)/packages/winnie-index
 ADMIN_DIR := $(ROOT)/apps/admin
+NEWS_DIR := $(ROOT)/packages/winnie-news
 ENV_FILE ?= $(API_DIR)/.env
 INDEX_PYTHON ?= $(API_DIR)/.venv/bin/python
 INDEX_CONFIG ?= $(HOME)/.config/winnie-index/config.yaml
@@ -33,7 +34,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android admin admin-build stop restart index-init index-dry index-build index-serve index-status index-search index-skill index-test
+.PHONY: help api android admin admin-build stop restart news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -143,6 +144,15 @@ android: ## Build the debug APK at apps/android/app/build/outputs/apk/debug/
 	JAVA_HOME='$(JAVA_HOME)' \
 	./gradlew :app:assembleDebug --console=plain
 	@printf '\nAPK: %s\n' '$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk'
+
+# News material collectors. Writes one material document per source; no model
+# call and no API server are involved, so this is the quickest way to see
+# whether a feed still works.
+NEWS_MATERIAL_OUT ?= /tmp/winnie-news-material.json
+news-fetch: ## Collect news material to /tmp/winnie-news-material.json
+	@PYTHONPATH='$(NEWS_DIR)/src' '$(INDEX_PYTHON)' -m winnie_news.material.fetcher \
+		-o '$(NEWS_MATERIAL_OUT)' --compact
+	@printf 'News material: %s\n' '$(NEWS_MATERIAL_OUT)'
 
 # Local document index. Runs with the API venv so nothing extra is installed;
 # `skill install` writes ~/.agents/skills/local-knowledge/SKILL.md.

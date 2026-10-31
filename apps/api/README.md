@@ -12,6 +12,8 @@ incrementally.
 - Chat engine: `packages/winnie-chat` (model loop, skills, prompt)
 - Local execution: `packages/winnie-local` (files, commands, review, audit)
 - Knowledge sink package: `packages/winnie-knowledge`
+- News pipeline package: `packages/winnie-news` (mounted as `/api/v1/news`;
+  design and operations in [docs/news.md](../../docs/news.md))
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Admin-managed AI registry: `data/ai.yaml` (gitignored), served by
   `src/winnie_api/ai/` and edited through the console

@@ -189,6 +189,29 @@ status are in [plan.md](./plan.md).
       choice is environment-only, documented in `docs/decisions.md`; do not add
       a plaintext column as a shortcut.
 
+## P2 — news production follow-ups
+
+> The pipeline is usable end to end with the fake model. These items are what
+> stands between "works" and "trustworthy on a real batch".
+
+- [ ] Run a real `news.write` model over a full batch and compare it with the
+      fake drafts on the same material: factual misses, invented numbers,
+      clickbait, length and cost. Record the measurement in
+      [docs/news.md](./news.md) before tuning prompts.
+- [ ] Move a run into the arq worker. Today it executes in the API process, so a
+      restart loses it and leaves its record `running`; add a startup sweep that
+      marks abandoned runs `failed`.
+- [ ] Render the draft Markdown in the console with a sanitizer, or keep the
+      source view and document why. Do not add a renderer without tests for
+      script/iframe injection through article text.
+- [ ] Add per-draft regeneration and per-stage rerun from the console; the run
+      directory already holds every stage document.
+- [ ] Report source health (last success, consecutive failures, cache age) so a
+      dead feed is visible before it silently empties a batch.
+- [ ] Add a publication hand-off (Markdown to a chosen directory or a webhook)
+      with an explicit human confirmation; keep publishing out of the pipeline
+      until then.
+
 ## P3 — operational polish
 
 - [x] Per-month LLM cost view in the console (`/usage`), built from the new

@@ -78,6 +78,7 @@ Success for the current phase:
 | Knowledge base | Markdown in Git: browse, edit, classify, version, search | `winnie-knowledge` note sink only | Partial |
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
+| News | Six-stage pipeline from public sources to a sourced, reviewed draft | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
 | Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
@@ -96,12 +97,16 @@ Success for the current phase:
 | M4 | Live captions | PCM stream, live caption UI, canonical file pass, foreground recording and reconnect | **Core done** — captions and final pass work; foreground service, reconnect and streaming usage records are open |
 | M5 | Knowledge base | Markdown in Git is the source of truth; browse/edit/classify/version/search; notes are indexed and retrievable | Planned |
 | M6 | Assistant | A reachable assistant that chats, searches, runs conversation-managed tasks and remembers from local files through the index | **Core done** — chat, search, index-backed recall and chat-managed tasks work; streaming, vector retrieval and an out-of-process worker are open |
+| M8 | News production | A run over real sources groups reports into events, writes one sourced draft per event, reviews it and stops at a reviewed Markdown file; console and assistant operate it | **Core done** — end-to-end verified with the fake model; real-model quality, a worker-backed run and Markdown rendering are open |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 The current work is **M3/M4 hardening** plus the first slice of **M6**: the
 meeting capability is usable on the happy path, and the assistant now has a
-working chat, search, memory and scheduling path. Remaining work in both is
-validation and durability rather than new surface area.
+working chat, search, memory and scheduling path. **M8** added a second content
+capability on the same foundations — the news pipeline uses the AI registry,
+the assistant's search provider and the console, and ends in a reviewed file
+rather than a published post. Remaining work in all three is validation and
+durability rather than new surface area.
 
 ## 5. Completion by capability
 
@@ -234,6 +239,10 @@ Working:
 - Meetings: paginated list; detail with stage, processing error, transcript and
   translations, structured minutes, Markdown/TXT export, minutes regeneration
   and deletion.
+- News: pipeline readiness and bindings, the run list with stage badges and
+  counts, the drafts a run produced with their review status, and the selected
+  draft with its review and Markdown. A run is started from this page and polled
+  while it is in flight.
 - Scheduled tasks: the assistant-created definitions with schedule, active or
   paused state, next and last run, last result and error, prompt, webhook target,
   ignored definitions and the scheduler's timezone. The page is read-only.
@@ -413,11 +422,51 @@ Open:
 - Scheduled task runs deliberately have no file or command tools; there is no
   human turn to confirm them.
 
+### 5.10 News production — Core done
+
+Working:
+
+- Six stages behind versioned JSON contracts: material, clean, aggregate,
+  search, generate, review.
+- RSS, Tencent hot list and tophub collectors with per-source failure isolation
+  and a one-hour cache; a failing source is reported, never fatal.
+- Rule filtering before any model call; extraction as a second filter; hard
+  aggregation conflicts (type, location, time) decided without a model.
+- Event store as a JSON file with indexes rebuilt on load; articles are never
+  attached twice.
+- Sourced drafts: invented URLs are removed, the writer may cite only input
+  URLs, and a number that appears nowhere in the material fails review.
+- Bounded generate/review loop, then `needs_human`; run status `done`,
+  `partial` or `failed` with per-stage status and counts.
+- Three AI bindings (`news.extract`, `news.write`, `news.review`), one search
+  provider shared with the assistant, and a deterministic offline model.
+- Console News page (run list, stage badges, drafts, review, Markdown) and an
+  assistant `news` skill that is scheduled-safe.
+
+Verified:
+
+- A real run over two RSS feeds with the fake model: 60 materials, 10 cleaned,
+  10 events, 10 drafts, 10 passing reviews.
+- The console page in headless Firefox: sign-in, run table, draft list, review
+  and Markdown for a selected draft.
+- 81 package tests and 205 API tests, including an API-level run and the
+  assistant tool path.
+
+Open:
+
+- A real writing model has not been run over a full batch; draft quality and
+  cost are unmeasured.
+- A run executes in the API process; a restart leaves its record `running` and
+  the `arq` backend does not move news yet.
+- Markdown is shown as source, not rendered; a sanitised renderer is a
+  follow-up.
+- Publication is out of scope: the pipeline ends at a reviewed file.
+
 ## 6. Verification snapshot
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **199 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **205 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -439,6 +488,9 @@ Open:
 | Admin skills page | TypeScript/Vite build + Firefox production preview | Page typechecks and builds; six skills listed with instructions; unavailable index and always-on core; web toggle persisted; light/dark/mobile |
 | Admin AI suppliers page | Firefox against a disposable API and `ai.yaml` | Fresh seed bound model features to `fake`; DeepSeek endpoints were grouped under one supplier; added a model through **Models**; created `ui-llm`, rebound `assistant.chat` (`source=admin`), deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
 | AI registry migration | `pytest` against hand-written v1/v2 files | v1 split into gateway + `internal-llm`; v2 grouped under suppliers and collected endpoint/bound models; both rewritten `version: 3` |
+| News pipeline | `pytest packages/winnie-news/tests` | 81 passed; six stages, fake model, file store, retry and duplicate-attach paths |
+| News run end to end | Throwaway API + two real RSS feeds + fake model | 60 materials → 10 cleaned → 10 events → 10 drafts, all reviews passed |
+| Admin news page | Firefox against the same disposable API | Sign-in, run table, stage badges, draft list, review and Markdown rendered; no console errors |
 | Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |
 | Admin LLM usage page | Firefox against the same disposal API | Period switch, metrics, balances (not-exposed and missing-key states), by-day/by-feature/by-model tables, feature filter (8 gateway calls), detail row without column resize, price table, light/dark and 500 px width with no page overflow |
 
@@ -462,6 +514,8 @@ Not yet verified:
 | Admin console has no automated tests | Its flows are only checked manually | Add a Vitest/Playwright suite when the console grows beyond these pages |
 | SQLite + inline jobs in the current checkout | Not a production topology | PostgreSQL, arq worker, reverse proxy, backups |
 | Stale domain `A` record | IPv4 to the domain can resolve to a different host | Remove it or set it to the LAN address; verify the router's inbound rules |
+| News drafts are only as good as the writer model | The fake provider produces a repetitive demo draft; real quality is unmeasured | Bind `news.write` to a real model and compare the same batch; tune prompts and review rules |
+| A news run is not worker-backed | A restart loses an in-flight run and leaves its record `running` | Move runs into the arq worker and add a recovery sweep |
 | No speaker diarization or export/share on Android | Limited usefulness for multi-speaker meetings | Follow-ups after M4 hardening |
 
 ## 8. Next development plan

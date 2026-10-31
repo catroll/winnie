@@ -89,7 +89,11 @@ The repository-level design, contracts and operating notes are in
 - The tophub and Tencent sources depend on their public endpoints and, for
   Tencent, on a local `tencent-news-cli`; a single failing source never fails a
   batch.
-- The shipped RSS list is Chinese-language and was verified against those
-  endpoints only.
+- The shipped RSS list enables only the six `chinanews.com.cn` feeds; the
+  international and Google News entries are disabled because they timed out
+  when the list was checked. Enable what your network reaches in
+  `material/rss_sources.json`.
+- The tophub daily digest currently answers "the endpoint returned no data";
+  the failure is isolated per source.
 - Aggregation quality depends on the extractor model; a cheap model that returns
   few actors or places produces more separate events.

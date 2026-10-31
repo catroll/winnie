@@ -132,3 +132,35 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
    Restore the normal `make api` reload path only after `uv sync` and a clean
    `/healthz` check; a reload child that crashes on import leaves a listening
    socket that looks healthy from `ss` but serves nothing.
+
+## A throwaway config inherits every path you did not override (2026-11-01)
+
+1. **Signal.** A disposable API for a browser check used a minimal
+   `config.yaml` with `auth.enabled: false`, `assistant.root` and `news.root`
+   under `.tmp/`, and no `database.url`. It worked, so it looked isolated.
+   Enabling auth on the same config made the first registration fail with
+   `registration is closed; an account already exists` — the API had been
+   reading the owner's real `data/winnie.db`.
+2. **Why it stayed hidden.** With auth and meetings both disabled, the host
+   builds no runtime at all (`if not (auth.enabled or meetings.enabled):
+   return None`), so no database was opened. The false signal was "the config
+   has no database section, therefore it has no database".
+3. **Check.** Before starting a disposable instance, list every path key and
+   assert the target, not the intent:
+
+   ```bash
+   grep -nE 'url|root|path' .tmp/demo/config.yaml
+   # then, after startup, confirm the files it created are under .tmp:
+   find .tmp/demo -newermt '-1 min' -type f | head
+   ```
+
+   In this case `data/winnie.db` had a recent mtime, which the check would have
+   shown immediately.
+4. **Fix.** Set every path explicitly in a disposable config — `database.url`,
+   `log_root`, `ai.path`, `assistant.root`, `news.root`, and any capability
+   root — using absolute paths under `.tmp/`. Never rely on a default path
+   being harmless because the capability that uses it is disabled.
+5. **Generalisation.** A test/demo configuration is judged by the files it
+   touches, not by the keys it lists. Any capability that is enabled later will
+   resolve its default against the real checkout, so a throwaway config must
+   override defaults, not delete sections from them.
