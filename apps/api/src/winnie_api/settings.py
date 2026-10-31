@@ -32,7 +32,7 @@ class IndexConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    base_url: str = "http://127.0.0.1:8787"
+    base_url: str = "http://127.0.0.1:8790"
     timeout_seconds: float = 60.0
 
 

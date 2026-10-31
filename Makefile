@@ -33,7 +33,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android admin admin-build stop restart index-dry index-build index-serve index-status index-search index-skill index-test
+.PHONY: help api android admin admin-build stop restart index-init index-dry index-build index-serve index-status index-search index-skill index-test
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -148,13 +148,16 @@ android: ## Build the debug APK at apps/android/app/build/outputs/apk/debug/
 # `skill install` writes ~/.agents/skills/local-knowledge/SKILL.md.
 INDEX_RUN := PYTHONPATH='$(INDEX_DIR)/src' '$(INDEX_PYTHON)' -m winnie_index.cli --config '$(INDEX_CONFIG)'
 
+index-init: ## Write an annotated ~/.config/winnie-index/config.yaml
+	@$(INDEX_RUN) init
+
 index-dry: ## Report what the index would ingest, writing nothing
 	@$(INDEX_RUN) build --dry-run
 
 index-build: ## Sweep the configured roots and index what changed
 	@$(INDEX_RUN) build
 
-index-serve: ## Run the index daemon: sweep loop plus HTTP and MCP on 127.0.0.1:8787
+index-serve: ## Run the index daemon: sweep loop plus HTTP and MCP on 127.0.0.1:8790
 	@$(INDEX_RUN) serve
 
 index-status: ## Show index coverage and failures

@@ -35,7 +35,7 @@ python -m winnie_index.cli status
 | Surface | How |
 |---|---|
 | Agent Skill | `python -m winnie_index.cli skill install` → `~/.agents/skills/local-knowledge/SKILL.md` |
-| MCP over HTTP | `python -m winnie_index.cli serve` → `POST http://127.0.0.1:8787/mcp` |
+| MCP over HTTP | `python -m winnie_index.cli serve` → `POST http://127.0.0.1:8790/mcp` |
 | MCP over stdio | `python -m winnie_index.cli mcp --stdio` |
 | HTTP API | `POST /search`, `GET /doc?path=…`, `GET /status`, `GET /healthz` |
 

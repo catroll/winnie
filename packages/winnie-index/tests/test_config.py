@@ -16,7 +16,7 @@ def test_defaults_apply_from_an_empty_file(tmp_path: Path):
     path = _write(tmp_path / "c.yaml", {})
     config = load_config(path, environ={})
     assert config.prose_ext == {"txt", "md"}
-    assert config.http_port == 8787
+    assert config.http_port == 8790
     assert config.data_dir.name == "winnie-index"
 
 
@@ -84,3 +84,13 @@ def test_retrieval_limit_has_bounds(tmp_path: Path):
     path = _write(tmp_path / "c.yaml", {"retrieval": {"limit": 500}})
     with pytest.raises(ConfigError, match="retrieval.limit"):
         load_config(path, environ={})
+
+
+def test_missing_default_path_is_not_an_error():
+    from winnie_index.config import DEFAULT_CONFIG_PATH
+
+    path = DEFAULT_CONFIG_PATH.expanduser()
+    if path.exists():
+        pytest.skip("a real user config exists on this machine")
+    config = load_config(path, environ={})
+    assert config.roots == ()

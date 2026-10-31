@@ -176,7 +176,8 @@ retrieval:
   min_score: 0.25              # below this, return nothing
 
 serve:
-  http: 127.0.0.1:8787         # /search /doc /status /healthz and /mcp
+  http: 127.0.0.1:8790         # /search /doc /status /healthz and /mcp
+                              # (8787 is held by another local service on this host)
   mcp: http                    # http | stdio
   token_env: WINNIE_INDEX_TOKEN  # optional; empty means loopback trust
 
@@ -371,7 +372,7 @@ description: Search the owner's local notes and Markdown documents. Use when a
   question depends on what the owner wrote or saved before ("我的笔记",
   "之前写的", "找一下那份文档", "where did I", "what did we decide about").
   Backed by an MCP server named local-knowledge and an HTTP API on
-  127.0.0.1:8787; do not search the filesystem for these documents.
+  127.0.0.1:8790; do not search the filesystem for these documents.
 ---
 
 # Local knowledge
@@ -387,7 +388,7 @@ calls, never by walking directories.
 - `index_status()` → coverage, last sweep, failures.
 
 ## HTTP (when MCP is unavailable)
-`POST http://127.0.0.1:8787/search` with `{"query": "...", "limit": 8}`.
+`POST http://127.0.0.1:8790/search` with `{"query": "...", "limit": 8}`.
 
 ## Rules
 - Answer only from text returned by `get_document`; cite `path:line`.
@@ -406,8 +407,8 @@ configure the transport:
 | Client | Registration |
 |---|---|
 | DSH | MCP server entry in the DSH config overlay (exact key confirmed in P3) |
-| Cursor | `.cursor/mcp.json` with `{"mcpServers": {"local-knowledge": {"url": "http://127.0.0.1:8787/mcp"}}}` |
-| Claude Code | `claude mcp add --transport http local-knowledge http://127.0.0.1:8787/mcp` |
+| Cursor | `.cursor/mcp.json` with `{"mcpServers": {"local-knowledge": {"url": "http://127.0.0.1:8790/mcp"}}}` |
+| Claude Code | `claude mcp add --transport http local-knowledge http://127.0.0.1:8790/mcp` |
 
 Registration syntax is confirmed in P3; the table states the intended shape.
 
@@ -690,7 +691,7 @@ make index-dry      # what would be ingested, writes nothing
 make index-build    # sweep and index
 make index-search Q="部署"
 make index-status
-make index-serve    # daemon: sweep loop, HTTP and MCP on 127.0.0.1:8787
+make index-serve    # daemon: sweep loop, HTTP and MCP on 127.0.0.1:8790
 make index-skill    # write ~/.agents/skills/local-knowledge/SKILL.md
 make index-test
 ```
@@ -710,6 +711,15 @@ Deviations from the design above, each deliberate:
   citation remains exact.
 - **The sweep is synchronous.** At 19k files a full build is seconds; a worker
   pool would be complexity without a measured need.
+- **The default port is 8790.** `8787` is already held by another local service
+  on this host (`ocd`), and a bind failure at startup is indistinguishable from
+  a configuration error to whoever ran the command.
+- **The conventional config path is optional however it arrives.** `make
+  index-serve` passes `--config ~/.config/winnie-index/config.yaml`
+  unconditionally, so on a fresh install the flag named a file that could not
+  exist yet. The rule is now path-based, not source-based: the default path may
+  be absent, any other path must exist. The daemon then starts with defaults,
+  says so, and the console's first save creates the file.
 
 What remains: dense retrieval and RRF (P2), inotify acceleration, the reranker,
 the 40-query evaluation fixture, and the DSH/Cursor registration check that the

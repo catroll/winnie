@@ -153,6 +153,6 @@ assistant:
 index:
   enabled: true
   # Where the index daemon listens. It binds loopback only.
-  base_url: http://127.0.0.1:8787
+  base_url: http://127.0.0.1:8790
   # A build on a large tree can take minutes; a search should not.
   timeout_seconds: 60

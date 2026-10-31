@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import logging
 import sys
@@ -22,7 +23,7 @@ def _config_from(args: argparse.Namespace) -> Config:
     if getattr(args, "host", None) or getattr(args, "port", None):
         serve = {}
         if getattr(args, "host", None):
-            serve["http"] = f"{args.host}:{args.port or 8787}"
+            serve["http"] = f"{args.host}:{args.port or 8790}"
         overrides["serve"] = serve
     return load_config(getattr(args, "config", None), overrides=overrides or None)
 
@@ -139,7 +140,29 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     config = _config_from(args)
-    httpapi.serve(config)
+    if not config.roots:
+        print(
+            "no roots configured yet: serving an empty index. Add roots in the "
+            "console or in the config file, then run a build.",
+            file=sys.stderr,
+        )
+        if config.source is None:
+            print(
+                f"no config file at {Path('~/.config/winnie-index/config.yaml').expanduser()}; "
+                "the console will create it on the first save, or run `winnie-index init`.",
+                file=sys.stderr,
+            )
+    try:
+        httpapi.serve(config)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            print(
+                f"port {config.http_port} is already in use; stop that process or "
+                "set serve.http in the config",
+                file=sys.stderr,
+            )
+            return 1
+        raise
     return 0
 
 

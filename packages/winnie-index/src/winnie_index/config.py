@@ -30,7 +30,7 @@ DEFAULTS: dict[str, Any] = {
         "overlap_tokens": 60,
     },
     "retrieval": {"limit": 8, "bm25_k": 50, "max_per_doc": 2},
-    "serve": {"http": "127.0.0.1:8787", "mcp": "http", "token_env": "WINNIE_INDEX_TOKEN"},
+    "serve": {"http": "127.0.0.1:8790", "mcp": "http", "token_env": "WINNIE_INDEX_TOKEN"},
     "skill": {"enabled": True, "target": str(DEFAULT_SKILL_TARGET)},
 }
 
@@ -144,14 +144,18 @@ def load_config(
 ) -> Config:
     environ = dict(os.environ) if environ is None else environ
     requested = path or environ.get("WINNIE_INDEX_CONFIG")
+    default = DEFAULT_CONFIG_PATH.expanduser()
     source: Path | None = None
     if requested:
         source = Path(requested).expanduser()
-        if not source.is_file():
+        # The conventional path is optional however it arrives: a flag that
+        # points at the default is still "no file asked for". Any other missing
+        # path is a mistake worth stopping for.
+        if not source.is_file() and source.resolve() != default.resolve():
             raise ConfigError(f"config file not found: {source}")
-        file_layer = _load_yaml(source)
+        file_layer = _load_yaml(source) if source.is_file() else {}
+        source = source if source.is_file() else None
     else:
-        default = DEFAULT_CONFIG_PATH.expanduser()
         file_layer = _load_yaml(default) if default.is_file() else {}
         source = default if default.is_file() else None
 
@@ -308,7 +312,7 @@ retrieval:
   max_per_doc: 2         # at most this many chunks from one document
 
 serve:
-  http: 127.0.0.1:8787   # /search /doc /status /healthz and /mcp
+  http: 127.0.0.1:8790   # /search /doc /status /healthz and /mcp
   mcp: http              # http | stdio
   token_env: WINNIE_INDEX_TOKEN  # optional bearer token, empty means loopback trust
 
