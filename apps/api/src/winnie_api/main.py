@@ -11,6 +11,8 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 
+from winnie_assistant.capability import capability as assistant_capability
+from winnie_assistant.factory import build_assistant_service
 from winnie_core.auth.capability import capability as auth_capability
 from winnie_core.capability import WinnieFramework
 from winnie_core.jobs.queue import ArqJobQueue
@@ -45,13 +47,34 @@ def create_app(
             timeout=httpx.Timeout(300.0, connect=30.0)
         )
         app.state.runtime = runtime
+        app.state.assistant_service = None
+        app.state.assistant_error = ""
         if runtime is not None:
             await runtime.startup()
             app.state.auth_service = runtime.auth_service
             app.state.meeting_service = runtime.meeting_service
+        assistant = None
+        if resolved.assistant.enabled:
+            try:
+                assistant = build_assistant_service(
+                    config=resolved.assistant,
+                    llm=resolved.llm,
+                    root=resolved.resolve_assistant_root(),
+                    extra_memory_roots=resolved.resolve_assistant_memory_roots(),
+                    tasks_file=resolved.resolve_assistant_tasks_file(),
+                    http=app.state.http,
+                )
+                await assistant.startup()
+                app.state.assistant_service = assistant
+            except Exception as exc:  # noqa: BLE001 - keep the rest of the API up
+                app.state.assistant_error = f"{type(exc).__name__}: {exc}"
+                logger.exception("assistant failed to start")
         try:
             yield
         finally:
+            if assistant is not None:
+                await assistant.shutdown()
+                app.state.assistant_service = None
             if runtime is not None:
                 await runtime.shutdown()
                 app.state.runtime = None
@@ -65,6 +88,8 @@ def create_app(
         framework.register(auth_capability())
     if resolved.meetings.enabled:
         framework.register(meetings_capability())
+    if resolved.assistant.enabled:
+        framework.register(assistant_capability())
     app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")

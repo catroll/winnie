@@ -10,6 +10,12 @@ import pytest_asyncio
 
 from winnie_api.main import create_app
 from winnie_api.settings import DatabaseConfig, Settings
+from winnie_assistant.config import (
+    AssistantConfig,
+    MemoryConfig,
+    SearchConfig,
+    TasksConfig,
+)
 from winnie_core.config import AuthConfig, JobsConfig
 from winnie_gateway.config import RouteConfig
 from winnie_meetings.config import MeetingsConfig
@@ -232,6 +238,40 @@ async def account_client(
         timeout=httpx.Timeout(5.0),
     )
     app = create_app(settings=account_settings, http=http)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as test_client:
+            yield test_client
+    await http.aclose()
+
+
+@pytest.fixture
+def assistant_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={},
+        assistant=AssistantConfig(
+            enabled=True,
+            root=str(tmp_path / "assistant"),
+            timezone="Asia/Shanghai",
+            model="fake",
+            search=SearchConfig(provider="fake"),
+            memory=MemoryConfig(auto_distill=False),
+            tasks=TasksConfig(enabled=False),
+        ),
+    )
+
+
+@pytest_asyncio.fixture
+async def assistant_client(
+    assistant_settings: Settings,
+) -> AsyncIterator[httpx.AsyncClient]:
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500)),
+        timeout=httpx.Timeout(5.0),
+    )
+    app = create_app(settings=assistant_settings, http=http)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"

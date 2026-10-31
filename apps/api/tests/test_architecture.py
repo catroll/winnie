@@ -13,6 +13,7 @@ ALLOWED = {
     "winnie-gateway": {"winnie_core", "winnie_gateway"},
     "winnie-knowledge": {"winnie_knowledge"},
     "winnie-meetings": {"winnie_core", "winnie_knowledge", "winnie_meetings"},
+    "winnie-assistant": {"winnie_core", "winnie_assistant"},
 }
 
 
@@ -46,3 +47,8 @@ def test_capability_packages_do_not_import_the_host_or_each_other() -> None:
 def test_host_registers_expected_capabilities(meeting_settings: Settings) -> None:
     app = create_app(settings=meeting_settings)
     assert app.state.capability_names == ("gateway", "meetings")
+
+
+def test_host_registers_the_assistant_when_enabled(assistant_settings: Settings) -> None:
+    app = create_app(settings=assistant_settings)
+    assert app.state.capability_names == ("assistant", "gateway")

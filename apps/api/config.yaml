@@ -112,3 +112,37 @@ jobs:
   # arq: hand the job to a separate worker.
   backend: inline
   redis_url: ""
+
+# Personal assistant: chat, web search, scheduled tasks and local memory.
+# Conversations and memory are Markdown under ../../data/assistant; the files
+# are the source of truth and the service can be restarted without losing them.
+assistant:
+  enabled: true
+  root: ../../data/assistant
+  timezone: Asia/Shanghai
+  # "fake" answers deterministically and needs no API key. Set it to "" to
+  # reuse llm.model, which requires WINNIE_LLM_API_KEY in the environment.
+  model: fake
+  max_history_messages: 30
+  max_tool_rounds: 4
+  max_tool_output_chars: 4000
+  search:
+    # bing_rss needs no API key; "fake" is for offline tests.
+    provider: bing_rss
+    endpoint: https://cn.bing.com/search
+    max_results: 5
+    timeout_seconds: 15
+  memory:
+    enabled: true
+    # Extra read-only Markdown roots indexed for retrieval, e.g. ../../personal.
+    extra_roots: []
+    digest_chars: 2000
+    auto_distill: true
+    max_facts_per_run: 12
+    max_fact_chars: 500
+  tasks:
+    enabled: true
+    file: tasks.yaml
+    tick_seconds: 30
+    catch_up_seconds: 3600
+    webhook_timeout_seconds: 10

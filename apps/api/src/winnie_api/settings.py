@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from winnie_assistant.config import AssistantConfig
 from winnie_core.config import AuthConfig, JobsConfig, LLMConfig
 from winnie_gateway.config import GatewayConfig, RouteConfig
 from winnie_meetings.config import MeetingsConfig
@@ -37,6 +38,7 @@ class Settings(BaseModel):
     jobs: JobsConfig = Field(default_factory=JobsConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
+    assistant: AssistantConfig = Field(default_factory=AssistantConfig)
 
     def gateway_config(self) -> GatewayConfig:
         return GatewayConfig(
@@ -54,6 +56,18 @@ class Settings(BaseModel):
 
     def resolve_notes_root(self) -> Path:
         return _resolve_path(self.meetings.notes_root)
+
+    def resolve_assistant_root(self) -> Path:
+        return _resolve_path(self.assistant.root)
+
+    def resolve_assistant_memory_roots(self) -> list[Path]:
+        return [_resolve_path(value) for value in self.assistant.memory.extra_roots]
+
+    def resolve_assistant_tasks_file(self) -> Path:
+        path = Path(self.assistant.tasks.file)
+        if path.is_absolute():
+            return path
+        return self.resolve_assistant_root() / path
 
     def resolve_database_url(self) -> str:
         """Make relative SQLite paths absolute; leave server URLs untouched."""

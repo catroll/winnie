@@ -1,0 +1,25 @@
+# Copy to tasks.yaml in this directory and restart the API (or wait one tick).
+# Each enabled task runs with the assistant's model and tools; the result is
+# stored as a conversation under ../conversations and optionally POSTed to a
+# webhook so it reaches a phone.
+timezone: Asia/Shanghai
+
+tasks:
+  - id: morning-brief
+    title: Morning brief
+    schedule: daily 07:30
+    prompt: >-
+      Give me a short brief for today: the weather in Shanghai, anything
+      important from overnight news, and one thing I should not forget.
+      Keep it under 150 words and name your sources.
+    enabled: false
+    webhook: ""
+
+  - id: weekly-review
+    title: Weekly review
+    schedule: weekly sun 20:00
+    prompt: >-
+      Review the past week from my memory and conversations. List what moved
+      forward, what is stuck, and what to do first next week.
+    enabled: false
+    webhook: ""

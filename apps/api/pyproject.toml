@@ -21,6 +21,7 @@ dependencies = [
     "winnie-gateway",
     "winnie-meetings",
     "winnie-knowledge",
+    "winnie-assistant",
 ]
 
 [tool.uv.sources]
@@ -28,6 +29,7 @@ winnie-core = { path = "../../packages/winnie-core", editable = true }
 winnie-gateway = { path = "../../packages/winnie-gateway", editable = true }
 winnie-meetings = { path = "../../packages/winnie-meetings", editable = true }
 winnie-knowledge = { path = "../../packages/winnie-knowledge", editable = true }
+winnie-assistant = { path = "../../packages/winnie-assistant", editable = true }
 
 [build-system]
 requires = ["hatchling"]
