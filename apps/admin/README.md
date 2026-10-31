@@ -62,10 +62,12 @@ load.
 
 ## AI providers
 
-`/ai` owns the vendor registry. On first start the API seeds
-`data/ai.yaml` from the existing `routes`, `llm`, `meetings` and `assistant`
-configuration, then the console is authoritative. Each feature selects one
-integration and an optional model:
+`/ai` owns the vendor registry and is the **only** model choice: `config.yaml`
+has no `llm` block, `assistant.model`, `meetings.translator` or
+`meetings.summarizer`. On first start the API writes `data/ai.yaml` from the
+gateway routes and the ASR defaults; model features start on `fake` until a real
+provider is added and bound. Each feature selects one integration and an
+optional model:
 
 | Feature | What it drives |
 |---|---|
@@ -77,17 +79,19 @@ integration and an optional model:
 An OpenAI/Anthropic integration has a separate **Gateway route** switch. With it
 on, the provider is reachable at `/{name}/v1/...` and the client supplies the
 vendor key; with it off, the provider is internal-only and is called by the
-assistant or meetings with `api_key_env`. The seeded `internal-llm` is
-internal-only; the seeded routes have no server-side key. A keyless
-OpenAI-compatible provider cannot serve an internal feature, so it is not listed
-in those feature dropdowns.
+assistant or meetings with `api_key_env`. Seeded routes have no server-side key.
+A keyless OpenAI-compatible provider cannot serve an internal feature, so it is
+not listed in those feature dropdowns.
 
-A provider change takes effect on the next model call; no API restart is needed.
-Deleting a provider resets its features to their `config.yaml` fallback. The
-page never receives or stores a vendor key: `api_key_env` is the *name* of an
-environment variable, and the table shows whether it is currently set. The full
-model, first-start precedence (including the `version: 1` migration) and the HTTP
-API are in [docs/ai-providers.md](../../docs/ai-providers.md).
+The **Model runtime** card edits the shared timeout, token cap, temperature,
+retry and chunk limits. They apply to the next call. A provider change takes
+effect on the next model call; no API restart is needed. Deleting a provider
+unbinds its features; there is no `config.yaml` fallback, so choose a
+replacement before using them again. The page never receives or stores a vendor
+key: `api_key_env` is the *name* of an environment variable, and the table shows
+whether it is currently set. The full model, first-start behaviour (including
+the `version: 1` migration) and the HTTP API are in
+[docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## Quick start
 

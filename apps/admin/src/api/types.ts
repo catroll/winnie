@@ -365,9 +365,18 @@ export interface AIFeature {
   requires_model: boolean;
   integration_id: string | null;
   model: string;
-  source: 'admin' | 'config';
+  source: 'admin' | 'none';
   integration_name: string;
-  config_default: string;
+}
+
+export interface ModelRuntime {
+  timeout_seconds: number;
+  max_output_tokens: number;
+  temperature: number;
+  max_retries: number;
+  retry_backoff_seconds: number;
+  translation_batch_chars: number;
+  summary_chunk_chars: number;
 }
 
 export interface AIKind {
@@ -381,6 +390,7 @@ export interface AIKind {
 
 export interface AIProviderConfig {
   path: string;
+  runtime: ModelRuntime;
   integrations: AIIntegration[];
   features: AIFeature[];
   kinds: AIKind[];

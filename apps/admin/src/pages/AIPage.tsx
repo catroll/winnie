@@ -7,6 +7,7 @@ import type {
   AIIntegrationInput,
   AIProviderConfig,
   AIProviderKind,
+  ModelRuntime,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
@@ -176,6 +177,7 @@ export function AIPage() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AIIntegration | null>(null);
   const [bindings, setBindings] = useState<Record<string, BindingState>>({});
+  const [runtimeDraft, setRuntimeDraft] = useState<ModelRuntime | null>(null);
 
   const data: AIProviderConfig | null =
     result.status === 'success' ? result.data : null;
@@ -192,6 +194,7 @@ export function AIPage() {
       };
     }
     setBindings(next);
+    setRuntimeDraft(result.data.runtime);
   }, [result.status, result.data]);
 
   const openCreate = () => {
@@ -283,7 +286,7 @@ export function AIPage() {
     try {
       const response = await api.deleteAIIntegration(deleteTarget.id);
       const cleared = response.cleared_features.length
-        ? ` Features reset to config.yaml: ${response.cleared_features.join(', ')}.`
+        ? ` These features now have no provider: ${response.cleared_features.join(', ')}.`
         : '';
       setMessage({
         kind: 'success',
@@ -328,8 +331,29 @@ export function AIPage() {
             ? data?.integrations.find(
                 (item) => item.id === binding.integration_id,
               )?.name ?? 'the selected provider'
-            : 'the config.yaml fallback'
+            : 'no provider (choose one before using it)'
         }.`,
+      });
+      result.reload();
+    } catch (error) {
+      setMessage({ kind: 'danger', text: describe(error) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveRuntime = async () => {
+    if (!runtimeDraft) {
+      return;
+    }
+    setBusy('runtime');
+    setMessage(null);
+    try {
+      const response = await api.setAIRuntime(runtimeDraft);
+      setRuntimeDraft(response.runtime);
+      setMessage({
+        kind: 'success',
+        text: 'Model runtime saved. The next model call uses the new limits.',
       });
       result.reload();
     } catch (error) {
@@ -372,19 +396,21 @@ export function AIPage() {
               <ErrorBlock error={result.error} onRetry={result.reload} />
               <div className="alert alert-secondary" role="note">
                 The AI provider registry is available when <code>ai.enabled</code> is
-                true in <code>apps/api/config.yaml</code>. With it disabled, the API
-                reads providers and feature bindings directly from the YAML
-                configuration.
+                true in <code>apps/api/config.yaml</code>. With it disabled, model
+                features use the deterministic fake provider and ASR keeps its YAML
+                default; enable it to choose a real model here.
               </div>
             </>
           ) : data ? (
             <>
               <div className="alert alert-info" role="note">
                 <i className="bi bi-cpu-fill me-2" aria-hidden="true" />
-                Providers and feature bindings are stored in <code>{data.path}</code>.
-                Changes take effect on the next model call without restarting the API.
-                API keys are <strong>not</strong> stored here: each provider names an
-                environment variable that the API process reads.
+                Providers, feature bindings and model runtime are stored in{' '}
+                <code>{data.path}</code>. Changes take effect on the next model call
+                without restarting the API. This registry is the only model choice:{' '}
+                <code>config.yaml</code> has no <code>llm</code> block. API keys are{' '}
+                <strong>not</strong> stored here: each provider names an environment
+                variable that the API process reads.
               </div>
 
               <div className="row g-3 mb-3">
@@ -426,7 +452,7 @@ export function AIPage() {
                         ? 'No AI features are registered'
                         : configured === features.length
                           ? 'Every feature has an explicit provider'
-                          : `${features.length - configured} inherit config.yaml`}
+                          : `${features.length - configured} need a provider`}
                     </span>
                   </div>
                 </div>
@@ -725,9 +751,7 @@ export function AIPage() {
                                   }
                                   disabled={disabled || rowBusy}
                                 >
-                                  <option value="">
-                                    Inherit from config.yaml
-                                  </option>
+                                  <option value="">Not configured</option>
                                   {compatible.map((integration) => (
                                     <option
                                       key={integration.id}
@@ -739,9 +763,11 @@ export function AIPage() {
                                     </option>
                                   ))}
                                 </select>
-                                <div className="form-text">
-                                  Config fallback: {feature.config_default}
-                                </div>
+                                {feature.source === 'none' ? (
+                                  <div className="form-text text-warning">
+                                    Choose a provider; this feature has no fallback.
+                                  </div>
+                                ) : null}
                               </td>
                               <td style={{ minWidth: '11rem' }}>
                                 <label
@@ -795,8 +821,8 @@ export function AIPage() {
                                     Admin
                                   </span>
                                 ) : (
-                                  <span className="badge text-bg-secondary">
-                                    Config
+                                  <span className="badge text-bg-warning">
+                                    Not configured
                                   </span>
                                 )}
                               </td>
@@ -831,9 +857,25 @@ export function AIPage() {
                   A provider can serve only the features listed for its kind. The
                   assistant, translation and minutes use OpenAI-compatible
                   providers; meeting transcription uses Volcengine ASR;{' '}
-                  <code>fake</code> keeps an offline demo working.
+                  <code>fake</code> keeps an offline demo working. These bindings
+                  are the only model choice; <code>config.yaml</code> no longer
+                  selects one.
                 </div>
               </div>
+
+              {runtimeDraft ? (
+                <RuntimeCard
+                  runtime={runtimeDraft}
+                  busy={busy === 'runtime'}
+                  disabled={disabled}
+                  onChange={(patch) =>
+                    setRuntimeDraft((current) =>
+                      current ? { ...current, ...patch } : current,
+                    )
+                  }
+                  onSave={saveRuntime}
+                />
+              ) : null}
             </>
           ) : null}
         </div>
@@ -868,6 +910,116 @@ export function AIPage() {
     </>
   );
 }
+
+function RuntimeCard({
+  runtime,
+  busy,
+  disabled,
+  onChange,
+  onSave,
+}: {
+  runtime: ModelRuntime;
+  busy: boolean;
+  disabled: boolean;
+  onChange: (patch: Partial<ModelRuntime>) => void;
+  onSave: () => void;
+}) {
+  const number = (key: keyof ModelRuntime, step = '1', min = '0') => (
+    <input
+      id={`runtime-${key}`}
+      className="form-control"
+      type="number"
+      step={step}
+      min={min}
+      value={runtime[key]}
+      onChange={(event) => onChange({ [key]: Number(event.target.value) })}
+      disabled={disabled}
+    />
+  );
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header">
+        <h3 className="card-title mb-0">Model runtime</h3>
+      </div>
+      <div className="card-body">
+        <p className="small text-secondary">
+          Shared limits for every OpenAI-compatible call. They apply to the
+          assistant, translation and minutes; the model and endpoint come from
+          the provider binding above.
+        </p>
+        <div className="row g-3">
+          <div className="col-md-4">
+            <label className="form-label" htmlFor="runtime-timeout_seconds">
+              Timeout (seconds)
+            </label>
+            {number('timeout_seconds')}
+          </div>
+          <div className="col-md-4">
+            <label className="form-label" htmlFor="runtime-max_output_tokens">
+              Max output tokens
+            </label>
+            {number('max_output_tokens')}
+          </div>
+          <div className="col-md-4">
+            <label className="form-label" htmlFor="runtime-temperature">
+              Temperature
+            </label>
+            {number('temperature', '0.1')}
+          </div>
+          <div className="col-md-4">
+            <label className="form-label" htmlFor="runtime-max_retries">
+              Max retries
+            </label>
+            {number('max_retries')}
+          </div>
+          <div className="col-md-4">
+            <label className="form-label" htmlFor="runtime-retry_backoff_seconds">
+              Retry backoff (seconds)
+            </label>
+            {number('retry_backoff_seconds', '0.1')}
+          </div>
+          <div className="col-md-4">
+            <label
+              className="form-label"
+              htmlFor="runtime-translation_batch_chars"
+            >
+              Translation batch (characters)
+            </label>
+            {number('translation_batch_chars', '100', '500')}
+          </div>
+          <div className="col-md-4">
+            <label className="form-label" htmlFor="runtime-summary_chunk_chars">
+              Minutes chunk (characters)
+            </label>
+            {number('summary_chunk_chars', '1000', '2000')}
+          </div>
+        </div>
+      </div>
+      <div className="card-footer d-flex justify-content-end">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={onSave}
+          disabled={disabled}
+        >
+          {busy ? (
+            <>
+              <span
+                className="spinner-border spinner-border-sm me-1"
+                aria-hidden="true"
+              />
+              Saving…
+            </>
+          ) : (
+            'Save runtime'
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 interface EditorProps {
   editor: Editor;

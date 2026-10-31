@@ -17,6 +17,7 @@ import type {
   Meeting,
   MeetingList,
   Minutes,
+  ModelRuntime,
   Readiness,
   RouteList,
   TokenResponse,
@@ -229,6 +230,10 @@ export const api = {
     return request(`/api/v1/ai/integrations/${encodeURIComponent(integrationId)}`, {
       method: 'DELETE',
     });
+  },
+
+  setAIRuntime(runtime: ModelRuntime): Promise<{ runtime: ModelRuntime }> {
+    return request('/api/v1/ai/runtime', { method: 'PUT', body: runtime });
   },
 
   setAIFeature(
