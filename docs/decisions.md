@@ -1115,3 +1115,41 @@ flag was rejected as a setting nobody will remember to use.
 a person read it. Building a receipt would mean another round trip and a
 per-device read model for a single-user assistant; the value does not justify
 it. This is recorded as a limit rather than implied by the feature.
+
+## Gold watch: self-sampled history, deterministic alerts, app push (2026-11-01)
+
+**A keyless feed with no history means we sample.** `api.gold-api.com/price/XAU`
+returns one quote and needs no key; it has no candles. A periodic sampler with
+the samples persisted in `.state/gold.json` was chosen over adding a market-data
+dependency or a paid provider: the feature only needs tens of minutes of
+history, and an explicit sample history is inspectable. The trade-off is that a
+spike inside a five-minute interval is invisible, and the first alert needs the
+process to have been up for the window.
+
+**Deterministic, like the weather watch.** The watcher does not call a model. An
+alert that may move money must not depend on a model being bound, and the body
+has to be a price and a percentage, not a paragraph. The `gold_price` tool reads
+the same service, so chat and the alert cannot disagree.
+
+**Thresholds and cooldown.** 1 % against the sample closest to one hour ago, or
+2.5 % over 24 hours, with a two-hour cooldown. The window baseline is labelled
+with its actual age (a 45-minute move is not called an hour). A 24-hour rule
+catches a slow grind that never trips the hourly one. The thresholds are
+deployment configuration because this instance has one user; per-user settings
+would need a console surface that does not exist.
+
+**Push through the existing notifier.** The alert goes through the same
+`Notifier` as `notify_user` and the scheduled-task briefs, so there is one push
+path, one owner resolution and one backlog. The host resolves the owner (the
+only active account, `cleanup`); the model never sees a user id. A conversation
+record is written as well, because the push is a transient view and the record
+must survive the message being dismissed.
+
+**Manual checks never push.** `POST /assistant/gold/check` samples and reports
+without delivering and without moving the schedule. A console refresh or a test
+must not train the owner to ignore real alerts, and it must not consume the
+cooldown.
+
+**USD per troy ounce.** The source is a USD spot quote. A CNY-per-gram view
+needs an FX rate and a unit conversion; showing an approximate number without
+saying which rate was used would be worse than showing the source currency.

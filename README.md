@@ -77,10 +77,12 @@ dedicated `winnie-chat` engine with a skill registry (web, weather, document
 index, memory, scheduled tasks and local execution), append-only Markdown
 conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
 those files and recalled through the local index service, and scheduled tasks
-the assistant creates and cancels when asked in conversation. The weather watch
-is on by default: a daily forecast check records an umbrella or clothing notice
-only when the advice changes, and the same forecast is available in chat. The
-console's Skills page is the feature list and can switch any skill off. It can also list,
+the assistant creates and cancels when asked in conversation. Two watches are on
+by default: a daily weather check records an umbrella or clothing notice only
+when the advice changes, and a gold watch samples the price every five minutes
+and pushes the Winnie app when it moves sharply (≥1% in an hour or ≥2.5% in a
+day). Their skills are available in chat, and the console's Skills page is the
+feature list that can switch any skill off. The assistant can also list,
 read and write files under a configured workspace and run local commands after
 an LLM review and an explicit confirmation; the file and command tools are
 audited, whitelisted read-only operations skip the review, and the command

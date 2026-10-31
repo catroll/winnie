@@ -372,8 +372,9 @@ Working:
   `packages/winnie-chat`; the page at `/api/v1/assistant/ui` is phone-sized and
   needs no build step, and the console at `/chat` is the desktop surface.
 - The chat engine selects enabled skills and builds the system prompt from their
-  instructions. Seven skills are registered: core, web, weather, documents (the local
-  index), memory, tasks and local (files/commands). The registry persists
+  instructions. Registered skills include core, web, weather, gold, documents
+  (the local index), memory, tasks, news and local (files/commands); phone
+  bundles appear when the phone service is configured. The registry persists
   enable/disable state in `skills/skills.json`; the assistant only creates the
   conversation and records the blocks.
 - Local tools are opt-in and live in `packages/winnie-local`:
@@ -406,6 +407,11 @@ Working:
   and records a notice (`source: weather`) only when the umbrella, clothing or
   severe-weather advice changed. The console's Skills page toggles the tool and
   the watch together.
+- The `gold` skill samples gold-api.com every five minutes, keeps its own
+  samples in `.state/gold.json`, and on a ≥1% hourly or ≥2.5% daily move records
+  a notice (`source: gold`) and pushes the Winnie app through the same notifier
+  as `notify_user`. The owner is resolved by the host (`cleanup` here). The
+  manual check never pushes and never moves the schedule.
 
 Verified:
 
@@ -421,13 +427,17 @@ Verified:
 - A live weather check returned in 0.9 s with the `rain` and
   `temperature_drop` advisories; the notice asked for an umbrella and an extra
   layer, and a real model turn called `weather_forecast` and cited Open-Meteo.
+- A live gold check returned in 0.75 s at XAU/USD 3,876.40 with the rules and
+  the first-run "history insufficient" message; a real model turn called
+  `gold_price` and refused to invent a 24-hour change. The push is wired through
+  the notifier (`push: true`); a real move has not occurred yet.
 - A disposable service with a scripted model exercised the local tools:
   `read_file`/`write_file` worked, a command stayed pending until the next
   "确认" turn, and both audit files were written.
 - The `winnie-local` suite covers the whitelist policy (paths, git options,
   path-qualified executables), reviewer JSON/timeout/error handling, redaction,
   whitelisted bypass, review allow/deny, and the fail-closed disabled path.
-- `199 passed` in the backend suite.
+- `276 passed` in the backend suite.
 
 Open:
 
@@ -566,13 +576,13 @@ Open:
   permission flow are unverified on a handset.
 - In-process fan-out only; multiple API workers need Redis pub/sub.
 - No notification actions, quiet hours or deep link into a conversation.
-- No new sources yet from meetings, news or the weather watcher.
+- The gold watcher publishes through the assistant notifier; meetings, news and the weather watcher still do not.
 
 ## 6. Verification snapshot
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **221 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **276 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -581,6 +591,9 @@ Open:
 | Weather watch | `POST /api/v1/assistant/weather/check` + Open-Meteo | 0.9 s; rain + temperature drop; notice conversation `source: weather`, assistant-only opening block |
 | Weather in chat | DeepSeek turn asking about tomorrow | called `weather_forecast`; umbrella and clothing advice with the source |
 | Weather feature toggle | `PUT /api/v1/assistant/skills/weather` | removed and restored the tool and watcher; state persisted in `skills/skills.json` |
+| Gold price check | `POST /api/v1/assistant/gold/check` + gold-api.com | 0.75 s; XAU/USD 3,876.40; rules and the first-run history note |
+| Gold in chat | DeepSeek turn asking about the price | called `gold_price`; quoted the price and refused to invent a 24-hour change |
+| Gold push wiring | `GET /api/v1/assistant/gold` | `push: true`; the notifier used by `notify_user`, already reached for `cleanup` by the app's push test |
 | Live file ASR | Doubao recording-file 2.0 on real audio | `ready`, one segment |
 | Live streaming ASR | Doubao SAUC 2.0 via the WebSocket | `ready` → partial → `你好。` → `final` |
 | Realtime final pass | `/meetings/{id}/audio` + `/transcribe` on a `realtime` meeting | `uploaded` → `ready` |

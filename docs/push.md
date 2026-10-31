@@ -128,6 +128,7 @@ test notification" button uses it as the end-to-end check.
 | Scheduled task result | `notification` | Every run of a scheduled task pushes its brief unless `assistant.tasks.notify_results` is false |
 | Phone command approved | `sync` | Wakes the phone to claim and execute the command now, instead of waiting for the periodic sync |
 | Phone command result | `phone_command` | Tells the owner that the calendar change or SMS finished, or why it failed |
+| Gold price watch | `notification` | A move past the hourly or daily threshold, with the price and percentage |
 
 The assistant's `notify` skill is available in scheduled task runs (a brief is
 useless if nobody sees it) but the write tools of `phone_write` are not. The
@@ -235,7 +236,8 @@ command wake-ups; the phone shows the connection as unavailable.
 - No iOS client and no Web Push for a browser.
 - Meetings, news and the weather watcher do not publish push events yet; the
   hooks exist (`PushService.notify`) and the weather watcher's webhook is the
-  natural next source.
+  natural next source. The gold watcher already publishes through the
+  assistant's notifier.
 - Recurring reminders are scheduled tasks, not a separate reminder model.
 
 ## 11. Verification

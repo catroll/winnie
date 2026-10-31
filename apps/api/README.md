@@ -428,6 +428,13 @@ only from the `assistant.chat` binding; a fresh registry leaves it unbound until
 a supplier model is configured on the AI suppliers page. Web search uses Bing
 RSS by default and needs no key.
 
+The default `gold` skill adds `gold_price` and a five-minute sampler. A move of
+at least 1% against the sample closest to an hour ago, or 2.5% over 24 hours,
+records a notice and pushes the Winnie app through the same notifier as
+`notify_user`; a two-hour cooldown follows an alert. `http://[::1]:8000/api/v1/assistant/gold`
+shows the thresholds and last sample, and `POST .../gold/check` samples without
+pushing. The `assistant.gold` block sets the schedule, window and thresholds.
+
 The default `weather` skill adds `weather_forecast` and a daily watch. The
 watch fetches Open-Meteo for the configured location, applies the rain, snow,
 temperature and severe-weather rules, and records a notice only when the advice

@@ -289,6 +289,7 @@ Skills are named bundles of tools, prompt instructions, permissions and policy.
 | `core` | — | Persona and general rules; always on, not toggleable |
 | `web` | `web_search`, `fetch_page` | Bing RSS and the SSRF-guarded page fetcher |
 | `weather` | `weather_forecast` | Open-Meteo forecast, rules and the daily weather watch |
+| `gold` | `gold_price` | gold-api.com quote, move rules and the push watcher |
 | `documents` | `search_documents`, `read_document` | the `winnie-index` daemon |
 | `memory` | `remember` | `profile/*.md` |
 | `tasks` | `schedule_task`, `list_tasks`, `cancel_task` | `tasks/tasks.json`; chat only |
@@ -304,6 +305,7 @@ Tools and their inputs:
 | web | `web_search` | `query`, `limit?` | numbered title / URL / snippet list |
 | web | `fetch_page` | `url` | readable text, truncated |
 | weather | `weather_forecast` | — | today/tomorrow forecast with umbrella, clothing, heat, wind and severe-weather advice |
+| gold | `gold_price` | — | current gold price, window/day changes and the alert rules |
 | documents | `search_documents` | `query`, `limit?` | `path:line-range`, heading, snippet, mtime |
 | documents | `read_document` | `path`, `from_line?`, `lines?` | the current text with a line header |
 | memory | `remember` | `category`, `text` | confirmation, or an error for an unknown category |
@@ -417,7 +419,7 @@ it when there are real branches (planner, subagents, retries by step). Moving
 the loop out of the assistant is also what makes "chat" a module rather than a
 side effect of the assistant's tool code.
 
-## 7. Weather watch
+## 7. Default watches: weather and gold
 
 The weather watch is the first feature that is on by default. It has two halves,
 and the `weather` skill owns both:
@@ -488,6 +490,32 @@ alert feed is a provider-port follow-up, not a rewrite: add an `alerts` source t
 
 One deployment watches one location. Per-user or multi-city watches need a
 settings surface the console does not have yet.
+
+### Gold price watch
+
+The `gold` skill answers "how much is gold?" and, more importantly, watches for a
+sharp move and pushes an alert to the owner's app. It is deterministic like the
+weather watcher: no model call, one quote every five minutes.
+
+The source is [gold-api.com](https://gold-api.com) `XAU/USD`: no key, current
+price only. The watcher keeps its own samples in `.state/gold.json` because the
+feed has no candles, and it uses the quote's `updatedAt` as the sample time.
+
+A move is 1 % or more against the sample closest to one hour ago, or 2.5 % over
+24 hours; a two-hour cooldown follows any alert, and the message is labelled
+with the move's actual age. The first possible alert needs about 30 minutes of
+samples; a full hour window needs an hour of uptime. Samples persist across a
+restart.
+
+Delivery has two parts: a conversation (`source: gold`,
+`channel: notification`) and a push through the same `Notifier` the
+`notify_user` tool uses. The host resolves the owner — the only active account,
+`cleanup` on this instance — so the model never handles a user id.
+`POST /assistant/gold/check` samples and reports without pushing and without
+moving the schedule; an inspection must not train the owner to ignore alerts.
+
+Configuration, the exact rule table and the limits (USD per ounce only, no tick
+feed, no market calendar) are in [gold.md](./gold.md).
 
 ## 8. Scheduled tasks, managed in conversation
 
@@ -575,7 +603,9 @@ accounts are disabled the local owner is used.
 | POST | `/assistant/memory/distill` | run the distillation now |
 | GET | `/assistant/documents/search?q=` | index-backed search with provenance |
 | GET | `/assistant/weather` | the weather watch's schedule and last result |
-| POST | `/assistant/weather/check` | run the check now, without moving its schedule |
+| POST | `/assistant/weather/check` | run the weather check now, without moving its schedule |
+| GET | `/assistant/gold` | the gold watch's thresholds, schedule and last sample |
+| POST | `/assistant/gold/check` | sample the gold price now and report, without pushing |
 | GET | `/assistant/tasks` | tasks plus persisted next-run state |
 | GET | `/assistant/tasks/runs` | recorded executions, newest first; `task_id`, `limit`, `offset` |
 | POST | `/assistant/tasks/{id}/run` | run a task now, without moving its schedule |
@@ -630,6 +660,17 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+  gold:
+    enabled: true
+    symbol: XAU
+    schedule: every 5m
+    window_minutes: 60
+    threshold_percent: 1.0
+    daily_threshold_percent: 2.5
+    cooldown_minutes: 120
+    history_hours: 48
+    timeout_seconds: 15
+    tick_seconds: 30
   weather:
     enabled: true
     location: 上海
@@ -771,7 +812,10 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
   through the `SearchProvider` port.
 - **Weather data.** The weather watch sends only the configured coordinates and
   timezone to Open-Meteo; it sends no conversation text, file content or
-  identity. A weather notice is stored like any other conversation and can be
+  identity.
+- **Market data.** The gold watch sends only the symbol to gold-api.com; it
+  sends no conversation text, identity or holdings. A push body is a price and
+  a percentage, short enough for a lock screen. A weather notice is stored like any other conversation and can be
   indexed by the local index.
 - **Sync.** The storage directory is under `~/Documents`; if that tree is
   synced, conversations leave the machine through the sync service. This is a
@@ -788,6 +832,7 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
 | A5 | Local file tools, LLM review and confirmed commands | List/read/write under the workspace; non-whitelisted actions pass an LLM review and a later confirmation; audit, review and protected paths | Done |
 | A6 | Dedicated chat engine and skill registry | `winnie-chat` owns the loop/prompt/skills; the assistant only persists; admin lists, inspects and toggles skills | Done |
 | A7 | Default weather watch | Daily forecast check writes an umbrella/clothing notice only when advice changed; the skill exposes the same forecast to chat; admin can switch it off | Done |
+| A8 | Gold price watch with app push | Samples every 5 minutes; a ≥1% hourly or ≥2.5% daily move records a notice and pushes the Winnie app; the skill exposes the quote to chat; admin can switch it off | Done |
 
 Follow-ups after this slice, in order:
 
@@ -837,6 +882,9 @@ and the real storage root:
 | Weather check | `POST /assistant/weather/check` against Open-Meteo | 0.9 s; advisories `rain` and `temperature_drop`; notice message asked for an umbrella and an extra layer; conversation `source: weather`, `channel: weather`, assistant-only first block; `next_run` unchanged |
 | Weather in chat | DeepSeek turn asking about tomorrow | called `weather_forecast`; reply named the 86% probability, 13.4–20 °C, the 6.6 °C drop and Open-Meteo as the source |
 | Weather feature toggle | `PUT /assistant/skills/weather` | removed and restored the tool; state persisted in `skills/skills.json` |
+| Gold price check | `POST /assistant/gold/check` against gold-api.com | 0.75 s; XAU/USD 3,876.40; rules and the first-run "history insufficient" message |
+| Gold in chat | DeepSeek turn asking about the price | called `gold_price`; quoted 3,876.40 and refused to invent a 24-hour change |
+| Gold push wiring | `GET /assistant/gold` after startup | `push: true`; the same `Notifier` used by `notify_user`, which the app's push test already reached for `cleanup` |
 
 The local-tools check used a scripted model rather than a vendor model: the
 confirmation gate is in the tool layer, so the provider does not change the
@@ -866,6 +914,11 @@ result.
 - Should a weather notice respect quiet hours or a separate notification
   channel? The default 07:00 check is meant to be the morning brief; a late
   severe-weather update is currently only sent if a new advisory kind appears.
+- Should the gold thresholds be per-user or editable in the console? Today they
+  are deployment settings shared by the instance; a per-user threshold needs a
+  settings surface the console does not have.
+- Is USD per troy ounce enough, or should the alert also show CNY per gram? The
+  latter needs an FX source and a unit conversion.
 - Should skills be loadable from `SKILL.md` files, or stay as code-registered
   manifests until there is a second consumer? Today they are registered by the
   assistant host; the admin only toggles them.
