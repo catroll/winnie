@@ -70,6 +70,10 @@ meetings:
     base_url: https://openspeech.bytedance.com
     # The model line: volc.seedasr.auc (2.0, current), volc.bigasr.auc (1.0).
     resource_id: volc.seedasr.auc
+    # Streaming 2.0 uses the bidirectional SAUC WebSocket and its own
+    # resource id. The same VOLCENGINE_ASR_API_KEY is sent as X-Api-Key.
+    stream_endpoint: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
+    stream_resource_id: volc.seedasr.sauc.duration
     model_name: bigmodel
     max_inline_mb: 100
     poll_interval_seconds: 2

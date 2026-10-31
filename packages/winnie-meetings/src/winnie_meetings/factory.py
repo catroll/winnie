@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from winnie_meetings.integrations.factory import (
     build_asr_provider,
+    build_realtime_asr_provider,
     build_summarizer,
     build_translator,
 )
@@ -34,6 +35,7 @@ def build_meeting_service(
         llm=llm,
         storage=LocalStorage(meetings_root),
         asr=build_asr_provider(config),
+        realtime_asr=build_realtime_asr_provider(config),
         translator=build_translator(config, llm),
         summarizer=build_summarizer(config, llm),
         note_writer=MeetingNoteWriter(notes_root),

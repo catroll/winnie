@@ -32,11 +32,13 @@ class MeetingRepository:
         user_id: str,
         title: str,
         local_language: str,
+        source: str = "file",
     ) -> Meeting:
         meeting = Meeting(
             user_id=user_id,
             title=title,
             local_language=local_language,
+            source=source,
         )
         self.session.add(meeting)
         await self.session.commit()

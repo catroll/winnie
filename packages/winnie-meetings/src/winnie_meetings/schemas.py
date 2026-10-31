@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class MeetingCreate(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     local_language: str | None = Field(default=None, max_length=16)
+    source: Literal["file", "realtime"] = "file"
 
 
 class MeetingRead(BaseModel):

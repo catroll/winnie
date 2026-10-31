@@ -245,11 +245,14 @@ realtime WS ──► streaming ASR ───┘
 ```
 
 - File mode: ASR returns a full segment list, then the pipeline runs once.
-- Realtime mode: ASR appends segments as they are finalized. Language detection
-  and translation can run incrementally for the live view, but when the meeting
-  ends the same normalization/translation/summarization functions run on the
-  persisted segments. Do not fork the logic into a "live version" and a "final
-  version".
+- Realtime mode (current): the WebSocket sends PCM to streaming ASR and returns
+  provisional captions. The client uploads the same WAV after stop, so the
+  file pipeline still produces the canonical transcript, translation and
+  minutes. This keeps one accuracy path; the cost is a second ASR call per
+  meeting. Persisting live segments and translating them incrementally remains
+  a follow-up, not a second pipeline.
+- Do not fork the normalization/translation/summarization logic into a "live
+  version" and a "final version".
 
 ### 5.2 Language detection and translation rules
 
@@ -328,7 +331,7 @@ All product endpoints live under `/api/v1`; the existing gateway contract under
 | `GET` | `/api/v1/meetings/{id}/minutes` | Structured minutes |
 | `GET` | `/api/v1/meetings/{id}/export?format=markdown\|txt` | Download |
 | `DELETE` | `/api/v1/meetings/{id}` | Delete meeting and purge audio |
-| `WS` | `/api/v1/meetings/{id}/stream` | Realtime audio in, events out (phase 2) |
+| `WS` | `/api/v1/meetings/{id}/stream` | Live PCM in, provisional caption events out; the file pipeline still produces the final transcript |
 
 Auth: accounts are implemented with opaque bearer sessions. Passwords are
 hashed with Argon2id, only a SHA-256 hash of the session token is stored, and
@@ -381,6 +384,12 @@ class Summarizer(Protocol):
   other vendors on the same bilingual recordings before adding a second
   adapter; the follow-up is tracked in [todo.md](./todo.md). Local
   `faster-whisper` is a separate implementation of the same protocol.
+- **Streaming ASR**: `RealtimeASRProvider` is the live equivalent. The
+  Volcengine SAUC 2.0 adapter in `integrations/asr/volcengine_stream.py` opens
+  `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel`, sends 100 ms gzipped
+  PCM frames and returns cumulative captions; the browser-style handshake uses
+  the same `X-Api-Key` and `volc.seedasr.sauc.duration`. It does not write a
+  `usage_records` row yet, so the cost view currently undercounts live audio.
 - **Translation**: an LLM call behind `Translator` is usually good enough for
   meeting text and reuses the same internal model access. The
   `openai_compatible` adapter batches by character count, requests a JSON array
@@ -396,9 +405,11 @@ class Summarizer(Protocol):
   variables (`VOLCENGINE_ASR_API_KEY`, `WINNIE_LLM_API_KEY`), never from YAML
   committed to Git. The Doubao key is a single new-console API key sent as
   `X-Api-Key`; the old APP ID + Access Token pair is not supported.
-- **Cost**: every provider call writes a `usage_records` row (audio seconds,
-  tokens, characters). Provider prices live in config so the estimate can be
-  recomputed. This is the basis of the per-meeting cost view.
+- **Cost**: every file ASR, translation and summarization call writes a
+  `usage_records` row (audio seconds, tokens, characters). The live-caption
+  stream does not, so a realtime meeting is currently billed twice for ASR but
+  only the file pass is recorded. Streaming usage is a follow-up. Provider
+  prices live in config so the estimate can be recomputed.
 
 ## 8. Integration with the existing backend
 
@@ -445,6 +456,8 @@ meetings:
   volcengine:
     base_url: https://openspeech.bytedance.com
     resource_id: volc.seedasr.auc
+    stream_endpoint: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
+    stream_resource_id: volc.seedasr.sauc.duration
     model_name: bigmodel
     max_inline_mb: 100
     poll_interval_seconds: 2
@@ -546,11 +559,15 @@ Implemented MVP flow:
 3. Poll meeting status; the detail screen waits for `ready`.
 4. Show the transcript with original and translation, then the minutes.
 
+The recorder creates the meeting first, opens the live-caption WebSocket, and
+shows provisional text while recording. On stop it uploads the WAV and runs the
+file pipeline, which replaces the provisional text with the final transcript.
+A failed stream is therefore a caption failure, not a lost recording.
+
 Deferred and tracked in [todo.md](./todo.md): foreground-service recording and
 a persistent notification, `WorkManager` upload retry, offline cache,
-export/share, speaker labels, and realtime streaming. Do not build realtime
-streaming before the file-first flow is validated on a real device: the
-foreground-service + WebSocket work is where the schedule usually breaks.
+export/share, speaker labels, and reconnecting a dropped live stream. The
+current live stream stops if the activity is destroyed.
 
 ## 10. Delivery plan
 
@@ -581,9 +598,11 @@ meetings to the current `main.py` would make the god module worse.
 
 ### Phase 3 — realtime
 
-- WebSocket endpoint; streaming ASR; incremental translation.
-- Android foreground-service streaming and reconnect.
-- Final pass reuses the phase-1/2 pipeline unchanged.
+- WebSocket endpoint and Doubao SAUC 2.0 streaming ASR adapter.
+- Android live captions while recording; final pass reuses the phase-1/2
+  pipeline unchanged.
+- Remaining: foreground-service streaming, reconnect, and incremental
+  translation of live segments.
 
 ### Phase 4 — scale and polish
 
@@ -709,9 +728,9 @@ Deliberate deferrals and why:
   recordings; the chunked map-reduce merge quality is not yet measured.
 - **Other ASR vendors**: Aliyun, local Whisper and a bilingual accuracy
   benchmark are deferred until the Doubao path has run on real recordings.
-- **Android and realtime**: the Android MVP runs the file-first flow (sign in,
-  record, upload, transcript, minutes) and is verified against the local backend
-  with fake providers; a physical-device run with a live ASR key is pending.
-  Realtime streaming is not started; file-first remains the main path.
+- **Android and realtime**: the backend streaming path is validated against
+  the live Doubao endpoint. The Android MVP now records with live captions and
+  still runs the file-first final pass; a physical-device run with a live ASR
+  key is pending. Foreground-service recording and reconnect are still open.
 - **Knowledge Git write**: the note writer writes Markdown to a local
   directory; the Git commit/versioning layer is still the knowledge-base task.

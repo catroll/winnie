@@ -12,10 +12,14 @@ import os
 from winnie_core.config import LLMConfig
 from winnie_meetings.config import MeetingsConfig
 from winnie_meetings.integrations.asr.base import ASRProvider
-from winnie_meetings.integrations.asr.fake import FakeASRProvider
+from winnie_meetings.integrations.asr.fake import FakeASRProvider, FakeRealtimeASR
+from winnie_meetings.integrations.asr.realtime import RealtimeASRProvider
 from winnie_meetings.integrations.asr.volcengine import (
     API_KEY_ENV,
     VolcengineASRProvider,
+)
+from winnie_meetings.integrations.asr.volcengine_stream import (
+    VolcengineRealtimeASR,
 )
 from winnie_core.llm.factory import build_llm
 from winnie_meetings.integrations.summarize.base import Summarizer
@@ -43,6 +47,24 @@ def build_asr_provider(config: MeetingsConfig) -> ASRProvider:
         )
     raise ValueError(
         f"unsupported ASR provider {name!r}; implement it under "
+        "winnie_meetings/integrations/asr/ and register it here"
+    )
+
+
+def build_realtime_asr_provider(config: MeetingsConfig) -> RealtimeASRProvider:
+    name = config.asr_provider
+    if name == "fake":
+        return FakeRealtimeASR()
+    if name == "volcengine":
+        asr = config.volcengine
+        return VolcengineRealtimeASR(
+            api_key=os.environ.get(API_KEY_ENV, ""),
+            endpoint=asr.stream_endpoint,
+            resource_id=asr.stream_resource_id,
+            model_name=asr.model_name,
+        )
+    raise ValueError(
+        f"unsupported realtime ASR provider {name!r}; implement it under "
         "winnie_meetings/integrations/asr/ and register it here"
     )
 

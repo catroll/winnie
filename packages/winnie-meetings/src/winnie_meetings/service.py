@@ -11,6 +11,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from winnie_meetings.integrations.asr.base import ASRProvider
+from winnie_meetings.integrations.asr.realtime import RealtimeASRProvider
 from winnie_meetings.integrations.summarize.base import (
     MinutesDraft,
     Summarizer,
@@ -60,6 +61,7 @@ class MeetingService:
         llm: LLMConfig,
         storage: Storage,
         asr: ASRProvider,
+        realtime_asr: RealtimeASRProvider,
         translator: Translator,
         summarizer: Summarizer,
         note_writer: MeetingNoteWriter,
@@ -70,6 +72,7 @@ class MeetingService:
         self.llm = llm
         self.storage = storage
         self.asr = asr
+        self.realtime_asr = realtime_asr
         self.translator = translator
         self.summarizer = summarizer
         self.note_writer = note_writer
@@ -84,6 +87,7 @@ class MeetingService:
         user_id: str,
         title: str,
         local_language: str | None = None,
+        source: str = "file",
     ) -> Meeting:
         language = local_language or self.config.local_language
         async with self.session_factory() as session:
@@ -92,6 +96,7 @@ class MeetingService:
                 user_id=user_id,
                 title=title,
                 local_language=language,
+                source=source,
             )
 
     async def list_meetings(

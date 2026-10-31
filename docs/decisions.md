@@ -67,3 +67,16 @@ tracked in [todo](../docs/todo.md).
 **Interface language.** English. The user writes Chinese, but the project rule
 is English for all artifacts, including app strings; localisation is a later
 step, not a reason to mix languages now.
+
+**Live captions.** The recorder creates the meeting before it starts and opens
+`WS /api/v1/meetings/{id}/stream`; the server proxies 16 kHz mono PCM to
+Volcengine SAUC 2.0 and returns cumulative text. The vendor key stays on the
+server, and the Android app never calls the vendor. The WebSocket is not a
+second processing pipeline: stopping still uploads the WAV and runs the file
+ASR, translation and minutes path, which replaces the provisional captions.
+That costs a second ASR pass per meeting, but it keeps one canonical
+transcript, reuses the validated pipeline, and makes a dropped stream a caption
+failure rather than a lost recording. Persisting live segments would remove the
+second call and is a deliberate follow-up, not an oversight. Live captions are
+also the reason the meeting row is created at record start; discarding deletes
+that draft, and a process death can leave an empty draft until recovery lands.

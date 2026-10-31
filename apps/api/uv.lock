@@ -1609,6 +1609,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-multipart" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "websockets" },
     { name = "winnie-core" },
     { name = "winnie-knowledge" },
 ]
@@ -1620,6 +1621,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.0" },
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
+    { name = "websockets", specifier = ">=17.0" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
 ]

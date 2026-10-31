@@ -12,6 +12,9 @@ class VolcengineASRConfig(BaseModel):
 
     base_url: str = "https://openspeech.bytedance.com"
     resource_id: str = "volc.seedasr.auc"
+    # Streaming uses a different product line and WebSocket endpoint.
+    stream_endpoint: str = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
+    stream_resource_id: str = "volc.seedasr.sauc.duration"
     model_name: str = "bigmodel"
     max_inline_mb: int = Field(default=100, ge=1, le=500)
     poll_interval_seconds: float = Field(default=2.0, ge=0.0, le=60.0)

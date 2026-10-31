@@ -5,9 +5,9 @@ enough to start without re-reading the design.
 
 ## P0 — first real meeting and bilingual fixture
 
-> The ASR credential is supplied to the Android workstream. The API process
-> still needs `VOLCENGINE_ASR_API_KEY` in its environment for the live smoke
-> test; this shell did not inherit it.
+> `VOLCENGINE_ASR_API_KEY` is configured in the gitignored `apps/api/.env`
+> for this checkout. Restart the API after changing it (`make restart`):
+> `uvicorn --reload` watches Python files, not the environment file.
 
 - [x] Verify the new-console API-key auth against the live endpoint: a valid
       `X-Api-Key` is accepted, while a bogus one returns
@@ -133,8 +133,12 @@ enough to start without re-reading the design.
 - [ ] Run the Android MVP on a phone against a real Doubao key and fix the
       device-specific issues (mic permission UX, long-recording stability,
       cleartext/TLS configuration).
-- [ ] Realtime WebSocket ASR and incremental translation, reusing the final
-      file-first pipeline for the finished recording.
+- [x] Realtime WebSocket ASR for live captions, reusing the final file-first
+      pipeline for the finished recording. The backend proxies PCM to Doubao
+      SAUC 2.0 over `/api/v1/meetings/{id}/stream`; the Android recorder shows
+      provisional captions and still uploads the WAV for the canonical
+      transcript. Remaining: foreground-service streaming, reconnect, streaming
+      usage records, and incremental translation.
 - [ ] Speaker diarization and per-speaker labels in transcript/minutes.
 - [ ] Cross-meeting semantic search over knowledge notes (not raw transcripts).
 
