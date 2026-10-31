@@ -5,6 +5,8 @@ import type {
   AssistantChatResponse,
   AssistantConversation,
   AssistantConversationList,
+  AssistantSkill,
+  AssistantSkillList,
   AssistantStatus,
   AssistantTaskList,
   AssistantTaskRunList,
@@ -252,6 +254,17 @@ export const api = {
 
   assistantStatus(): Promise<AssistantStatus> {
     return request<AssistantStatus>('/api/v1/assistant/status');
+  },
+
+  assistantSkills(): Promise<AssistantSkillList> {
+    return request<AssistantSkillList>('/api/v1/assistant/skills');
+  },
+
+  setAssistantSkill(name: string, enabled: boolean): Promise<AssistantSkill> {
+    return request<AssistantSkill>(
+      `/api/v1/assistant/skills/${encodeURIComponent(name)}`,
+      { method: 'PUT', body: { enabled } },
+    );
   },
 
   assistantTaskRuns(params: {

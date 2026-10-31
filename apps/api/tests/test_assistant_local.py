@@ -10,9 +10,17 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-from winnie_assistant.agent import AssistantAgent, build_system_prompt
-from winnie_assistant.config import AssistantConfig
+from winnie_chat import (
+    ChatEngine,
+    ChatTurn,
+    SkillManifest,
+    SkillRegistry,
+    build_system_prompt,
+)
+
+from winnie_assistant.agent import AssistantAgent
 from winnie_assistant.conversations import ConversationStore
+from winnie_assistant.skills import LOCAL, ToolboxSkill
 from winnie_local import (
     AuditLog,
     CommandRunner,
@@ -67,6 +75,33 @@ class _AllowReviewer:
         self.calls += 1
         self.last_prompt = user
         return '{"allow": true, "risk": "low", "reason": "test action"}'
+
+
+def _engine(toolbox: ToolBox, model) -> ChatEngine:
+    manifest = SkillManifest(
+        name="local",
+        title="Local files and commands",
+        description="test",
+        instructions=LOCAL.instructions,
+        tools=(
+            "list_files",
+            "read_file",
+            "write_file",
+            "run_command",
+            "confirm_action",
+        ),
+        scheduled_safe=False,
+    )
+    registry = SkillRegistry(
+        [ToolboxSkill(manifest, toolbox, allow_local=True)],
+        state_path=None,
+    )
+    return ChatEngine(
+        registry=registry,
+        model=model,
+        max_tool_rounds=4,
+        max_tool_output_chars=4_000,
+    )
 
 
 def _local(
@@ -380,25 +415,43 @@ def test_confirmation_phrases_are_short_and_explicit() -> None:
     assert not is_confirmation("yes please delete everything")
 
 
+class _LocalPromptSkill:
+    manifest = SkillManifest(
+        name="local",
+        title="Local tools",
+        description="test",
+        instructions=LOCAL.instructions,
+        tools=("run_command",),
+    )
+    available = True
+    unavailable_reason = ""
+
+    def schemas(self):
+        return []
+
+
 def test_system_prompt_mentions_local_rules_and_pending() -> None:
-    prompt = build_system_prompt(
-        digest="",
+    turn = ChatTurn(
+        conversation_id="c",
+        user_message="run it",
+        history=[],
         now=datetime(2026, 11, 1, 3, 0, tzinfo=timezone.utc),
-        timezone=ZoneInfo("UTC"),
-        scheduled=False,
-        local_tools=True,
+        timezone="UTC",
         pending="run_command abc123: run echo hi",
     )
+    prompt = build_system_prompt(turn, [_LocalPromptSkill()])
     assert "confirm_action" in prompt
     assert "Never put file contents" in prompt
     assert "abc123" in prompt
-    task = build_system_prompt(
-        digest="",
+    scheduled = ChatTurn(
+        conversation_id="c",
+        user_message="brief",
+        history=[],
         now=datetime(2026, 11, 1, 3, 0, tzinfo=timezone.utc),
-        timezone=ZoneInfo("UTC"),
+        timezone="UTC",
         scheduled=True,
-        local_tools=False,
     )
+    task = build_system_prompt(scheduled, [])
     assert "Local file and command tools are not available" in task
 
 
@@ -471,8 +524,8 @@ async def test_agent_runs_a_command_only_after_the_confirmation_turn(
         store=store,
         memory=None,
         toolbox=toolbox,
-        model=model,
-        config=AssistantConfig(),
+        engine=_engine(toolbox, model),
+        max_history_messages=30,
         timezone=ZoneInfo("UTC"),
     )
 
@@ -521,8 +574,8 @@ async def test_task_run_never_gets_local_tools(tmp_path: Path) -> None:
         store=store,
         memory=None,
         toolbox=toolbox,
-        model=_OneShotToolModel(),
-        config=AssistantConfig(),
+        engine=_engine(toolbox, _OneShotToolModel()),
+        max_history_messages=30,
         timezone=ZoneInfo("UTC"),
     )
 
@@ -531,5 +584,5 @@ async def test_task_run_never_gets_local_tools(tmp_path: Path) -> None:
     assert conversation.source == "task"
     tool_blocks = [message for message in conversation.messages if message.role == "tool"]
     assert tool_blocks and tool_blocks[0].text.startswith("ERROR:")
-    assert "unavailable in a task run" in tool_blocks[0].text
+    assert "not enabled" in tool_blocks[0].text
     assert not (tmp_path / "state" / "exec.jsonl").exists()

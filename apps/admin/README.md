@@ -19,6 +19,7 @@ not store vendor API keys.
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
+| **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
 | **LLM usage** | Recorded model calls with token classes, latency, status and cost; breakdowns by day, feature and model; provider balances with a refresh; the configured price table |
 | **AI providers** | Add, edit and delete vendor integrations (OpenAI-compatible, Anthropic, Volcengine ASR, deterministic fake); mark an OpenAI/Anthropic provider as a gateway route or internal-only; choose the provider and model for the assistant, transcription, translation and minutes; see gateway paths, internal-only status and whether the environment key is set |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
@@ -59,6 +60,21 @@ trace.
 The chat is available when `assistant.enabled` is true in
 `apps/api/config.yaml`; otherwise the history request explains why it cannot
 load.
+
+## Skills
+
+`/skills` lists the skill registry served by the assistant. A skill is a named
+bundle of tools, prompt instructions and permissions: web search, the document
+index, long-term memory, scheduled tasks, local files and commands, and the
+always-on core. The page shows which service backs each skill and whether it is
+available; a switch calls `PUT /api/v1/assistant/skills/{name}` and persists the
+choice in `skills/skills.json` under the assistant root.
+
+A disabled skill is removed from the model's tool schemas and its prompt
+instructions are no longer added, so the next chat turn cannot use it. The
+local-execution skill still goes through the LLM review, whitelist and
+confirmation flow; disabling the skill only removes it from chat. The core
+skill cannot be disabled.
 
 ## AI providers
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
+from winnie_chat import SkillView
 from winnie_core.auth.dependencies import get_user_id
 from winnie_assistant.agent import AssistantModelError
 from winnie_assistant.conversations import (
@@ -27,6 +28,9 @@ from winnie_assistant.schemas import (
     MemoryFileRead,
     MemoryListRead,
     MessageRead,
+    SkillListRead,
+    SkillToggleRequest,
+    SkillViewRead,
     StatusRead,
     TaskListRead,
     TaskRead,
@@ -147,6 +151,46 @@ async def get_conversation(
             for message in conversation.messages
         ],
     )
+
+
+def _skill_view(view: SkillView) -> SkillViewRead:
+    return SkillViewRead(
+        name=view.name,
+        title=view.title,
+        description=view.description,
+        instructions=view.instructions,
+        tools=list(view.tools),
+        permissions=list(view.permissions),
+        enabled=view.enabled,
+        available=view.available,
+        unavailable_reason=view.unavailable_reason,
+        toggleable=view.toggleable,
+        scheduled_safe=view.scheduled_safe,
+    )
+
+
+@router.get("/skills", response_model=SkillListRead)
+async def list_skills(
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> SkillListRead:
+    return SkillListRead(skills=[_skill_view(view) for view in service.skills()])
+
+
+@router.put("/skills/{name}", response_model=SkillViewRead)
+async def set_skill(
+    name: str,
+    payload: SkillToggleRequest,
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> SkillViewRead:
+    try:
+        view = service.set_skill_enabled(name, payload.enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"unknown skill: {name}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _skill_view(view)
 
 
 @router.get("/memory", response_model=MemoryListRead)

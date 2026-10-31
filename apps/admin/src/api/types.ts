@@ -511,3 +511,24 @@ export interface UsageBalanceList {
   ttl_seconds: number;
   balances: UsageBalance[];
 }
+
+
+/** Chat skills: a bundle of tools, prompt instructions and permissions. */
+
+export interface AssistantSkill {
+  name: string;
+  title: string;
+  description: string;
+  instructions: string;
+  tools: string[];
+  permissions: string[];
+  enabled: boolean;
+  available: boolean;
+  unavailable_reason: string;
+  toggleable: boolean;
+  scheduled_safe: boolean;
+}
+
+export interface AssistantSkillList {
+  skills: AssistantSkill[];
+}

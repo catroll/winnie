@@ -12,7 +12,9 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from winnie_assistant.agent import AssistantAgent, ChatModel
+from winnie_chat import ChatModel, SkillRegistry, SkillView
+
+from winnie_assistant.agent import AssistantAgent
 from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
 from winnie_assistant.index_client import IndexClient, IndexHit
@@ -42,6 +44,7 @@ class AssistantService:
         builder: MemoryBuilder | None,
         agent: AssistantAgent,
         scheduler: AssistantScheduler,
+        registry: SkillRegistry,
         model: ChatModel,
         model_name: str,
         search: SearchProvider,
@@ -56,6 +59,7 @@ class AssistantService:
         self.builder = builder
         self.agent = agent
         self.scheduler = scheduler
+        self.registry = registry
         self.model = model
         self.model_name = model_name
         self.search = search
@@ -112,6 +116,14 @@ class AssistantService:
         if self.builder is not None and self.config.memory.auto_distill:
             self._schedule_distill()
         return reply
+
+    # -- skills ----------------------------------------------------------
+
+    def skills(self) -> list[SkillView]:
+        return self.registry.views()
+
+    def set_skill_enabled(self, name: str, enabled: bool) -> SkillView:
+        return self.registry.set_enabled(name, enabled)
 
     # -- local documents -------------------------------------------------
 
@@ -191,6 +203,7 @@ class AssistantService:
             "timezone": self.timezone.key,
             "root": str(self.root),
             "conversations": self.store.count(),
+            "skills": len(self.registry.views()),
             "memory": {
                 "enabled": self.memory is not None,
                 "entries": memory_entries,

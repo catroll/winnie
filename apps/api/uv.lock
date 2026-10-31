@@ -1515,6 +1515,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
     { name = "winnie-assistant" },
+    { name = "winnie-chat" },
     { name = "winnie-core" },
     { name = "winnie-gateway" },
     { name = "winnie-knowledge" },
@@ -1543,6 +1544,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.0" },
     { name = "winnie-assistant", editable = "../../packages/winnie-assistant" },
+    { name = "winnie-chat", editable = "../../packages/winnie-chat" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-gateway", editable = "../../packages/winnie-gateway" },
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
@@ -1565,6 +1567,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "winnie-chat" },
     { name = "winnie-core" },
     { name = "winnie-local" },
 ]
@@ -1575,9 +1578,21 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pydantic", specifier = ">=2.13.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "winnie-chat", editable = "../../packages/winnie-chat" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-local", editable = "../../packages/winnie-local" },
 ]
+
+[[package]]
+name = "winnie-chat"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-chat" }
+dependencies = [
+    { name = "winnie-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "winnie-core", editable = "../../packages/winnie-core" }]
 
 [[package]]
 name = "winnie-core"

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
+from winnie_chat import ChatEngine, SkillRegistry
 from winnie_assistant.agent import AssistantAgent, ChatModel
 from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
@@ -30,6 +31,7 @@ from winnie_assistant.scheduler import (
 )
 from winnie_assistant.search import BingRSSSearch, FakeSearchProvider, SearchProvider
 from winnie_assistant.service import AssistantService
+from winnie_assistant.skills import build_skills
 from winnie_assistant.tools import ToolBox
 
 
@@ -117,12 +119,22 @@ def build_assistant_service(
         max_output_chars=config.max_tool_output_chars,
         local=local,
     )
+    registry = SkillRegistry(
+        build_skills(toolbox),
+        state_path=root / "skills" / "skills.json",
+    )
+    engine = ChatEngine(
+        registry=registry,
+        model=resolved_model,
+        max_tool_rounds=config.max_tool_rounds,
+        max_tool_output_chars=config.max_tool_output_chars,
+    )
     agent = AssistantAgent(
         store=store,
         memory=memory,
         toolbox=toolbox,
-        model=resolved_model,
-        config=config,
+        engine=engine,
+        max_history_messages=config.max_history_messages,
         timezone=timezone,
         clock=clock,
     )
@@ -134,6 +146,7 @@ def build_assistant_service(
         builder=builder,
         agent=agent,
         scheduler=scheduler,
+        registry=registry,
         model=resolved_model,
         model_name=resolved_name,
         search=search,
@@ -165,6 +178,7 @@ def _build_workspace(config: AssistantConfig, root: Path) -> Workspace | None:
         root / "profile",
         root / ".state",
         root / "tasks",
+        root / "skills",
         *[
             _path_from(workspace_root, value)
             for value in config.workspace.protected

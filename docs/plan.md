@@ -74,12 +74,12 @@ Success for the current phase:
 
 | Layer | Capability | Where it lives | Status |
 |---|---|---|---|
-| Assistant | Chat, web search, scheduled tasks, memory from local files, opt-in local file/command tools | `winnie-assistant` | Core done |
+| Assistant | Chat engine (`winnie-chat`) with web, document index, memory, scheduled-task and local-execution skills | `winnie-assistant` | Core done |
 | Knowledge base | Markdown in Git: browse, edit, classify, version, search | `winnie-knowledge` note sink only | Partial |
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: assistant chat and conversation history, meetings, transcripts/minutes, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
 | Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
@@ -240,6 +240,9 @@ Working:
 - Run history: every recorded execution, newest first, filterable by task and
   paged 25 at a time, with start time, duration, result, conversation id and both
   execution and delivery errors.
+- Skills: the registered chat skills with title, description, tools,
+  permissions, prompt instructions, availability and scheduled-run safety. The
+  switch calls `PUT /assistant/skills/{name}`; the core skill is always on.
 - AI providers: add, edit and delete integrations (OpenAI-compatible, Anthropic,
   Volcengine ASR and the deterministic fake), and choose the provider and model
   for each AI-using feature. This registry is the only model choice;
@@ -338,9 +341,14 @@ Open:
 
 Working:
 
-- `POST /api/v1/assistant/chat` runs a bounded tool loop; the page at
-  `/api/v1/assistant/ui` is phone-sized and needs no build step, and the console
-  at `/chat` is the desktop surface.
+- `POST /api/v1/assistant/chat` runs a bounded tool loop in
+  `packages/winnie-chat`; the page at `/api/v1/assistant/ui` is phone-sized and
+  needs no build step, and the console at `/chat` is the desktop surface.
+- The chat engine selects enabled skills and builds the system prompt from their
+  instructions. Six skills are registered: core, web, documents (the local
+  index), memory, tasks and local (files/commands). The registry persists
+  enable/disable state in `skills/skills.json`; the assistant only creates the
+  conversation and records the blocks.
 - Local tools are opt-in and live in `packages/winnie-local`:
   `list_files`, `read_file`, `write_file`, `run_command` and `confirm_action`.
   File paths are confined to `assistant.workspace.root` and protected paths;
@@ -384,7 +392,7 @@ Verified:
 - The `winnie-local` suite covers the whitelist policy (paths, git options,
   path-qualified executables), reviewer JSON/timeout/error handling, redaction,
   whitelisted bypass, review allow/deny, and the fail-closed disabled path.
-- `180 passed` in the backend suite.
+- `199 passed` in the backend suite.
 
 Open:
 
@@ -404,7 +412,7 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **180 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **199 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -422,6 +430,8 @@ Open:
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
 | Local assistant tools | Disposable service with a scripted model | `read_file`/`write_file`; command pending until the next "确认" turn; file and command audit lines |
 | Local LLM review | `winnie-local` test suite | Whitelisted reads skipped the reviewer; non-whitelisted write/command allowed or denied; malformed JSON, timeout and provider errors denied; denied actions changed nothing |
+| Chat engine and skills | `winnie-chat` and API tests | Registry persistence and duplicate rejection; enabled-only schemas and prompt; disabled-tool rejection; scheduled filtering; skills list/toggle/persistence |
+| Admin skills page | TypeScript/Vite build + Firefox production preview | Page typechecks and builds; six skills listed with instructions; unavailable index and always-on core; web toggle persisted; light/dark/mobile |
 | Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Fresh seed bound model features to `fake`; created `ui-llm` through the modal, rebound `assistant.chat` and the API reported `source=admin`, deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
 | AI registry v1 migration | `pytest` against a hand-written v1 file | Split into `deepseek-openai` + `internal-llm`, cleared the route key/model, repointed `assistant.chat`, rewrote `version: 2` |
 | Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |

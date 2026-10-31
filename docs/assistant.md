@@ -86,7 +86,9 @@ Consequences that matter:
         ~/Documents/Mine/Winnie  ◄── indexed by ───────┘
 ```
 
-The capability imports only `winnie_core`; the host composes it. The index is a
+The model/tool loop and the skill registry are implemented in
+`winnie-chat`; local side effects are in `winnie-local`. The assistant imports
+those shared layers and `winnie-core`; the host composes it. The index is a
 separate loopback daemon (`packages/winnie-index`, `127.0.0.1:8790`) because the
 same catalog also serves other agents through MCP.
 
@@ -259,37 +261,73 @@ the assistant's memory hits `Winnie/`. The prompt tells the model that paths
 under `Winnie/` are its own files, and every hit carries its path so the
 distinction stays visible.
 
-## 6. Agent loop and tools
+## 6. Chat engine, skills and tools
+
+The model/tool loop does not live in the assistant capability. It lives in
+[`packages/winnie-chat`](../packages/winnie-chat/README.md): the chat engine
+selects the enabled skills, builds the system prompt from their instructions,
+offers their tool schemas, runs the bounded loop and dispatches each tool call
+to its owning skill. The assistant's `AssistantAgent` only creates the
+conversation, records the user/tool/assistant messages and stores the reply.
 
 One turn is:
 
-1. Append the user message to the conversation file.
-2. Build the message list: system prompt (persona, current time, pinned memory
-   digest) plus the last `max_history_messages` user/assistant messages from the
-   file.
-3. Call the chat model with the tool schemas.
-4. While the model returns tool calls and the round budget is not exhausted:
-   execute the tools, append their outputs as tool blocks and as `tool`
-   messages, call the model again.
-5. Append the final assistant text and return it.
+1. The assistant appends the user message and gives `winnie-chat` the history,
+   time, memory digest and any pending confirmation.
+2. The chat engine asks the `SkillRegistry` for the skills enabled for this
+   turn (and allowed in a scheduled run), then builds the system prompt and the
+   tool schemas from those skills.
+3. It calls the model, executes returned tool calls through the owning skill,
+   and repeats while the round budget is not exhausted.
+4. Each tool output is recorded as a `tool:` block; the final assistant text is
+   appended and returned.
 
-Tools:
+Skills are named bundles of tools, prompt instructions, permissions and policy.
 
-| Tool | Input | Output |
+| Skill | Tools | Where the work happens |
 |---|---|---|
-| `web_search` | `query`, `limit?` | numbered title / URL / snippet list |
-| `fetch_page` | `url` | readable text, truncated |
-| `search_documents` | `query`, `limit?` | `path:line-range`, heading, snippet, mtime |
-| `read_document` | `path`, `from_line?`, `lines?` | the current text with a line header |
-| `remember` | `category`, `text` | confirmation, or an error for an unknown category |
-| `schedule_task` | `title`, `schedule`, `prompt`, `webhook?` | task id and next run |
-| `list_tasks` | — | id, schedule, next run, last status |
-| `cancel_task` | `id` | confirmation or "no such task" |
-| `list_files` | `path?` | directory entries with sizes and `[protected]` / `[credential]` / `[outside]` markers |
-| `read_file` | `path`, `start_line?`, `max_lines?` | text with its line range and sha256 |
-| `write_file` | `path`, `content`, `mode?`, `expected_sha256?` | write summary, or a `PENDING` id |
-| `run_command` | `argv`, `cwd?` | command output, or a `PENDING` id |
-| `confirm_action` | `pending_id` | executes the pending write/command after a later confirmation |
+| `core` | — | Persona and general rules; always on, not toggleable |
+| `web` | `web_search`, `fetch_page` | Bing RSS and the SSRF-guarded page fetcher |
+| `documents` | `search_documents`, `read_document` | the `winnie-index` daemon |
+| `memory` | `remember` | `profile/*.md` |
+| `tasks` | `schedule_task`, `list_tasks`, `cancel_task` | `tasks/tasks.json`; chat only |
+| `local` | `list_files`, `read_file`, `write_file`, `run_command`, `confirm_action` | `winnie-local`, with review, whitelist, confirmation and audit; chat only |
+
+Tools and their inputs:
+
+| Skill | Tool | Input | Output |
+|---|---|---|---|
+| web | `web_search` | `query`, `limit?` | numbered title / URL / snippet list |
+| web | `fetch_page` | `url` | readable text, truncated |
+| documents | `search_documents` | `query`, `limit?` | `path:line-range`, heading, snippet, mtime |
+| documents | `read_document` | `path`, `from_line?`, `lines?` | the current text with a line header |
+| memory | `remember` | `category`, `text` | confirmation, or an error for an unknown category |
+| tasks | `schedule_task` | `title`, `schedule`, `prompt`, `webhook?` | task id and next run |
+| tasks | `list_tasks` | — | id, schedule, next run, last status |
+| tasks | `cancel_task` | `id` | confirmation or "no such task" |
+| local | `list_files` | `path?` | directory entries with sizes and `[protected]` / `[credential]` / `[outside]` markers |
+| local | `read_file` | `path`, `start_line?`, `max_lines?` | text with its line range and sha256 |
+| local | `write_file` | `path`, `content`, `mode?`, `expected_sha256?` | write summary, or a `PENDING` id |
+| local | `run_command` | `argv`, `cwd?` | command output, or a `PENDING` id |
+| local | `confirm_action` | `pending_id` | executes the pending write/command after a later confirmation |
+
+### Skill registry and admin
+
+A `SkillManifest` declares the name, title, description, instructions, tools,
+permissions, whether the skill is safe in scheduled task runs, and whether it is
+toggleable. `SkillRegistry` owns the enable/disable state in
+`skills/skills.json` under the assistant root, rejects duplicate tool names,
+filters unavailable and scheduled-unsafe skills, and resolves a tool name to its
+owner. Disabling a skill removes its tools from the schema list **and** its
+instructions from the system prompt, so the model neither sees the tool nor is
+told to use it.
+
+The console's `/skills` page reads the registry through
+`GET /api/v1/assistant/skills` and toggles a skill through
+`PUT /api/v1/assistant/skills/{name}`. It shows title, description, tools,
+permissions, availability (for example the index daemon being off), scheduled-run
+safety and the full prompt instructions. The `core` skill is always on. A
+disabled skill stays listed so the owner can see what is off.
 
 Bounds and failure behaviour:
 
@@ -341,10 +379,12 @@ assistant.
 ### Why not LangGraph yet
 
 `DESIGN.md` names LangGraph for orchestration. This slice is a single-agent,
-two-to-four-round tool loop with a fixed tool set; a graph framework would add a
+two-to-four-round tool loop with a skill registry; a graph framework would add a
 dependency and hide the trace that is currently stored as conversation blocks.
-The agent is behind an `AssistantAgent` seam, so a LangGraph runner can replace
-the loop when there are real branches (planner, subagents, retries by step).
+The loop is behind `winnie_chat.ChatEngine`, so a LangGraph runner can replace
+it when there are real branches (planner, subagents, retries by step). Moving
+the loop out of the assistant is also what makes "chat" a module rather than a
+side effect of the assistant's tool code.
 
 ## 7. Scheduled tasks, managed in conversation
 
@@ -426,6 +466,8 @@ accounts are disabled the local owner is used.
 | POST | `/assistant/chat` | send `{message, conversation_id?, channel?}`, get the reply |
 | GET | `/assistant/conversations` | recent conversations, newest first; `limit`, `offset`, `channel` |
 | GET | `/assistant/conversations/{id}` | full transcript (tool blocks included) |
+| GET | `/assistant/skills` | registered skills with enabled/available state, tools, permissions and instructions |
+| PUT | `/assistant/skills/{name}` | enable or disable one skill; body `{enabled: bool}` |
 | GET | `/assistant/memory` | profile files with entry counts and the digest |
 | POST | `/assistant/memory/distill` | run the distillation now |
 | GET | `/assistant/documents/search?q=` | index-backed search with provenance |
@@ -527,6 +569,13 @@ repository-configured textconv/external-diff helpers, so they are reviewed by
 default. Adding a write command or a shell here removes its review; the human
 confirmation (if enabled) still applies.
 
+Skills are not configuration. Their enable/disable state is
+`skills/skills.json` under the assistant root, written by the console; the
+services behind a skill (index, local execution, tasks, memory) are still
+configured by the blocks above. A skill whose service is off is shown as
+unavailable in the console and is not offered to the model; the core skill has
+no service and is always on.
+
 `assistant.index` is the capability's view of the daemon. The host also has a
 top-level `index` block for the console proxy; they are deliberately separate so
 hiding the console page does not break the assistant's recall.
@@ -581,6 +630,15 @@ binds `assistant.chat` to `fake` until a real provider is added. See
 - **Review data leaves the process.** The review sends the user's current
   message and a bounded, redacted action summary/preview to the model provider.
   Do not use a remote review model for files that must never leave the machine.
+- **Skill toggles are an admin control.** Disabling a skill removes its tools
+  and prompt instructions from the next turn; it is not a security boundary
+  against a request that the model would otherwise make with another skill. The
+  local skill still delegates to `winnie-local`, so disabling it is not required
+  for the review/whitelist/confirmation controls to apply. The core skill cannot
+  be disabled, and the admin routes use the same bearer session as the console.
+- **Skills are code-registered today.** There is no arbitrary plugin loading,
+  no user-supplied tool code, and no file-based skill discovery in this slice;
+  the registry is a fixed set composed by the assistant host.
 - **Audit and backups.** `files.jsonl` and `exec.jsonl` under `.state/` record
   the path/argv, exit code, duration and hashes, not file contents or command
   output. Overwrites and appends copy the old file to `.state/backups/` first.
@@ -604,6 +662,7 @@ binds `assistant.chat` to `fake` until a real provider is added. See
 | A3 | Conversation-managed tasks | A task is created by chat, persisted, run and cancelled | Done |
 | A4 | Chat page, docs, verification | Phone-sized page sends and renders; suite passes | Done |
 | A5 | Local file tools, LLM review and confirmed commands | List/read/write under the workspace; non-whitelisted actions pass an LLM review and a later confirmation; audit, review and protected paths | Done |
+| A6 | Dedicated chat engine and skill registry | `winnie-chat` owns the loop/prompt/skills; the assistant only persists; admin lists, inspects and toggles skills | Done |
 
 Follow-ups after this slice, in order:
 
@@ -648,6 +707,8 @@ and the real storage root:
 | Console chat | Firefox against a disposable API and assistant root: login, new chat, four-channel history, channel filter, task record read-only, tool trace, light/dark and mobile with no horizontal overflow |
 | Local tools | Disposable service with a scripted model: `read_file`/`write_file` worked; a command stayed pending until the next "确认" turn; the file and command audit lines were written |
 | Local review | Scripted reviewer in the test suite | Whitelisted reads skipped the reviewer; a non-whitelisted write/command was allowed or denied by the reviewer; a denied action changed nothing; malformed JSON, timeout and review errors denied |
+| Chat engine and skills | `winnie-chat` and API tests | Registry persistence/duplicates/filtering; enabled-only schemas and instructions; disabled-tool rejection; skills list/toggle/persistence |
+| Admin skills page | Firefox production preview | Six skills listed with tools/permissions/instructions; unavailable document index shown; core always on; web toggled off and on with persistence; light/dark/mobile with no horizontal overflow |
 
 The local-tools check used a scripted model rather than a vendor model: the
 confirmation gate is in the tool layer, so the provider does not change the
@@ -671,6 +732,9 @@ result.
 - Which read-only commands belong on the default whitelist? The current batch is
   deliberately narrow; `git diff`/`log`/`show` are reviewed because a
   repository can configure helpers that execute.
+- Should skills be loadable from `SKILL.md` files, or stay as code-registered
+  manifests until there is a second consumer? Today they are registered by the
+  assistant host; the admin only toggles them.
 - Should the default workspace add `~/Downloads` or `~/Desktop`? Today it is
   `~/Documents/Mine` plus `~/Projects`; the config is the boundary.
 - Should scheduled task runs ever get file or command tools? Today they do not,

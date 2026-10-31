@@ -12,7 +12,7 @@ from pathlib import Path
 
 from winnie_assistant.files import atomic_write
 
-SUBDIRECTORIES = ("profile", "conversations", "tasks", ".state")
+SUBDIRECTORIES = ("profile", "conversations", "tasks", "skills", ".state")
 
 README = """\
 # Winnie
@@ -27,6 +27,7 @@ not hide state in a database.
 | `conversations/` | One Markdown file per conversation, grouped by date. User, assistant and tool messages are appended; earlier messages are not rewritten. |
 | `tasks/tasks.json` | Scheduled tasks, written by the assistant when you ask for one in conversation. Ask the assistant to list or cancel tasks instead of editing this file. |
 | `tasks/runs.jsonl` | One line per scheduled run: status, timing, conversation id and any error. |
+| `skills/` | Which chat skills are enabled. Written by the console; the assistant's file tools cannot edit it. |
 | `.state/` | Derived bookkeeping: the memory watermark, the next-run state, the `exec.jsonl`/`files.jsonl` audit and `backups/` for overwritten files. The scheduler state is rebuilt; the audit and backups are records you may want to keep. |
 | `README.md` | This file. |
 

@@ -8,7 +8,9 @@ incrementally.
 - Framework package: `packages/winnie-core` (auth, DB, storage, jobs, LLM)
 - Gateway package: `packages/winnie-gateway`
 - Meetings package: `packages/winnie-meetings`
-- Assistant package: `packages/winnie-assistant` (chat, tools, memory, tasks)
+- Assistant package: `packages/winnie-assistant` (conversations, memory, tasks)
+- Chat engine: `packages/winnie-chat` (model loop, skills, prompt)
+- Local execution: `packages/winnie-local` (files, commands, review, audit)
 - Knowledge sink package: `packages/winnie-knowledge`
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Admin-managed AI registry: `data/ai.yaml` (gitignored), served by
@@ -390,6 +392,13 @@ Local recall goes through `winnie-index` (`make index-serve`, listening on
 `127.0.0.1:8790`). With the daemon down, chat still works and the local-document
 tools report why they failed. `GET /api/v1/assistant/documents/search?q=` exposes
 the same search for debugging.
+
+The chat loop and the skill registry live in `packages/winnie-chat`; the
+assistant composes them with its store, memory, scheduler and the local executor.
+Six skills are registered (core, web, documents, memory, tasks, local). The
+console `/skills` page and `GET /api/v1/assistant/skills` show them, and
+`PUT /api/v1/assistant/skills/{name}` toggles one; the state is persisted in
+`<root>/skills/skills.json`.
 
 Scheduled tasks are created by asking the assistant; there is no file to edit.
 The JSON at `<root>/tasks/tasks.json`, the schedule forms and the memory

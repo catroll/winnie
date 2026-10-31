@@ -583,3 +583,56 @@ and commands still return `PENDING` and need an explicit confirmation in a later
 turn. A review denial returns `REVIEW DENIED` and creates no pending action.
 Scheduled task runs still get neither file nor command tools, because there is
 no human turn to confirm them.
+
+## Chat is a module: winnie-chat owns the loop and the skills (2026-11-01)
+
+**The assistant was calling the model itself.** `AssistantAgent` contained the
+model loop, prompt assembly and tool schemas, so "chat" was a side effect of
+the assistant's tool code. Add `packages/winnie-chat`: `ChatEngine` owns the
+bounded model/tool loop, `SkillRegistry` owns what is offered, and
+`build_system_prompt` assembles the persona, time, memory digest, pending
+confirmation and the instructions of the enabled skills. The assistant's
+`AssistantAgent` now only creates the conversation, records user/tool/assistant
+blocks and stores the reply. The host can replace the engine without touching
+conversation files.
+
+**Skills are the unit of capability.** A `SkillManifest` declares a name, title,
+description, prompt instructions, tools, permissions, scheduled-run safety and
+whether it is toggleable. The assistant registers six: `core` (persona/rules,
+always on), `web`, `documents` (the index), `memory`, `tasks` and `local`
+(`winnie-local`). The registry rejects duplicate tool names, resolves a tool to
+its owner, filters unavailable services and scheduled-unsafe skills, and
+persists the enable/disable map in `skills/skills.json`.
+
+**Disabling is a real removal, not a hint.** The chat engine builds the tool
+schemas and system prompt from the enabled skills. A disabled skill's tools are
+absent and its instructions are not sent; a hallucinated tool call is rejected
+before execution. The core skill cannot be disabled, and `tasks`/`local` are
+chat-only because scheduled runs have no human to confirm a schedule or a side
+effect.
+
+**The document index is a skill, not a special case.** `documents` owns
+`search_documents`/`read_document` and the instruction to cite `path:line`; if
+the daemon is off the skill is shown unavailable and is not offered. The local
+execution skill owns the file/command tools and delegates to `winnie-local`, so
+the review, whitelist, confirmation and audit path is not reimplemented or
+bypassed by the skill layer.
+
+**The admin views and manages the same registry.** `GET /assistant/skills`
+returns the manifests plus enabled/available state, tools, permissions and
+instructions; `PUT /assistant/skills/{name}` toggles one. The console `/skills`
+page renders that list and calls the toggle route. This is a view of the
+registry, not a second configuration file: the state lives in one place and the
+next chat turn reads it.
+
+**Why code-registered instead of `SKILL.md` loading.** The existing Agent Skill
+for `winnie-index` is instructions for an external agent. Loading executable
+tool bundles from arbitrary Markdown would add a discovery format, a trust
+boundary and a second way to register tools before there is a second consumer.
+The manifests are code-registered now; file-based skill discovery is a named
+follow-up, not an accidental omission.
+
+**Architecture test.** `winnie-chat` may be imported by `winnie-assistant` and
+depends only on `winnie-core`; `winnie-local` remains the shared execution
+layer. Neither is a capability, and neither imports the host or another
+capability.

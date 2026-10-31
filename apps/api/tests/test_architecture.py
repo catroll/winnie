@@ -16,7 +16,13 @@ ALLOWED = {
     # winnie-local is a shared execution layer (like winnie-core), not a
     # capability. It may be used by the assistant; it imports no capability.
     "winnie-local": {"winnie_local"},
-    "winnie-assistant": {"winnie_core", "winnie_assistant", "winnie_local"},
+    "winnie-chat": {"winnie_core", "winnie_chat"},
+    "winnie-assistant": {
+        "winnie_core",
+        "winnie_assistant",
+        "winnie_chat",
+        "winnie_local",
+    },
 }
 
 

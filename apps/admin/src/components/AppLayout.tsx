@@ -10,6 +10,7 @@ const NAVIGATION = [
   { to: '/usage', label: 'LLM usage', icon: 'bi-graph-up-arrow', end: false },
   { to: '/meetings', label: 'Meetings', icon: 'bi-camera-video', end: false },
   { to: '/tasks', label: 'Scheduled tasks', icon: 'bi-alarm', end: false },
+  { to: '/skills', label: 'Skills', icon: 'bi-puzzle', end: false },
   { to: '/ai', label: 'AI providers', icon: 'bi-cpu', end: false },
   { to: '/index', label: 'Document index', icon: 'bi-journal-text', end: false },
   { to: '/gateway', label: 'Gateway routes', icon: 'bi-signpost-split', end: false },

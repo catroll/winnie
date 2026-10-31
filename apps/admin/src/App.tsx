@@ -13,6 +13,7 @@ import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RoutesPage } from './pages/RoutesPage';
+import { SkillsPage } from './pages/SkillsPage';
 import { TasksPage } from './pages/TasksPage';
 import { UsagePage } from './pages/UsagePage';
 
@@ -32,6 +33,7 @@ export function App() {
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/tasks" element={<TasksPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
             <Route path="/usage" element={<UsagePage />} />
             <Route path="/ai" element={<AIPage />} />
             <Route path="/gateway" element={<RoutesPage />} />

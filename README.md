@@ -69,7 +69,8 @@ running it on a device with a live ASR key is still pending.
 
 The assistant capability is usable end to end: a phone-sized chat page at
 `/api/v1/assistant/ui` and a ChatGPT-like chat in the management console, a
-bounded tool loop with web and local-document search, append-only Markdown
+dedicated `winnie-chat` engine with a skill registry (web, document index,
+memory, scheduled tasks and local execution), append-only Markdown
 conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
 those files and recalled through the local index service, and scheduled tasks
 the assistant creates and cancels when asked in conversation. It can also list,
@@ -86,8 +87,8 @@ on the AI providers page. Design, decisions and operating notes are in
 
 The AdminLTE management console in `apps/admin` operates the same data in a
 browser: sign in, dashboard, assistant chat with the full cross-channel
-conversation history, meeting list and detail, transcript and minutes,
-Markdown/TXT export, regenerate and delete, assistant scheduled tasks and their
+conversation history, chat skills, meeting list and detail, transcript and
+minutes, Markdown/TXT export, regenerate and delete, assistant scheduled tasks and their
 run history, AI provider CRUD with per-feature provider selection, gateway route
 inspection, and account/password management. It is read-and-operate for
 recordings — upload stays in the Android client, and scheduled tasks are created

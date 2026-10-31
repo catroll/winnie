@@ -128,6 +128,28 @@ class TaskRunListRead(BaseModel):
     skipped: int = 0
 
 
+class SkillViewRead(BaseModel):
+    name: str
+    title: str
+    description: str
+    instructions: str
+    tools: list[str]
+    permissions: list[str]
+    enabled: bool
+    available: bool
+    unavailable_reason: str
+    toggleable: bool
+    scheduled_safe: bool
+
+
+class SkillListRead(BaseModel):
+    skills: list[SkillViewRead]
+
+
+class SkillToggleRequest(BaseModel):
+    enabled: bool
+
+
 class StatusRead(BaseModel):
     model: str
     search: str

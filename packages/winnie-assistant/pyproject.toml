@@ -9,11 +9,13 @@ dependencies = [
     "pydantic>=2.13.0",
     "pyyaml>=6.0.3",
     "winnie-core",
+    "winnie-chat",
     "winnie-local",
 ]
 
 [tool.uv.sources]
 winnie-core = { path = "../winnie-core", editable = true }
+winnie-chat = { path = "../winnie-chat", editable = true }
 winnie-local = { path = "../winnie-local", editable = true }
 
 [build-system]
