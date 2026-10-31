@@ -562,3 +562,121 @@ export interface AssistantSkill {
 export interface AssistantSkillList {
   skills: AssistantSkill[];
 }
+
+/** News pipeline: runs, stages, drafts and their reviews. */
+
+export type NewsStageStatus = 'pending' | 'running' | 'ok' | 'failed' | 'skipped';
+export type NewsRunStatus = 'running' | 'done' | 'partial' | 'failed';
+
+export interface NewsStage {
+  name: string;
+  status: NewsStageStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  count: number | null;
+  detail: string;
+}
+
+export interface NewsRun {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  status: NewsRunStatus;
+  source_types: string[];
+  stages: NewsStage[];
+  stats: Record<string, number | string>;
+  error: string;
+}
+
+export interface NewsStatus {
+  enabled: boolean;
+  ready: boolean;
+  llm: string;
+  search: string;
+  active_run: string | null;
+  events: number;
+  runs: number;
+  root: string;
+}
+
+export interface NewsDraftSummary {
+  event_id: string;
+  title: string;
+  revision: number;
+  sources: number;
+  uncertainties: number;
+  generated_at: string;
+}
+
+export interface NewsReviewProblem {
+  type: string;
+  severity: string;
+  detail: string;
+  origin: string;
+}
+
+export interface NewsReview {
+  schema: string;
+  event_id: string;
+  passed: boolean;
+  score: number;
+  problems: NewsReviewProblem[];
+  feedback: string;
+  retry: number;
+  max_retries: number;
+  status: 'passed' | 'retry' | 'needs_human';
+  checked_at: string;
+}
+
+export interface NewsDraftSource {
+  title: string;
+  url: string;
+  source: string | null;
+  published_at: string | null;
+}
+
+export interface NewsDraft {
+  schema: string;
+  event_id: string;
+  title: string;
+  subtitle: string | null;
+  body: string;
+  sources: NewsDraftSource[];
+  uncertainties: string[];
+  language: string;
+  model: string;
+  generated_at: string;
+  revision: number;
+}
+
+export interface NewsDraftDetail {
+  draft: NewsDraft;
+  review: NewsReview | null;
+}
+
+export interface NewsRunDrafts {
+  run_id: string;
+  drafts: NewsDraftSummary[];
+  reviews: NewsReview[];
+}
+
+export interface NewsEventSummary {
+  id: string;
+  title: string;
+  summary: string;
+  event_type: string;
+  status: string;
+  first_seen: string;
+  last_seen: string;
+  coverage: {
+    articles: number;
+    sources: number;
+    languages: number;
+    first_report: string | null;
+    latest_report: string | null;
+  };
+}
+
+export interface NewsEventList {
+  events: NewsEventSummary[];
+}

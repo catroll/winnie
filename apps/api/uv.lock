@@ -1521,6 +1521,7 @@ dependencies = [
     { name = "winnie-knowledge" },
     { name = "winnie-local" },
     { name = "winnie-meetings" },
+    { name = "winnie-news" },
 ]
 
 [package.dev-dependencies]
@@ -1550,6 +1551,7 @@ requires-dist = [
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
     { name = "winnie-local", editable = "../../packages/winnie-local" },
     { name = "winnie-meetings", editable = "../../packages/winnie-meetings" },
+    { name = "winnie-news", editable = "../../packages/winnie-news" },
 ]
 
 [package.metadata.requires-dev]
@@ -1677,4 +1679,27 @@ requires-dist = [
     { name = "websockets", specifier = ">=17.0" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
+]
+
+[[package]]
+name = "winnie-news"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-news" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "winnie-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.1" },
 ]

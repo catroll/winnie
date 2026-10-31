@@ -20,6 +20,11 @@ import type {
   IndexStatus,
   Meeting,
   MeetingList,
+  NewsDraftDetail,
+  NewsEventList,
+  NewsRun,
+  NewsRunDrafts,
+  NewsStatus,
   Minutes,
   ModelRuntime,
   Readiness,
@@ -427,6 +432,71 @@ export const api = {
       `/api/v1/meetings/${meetingId}/minutes/regenerate`,
       { method: 'POST' },
     );
+  },
+
+  newsStatus(): Promise<NewsStatus> {
+    return request<NewsStatus>('/api/v1/news/status');
+  },
+
+  newsRuns(limit = 20): Promise<NewsRun[]> {
+    return request<NewsRun[]>(`/api/v1/news/runs?limit=${limit}`);
+  },
+
+  startNewsRun(): Promise<NewsRun> {
+    return request<NewsRun>('/api/v1/news/runs', {
+      method: 'POST',
+      body: {},
+    });
+  },
+
+  newsRun(runId: string): Promise<NewsRun> {
+    return request<NewsRun>(`/api/v1/news/runs/${encodeURIComponent(runId)}`);
+  },
+
+  newsDrafts(runId: string): Promise<NewsRunDrafts> {
+    return request<NewsRunDrafts>(
+      `/api/v1/news/runs/${encodeURIComponent(runId)}/drafts`,
+    );
+  },
+
+  newsDraft(runId: string, eventId: string): Promise<NewsDraftDetail> {
+    return request<NewsDraftDetail>(
+      `/api/v1/news/runs/${encodeURIComponent(runId)}/drafts/${encodeURIComponent(eventId)}`,
+    );
+  },
+
+  newsEvents(limit = 50): Promise<NewsEventList> {
+    return request<NewsEventList>(`/api/v1/news/events?limit=${limit}`);
+  },
+
+  async newsDraftMarkdown(runId: string, eventId: string): Promise<string> {
+    const token = getToken();
+    const headers = new Headers();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_BASE}/api/v1/news/runs/${encodeURIComponent(runId)}/drafts/${encodeURIComponent(eventId)}/markdown`,
+        { headers },
+      );
+    } catch {
+      throw new ApiError(
+        0,
+        'Cannot reach the Winnie API. Check that the server is running and reachable.',
+      );
+    }
+    if (response.status === 401 && token) {
+      unauthorizedHandler?.();
+    }
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        `Draft export failed with HTTP ${response.status}.`,
+      );
+    }
+    return response.text();
   },
 
   deleteMeeting(meetingId: string): Promise<void> {

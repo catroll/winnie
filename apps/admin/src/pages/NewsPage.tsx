@@ -1,0 +1,430 @@
+import { useEffect, useMemo, useState } from 'react';
+
+import { api, ApiError } from '../api/client';
+import type {
+  NewsDraftDetail,
+  NewsRun,
+  NewsRunDrafts,
+  NewsStatus,
+} from '../api/types';
+import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
+import { PageHeader } from '../components/PageHeader';
+import { formatDateTime } from '../lib/format';
+import { useApi } from '../lib/hooks';
+
+interface NewsData {
+  status: NewsStatus;
+  runs: NewsRun[];
+}
+
+const RUN_BADGE: Record<string, string> = {
+  running: 'text-bg-warning',
+  done: 'text-bg-success',
+  partial: 'text-bg-info',
+  failed: 'text-bg-danger',
+};
+
+const STAGE_BADGE: Record<string, string> = {
+  pending: 'text-bg-light text-dark',
+  running: 'text-bg-warning',
+  ok: 'text-bg-success',
+  skipped: 'text-bg-secondary',
+  failed: 'text-bg-danger',
+};
+
+const REVIEW_BADGE: Record<string, string> = {
+  passed: 'text-bg-success',
+  retry: 'text-bg-warning',
+  needs_human: 'text-bg-danger',
+};
+
+function describe(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.detail;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+function stat(run: NewsRun, key: string): string {
+  const value = run.stats?.[key];
+  return value === undefined || value === null ? '—' : String(value);
+}
+
+export function NewsPage() {
+  const result = useApi<NewsData>(async () => {
+    const [status, runs] = await Promise.all([api.newsStatus(), api.newsRuns(20)]);
+    return { status, runs };
+  }, []);
+
+  const [selectedRunId, setSelectedRunId] = useState<string>('');
+  const [drafts, setDrafts] = useState<NewsRunDrafts | null>(null);
+  const [detail, setDetail] = useState<NewsDraftDetail | null>(null);
+  const [markdown, setMarkdown] = useState<string>('');
+  const [message, setMessage] = useState<{ kind: 'success' | 'danger'; text: string } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+
+  const loaded = result.status === 'success' ? result.data : null;
+  const runs = loaded?.runs ?? [];
+  const selectedRun = useMemo(
+    () => runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null,
+    [runs, selectedRunId],
+  );
+  const running = runs.some((run) => run.status === 'running');
+
+  // A run continues in the API process; poll while work is in flight and while
+  // the page is open so stage progress is visible without a manual reload.
+  useEffect(() => {
+    if (!running) {
+      return;
+    }
+    const timer = window.setInterval(() => result.reload(), 3000);
+    return () => window.clearInterval(timer);
+  }, [running, result.reload]);
+
+  // Load the draft list whenever the selected run changes or its status moves.
+  useEffect(() => {
+    if (!selectedRun) {
+      setDrafts(null);
+      return;
+    }
+    let alive = true;
+    api.newsDrafts(selectedRun.id).then(
+      (value) => {
+        if (alive) {
+          setDrafts(value);
+        }
+      },
+      (error: unknown) => {
+        if (alive) {
+          setMessage({ kind: 'danger', text: describe(error) });
+        }
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [selectedRun?.id, selectedRun?.updated_at]);
+
+  async function startRun(): Promise<void> {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const run = await api.startNewsRun();
+      setMessage({ kind: 'success', text: `Started run ${run.id}.` });
+      setSelectedRunId(run.id);
+      result.reload();
+    } catch (error) {
+      setMessage({ kind: 'danger', text: describe(error) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openDraft(eventId: string): Promise<void> {
+    if (!selectedRun) {
+      return;
+    }
+    setMessage(null);
+    try {
+      const [draft, text] = await Promise.all([
+        api.newsDraft(selectedRun.id, eventId),
+        api.newsDraftMarkdown(selectedRun.id, eventId),
+      ]);
+      setDetail(draft);
+      setMarkdown(text);
+    } catch (error) {
+      setMessage({ kind: 'danger', text: describe(error) });
+    }
+  }
+
+  // The detail card renders below the tables; bring it into view so opening a
+  // draft while scrolled down the list does not look like nothing happened.
+  useEffect(() => {
+    if (!detail) {
+      return;
+    }
+    document
+      .getElementById(`draft-${detail.draft.event_id}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [detail]);
+
+  const reviews = new Map((drafts?.reviews ?? []).map((review) => [review.event_id, review]));
+
+  return (
+    <>
+      <PageHeader title="News" />
+      <div className="app-content">
+        <div className="container-fluid">
+          {result.status === 'loading' ? (
+            <LoadingBlock label="Loading news pipeline…" />
+          ) : result.status === 'error' ? (
+            <ErrorBlock error={result.error} onRetry={result.reload} />
+          ) : loaded ? (
+            <>
+              {message ? (
+                <div className={`alert alert-${message.kind}`} role="alert">
+                  {message.text}
+                </div>
+              ) : null}
+
+              {!loaded.status.ready ? (
+                <div className="alert alert-warning" role="alert">
+                  <i className="bi bi-exclamation-triangle-fill me-2" aria-hidden="true" />
+                  No model is bound for news. Bind <code>news.extract</code>,{' '}
+                  <code>news.write</code> and <code>news.review</code> on the{' '}
+                  <a href="/ai">AI providers</a> page before starting a run.
+                </div>
+              ) : null}
+
+              <div className="row g-3 mb-3">
+                <div className="col-sm-6 col-xl-3">
+                  <div className="small-box text-bg-primary">
+                    <div className="inner">
+                      <h3>{loaded.status.events}</h3>
+                      <p>Events stored</p>
+                    </div>
+                    <i className="small-box-icon bi bi-collection" aria-hidden="true" />
+                  </div>
+                </div>
+                <div className="col-sm-6 col-xl-3">
+                  <div className="small-box text-bg-info">
+                    <div className="inner">
+                      <h3>{loaded.status.runs}</h3>
+                      <p>Runs kept</p>
+                    </div>
+                    <i className="small-box-icon bi bi-clock-history" aria-hidden="true" />
+                  </div>
+                </div>
+                <div className="col-sm-6 col-xl-3">
+                  <div className="small-box text-bg-success">
+                    <div className="inner">
+                      <h3 className="fs-5">{loaded.status.llm || 'none'}</h3>
+                      <p>Model binding</p>
+                    </div>
+                    <i className="small-box-icon bi bi-cpu" aria-hidden="true" />
+                  </div>
+                </div>
+                <div className="col-sm-6 col-xl-3">
+                  <div className="small-box text-bg-secondary">
+                    <div className="inner">
+                      <h3 className="fs-5">{loaded.status.search || 'disabled'}</h3>
+                      <p>Search provider</p>
+                    </div>
+                    <i className="small-box-icon bi bi-search" aria-hidden="true" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="card mb-3">
+                <div className="card-header d-flex align-items-center justify-content-between">
+                  <h2 className="card-title mb-0">Runs</h2>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => void startRun()}
+                    disabled={busy || !loaded.status.ready || loaded.status.active_run !== null}
+                  >
+                    <i className="bi bi-play-fill me-1" aria-hidden="true" />
+                    {loaded.status.active_run ? 'Run in progress' : 'New run'}
+                  </button>
+                </div>
+                <div className="card-body p-0">
+                  {runs.length === 0 ? (
+                    <EmptyState message="No runs yet. A run collects the configured sources, groups reports into events, then writes and reviews one draft per event." />
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="table table-sm table-hover mb-0 align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">Run</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Started</th>
+                            <th scope="col">Materials</th>
+                            <th scope="col">Events</th>
+                            <th scope="col">Drafts</th>
+                            <th scope="col">Passed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {runs.map((run) => (
+                            <tr
+                              key={run.id}
+                              onClick={() => {
+                                setSelectedRunId(run.id);
+                                setDetail(null);
+                                setMarkdown('');
+                              }}
+                              style={{ cursor: 'pointer' }}
+                              className={selectedRun?.id === run.id ? 'table-active' : undefined}
+                            >
+                              <td className="font-monospace small">{run.id}</td>
+                              <td>
+                                <span className={`badge ${RUN_BADGE[run.status] ?? 'text-bg-secondary'}`}>
+                                  {run.status}
+                                </span>
+                              </td>
+                              <td className="small">{formatDateTime(run.created_at)}</td>
+                              <td>{stat(run, 'materials')}</td>
+                              <td>{stat(run, 'events')}</td>
+                              <td>{stat(run, 'drafts')}</td>
+                              <td>{stat(run, 'passed')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {selectedRun ? (
+                <div className="card mb-3">
+                  <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <h2 className="card-title mb-0">Run {selectedRun.id}</h2>
+                    <span className={`badge ${RUN_BADGE[selectedRun.status] ?? 'text-bg-secondary'}`}>
+                      {selectedRun.status}
+                    </span>
+                  </div>
+                  <div className="card-body">
+                    {selectedRun.error ? (
+                      <div className="alert alert-danger" role="alert">
+                        {selectedRun.error}
+                      </div>
+                    ) : null}
+                    <ul className="list-inline mb-3">
+                      {selectedRun.stages.map((stage) => (
+                        <li className="list-inline-item mb-1" key={stage.name}>
+                          <span className={`badge ${STAGE_BADGE[stage.status] ?? 'text-bg-secondary'}`}>
+                            {stage.name}
+                            {stage.count !== null ? ` · ${stage.count}` : ''}
+                          </span>
+                          {stage.detail ? (
+                            <span className="text-secondary small ms-1">{stage.detail}</span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+
+                    {!drafts || drafts.drafts.length === 0 ? (
+                      <EmptyState message="No drafts in this run. Cleaning may have dropped every item, or the articles were already part of existing events." />
+                    ) : (
+                      <div className="table-responsive">
+                        <table className="table table-sm align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th scope="col">Draft</th>
+                              <th scope="col">Revision</th>
+                              <th scope="col">Sources</th>
+                              <th scope="col">Review</th>
+                              <th scope="col">Score</th>
+                              <th scope="col" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {drafts.drafts.map((entry) => {
+                              const review = reviews.get(entry.event_id);
+                              return (
+                                <tr key={entry.event_id}>
+                                  <td>
+                                    <div className="fw-medium">{entry.title}</div>
+                                    <div className="text-secondary small font-monospace">
+                                      {entry.event_id}
+                                    </div>
+                                  </td>
+                                  <td>{entry.revision}</td>
+                                  <td>{entry.sources}</td>
+                                  <td>
+                                    {review ? (
+                                      <span className={`badge ${REVIEW_BADGE[review.status] ?? 'text-bg-secondary'}`}>
+                                        {review.status}
+                                      </span>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </td>
+                                  <td>{review ? review.score.toFixed(2) : '—'}</td>
+                                  <td className="text-end">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-primary"
+                                      onClick={() => void openDraft(entry.event_id)}
+                                    >
+                                      Open
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {detail ? (
+                <div className="card">
+                  <div
+                    className="card-header d-flex flex-wrap align-items-center justify-content-between gap-2"
+                    id={`draft-${detail.draft.event_id}`}
+                  >
+                    <h2 className="card-title mb-0">{detail.draft.title}</h2>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => {
+                        setDetail(null);
+                        setMarkdown('');
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="card-body">
+                    {detail.review ? (
+                      <div
+                        className={`alert ${
+                          detail.review.passed ? 'alert-success' : 'alert-warning'
+                        }`}
+                        role="status"
+                      >
+                        <p className="mb-1">
+                          <strong>Review:</strong> {detail.review.status} · score{' '}
+                          {detail.review.score.toFixed(2)} · retry {detail.review.retry}/
+                          {detail.review.max_retries}
+                        </p>
+                        {detail.review.problems.length > 0 ? (
+                          <ul className="mb-1 small">
+                            {detail.review.problems.map((problem, index) => (
+                              <li key={`${problem.type}-${index}`}>
+                                <span className="badge text-bg-secondary me-1">
+                                  {problem.severity}
+                                </span>
+                                {problem.type}: {problem.detail}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {detail.review.feedback ? (
+                          <pre className="small mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                            {detail.review.feedback}
+                          </pre>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <pre className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                      {markdown}
+                    </pre>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </>
+  );
+}

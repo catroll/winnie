@@ -11,6 +11,7 @@ import { IndexPage } from './pages/IndexPage';
 import { LoginPage } from './pages/LoginPage';
 import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { MeetingsPage } from './pages/MeetingsPage';
+import { NewsPage } from './pages/NewsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RoutesPage } from './pages/RoutesPage';
 import { SkillsPage } from './pages/SkillsPage';
@@ -30,6 +31,7 @@ export function App() {
             <Route index element={<DashboardPage />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/chat/:conversationId" element={<ChatPage />} />
+            <Route path="/news" element={<NewsPage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/tasks" element={<TasksPage />} />
