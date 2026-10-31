@@ -323,7 +323,7 @@ export interface AssistantChatResponse {
 
 /** Admin-managed AI providers and the features that use them. */
 
-export type AIProviderKind = 'openai' | 'anthropic' | 'volcengine_asr' | 'fake';
+export type AIProviderKind = 'openai' | 'anthropic' | 'volcengine_asr';
 
 export interface AIModel {
   id: string;

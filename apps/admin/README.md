@@ -21,7 +21,7 @@ not store vendor API keys.
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
 | **LLM usage** | Recorded model calls with token classes, latency, status and cost; breakdowns by day, feature and model; provider balances with a refresh; the configured price table |
-| **AI providers** | Add, edit and delete vendor integrations (OpenAI-compatible, Anthropic, Volcengine ASR, deterministic fake); mark an OpenAI/Anthropic provider as a gateway route or internal-only; choose the provider and model for the assistant, transcription, translation and minutes; see gateway paths, internal-only status and whether the environment key is set |
+| **AI suppliers** | Manage suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether the environment key is set |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
 | **Account** | Profile, session expiry and password change |
@@ -81,11 +81,11 @@ skill cannot be disabled.
 `/ai` owns the supplier registry and is the **only** model choice: `config.yaml`
 has no `llm` block, `assistant.model`, `meetings.translator` or
 `meetings.summarizer`. On first start the API writes `data/ai.yaml` from the
-gateway routes and the ASR defaults; model features start on `fake` until a real
-supplier endpoint is added and bound.
+gateway routes and the ASR defaults. No fake supplier ships: model features
+start unbound until a supplier API and model are configured.
 
 The page groups records by **supplier** (DeepSeek, OpenAI, Qwen, Anthropic,
-Volcengine, fake). A supplier owns:
+Volcengine). A supplier owns:
 
 - one **API** for internal model calls (base URL/key/protocol);
 - **models** — the catalog shown in the feature model select, synced from the

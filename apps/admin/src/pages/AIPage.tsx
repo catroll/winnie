@@ -108,17 +108,6 @@ function formForKind(kind: AIProviderKind, current: FormState): FormState {
       options: { ...VOLCENGINE_DEFAULTS, ...current.options },
     };
   }
-  if (kind === 'fake') {
-    return {
-      ...current,
-      kind,
-      base_url: '',
-      api_key_env: '',
-      default_model: '',
-      gateway: false,
-      options: {},
-    };
-  }
   return {
     ...current,
     kind,
@@ -453,8 +442,8 @@ export function AIPage() {
               <div className="alert alert-secondary" role="note">
                 The AI provider registry is available when <code>ai.enabled</code> is
                 true in <code>apps/api/config.yaml</code>. With it disabled, model
-                features use the deterministic fake provider and ASR keeps its YAML
-                default; enable it to choose a real model here.
+                features have no model and ASR keeps its YAML default; enable it to
+                choose a model here.
               </div>
             </>
           ) : data ? (
@@ -863,22 +852,6 @@ export function AIPage() {
                               );
                               if (!internal) {
                                 return null;
-                              }
-                              if (vendor.id === 'fake') {
-                                return {
-                                  vendor,
-                                  models: [
-                                    {
-                                      id: 'fake',
-                                      label: 'Fake (offline)',
-                                      owned_by: '',
-                                      created: null,
-                                      context_window: null,
-                                      max_output_tokens: null,
-                                      notes: '',
-                                    },
-                                  ],
-                                };
                               }
                               return { vendor, models: vendor.models };
                             })
@@ -1470,7 +1443,6 @@ function IntegrationEditor({
   onSubmit,
 }: EditorProps) {
   const draft = editor.draft;
-  const isFake = draft.kind === 'fake';
   const isVolcengine = draft.kind === 'volcengine_asr';
   const isGatewayKind = draft.kind === 'openai' || draft.kind === 'anthropic';
   const selectedVendor = vendors.find((vendor) => vendor.id === draft.vendor);
@@ -1624,7 +1596,6 @@ function IntegrationEditor({
                     <option value="openai">OpenAI-compatible</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="volcengine_asr">Volcengine Doubao ASR</option>
-                    <option value="fake">Deterministic fake</option>
                   </select>
                 </div>
                 <div className="col-md-6 d-flex align-items-end gap-4">
@@ -1662,8 +1633,7 @@ function IntegrationEditor({
                   ) : null}
                 </div>
 
-                {!isFake ? (
-                  <>
+                <>
                     <div className="col-12">
                       <label className="form-label" htmlFor="ai-base-url">
                         Base URL
@@ -1727,15 +1697,7 @@ function IntegrationEditor({
                         </div>
                       </div>
                     ) : null}
-                  </>
-                ) : (
-                  <div className="col-12">
-                    <div className="alert alert-secondary mb-0" role="note">
-                      The fake provider answers deterministically and never calls a
-                      vendor. It needs no URL, key or model.
-                    </div>
-                  </div>
-                )}
+                </>
 
                 {isVolcengine ? (
                   <div className="col-12">
