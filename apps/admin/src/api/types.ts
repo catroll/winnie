@@ -184,3 +184,44 @@ export interface IndexStatus {
   skill: { target: string; installed: boolean };
   last_build: IndexBuildResult | null;
 }
+
+export interface IndexSearchHit {
+  chunk_id: number;
+  doc_id: number;
+  root: string;
+  path: string;
+  heading: string;
+  start_line: number;
+  end_line: number;
+  score: number;
+  tokens: number;
+  mtime: string;
+  text_hash: string | null;
+  text: string;
+  truncated: boolean;
+}
+
+export interface IndexSearchFile {
+  root: string;
+  path: string;
+  chunks: number;
+  best_score: number;
+  heading: string;
+  start_line: number;
+  end_line: number;
+  chunk_ids: number[];
+}
+
+export interface IndexSearchResponse {
+  query: string;
+  expression: string | null;
+  terms: string[];
+  roots: string[];
+  elapsed_ms: number;
+  candidates: number;
+  returned: number;
+  dropped: number;
+  hint: string;
+  hits: IndexSearchHit[];
+  files: IndexSearchFile[];
+}

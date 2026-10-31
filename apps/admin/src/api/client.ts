@@ -3,6 +3,7 @@ import type {
   IndexConfigResponse,
   IndexEditableConfig,
   IndexBuildResult,
+  IndexSearchResponse,
   IndexStatus,
   Meeting,
   MeetingList,
@@ -168,6 +169,15 @@ export const api = {
     config: IndexEditableConfig,
   ): Promise<{ config: IndexEditableConfig; roots: string[] }> {
     return request('/api/v1/index/config', { method: 'PUT', body: { config } });
+  },
+
+  searchIndex(payload: {
+    query: string;
+    roots?: string[];
+    since?: string;
+    limit?: number;
+  }): Promise<IndexSearchResponse> {
+    return request('/api/v1/index/search', { method: 'POST', body: payload });
   },
 
   buildIndex(dryRun: boolean): Promise<{ build: IndexBuildResult }> {

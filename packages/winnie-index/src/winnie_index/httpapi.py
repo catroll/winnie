@@ -21,12 +21,12 @@ from urllib.parse import parse_qs, urlparse
 from winnie_index import db, mcp
 from winnie_index.admin import AdminError, Service
 from winnie_index.config import Config, ConfigError
-from winnie_index.search import get_document, search, status
+from winnie_index.search import get_document, search, search_debug, status
 
 logger = logging.getLogger(__name__)
 MAX_BODY = 1_000_000
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
-ADMIN_PATHS = ("/admin/config", "/admin/build", "/admin/skill", "/admin/status")
+ADMIN_PATHS = ("/admin/config", "/admin/build", "/admin/skill", "/admin/status", "/admin/search")
 
 
 def _connect(config: Config) -> sqlite3.Connection:
@@ -215,6 +215,31 @@ class _Handler(BaseHTTPRequestHandler):
                     "roots": [root.name for root in config.roots],
                 },
             )
+            return
+
+        if parsed.path == "/admin/search":
+            query = str(body.get("query") or "").strip()
+            if not query:
+                self._error(400, "query is required")
+                return
+            conn = _connect(self.config)
+            try:
+                try:
+                    result = search_debug(
+                        conn,
+                        self.config,
+                        query,
+                        roots=list(body.get("roots") or []) or None,
+                        since=body.get("since"),
+                        limit=body.get("limit"),
+                        text_chars=int(body.get("text_chars") or 600),
+                    )
+                except ValueError as exc:
+                    self._error(400, str(exc))
+                    return
+                self._send(200, result)
+            finally:
+                conn.close()
             return
 
         if parsed.path == "/admin/build":

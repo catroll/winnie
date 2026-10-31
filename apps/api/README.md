@@ -241,6 +241,7 @@ origin and one session:
 | `GET /api/v1/index/status` | Coverage, roots, failures, last sweep |
 | `GET /api/v1/index/config` | Editable configuration |
 | `PUT /api/v1/index/config` | Validate and save; the daemon reloads without a restart |
+| `POST /api/v1/index/search` | Chunk-level results for the console's search test |
 | `POST /api/v1/index/build` | Dry run or real sweep |
 | `POST /api/v1/index/skill` | Install or check the Agent Skill |
 

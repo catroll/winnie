@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 
 import { api, ApiError } from '../api/client';
 import type {
   IndexBuildResult,
   IndexEditableConfig,
+  IndexSearchResponse,
   IndexStatus,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
@@ -51,6 +52,13 @@ export function IndexPage() {
   const [message, setMessage] = useState<Message>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [lastBuild, setLastBuild] = useState<IndexBuildResult | null>(null);
+  const [query, setQuery] = useState('');
+  const [rootFilter, setRootFilter] = useState('');
+  const [since, setSince] = useState('');
+  const [searchLimit, setSearchLimit] = useState(8);
+  const [searching, setSearching] = useState(false);
+  const [searchResult, setSearchResult] = useState<IndexSearchResponse | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const loaded = result.status === 'success' ? result.data : null;
 
@@ -167,6 +175,30 @@ export function IndexPage() {
     }
   };
 
+  const runSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return;
+    }
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const response = await api.searchIndex({
+        query: trimmed,
+        roots: rootFilter ? [rootFilter] : undefined,
+        since: since.trim() || undefined,
+        limit: searchLimit,
+      });
+      setSearchResult(response);
+    } catch (error) {
+      setSearchResult(null);
+      setSearchError(describe(error));
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const disabled = busy !== null;
 
   return (
@@ -234,6 +266,184 @@ export function IndexPage() {
                 </div>
               </div>
 
+              <div className="row g-3 mb-3">
+                <div className="col-12">
+                  <div className="card">
+                    <div className="card-header d-flex flex-wrap align-items-center gap-2">
+                      <h3 className="card-title mb-0">Search test</h3>
+                      <span className="ms-auto small text-secondary">
+                        Every matching chunk, not the collapsed retrieval view
+                      </span>
+                    </div>
+                    <div className="card-body">
+                      <form className="row g-2 align-items-end" onSubmit={(event) => void runSearch(event)}>
+                        <div className="col-12 col-lg-5">
+                          <label className="form-label" htmlFor="search-query">
+                            Query
+                          </label>
+                          <input
+                            id="search-query"
+                            className="form-control"
+                            value={query}
+                            placeholder="例如 部署，或 MCP server"
+                            onChange={(event) => setQuery(event.target.value)}
+                          />
+                        </div>
+                        <div className="col-6 col-lg-2">
+                          <label className="form-label" htmlFor="search-root">
+                            Root
+                          </label>
+                          <select
+                            id="search-root"
+                            className="form-select"
+                            value={rootFilter}
+                            onChange={(event) => setRootFilter(event.target.value)}
+                          >
+                            <option value="">All roots</option>
+                            {draft.roots.map((root) => (
+                              <option key={root.name} value={root.name}>
+                                {root.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-6 col-lg-2">
+                          <label className="form-label" htmlFor="search-since">
+                            Modified since
+                          </label>
+                          <input
+                            id="search-since"
+                            className="form-control"
+                            value={since}
+                            placeholder="7d / 24h"
+                            onChange={(event) => setSince(event.target.value)}
+                          />
+                        </div>
+                        <div className="col-6 col-lg-1">
+                          <label className="form-label" htmlFor="search-limit">
+                            Limit
+                          </label>
+                          <input
+                            id="search-limit"
+                            type="number"
+                            min={1}
+                            max={50}
+                            className="form-control"
+                            value={searchLimit}
+                            onChange={(event) =>
+                              setSearchLimit(Number(event.target.value) || 8)
+                            }
+                          />
+                        </div>
+                        <div className="col-6 col-lg-2">
+                          <button type="submit" className="btn btn-primary w-100" disabled={searching}>
+                            {searching ? 'Searching…' : 'Search'}
+                          </button>
+                        </div>
+                      </form>
+
+                      {searchError ? (
+                        <div className="alert alert-danger mt-3 mb-0" role="alert">
+                          {searchError}
+                        </div>
+                      ) : null}
+
+                      {searchResult ? (
+                        <div className="mt-3">
+                          <div className="d-flex flex-wrap align-items-center gap-2 small">
+                            <span className="badge text-bg-primary">
+                              {searchResult.returned} chunks in {searchResult.files.length} files
+                            </span>
+                            <span className="text-secondary">
+                              {searchResult.candidates} candidates · {searchResult.elapsed_ms} ms ·{' '}
+                              {searchResult.dropped} dropped
+                            </span>
+                            <span className="text-secondary">expression</span>
+                            <code>{searchResult.expression ?? '—'}</code>
+                            {searchResult.terms.map((term) => (
+                              <span className="badge text-bg-light border" key={term}>
+                                {term}
+                              </span>
+                            ))}
+                          </div>
+
+                          {searchResult.hint ? (
+                            <div className="alert alert-warning mt-2 mb-0" role="note">
+                              {searchResult.hint}
+                            </div>
+                          ) : null}
+
+                          {searchResult.hits.length === 0 ? (
+                            <p className="text-secondary mt-2 mb-0">No chunk matched.</p>
+                          ) : (
+                            <div className="mt-2">
+                              {searchResult.files.map((file) => {
+                                const hits = searchResult.hits.filter(
+                                  (hit) => hit.root === file.root && hit.path === file.path,
+                                );
+                                return (
+                                  <div
+                                    className="border rounded mb-2"
+                                    key={`${file.root}:${file.path}`}
+                                  >
+                                    <div className="p-2 d-flex flex-wrap align-items-center gap-2">
+                                      <span className="badge text-bg-secondary">{file.root}</span>
+                                      <code className="text-break">{file.path}</code>
+                                      <span className="ms-auto small text-secondary">
+                                        {file.chunks} chunk{file.chunks === 1 ? '' : 's'} · best{' '}
+                                        {file.best_score.toFixed(2)} · lower is better
+                                      </span>
+                                    </div>
+                                    <div className="table-responsive">
+                                      <table className="table table-sm mb-0">
+                                        <thead>
+                                          <tr>
+                                            <th scope="col">Lines</th>
+                                            <th scope="col">Heading</th>
+                                            <th scope="col" className="text-end">
+                                              Score
+                                            </th>
+                                            <th scope="col" className="text-end">
+                                              Tokens
+                                            </th>
+                                            <th scope="col">Chunk</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {hits.map((hit) => (
+                                            <tr key={hit.chunk_id}>
+                                              <td className="text-nowrap">
+                                                {hit.start_line}–{hit.end_line}
+                                              </td>
+                                              <td>{hit.heading || '—'}</td>
+                                              <td className="text-end">{hit.score.toFixed(2)}</td>
+                                              <td className="text-end">{hit.tokens}</td>
+                                              <td>
+                                                <details>
+                                                  <summary className="text-truncate" style={{ maxWidth: '520px' }}>
+                                                    {hit.text.slice(0, 90).replace(/\n/g, ' ')}
+                                                    {hit.text.length > 90 ? '…' : ''}
+                                                  </summary>
+                                                  <pre className="small mt-2 mb-0 text-wrap">{hit.text}</pre>
+                                                </details>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="row g-3">
                 <div className="col-lg-8">
                   <div className="card">
@@ -269,11 +479,13 @@ export function IndexPage() {
                           <table className="table align-middle mb-0">
                             <thead>
                               <tr>
-                                <th scope="col">Name</th>
+                                <th scope="col" style={{ width: '150px' }}>
+                                  Name
+                                </th>
                                 <th scope="col">Path</th>
-                                <th scope="col">Include</th>
-                                <th scope="col">Exclude</th>
-                                <th scope="col">Watch</th>
+                                <th scope="col" className="text-center">
+                                  Watch
+                                </th>
                                 <th scope="col" className="text-end">
                                   Actions
                                 </th>
@@ -281,78 +493,92 @@ export function IndexPage() {
                             </thead>
                             <tbody>
                               {draft.roots.map((root, index) => (
-                                <tr key={`${root.name}-${index}`}>
-                                  <td>
-                                    <input
-                                      className="form-control form-control-sm"
-                                      value={root.name}
-                                      aria-label={`Root ${index + 1} name`}
-                                      onChange={(event) =>
-                                        updateRoot(index, { name: event.target.value })
-                                      }
-                                    />
-                                  </td>
-                                  <td>
-                                    <input
-                                      className="form-control form-control-sm"
-                                      style={{ minWidth: '220px' }}
-                                      value={root.path}
-                                      aria-label={`Root ${index + 1} path`}
-                                      placeholder="/home/you/notes"
-                                      onChange={(event) =>
-                                        updateRoot(index, { path: event.target.value })
-                                      }
-                                    />
-                                  </td>
-                                  <td>
-                                    <input
-                                      className="form-control form-control-sm"
-                                      style={{ minWidth: '150px' }}
-                                      value={(root.include ?? []).join(', ')}
-                                      aria-label={`Root ${index + 1} include globs`}
-                                      placeholder="optional, comma separated"
-                                      onChange={(event) =>
-                                        updateRoot(index, { include: splitList(event.target.value) })
-                                      }
-                                    />
-                                  </td>
-                                  <td>
-                                    <input
-                                      className="form-control form-control-sm"
-                                      style={{ minWidth: '150px' }}
-                                      value={(root.exclude ?? []).join(', ')}
-                                      aria-label={`Root ${index + 1} exclude globs`}
-                                      placeholder="optional, comma separated"
-                                      onChange={(event) =>
-                                        updateRoot(index, { exclude: splitList(event.target.value) })
-                                      }
-                                    />
-                                  </td>
-                                  <td>
-                                    <div className="form-check form-switch">
+                                <Fragment key={`${root.name}-${index}`}>
+                                  <tr>
+                                    <td>
                                       <input
-                                        className="form-check-input"
-                                        type="checkbox"
-                                        checked={Boolean(root.watch)}
-                                        aria-label={`Root ${index + 1} watch`}
+                                        className="form-control form-control-sm"
+                                        value={root.name}
+                                        aria-label={`Root ${index + 1} name`}
                                         onChange={(event) =>
-                                          updateRoot(index, { watch: event.target.checked })
+                                          updateRoot(index, { name: event.target.value })
                                         }
                                       />
-                                    </div>
-                                  </td>
-                                  <td className="text-end">
-                                    <button
-                                      type="button"
-                                      className="btn btn-sm btn-outline-danger"
-                                      onClick={() => removeRoot(index)}
-                                      disabled={disabled}
-                                      aria-label={`Remove root ${root.name || index + 1}`}
-                                    >
-                                      <i className="bi bi-trash" aria-hidden="true" />
-                                    </button>
-                                  </td>
-                                </tr>
+                                    </td>
+                                    <td>
+                                      <input
+                                        className="form-control form-control-sm"
+                                        value={root.path}
+                                        aria-label={`Root ${index + 1} path`}
+                                        placeholder="/home/you/notes"
+                                        onChange={(event) =>
+                                          updateRoot(index, { path: event.target.value })
+                                        }
+                                      />
+                                    </td>
+                                    <td className="text-center">
+                                      <div className="form-check form-switch d-inline-block">
+                                        <input
+                                          className="form-check-input"
+                                          type="checkbox"
+                                          checked={Boolean(root.watch)}
+                                          aria-label={`Root ${index + 1} watch`}
+                                          onChange={(event) =>
+                                            updateRoot(index, { watch: event.target.checked })
+                                          }
+                                        />
+                                      </div>
+                                    </td>
+                                    <td className="text-end">
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-danger"
+                                        onClick={() => removeRoot(index)}
+                                        disabled={disabled}
+                                        aria-label={`Remove root ${root.name || index + 1}`}
+                                      >
+                                        <i className="bi bi-trash" aria-hidden="true" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                  <tr className="table-light">
+                                    <td colSpan={4} className="py-1">
+                                      <details>
+                                        <summary className="small text-secondary">
+                                          Include / exclude globs
+                                        </summary>
+                                        <div className="row g-2 mt-1">
+                                          <div className="col-md-6">
+                                            <input
+                                              className="form-control form-control-sm"
+                                              value={(root.include ?? []).join(', ')}
+                                              aria-label={`Root ${index + 1} include globs`}
+                                              placeholder="include, comma separated"
+                                              onChange={(event) =>
+                                                updateRoot(index, {
+                                                  include: splitList(event.target.value),
+                                                })
+                                              }
+                                            />
+                                          </div>
+                                          <div className="col-md-6">
+                                            <input
+                                              className="form-control form-control-sm"
+                                              value={(root.exclude ?? []).join(', ')}
+                                              aria-label={`Root ${index + 1} exclude globs`}
+                                              placeholder="exclude, comma separated"
+                                              onChange={(event) =>
+                                                updateRoot(index, {
+                                                  exclude: splitList(event.target.value),
+                                                })
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                      </details>
+                                    </td>
+                                  </tr>
+                                </Fragment>
                               ))}
                             </tbody>
                           </table>

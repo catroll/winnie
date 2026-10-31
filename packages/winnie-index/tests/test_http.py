@@ -90,6 +90,20 @@ def test_mcp_notification_returns_202(server: str):
         assert response.status == 202
 
 
+def test_admin_search_returns_chunk_detail(server: str):
+    payload = _post(server + "/admin/search", {"query": "Qdrant"})
+    assert payload["expression"] == '"qdrant"'
+    assert payload["returned"] >= 2
+    assert {hit["path"] for hit in payload["hits"]} == {"project.md", "copy.md"}
+    assert payload["files"]
+
+
+def test_admin_search_without_a_query_is_400(server: str):
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _post(server + "/admin/search", {"query": " "})
+    assert exc.value.code == 400
+
+
 def test_status_endpoint(server: str):
     payload = _get(server + "/status")
     assert payload["chunks"] > 0

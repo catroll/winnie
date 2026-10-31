@@ -456,6 +456,7 @@ browser ──/api/v1/index/*──► Winnie API ──proxy──► index dae
 | `GET /admin/status` | Coverage, roots, failures, endpoints, skill state |
 | `GET /admin/config` | Editable configuration with roots normalised |
 | `PUT /admin/config` | Validate, write the YAML, reload in place |
+| `POST /admin/search` | Chunk-level hits plus the FTS expression, for the console's test panel |
 | `POST /admin/build` | `dry_run` preview or a real sweep, under a build lock |
 | `POST /admin/skill` | Install or check the Agent Skill |
 
@@ -474,6 +475,12 @@ Rules that make writing safe:
   5–86400 s, file cap 1–512 MB, results 1–50, chunks per document 1–10.
 - **A page on another origin cannot drive it.** `/admin/*` rejects a browser
   request whose `Origin` is not loopback, on top of the loopback bind.
+- **The search test is not the retrieval contract.** `search_documents` collapses
+  duplicate documents, caps chunks per document and returns eight hits. The test
+  panel calls `/admin/search`, which returns every matching chunk, the FTS
+  expression, the query terms, the candidate and dropped counts, and a hint when
+  nothing matched — the difference is the point, because the panel exists to
+  explain a miss rather than to answer a question.
 - **Saving rewrites the file and drops comments.** The file carries a header
   saying so; a hand-edited file stays valid, it just loses its comments on the
   next save.

@@ -6,7 +6,7 @@ import pytest
 from winnie_index import db
 from winnie_index.config import Config
 from winnie_index.scan import scan
-from winnie_index.search import get_document, search, status
+from winnie_index.search import get_document, search, search_debug, status
 
 
 @pytest.fixture()
@@ -165,3 +165,46 @@ def test_line_ending_change_does_not_rechunk(conn, config: Config, tree: Path):
     assert stats.changed == 1
     assert stats.chunks == 0
     assert after == before
+
+
+def test_debug_search_explains_a_hit(conn, config: Config):
+    scan(conn, config)
+    result = search_debug(conn, config, "决定")
+    assert result["expression"] == '"决定"'
+    assert result["terms"] == ["决定"]
+    assert result["hits"]
+    first = result["hits"][0]
+    assert first["path"] == "project.md"
+    assert first["start_line"] == 3
+    assert "我们决定" in first["text"]
+    assert result["files"][0]["path"] == "project.md"
+
+
+def test_debug_search_keeps_every_chunk_of_one_document(conn, config: Config, tree: Path):
+    (tree / "roots" / "notes" / "two.md").write_text(
+        "# 甲\n\n部署一\n\n# 乙\n\n部署二\n", encoding="utf-8"
+    )
+    scan(conn, config)
+    result = search_debug(conn, config, "部署")
+    paths = [hit["path"] for hit in result["hits"]]
+    assert paths.count("two.md") == 2
+
+
+def test_debug_search_without_a_match_explains_itself(conn, config: Config):
+    scan(conn, config)
+    result = search_debug(conn, config, "zzz-not-present")
+    assert result["hits"] == []
+    assert result["hint"]
+
+
+def test_debug_search_reports_the_expression_for_a_blank_query(conn, config: Config):
+    scan(conn, config)
+    result = search_debug(conn, config, " ，。 ")
+    assert result["expression"] is None
+    assert "no indexable terms" in result["hint"]
+
+
+def test_debug_search_honours_the_root_filter(conn, config: Config):
+    scan(conn, config)
+    result = search_debug(conn, config, "Qdrant", roots=["docs"])
+    assert {hit["root"] for hit in result["hits"]} == {"docs"}

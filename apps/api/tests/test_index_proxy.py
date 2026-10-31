@@ -31,6 +31,8 @@ class FakeIndex:
             )
         if path == "/admin/config" and request.method == "PUT":
             return httpx.Response(200, json={"config": {"roots": [{"name": "extra"}]}})
+        if path == "/admin/search":
+            return httpx.Response(200, json={"query": "x", "hits": [], "files": []})
         if path == "/admin/build":
             if self.reject:
                 return httpx.Response(400, json={"error": "build refused"})
@@ -82,6 +84,12 @@ async def test_config_get_and_put(index_client: httpx.AsyncClient) -> None:
         "/api/v1/index/config", json={"config": {"roots": [{"name": "extra", "path": "/tmp"}]}}
     )
     assert saved.json()["config"]["roots"][0]["name"] == "extra"
+
+
+async def test_search_is_proxied(index_client: httpx.AsyncClient) -> None:
+    response = await index_client.post("/api/v1/index/search", json={"query": "x"})
+    assert response.status_code == 200
+    assert response.json()["hits"] == []
 
 
 async def test_build_and_skill(index_client: httpx.AsyncClient) -> None:

@@ -89,6 +89,15 @@ async def save_index_config(
     return await _forward(request, "PUT", "/admin/config", payload)
 
 
+@router.post("/search")
+async def search_index(
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    _: str = Depends(get_user_id),
+) -> dict[str, Any]:
+    return await _forward(request, "POST", "/admin/search", payload)
+
+
 @router.post("/build")
 async def build_index(
     request: Request,
