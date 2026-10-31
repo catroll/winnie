@@ -51,6 +51,7 @@
     },
     {
       "id": "bbc-world",
+      "enabled": false,
       "name": "BBC News World",
       "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
       "section": "国际新闻",
@@ -58,6 +59,7 @@
     },
     {
       "id": "nyt-world",
+      "enabled": false,
       "name": "The New York Times World",
       "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
       "section": "国际新闻",
@@ -65,6 +67,7 @@
     },
     {
       "id": "washingtonpost-world",
+      "enabled": false,
       "name": "The Washington Post World",
       "url": "https://feeds.washingtonpost.com/rss/world",
       "section": "国际新闻",
@@ -72,6 +75,7 @@
     },
     {
       "id": "bbc-chinese",
+      "enabled": false,
       "name": "BBC 中文",
       "url": "https://feeds.bbci.co.uk/zhongwen/trad/rss.xml",
       "section": "中文新闻",
@@ -79,6 +83,7 @@
     },
     {
       "id": "feedx-nytimes",
+      "enabled": false,
       "name": "FeedX · 纽约时报",
       "url": "https://feedx.net/rss/nytimes.xml",
       "section": "国际新闻",
@@ -86,6 +91,7 @@
     },
     {
       "id": "feedx-bbc",
+      "enabled": false,
       "name": "FeedX · BBC",
       "url": "https://feedx.net/rss/bbc.xml",
       "section": "国际新闻",
@@ -93,6 +99,7 @@
     },
     {
       "id": "feedx-zaobao",
+      "enabled": false,
       "name": "FeedX · 联合早报",
       "url": "https://feedx.net/rss/zaobaotoday.xml",
       "section": "综合新闻",
@@ -100,6 +107,7 @@
     },
     {
       "id": "feedx-thepaper",
+      "enabled": false,
       "name": "FeedX · 澎湃新闻",
       "url": "https://feedx.net/rss/thepaper.xml",
       "section": "综合新闻",
@@ -107,6 +115,7 @@
     },
     {
       "id": "feedx-cna",
+      "enabled": false,
       "name": "FeedX · 中央社",
       "url": "https://feedx.net/rss/cna.xml",
       "section": "国际新闻",
@@ -114,6 +123,7 @@
     },
     {
       "id": "feedx-dw",
+      "enabled": false,
       "name": "FeedX · 德国之声",
       "url": "https://feedx.net/rss/dw.xml",
       "section": "国际新闻",
@@ -121,7 +131,7 @@
     }
   ],
   "google_news": {
-    "enabled": true,
+    "enabled": false,
     "url_template": "https://news.google.com/rss/search?q={query}",
     "hl": "zh-CN",
     "gl": "CN",
