@@ -8,6 +8,7 @@ incrementally.
 - Framework package: `packages/winnie-core` (auth, DB, storage, jobs, LLM)
 - Gateway package: `packages/winnie-gateway`
 - Meetings package: `packages/winnie-meetings`
+- Assistant package: `packages/winnie-assistant` (chat, tools, memory, tasks)
 - Knowledge sink package: `packages/winnie-knowledge`
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Tests: `tests/`, using a fake upstream instead of real vendor keys
@@ -228,3 +229,32 @@ uv run python scripts/smoke_test.py
 uv run python scripts/smoke_test.py --only openai
 uv run python scripts/smoke_test.py --only anthropic
 ```
+
+## Assistant
+
+The assistant capability is enabled by `assistant.enabled` in `config.yaml` and
+mounts `/api/v1/assistant`. It stores conversations and memory as Markdown under
+`assistant.root` (`data/assistant` by default), so the records survive a restart
+and can be edited by hand.
+
+```bash
+# Login first when accounts are enabled; skip the header otherwise.
+TOKEN=$(curl -s -X POST http://[::1]:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"..."}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+
+curl -s -X POST http://[::1]:8000/api/v1/assistant/chat \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"message":"上海今天要带伞吗？"}'
+```
+
+Open `http://[::1]:8000/api/v1/assistant/ui` for the chat page. The model is
+`assistant.model`; leave it empty to reuse `llm.model`, which needs
+`WINNIE_LLM_API_KEY`. The default `fake` answers deterministically, so the
+routes work before a key exists. Web search uses Bing RSS by default and needs
+no key.
+
+Scheduled tasks live in `data/assistant/tasks.yaml`; copy
+`data/assistant/tasks.example.yaml` and see
+[docs/assistant.md](../../docs/assistant.md) for the schedule forms, memory
+pipeline and API surface.

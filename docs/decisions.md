@@ -131,3 +131,65 @@ meeting deletion, gateway routes, the account page, password change and
 re-sign-in, dark mode, the mobile sidebar, and redirect to login after the
 server session was revoked. There is no committed frontend test suite yet; the
 browser checks were run against a disposable copy of the database.
+
+## Assistant: files first, no orchestration framework yet (2026-11-01)
+
+**Storage.** One Markdown file per conversation under
+`data/assistant/conversations/<day>/`, append-only, with the tool trace as
+`## tool:<name>` blocks. The alternative — a database table plus a JSON export —
+was rejected because it makes the record only readable through the service,
+which contradicts the project rule that documents are the source of truth. The
+instance is single-user: `auth.allow_registration` is off, and the bearer token
+protects the API instead of partitioning data. A per-owner directory was
+considered and dropped because scheduled tasks run without a session and would
+have produced files the owner could not see.
+
+**Memory.** A lexical index over the Markdown entries (ASCII words plus CJK
+character bigrams), rebuilt from the files at startup and after every write.
+Qdrant plus an embedding model is the designed end state, but this checkout has
+no embedding provider, and a lexical index that can be rebuilt and inspected is
+verifiable today; the agent only touches `MemoryIndex.search`, so the swap is
+one class. The bigram tokenizer was chosen over a Chinese segmenter dependency:
+for a personal corpus of thousands of entries it retrieves well enough, and its
+behaviour is inspectable.
+
+**Orchestration.** An explicit tool loop instead of LangGraph, which
+`DESIGN.md` names for the assistant layer. The current agent has one model, four
+tools and a four-round bound; a graph framework would add a dependency and hide
+the per-turn trace that is now stored in the conversation file. The loop is
+behind `AssistantAgent`, and the exit condition is written down: adopt LangGraph
+when there are real branches (planner, subagents, per-step retries), not before.
+
+**Scheduling.** No `croniter` and no APScheduler. Tasks use three readable
+forms — `every 15m`, `daily 07:30`, `weekly mon 09:00` — and next-run state is
+persisted in `.state/scheduler.json`. Cron expressions buy flexibility a
+personal assistant does not need yet and bring DST/parse edge cases that would
+have to be tested; a new dependency also means a lockfile change for a feature
+that is currently three branches. Revisit when monthly or multi-field
+schedules are requested.
+
+**Search.** Bing's RSS endpoint by default (`format=rss`), which needs no API key
+and is explicitly intended for personal aggregation. DuckDuckGo HTML and the
+Brave API were unavailable from this host (DuckDuckGo timed out; Brave needs a
+key). The `SearchProvider` port is one method, so a paid API is a new class, not
+a refactor.
+
+**Model client.** `winnie_core.llm.OpenAICompatibleLLM` gained a `chat()` method
+that accepts tool schemas and returns tool calls; `complete()` now delegates to
+it. Reusing the client keeps the retry, timeout and usage handling identical
+between translation/minutes and the assistant, instead of a second HTTP client
+inside the capability. Tools are only added to the request body when passed, so
+the existing job payloads are byte-identical.
+
+**Default model.** `assistant.model: fake` in `config.yaml`, matching the
+meetings `translator`/`summarizer` fake defaults. A missing `WINNIE_LLM_API_KEY`
+must not silently downgrade to a real-looking answer, and it must not stop the
+gateway and meeting APIs from starting; the assistant routes return `503` with
+the exact missing variable, which is what the chat page shows. Switching to the
+real model is `assistant.model: ""` plus the key in the environment.
+
+**Chat surface.** A self-contained page served at `/api/v1/assistant/ui` rather
+than a panel in `apps/admin`. The console is a separate, still-uncommitted
+deliverable, and the chat page must work on a phone over the LAN with no build
+step. It stores the bearer token in `localStorage` and uses `textContent` for
+rendering, so model output cannot inject markup.

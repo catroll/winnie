@@ -8,7 +8,7 @@ infrastructure below it exists to serve the assistant.
 
 | Layer | What it gives you | Status |
 |-------|-------------------|--------|
-| **Assistant** | Scheduling, development help and everyday tasks, orchestrated on top of the layers below | Planned |
+| **Assistant** | Chat, web search, scheduled tasks and long-term memory built from local files | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
 | **Management console** | Web view of meetings, transcripts, minutes and gateway routes | **MVP implemented** |
@@ -61,6 +61,13 @@ real endpoints. The Android client MVP in `apps/android` runs the file-first
 flow with live captions — sign in, record, watch provisional captions, stop,
 upload, transcript and minutes — and is verified against the local backend;
 running it on a device with a live ASR key is still pending.
+
+The assistant capability is usable end to end: a phone-sized chat page at
+`/api/v1/assistant/ui`, a bounded tool loop with web search and page fetch,
+append-only Markdown conversations, long-term memory distilled from those same
+files, and declarative scheduled tasks with run history. Its default
+`assistant.model` is `fake` until `WINNIE_LLM_API_KEY` is set, and the design,
+decisions and operating notes are in [docs/assistant.md](./docs/assistant.md).
 
 The AdminLTE management console in `apps/admin` operates the same data in a
 browser: sign in, dashboard, meeting list and detail, transcript and minutes,
@@ -119,8 +126,9 @@ export `WINNIE_LLM_API_KEY`. The integration design and endpoint list are in
    then cross-meeting search.
 2. **Knowledge base** — Git-backed Markdown, knowledge-base UI, classification
    and tagging, re-indexing, retrieval-augmented chat.
-3. **Assistant capabilities** — scheduling, development assistance and everyday
-   tasks, composed over the knowledge base and the gateway.
+3. **Assistant capabilities** — first slice done: chat, web search, memory and
+   scheduled tasks. Streaming, task creation from chat, vector retrieval and a
+   worker for 24/7 task execution remain.
 4. **Production readiness** — migrations, queue-backed background work,
    retention and backups, deployment hardening.
 

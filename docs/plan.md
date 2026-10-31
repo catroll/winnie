@@ -1,6 +1,6 @@
 # Winnie project plan and status
 
-Last updated: 2026-10-31.
+Last updated: 2026-11-01.
 
 This is the single high-level view of what Winnie is trying to become, how the
 work is sequenced, and what is actually finished. Deeper material stays in the
@@ -74,7 +74,7 @@ Success for the current phase:
 
 | Layer | Capability | Where it lives | Status |
 |---|---|---|---|
-| Assistant | Orchestration over knowledge, models and tools | Not started | Planned |
+| Assistant | Chat, web search, scheduled tasks, memory from local files | `winnie-assistant` | Core done |
 | Knowledge base | Markdown in Git: browse, edit, classify, version, search | `winnie-knowledge` note sink only | Partial |
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
@@ -94,12 +94,13 @@ Success for the current phase:
 | M3 | File-first meetings | Real bilingual meeting is recorded, transcribed, translated, summarized, exported and written as a note; retention and jobs verified | **Core done** — pipeline and live ASR work; long bilingual fixture and real LLM minutes still pending |
 | M4 | Live captions | PCM stream, live caption UI, canonical file pass, foreground recording and reconnect | **Core done** — captions and final pass work; foreground service, reconnect and streaming usage records are open |
 | M5 | Knowledge base | Markdown in Git is the source of truth; browse/edit/classify/version/search; notes are indexed and retrievable | Planned |
-| M6 | Assistant | Scheduling, development help and everyday tasks over the knowledge base and gateway | Planned |
+| M6 | Assistant | A reachable assistant that chats, searches, runs scheduled tasks and remembers from local files | **Core done** — chat, search, memory and scheduling work; streaming, task creation from chat and vector retrieval are open |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
-The current milestone is **M3/M4 hardening**: the meeting capability is usable
-on the happy path, and the remaining work is validation and durability rather
-than new surface area.
+The current work is **M3/M4 hardening** plus the first slice of **M6**: the
+meeting capability is usable on the happy path, and the assistant now has a
+working chat, search, memory and scheduling path. Remaining work in both is
+validation and durability rather than new surface area.
 
 ## 5. Completion by capability
 
@@ -291,7 +292,9 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **83 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **111 passed** |
+| Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
+| Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written from the conversation file |
 | Live file ASR | Doubao recording-file 2.0 on real audio | `ready`, one segment |
 | Live streaming ASR | Doubao SAUC 2.0 via the WebSocket | `ready` → partial → `你好。` → `final` |
 | Realtime final pass | `/meetings/{id}/audio` + `/transcribe` on a `realtime` meeting | `uploaded` → `ready` |
@@ -351,10 +354,12 @@ Ordered by dependency and risk, not by novelty:
    - Exit criteria: the meeting note is searchable and an answer cites it.
 
 4. **M6 assistant.**
-   - Orchestrate scheduling, development help and everyday tasks over the
-     knowledge base and gateway.
-   - Exit criteria: one real task completes with a traceable chain of model and
-     knowledge calls.
+   - Done: chat, web search, tools, memory from conversation files and
+     declarative scheduled tasks, verified with a live model.
+   - Next: SSE streaming, task creation from chat with confirmation, vector
+     retrieval, and a worker so tasks run while the API is down.
+   - Exit criteria for the slice: a scheduled brief arrives on a phone through a
+     webhook, and a later chat answers from the distilled memory.
 
 5. **M7 production readiness.**
    - TLS, PostgreSQL, Redis/arq, reverse proxy, backups and restore rehearsal,
