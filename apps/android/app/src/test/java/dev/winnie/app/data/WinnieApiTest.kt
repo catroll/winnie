@@ -191,6 +191,47 @@ class WinnieApiTest {
         assertEquals("zh", segment.detectedLanguage)
     }
 
+    @Test
+    fun createMeetingCanMarkTheSourceRealtime() = runBlocking {
+        respond = {
+            StubResponse(
+                201,
+                """
+                {
+                  "id": "m1", "title": "Live", "status": "created",
+                  "stage": null, "source": "realtime", "local_language": "zh",
+                  "audio_duration_ms": null, "error": null,
+                  "created_at": "2026-10-31T01:00:00",
+                  "updated_at": "2026-10-31T01:00:00"
+                }
+                """.trimIndent(),
+            )
+        }
+
+        val meeting = api(token = "abc").createMeeting(
+            title = "Live",
+            localLanguage = "zh",
+            source = "realtime",
+        )
+
+        assertEquals("realtime", meeting.source)
+        assertTrue(received.single().body.contains("\"source\":\"realtime\""))
+    }
+
+    @Test
+    fun websocketUrlUsesTheMatchingScheme() {
+        assertEquals(
+            "ws://192.168.1.38:8000/api/v1/meetings/m1/stream",
+            WinnieApi("http://192.168.1.38:8000")
+                .webSocketUrl("/api/v1/meetings/m1/stream"),
+        )
+        assertEquals(
+            "wss://winnie.example/api/v1/meetings/m1/stream",
+            WinnieApi("https://winnie.example")
+                .webSocketUrl("/api/v1/meetings/m1/stream"),
+        )
+    }
+
     private fun api(token: String? = null): WinnieApi =
         WinnieApi("http://127.0.0.1:${server.address.port}", token)
 

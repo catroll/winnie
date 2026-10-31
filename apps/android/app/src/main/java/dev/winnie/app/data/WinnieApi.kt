@@ -13,6 +13,8 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +47,12 @@ class WinnieApi(
             .callTimeout(12, TimeUnit.MINUTES)
             .build()
     }
+    private val streamingClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
+            .build()
+    }
 
     suspend fun login(username: String, password: String): TokenResponse =
         postJson(
@@ -63,11 +71,36 @@ class WinnieApi(
     suspend fun listMeetings(limit: Int = 50): MeetingList =
         getJson("/api/v1/meetings?limit=$limit")
 
-    suspend fun createMeeting(title: String, localLanguage: String): Meeting =
+    suspend fun createMeeting(
+        title: String,
+        localLanguage: String,
+        source: String = "file",
+    ): Meeting =
         postJson(
             path = "/api/v1/meetings",
-            body = json.encodeToString(MeetingCreate(title, localLanguage)),
+            body = json.encodeToString(MeetingCreate(title, localLanguage, source)),
         )
+
+    /** Opens the live-caption stream for a meeting created with source=realtime. */
+    fun openMeetingStream(
+        meetingId: String,
+        listener: WebSocketListener,
+    ): WebSocket = streamingClient.newWebSocket(
+        Request.Builder()
+            .url(webSocketUrl("/api/v1/meetings/$meetingId/stream"))
+            .apply { if (token != null) header("Authorization", "Bearer $token") }
+            .build(),
+        listener,
+    )
+
+    internal fun webSocketUrl(path: String): String {
+        val wsRoot = when {
+            root.startsWith("https://") -> "wss://" + root.removePrefix("https://")
+            root.startsWith("http://") -> "ws://" + root.removePrefix("http://")
+            else -> root
+        }
+        return wsRoot + path
+    }
 
     suspend fun uploadAudio(
         meetingId: String,
@@ -186,4 +219,5 @@ private data class RegisterRequest(val username: String, val password: String)
 private data class MeetingCreate(
     val title: String,
     @kotlinx.serialization.SerialName("local_language") val localLanguage: String,
+    val source: String,
 )

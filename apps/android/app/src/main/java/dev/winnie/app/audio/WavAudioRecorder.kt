@@ -20,7 +20,8 @@ import kotlinx.coroutines.withContext
 
 /** Records microphone audio to a WAV file the backend can transcribe. */
 interface AudioRecorder {
-    fun start()
+    /** [onChunk] receives each raw PCM block before it is written to the WAV. */
+    fun start(onChunk: ((ByteArray, Int) -> Unit)? = null)
     suspend fun stop(): File
     fun cancel()
 }
@@ -39,7 +40,7 @@ class WavAudioRecorder(context: Context) : AudioRecorder {
 
     private var active: Active? = null
 
-    override fun start() {
+    override fun start(onChunk: ((ByteArray, Int) -> Unit)?) {
         check(active == null) { "a recording is already in progress" }
 
         val directory = File(appContext.cacheDir, RECORDINGS_DIR).apply { mkdirs() }
@@ -98,6 +99,7 @@ class WavAudioRecorder(context: Context) : AudioRecorder {
                     val read = record.read(buffer, 0, buffer.size)
                     if (read > 0) {
                         writer.append(buffer, read)
+                        onChunk?.invoke(buffer, read)
                     } else if (read < 0) {
                         throw IOException("AudioRecord.read failed with $read")
                     }

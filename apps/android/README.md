@@ -1,8 +1,9 @@
 # Winnie Android client (MVP)
 
 Kotlin/Compose client for the Winnie meeting-notes backend. It signs in, records
-a meeting at 16 kHz mono, uploads it, waits for the pipeline, and shows the
-transcript and structured minutes. It contains no AI logic: the FastAPI
+a meeting at 16 kHz mono, streams live captions while recording, then uploads
+the WAV, waits for the pipeline and shows the final transcript and structured
+minutes. It contains no AI logic: the FastAPI
 `/api/v1` contract is the source of truth.
 
 ## What works
@@ -10,12 +11,15 @@ transcript and structured minutes. It contains no AI logic: the FastAPI
 - Sign in, or create the first account; the bearer token is encrypted with an
   AES/GCM key held in the Android Keystore
 - Record 16 kHz mono PCM to a WAV file and upload it
+- Live captions over a WebSocket while recording; the final transcript still
+  comes from the uploaded file
 - Meeting list with status, transcript with original + translation, minutes
 - Server address editable on the login screen and persisted
 
 Not implemented yet: foreground-service recording (a backgrounded app can be
-killed), offline cache, export/share, realtime streaming, speaker labels,
-certificate pinning, and automatic recovery from an expired session. The
+killed, and that also stops the live-caption stream), offline cache,
+export/share, speaker labels, certificate pinning, and automatic recovery from
+an expired session. The
 meeting language is fixed to `zh` (the server's local language) in this MVP.
 
 ## Requirements
@@ -85,7 +89,11 @@ sends passwords, tokens and meeting audio in clear: terminate TLS before using
 it with real accounts.
 
 With `meetings.asr_provider: volcengine`, the API process needs
-`VOLCENGINE_ASR_API_KEY`; the app itself never sees vendor credentials.
+`VOLCENGINE_ASR_API_KEY`; the app itself never sees vendor credentials. Live
+captions use the same API key through the server-side streaming adapter and
+`wss://…/api/v1/meetings/{id}/stream`. The final transcript is a second,
+file-based ASR call on the uploaded WAV, which is the accuracy tradeoff for
+keeping one canonical pipeline.
 
 ## Tests
 

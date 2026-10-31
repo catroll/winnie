@@ -13,10 +13,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -69,13 +73,13 @@ fun RecordScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         permissionDenied = !granted
-        if (granted) viewModel.start()
+        if (granted) viewModel.start(title)
     }
 
     val working = state is RecordUiState.Working
     BackHandler(enabled = true) {
         if (working) return@BackHandler
-        viewModel.cancel()
+        viewModel.discard()
         onClose()
     }
 
@@ -86,7 +90,7 @@ fun RecordScreen(
                 navigationIcon = {
                     TextButton(
                         onClick = {
-                            viewModel.cancel()
+                            viewModel.discard()
                             onClose()
                         },
                         enabled = !working,
@@ -113,7 +117,7 @@ fun RecordScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Audio is recorded at 16 kHz mono and uploaded to your Winnie server.",
+                        text = "Audio is recorded at 16 kHz mono. Live captions stream while you record; the file is transcribed again on stop.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -150,7 +154,7 @@ fun RecordScreen(
                                 Manifest.permission.RECORD_AUDIO,
                             ) == PackageManager.PERMISSION_GRANTED
                             if (granted) {
-                                viewModel.start()
+                                viewModel.start(title)
                             } else {
                                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             }
@@ -161,6 +165,7 @@ fun RecordScreen(
                 }
 
                 is RecordUiState.Recording -> {
+                    val scroll = rememberScrollState()
                     Box(
                         modifier = Modifier
                             .size(12.dp)
@@ -177,12 +182,74 @@ fun RecordScreen(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(32.dp))
-                    Button(onClick = { viewModel.stopAndProcess(title) }) {
+                    Spacer(Modifier.height(20.dp))
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                text = "Live captions",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            when {
+                                current.liveText.isNotBlank() -> {
+                                    LaunchedEffect(current.liveText) {
+                                        scroll.scrollTo(scroll.maxValue)
+                                    }
+                                    Text(
+                                        text = current.liveText,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier
+                                            .heightIn(max = 220.dp)
+                                            .verticalScroll(scroll),
+                                    )
+                                    if (current.liveState == LiveState.Unavailable) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            text = current.liveError
+                                                ?: "Live captions stopped; the recording is still being saved.",
+                                            color = MaterialTheme.colorScheme.error,
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                }
+                                current.liveState == LiveState.Connecting -> {
+                                    Text(
+                                        text = "Connecting…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                current.liveState == LiveState.Streaming -> {
+                                    Text(
+                                        text = "Listening…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                else -> {
+                                    Text(
+                                        text = current.liveError
+                                            ?: "Live captions are unavailable. The recording will still be transcribed.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Live captions are provisional; the recording is transcribed again on stop.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Button(onClick = viewModel::stopAndProcess) {
                         Text("Stop and transcribe")
                     }
                     Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = viewModel::cancel) {
+                    TextButton(onClick = viewModel::discard) {
                         Text("Discard recording")
                     }
                 }
@@ -197,7 +264,7 @@ fun RecordScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Keep this screen open until the meeting is created.",
+                        text = "Keep this screen open until this step finishes.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -217,7 +284,7 @@ fun RecordScreen(
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(24.dp))
-                    Button(onClick = viewModel::cancel) {
+                    Button(onClick = viewModel::discard) {
                         Text("Back to start")
                     }
                 }
@@ -226,7 +293,7 @@ fun RecordScreen(
                     LaunchedEffect(current.meetingId) {
                         // Reset before navigating so reopening the recorder does
                         // not immediately navigate to the previous meeting.
-                        viewModel.cancel()
+                        viewModel.reset()
                         onFinished(current.meetingId)
                     }
                     CircularProgressIndicator()

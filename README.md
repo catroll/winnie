@@ -9,8 +9,8 @@ infrastructure below it exists to serve the assistant.
 | Layer | What it gives you | Status |
 |-------|-------------------|--------|
 | **Assistant** | Scheduling, development help and everyday tasks, orchestrated on top of the layers below | Planned |
-| **Meeting notes** | File-first transcription, cross-lingual transcript and structured minutes | Backend implemented; live provider validation pending |
-| **Android client** | Record a meeting, upload it, read its transcript and minutes | **MVP implemented** |
+| **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
+| **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
@@ -52,10 +52,11 @@ APIs and a Markdown knowledge sink are wired. Accounts, per-user meeting
 isolation, the Volcengine Doubao ASR adapter, and OpenAI-compatible translation
 and structured-minutes adapters are implemented. The fake providers remain the
 default for tests and local demos. The DeepSeek translation/minutes smoke test
-passed; live ASR still needs a real meeting with a Doubao key. The Android client
-MVP in `apps/android` runs the file-first flow — sign
-in, record, upload, transcript and minutes — and is verified against the local
-backend; running it on a device with a live ASR key is still pending.
+passed, and the file and streaming Doubao ASR paths are validated against the
+real endpoints. The Android client MVP in `apps/android` runs the file-first
+flow with live captions — sign in, record, watch provisional captions, stop,
+upload, transcript and minutes — and is verified against the local backend;
+running it on a device with a live ASR key is still pending.
 
 ### Quick start
 
@@ -101,7 +102,8 @@ export `WINNIE_LLM_API_KEY`. The integration design and endpoint list are in
 
 1. **Meeting notes** — validate and tune the Doubao and LLM provider paths on
    real recordings; evaluate a second ASR vendor on bilingual audio; run the
-   Android client on a device; realtime streaming; then cross-meeting search.
+   Android client on a device; foreground-service live captions and reconnect;
+   then cross-meeting search.
 2. **Knowledge base** — Git-backed Markdown, management UI, classification and
    tagging, re-indexing, retrieval-augmented chat.
 3. **Assistant capabilities** — scheduling, development assistance and everyday
