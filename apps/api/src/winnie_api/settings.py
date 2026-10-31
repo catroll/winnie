@@ -36,6 +36,20 @@ class IndexConfig(BaseModel):
     timeout_seconds: float = 60.0
 
 
+class AIConfig(BaseModel):
+    """The admin-managed AI registry and feature bindings.
+
+    Disabled by default so a programmatic ``Settings()`` (tests, embedders)
+    never reads or writes a file. ``config.yaml`` turns it on for the service.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    # Relative paths are resolved against apps/api/, like every other root.
+    path: str = "../../data/ai.yaml"
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -50,6 +64,7 @@ class Settings(BaseModel):
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
     assistant: AssistantConfig = Field(default_factory=AssistantConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)
+    ai: AIConfig = Field(default_factory=AIConfig)
 
     def gateway_config(self) -> GatewayConfig:
         return GatewayConfig(
@@ -76,6 +91,9 @@ class Settings(BaseModel):
         if path.is_absolute():
             return path
         return self.resolve_assistant_root() / path
+
+    def resolve_ai_path(self) -> Path:
+        return _resolve_path(self.ai.path)
 
     def resolve_database_url(self) -> str:
         """Make relative SQLite paths absolute; leave server URLs untouched."""

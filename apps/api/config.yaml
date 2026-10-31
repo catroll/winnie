@@ -31,6 +31,15 @@ routes:
     protocol: anthropic
     base_url: https://api.anthropic.com
 
+# Admin-managed AI providers and the feature bindings that use them. On the
+# first start the routes, LLM, ASR and assistant values above are imported
+# into the registry file; afterwards the console (Admin -> AI providers) is
+# authoritative and this block only says where that file lives. API keys are
+# never written there: each provider names an environment variable.
+ai:
+  enabled: true
+  path: ../../data/ai.yaml
+
 # Account system. Enabling auth creates users and sessions in the database.
 auth:
   enabled: true

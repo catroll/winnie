@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from winnie_core.auth.models import AuthSession, LoginThrottle, User  # noqa: F401
@@ -14,6 +15,13 @@ from winnie_meetings.factory import build_meeting_service
 from winnie_meetings.models import Meeting  # noqa: F401  (metadata)
 from winnie_meetings.service import MeetingService
 
+from winnie_api.ai.providers import (
+    DynamicASRProvider,
+    DynamicRealtimeASR,
+    DynamicSummarizer,
+    DynamicTranslator,
+)
+from winnie_api.ai.store import AISettingsService
 from winnie_api.settings import Settings
 
 
@@ -44,7 +52,12 @@ class AppRuntime:
         await self.engine.dispose()
 
 
-def build_runtime(settings: Settings) -> AppRuntime | None:
+def build_runtime(
+    settings: Settings,
+    *,
+    ai: AISettingsService | None = None,
+    http: httpx.AsyncClient | None = None,
+) -> AppRuntime | None:
     if not (settings.auth.enabled or settings.meetings.enabled):
         return None
 
@@ -69,6 +82,14 @@ def build_runtime(settings: Settings) -> AppRuntime | None:
             session_factory=session_factory,
             meetings_root=settings.resolve_meetings_root(),
             notes_root=settings.resolve_notes_root(),
+            asr=DynamicASRProvider(settings, ai, http) if ai is not None else None,
+            realtime_asr=DynamicRealtimeASR(settings, ai) if ai is not None else None,
+            translator=(
+                DynamicTranslator(settings, ai, http) if ai is not None else None
+            ),
+            summarizer=(
+                DynamicSummarizer(settings, ai, http) if ai is not None else None
+            ),
         )
         if settings.meetings.enabled
         else None

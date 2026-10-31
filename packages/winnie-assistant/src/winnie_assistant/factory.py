@@ -36,10 +36,12 @@ def build_assistant_service(
     tasks_file: Path,
     http: httpx.AsyncClient,
     clock=None,
+    model: ChatModel | None = None,
+    model_name: str = "",
 ) -> AssistantService:
     timezone = _timezone(config.timezone)
-    model_name = (config.model or llm.model or "fake").strip()
-    model = _build_model(model_name, llm, http)
+    resolved_name = model_name or (config.model or llm.model or "fake").strip()
+    resolved_model = model or _build_model(resolved_name, llm, http)
     search = _build_search(config, http)
     index = (
         IndexClient(
@@ -67,7 +69,7 @@ def build_assistant_service(
         MemoryBuilder(
             store=store,
             memory=memory,  # type: ignore[arg-type]
-            model=model,
+            model=resolved_model,
             config=config,
             state_path=root / ".state" / "memory.json",
             timezone=timezone,
@@ -108,7 +110,7 @@ def build_assistant_service(
         store=store,
         memory=memory,
         toolbox=toolbox,
-        model=model,
+        model=resolved_model,
         config=config,
         timezone=timezone,
         clock=clock,
@@ -121,8 +123,8 @@ def build_assistant_service(
         builder=builder,
         agent=agent,
         scheduler=scheduler,
-        model=model,
-        model_name=model_name,
+        model=resolved_model,
+        model_name=resolved_name,
         search=search,
         index=index,
         timezone=timezone,

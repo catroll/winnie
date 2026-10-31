@@ -8,9 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 from arq import cron
 from arq.connections import RedisSettings
 
+from winnie_api.ai.store import AISettingsService
 from winnie_api.jobs.tasks import (
     cleanup_expired_audio,
     cleanup_expired_sessions,
@@ -22,19 +24,33 @@ from winnie_api.settings import get_settings
 
 async def startup(ctx: dict[str, Any]) -> None:
     settings = get_settings()
-    runtime = build_runtime(settings)
+    ai = AISettingsService(settings) if settings.ai.enabled else None
+    if ai is not None:
+        ai.load()
+    http = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0))
+    runtime = build_runtime(settings, ai=ai, http=http)
     if runtime is None:
+        await http.aclose()
         raise RuntimeError("auth.enabled or meetings.enabled must be true")
-    await runtime.startup()
+    try:
+        await runtime.startup()
+    except Exception:
+        await http.aclose()
+        raise
     ctx["runtime"] = runtime
     ctx["service"] = runtime.meeting_service
     ctx["auth"] = runtime.auth_service
+    ctx["ai"] = ai
+    ctx["http"] = http
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
     runtime = ctx.get("runtime")
     if runtime is not None:
         await runtime.shutdown()
+    http = ctx.get("http")
+    if http is not None:
+        await http.aclose()
 
 
 class WorkerSettings:

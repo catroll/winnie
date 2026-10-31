@@ -20,6 +20,9 @@ from winnie_gateway.capability import capability as gateway_capability
 from winnie_meetings.capability import capability as meetings_capability
 
 from winnie_api import __version__
+from winnie_api.ai.providers import DynamicChatModel
+from winnie_api.ai.router import router as ai_router
+from winnie_api.ai.store import AISettingsService
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.settings import Settings, load_settings
@@ -35,20 +38,35 @@ def create_app(
     """Build the application from independently registered capabilities."""
     resolved = settings or load_settings()
     owns_http = http is None
-    runtime: AppRuntime | None = build_runtime(resolved)
+    ai_settings = AISettingsService(resolved) if resolved.ai.enabled else None
+    if ai_settings is not None:
+        # Seed or validate the file before any service is built: a broken
+        # registry should fail startup loudly, not surface on the first chat.
+        ai_settings.load()
+    http_client = http or httpx.AsyncClient(
+        timeout=httpx.Timeout(300.0, connect=30.0)
+    )
+    runtime: AppRuntime | None = build_runtime(
+        resolved,
+        ai=ai_settings,
+        http=http_client,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.gateway = resolved.gateway_config()
-        app.state.routes_table = app.state.gateway.route_table()
+        app.state.routes_table = (
+            ai_settings.route_table()
+            if ai_settings is not None
+            else app.state.gateway.route_table()
+        )
+        app.state.ai_settings = ai_settings
         app.state.log_root = resolved.resolve_log_root()
         app.state.recorders = {}
         app.state.default_user_id = resolved.meetings.default_user_id
         app.state.index_base_url = resolved.index.base_url if resolved.index.enabled else ""
         app.state.index_timeout = resolved.index.timeout_seconds
-        app.state.http = http or httpx.AsyncClient(
-            timeout=httpx.Timeout(300.0, connect=30.0)
-        )
+        app.state.http = http_client
         app.state.runtime = runtime
         app.state.assistant_service = None
         app.state.assistant_error = ""
@@ -59,12 +77,19 @@ def create_app(
         assistant = None
         if resolved.assistant.enabled:
             try:
+                model = (
+                    DynamicChatModel(resolved, ai_settings, http_client)
+                    if ai_settings is not None
+                    else None
+                )
                 assistant = build_assistant_service(
                     config=resolved.assistant,
                     llm=resolved.llm,
                     root=resolved.resolve_assistant_root(),
                     tasks_file=resolved.resolve_assistant_tasks_file(),
-                    http=app.state.http,
+                    http=http_client,
+                    model=model,
+                    model_name=getattr(model, "name", "") if model is not None else "",
                 )
                 await assistant.startup()
                 app.state.assistant_service = assistant
@@ -81,7 +106,7 @@ def create_app(
                 await runtime.shutdown()
                 app.state.runtime = None
             if owns_http:
-                await app.state.http.aclose()
+                await http_client.aclose()
 
     app = FastAPI(title="Winnie", version=__version__, lifespan=lifespan)
     framework = WinnieFramework(app)
@@ -96,6 +121,8 @@ def create_app(
     # router only proxies to it, so the host owns the mount.
     if resolved.index.enabled:
         app.include_router(index_router, prefix="/api/v1")
+    if resolved.ai.enabled:
+        app.include_router(ai_router, prefix="/api/v1")
     app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")

@@ -186,7 +186,7 @@ class AssistantService:
         memory_entries = len(self.memory.entries) if self.memory is not None else 0
         memory_files = len(self.memory.files()) if self.memory is not None else 0
         return {
-            "model": self.model_name,
+            "model": getattr(self.model, "name", self.model_name),
             "search": self.search.name,
             "timezone": self.timezone.key,
             "root": str(self.root),

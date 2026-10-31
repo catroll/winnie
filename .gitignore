@@ -7,6 +7,9 @@ data/*.db
 data/*.db-*
 data/meetings/
 data/kb/
+# Admin-managed AI providers; generated on first start and machine-local.
+data/ai.yaml
+data/.ai.yaml*
 **/__pycache__/
 **/.venv/
 **/.env
