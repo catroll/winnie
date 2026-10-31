@@ -15,7 +15,7 @@ from winnie_core.auth.dependencies import get_user_id
 from winnie_core.config import ModelRuntimeConfig
 
 from winnie_api.ai.errors import AIConflict, AINotFound, AIProviderError
-from winnie_api.ai.schema import BindingDraft, IntegrationDraft
+from winnie_api.ai.schema import BindingDraft, IntegrationDraft, VendorDraft
 from winnie_api.ai.store import AISettingsService
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -53,13 +53,49 @@ def _integration_view(
     raise HTTPException(status_code=404, detail="integration not found")
 
 
+def _vendor_view(service: AISettingsService, vendor_id: str) -> dict[str, Any]:
+    for vendor in service.view()["vendors"]:
+        if vendor["id"] == vendor_id:
+            return vendor
+    raise HTTPException(status_code=404, detail="supplier not found")
+
+
 @router.get("/config")
 async def get_config(
     request: Request,
     _: str = Depends(get_user_id),
 ) -> dict[str, Any]:
-    """Integrations, feature bindings and the config.yaml fallback for each."""
+    """Suppliers, endpoints, models, feature bindings and runtime limits."""
     return _service(request).view()
+
+
+@router.post("/vendors", status_code=201)
+async def create_vendor(
+    request: Request,
+    payload: VendorDraft,
+    _: str = Depends(get_user_id),
+) -> dict[str, Any]:
+    service = _service(request)
+    try:
+        vendor = service.create_vendor(payload)
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {"vendor": _vendor_view(service, vendor.id)}
+
+
+@router.put("/vendors/{vendor_id}")
+async def update_vendor(
+    request: Request,
+    vendor_id: str,
+    payload: VendorDraft,
+    _: str = Depends(get_user_id),
+) -> dict[str, Any]:
+    service = _service(request)
+    try:
+        vendor = service.update_vendor(vendor_id, payload)
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {"vendor": _vendor_view(service, vendor.id)}
 
 
 @router.post("/integrations", status_code=201)

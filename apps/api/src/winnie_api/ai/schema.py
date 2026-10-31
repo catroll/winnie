@@ -1,9 +1,10 @@
-"""Admin-managed AI provider registry and the features that use it.
+"""Admin-managed AI supplier registry and the features that use it.
 
-The registry is deliberately small: an integration describes one vendor
-endpoint, and a binding says which feature uses it. Gateway routes are the
-OpenAI/Anthropic integrations; internal jobs (assistant chat, translation,
-minutes, ASR) resolve the integration named by their binding at call time.
+The registry is deliberately small: a supplier owns endpoints and a model
+catalog, and a binding says which endpoint/model serves a feature. Gateway
+routes are the endpoints with ``gateway: true``; internal jobs (assistant chat,
+translation, minutes, ASR) resolve the endpoint named by their binding at call
+time.
 """
 
 from __future__ import annotations
@@ -137,6 +138,51 @@ KINDS: tuple[KindSpec, ...] = (
 KIND_BY_KEY: dict[str, KindSpec] = {kind.kind: kind for kind in KINDS}
 
 
+_VENDOR_LABELS = {
+    "anthropic": "Anthropic",
+    "deepseek": "DeepSeek",
+    "fake": "Deterministic fake",
+    "openai": "OpenAI",
+    "qwen": "Qwen",
+    "volcengine": "Volcengine",
+}
+
+_VENDOR_HOSTS = (
+    ("deepseek", "deepseek"),
+    ("openai", "openai"),
+    ("anthropic", "anthropic"),
+    ("dashscope", "qwen"),
+    ("qwen", "qwen"),
+    ("volcengine", "volcengine"),
+    ("bytedance", "volcengine"),
+)
+
+
+def vendor_label_for(vendor_id: str) -> str:
+    return _VENDOR_LABELS.get(vendor_id, vendor_id.replace("-", " ").title())
+
+
+def infer_vendor(name: str, base_url: str = "") -> str:
+    """Group protocol/role records under the supplier they belong to."""
+    host = (urlparse(base_url).hostname or "").lower()
+    for needle, vendor in _VENDOR_HOSTS:
+        if needle in host:
+            return vendor
+
+    slug = name.strip().lower()
+    for suffix in ("-openai", "-anthropic", "-asr"):
+        if slug.endswith(suffix):
+            slug = slug[: -len(suffix)]
+            break
+    for vendor in _VENDOR_LABELS:
+        if slug == vendor:
+            return vendor
+    if slug.startswith("internal"):
+        return "internal"
+    cleaned = re.sub(r"[^a-z0-9-]+", "-", slug).strip("-")
+    return cleaned or "custom"
+
+
 def _validate_name(value: str) -> str:
     name = value.strip()
     if not _NAME_RE.fullmatch(name):
@@ -190,6 +236,80 @@ def _normalize_options(kind: IntegrationKind, options: dict[str, Any]) -> dict[s
     return normalized
 
 
+class ModelRecord(BaseModel):
+    """One model id a supplier offers, with the metadata the console shows."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str = ""
+    context_window: int | None = Field(default=None, ge=1)
+    max_output_tokens: int | None = Field(default=None, ge=1)
+    notes: str = ""
+
+    @field_validator("id", "label", "notes")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str) -> str:
+        if not value:
+            raise ValueError("model id is required")
+        if len(value) > 128:
+            raise ValueError("model id must be at most 128 characters")
+        return value
+
+    @model_validator(mode="after")
+    def _label(self) -> ModelRecord:
+        if not self.label:
+            self.label = self.id
+        return self
+
+
+class VendorDraft(BaseModel):
+    """A supplier grouping endpoint integrations and the models they offer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str = ""
+    models: list[ModelRecord] = Field(default_factory=list)
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str) -> str:
+        name = value.strip()
+        if not _NAME_RE.fullmatch(name):
+            raise ValueError(
+                "vendor id must be lowercase letters, digits and dashes, start "
+                "with a letter or digit, and be at most 63 characters"
+            )
+        return name
+
+    @field_validator("label")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _models(self) -> VendorDraft:
+        seen: set[str] = set()
+        for model in self.models:
+            if model.id in seen:
+                raise ValueError(f"duplicate model id: {model.id}")
+            seen.add(model.id)
+        if not self.label:
+            self.label = vendor_label_for(self.id)
+        return self
+
+
+class VendorRecord(VendorDraft):
+    created_at: str = Field(default_factory=utcnow)
+    updated_at: str = Field(default_factory=utcnow)
+
+
 class IntegrationInput(BaseModel):
     """The fields a console user can change on an integration."""
 
@@ -197,13 +317,16 @@ class IntegrationInput(BaseModel):
 
     name: str
     label: str = ""
+    # Supplier grouping. Store methods fill it in for older API clients; a
+    # version 3 file must carry it explicitly.
+    vendor: str = ""
     kind: IntegrationKind
     base_url: str = ""
     api_key_env: str = ""
     default_model: str = ""
     enabled: bool = True
-    # Whether an OpenAI/Anthropic integration is exposed as a gateway route.
-    # Internal-only providers (including the seeded internal LLM) keep False.
+    # Whether an OpenAI/Anthropic endpoint is exposed as a gateway route.
+    # Internal-only endpoints keep False.
     gateway: bool = True
     options: dict[str, Any] = Field(default_factory=dict)
 
@@ -211,6 +334,19 @@ class IntegrationInput(BaseModel):
     @classmethod
     def _name(cls, value: str) -> str:
         return _validate_name(value)
+
+    @field_validator("vendor")
+    @classmethod
+    def _vendor(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            return ""
+        if not _NAME_RE.fullmatch(name):
+            raise ValueError(
+                "vendor must be lowercase letters, digits and dashes, start "
+                "with a letter or digit, and be at most 63 characters"
+            )
+        return name
 
     @field_validator("api_key_env")
     @classmethod
@@ -281,20 +417,29 @@ class BindingDraft(BaseModel):
 
 
 class AIState(BaseModel):
-    """The whole file: integrations plus one binding per configured feature."""
+    """The whole file: suppliers, endpoints, models and feature bindings."""
 
     model_config = ConfigDict(extra="forbid")
 
     version: int = 2
     # Shared tuning only; provider base URL/model/key belong to an integration.
     runtime: ModelRuntimeConfig = Field(default_factory=ModelRuntimeConfig)
+    # Supplier -> endpoints -> models. The same vendor can contribute several
+    # endpoint records (protocol/role), but it is one supplier in the console.
+    vendors: list[VendorRecord] = Field(default_factory=list)
     integrations: list[IntegrationRecord] = Field(default_factory=list)
     bindings: dict[str, BindingRecord] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> AIState:
-        if self.version not in (1, 2):
+        if self.version not in (1, 2, 3):
             raise ValueError(f"unsupported ai settings version: {self.version}")
+
+        vendor_ids: set[str] = set()
+        for vendor in self.vendors:
+            if vendor.id in vendor_ids:
+                raise ValueError(f"duplicate vendor id: {vendor.id}")
+            vendor_ids.add(vendor.id)
 
         ids: set[str] = set()
         names: set[str] = set()
@@ -307,6 +452,32 @@ class AIState(BaseModel):
             names.add(integration.name)
 
         by_id = {integration.id: integration for integration in self.integrations}
+        vendors_by_id = {vendor.id: vendor for vendor in self.vendors}
+        if self.version >= 3:
+            for integration in self.integrations:
+                if not integration.vendor:
+                    raise ValueError(
+                        f"integration {integration.name!r} has no vendor"
+                    )
+                vendor = vendors_by_id.get(integration.vendor)
+                if vendor is None:
+                    raise ValueError(
+                        f"integration {integration.name!r} references missing "
+                        f"vendor {integration.vendor!r}"
+                    )
+                if (
+                    integration.kind != "fake"
+                    and integration.default_model
+                    and not any(
+                        model.id == integration.default_model
+                        for model in vendor.models
+                    )
+                ):
+                    raise ValueError(
+                        f"integration {integration.name!r} default_model "
+                        f"{integration.default_model!r} is not in the "
+                        f"{vendor.id!r} model catalog"
+                    )
         for key, binding in self.bindings.items():
             feature = FEATURE_BY_KEY.get(key)
             if feature is None:
@@ -331,12 +502,25 @@ class AIState(BaseModel):
                     f"feature {key} is bound to {integration.name!r}, which has "
                     "no api_key_env; set one or choose an internal provider"
                 )
+            if self.version >= 3 and binding.model:
+                vendor = vendors_by_id[integration.vendor]
+                if not any(model.id == binding.model for model in vendor.models):
+                    raise ValueError(
+                        f"feature {key} model {binding.model!r} is not in the "
+                        f"{vendor.id!r} model catalog"
+                    )
         return self
 
     def integration(self, integration_id: str) -> IntegrationRecord | None:
         for integration in self.integrations:
             if integration.id == integration_id:
                 return integration
+        return None
+
+    def vendor(self, vendor_id: str) -> VendorRecord | None:
+        for vendor in self.vendors:
+            if vendor.id == vendor_id:
+                return vendor
         return None
 
 
@@ -348,6 +532,8 @@ class ResolvedProvider:
     source: Literal["admin", "config"]
     integration_id: str | None
     integration_name: str
+    vendor: str
+    vendor_label: str
     kind: IntegrationKind
     base_url: str
     api_key_env: str

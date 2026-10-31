@@ -61,6 +61,12 @@ async def test_config_seeds_routes_features_and_the_file(tmp_path: Path) -> None
 
     names = {item["name"] for item in body["integrations"]}
     assert {"openai", "anthropic", "fake"} <= names
+    vendors = {item["id"]: item for item in body["vendors"]}
+    assert {"openai", "anthropic", "volcengine", "fake"} <= set(vendors)
+    assert vendors["volcengine"]["models"][0]["id"] == "bigmodel"
+    by_name = {item["name"]: item for item in body["integrations"]}
+    assert by_name["openai"]["vendor"] == "openai"
+    assert by_name["openai"]["role_label"] == "OpenAI-compatible gateway"
     assert body["path"].endswith("ai.yaml")
     assert (tmp_path / "ai.yaml").is_file()
 
@@ -603,8 +609,14 @@ bindings:
         routes = (await client.get("/routes")).json()["routes"]
 
     stored = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert stored["version"] == 2
+    assert stored["version"] == 3
     by_name = {item["name"]: item for item in config["integrations"]}
+    vendors = {item["id"]: item for item in config["vendors"]}
+    assert by_name["deepseek-openai"]["vendor"] == "deepseek"
+    assert by_name["internal-llm"]["vendor"] == "deepseek"
+    assert [model["id"] for model in vendors["deepseek"]["models"]] == [
+        "deepseek-chat"
+    ]
     assert by_name["deepseek-openai"]["api_key_env"] == ""
     assert by_name["deepseek-openai"]["default_model"] == ""
     assert by_name["deepseek-openai"]["label"] == "DeepSeek (OpenAI-compatible)"
@@ -697,3 +709,97 @@ async def test_model_runtime_is_admin_managed(tmp_path: Path) -> None:
             json={**config["runtime"], "timeout_seconds": 0},
         )
         assert invalid.status_code == 422
+
+
+async def test_supplier_groups_endpoints_models_and_bindings(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        created_vendor = await client.post(
+            "/api/v1/ai/vendors",
+            json={
+                "id": "deepseek",
+                "label": "DeepSeek",
+                "models": [
+                    {
+                        "id": "deepseek-chat",
+                        "label": "DeepSeek Chat",
+                        "context_window": 128000,
+                        "max_output_tokens": 8192,
+                    },
+                    {
+                        "id": "deepseek-reasoner",
+                        "label": "DeepSeek Reasoner",
+                        "context_window": 128000,
+                        "max_output_tokens": 8192,
+                    },
+                ],
+            },
+        )
+        assert created_vendor.status_code == 201, created_vendor.text
+
+        created = await client.post(
+            "/api/v1/ai/integrations",
+            json={
+                "name": "deepseek-internal",
+                "label": "DeepSeek",
+                "vendor": "deepseek",
+                "kind": "openai",
+                "base_url": "https://api.deepseek.com/v1",
+                "api_key_env": "TEST_DEEPSEEK_KEY",
+                "default_model": "deepseek-chat",
+                "gateway": False,
+            },
+        )
+        assert created.status_code == 201, created.text
+        integration_id = created.json()["integration"]["id"]
+        assert created.json()["integration"]["vendor"] == "deepseek"
+        assert (
+            created.json()["integration"]["role_label"]
+            == "Internal (OpenAI-compatible)"
+        )
+
+        bound = await client.put(
+            "/api/v1/ai/features/assistant.chat",
+            json={"integration_id": integration_id, "model": "deepseek-reasoner"},
+        )
+        assert bound.status_code == 200, bound.text
+
+        unknown_model = await client.put(
+            "/api/v1/ai/features/assistant.chat",
+            json={"integration_id": integration_id, "model": "not-in-catalog"},
+        )
+        assert unknown_model.status_code == 400
+        assert "not in the DeepSeek catalog" in unknown_model.json()["detail"]
+
+        removed = await client.put(
+            "/api/v1/ai/vendors/deepseek",
+            json={
+                "id": "deepseek",
+                "label": "DeepSeek",
+                "models": [{"id": "deepseek-chat"}],
+            },
+        )
+        assert removed.status_code == 400
+        assert "assistant.chat is bound to it" in removed.json()["detail"]
+
+        updated = await client.put(
+            "/api/v1/ai/vendors/deepseek",
+            json={
+                "id": "deepseek",
+                "label": "DeepSeek API",
+                "models": [
+                    {"id": "deepseek-chat", "context_window": 128000},
+                    {"id": "deepseek-reasoner", "max_output_tokens": 8192},
+                ],
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["vendor"]["label"] == "DeepSeek API"
+
+        config = (await client.get("/api/v1/ai/config")).json()
+        deepseek = next(item for item in config["vendors"] if item["id"] == "deepseek")
+        assert deepseek["integration_count"] == 1
+        assert [item["id"] for item in deepseek["models"]] == [
+            "deepseek-chat",
+            "deepseek-reasoner",
+        ]

@@ -30,8 +30,13 @@ from winnie_api.ai.schema import (
     IntegrationRecord,
     KINDS,
     KIND_BY_KEY,
+    ModelRecord,
     ResolvedProvider,
+    VendorDraft,
+    VendorRecord,
+    infer_vendor,
     utcnow,
+    vendor_label_for,
 )
 from winnie_api.ai.seed import migrate_state, seed_state
 
@@ -179,11 +184,19 @@ class AISettingsService:
                 model = model or integration.default_model
             if integration.kind == "fake":
                 model = ""
+            vendor = state.vendor(integration.vendor)
+            if vendor is None:
+                raise AIProviderError(
+                    f"integration {integration.name!r} references missing supplier "
+                    f"{integration.vendor!r}"
+                )
             return ResolvedProvider(
                 feature=feature,
                 source="admin",
                 integration_id=integration.id,
                 integration_name=integration.name,
+                vendor=vendor.id,
+                vendor_label=vendor.label,
                 kind=integration.kind,
                 base_url=integration.base_url,
                 api_key_env=integration.api_key_env,
@@ -226,6 +239,9 @@ class AISettingsService:
         return {
             "path": str(self.path),
             "runtime": state.runtime.model_dump(mode="json"),
+            "vendors": [
+                self._vendor_view(vendor, state) for vendor in state.vendors
+            ],
             "integrations": [
                 self._integration_view(integration, state)
                 for integration in state.integrations
@@ -247,9 +263,20 @@ class AISettingsService:
                 for kind in KINDS
             ],
             "updated_at": max(
-                [integration.updated_at for integration in state.integrations]
+                [vendor.updated_at for vendor in state.vendors]
+                + [integration.updated_at for integration in state.integrations]
                 + [binding.updated_at for binding in state.bindings.values()],
                 default="",
+            ),
+        }
+
+    def _vendor_view(self, vendor: VendorRecord, state: AIState) -> dict[str, Any]:
+        return {
+            **vendor.model_dump(mode="json"),
+            "integration_count": sum(
+                1
+                for integration in state.integrations
+                if integration.vendor == vendor.id
             ),
         }
 
@@ -274,9 +301,20 @@ class AISettingsService:
                     f"/{integration.name}/v1/messages",
                     f"/{integration.name}/v1/models",
                 ]
+        vendor = state.vendor(integration.vendor)
+        if integration.kind == "fake":
+            role_label = "Offline fake"
+        elif integration.kind == "volcengine_asr":
+            role_label = "Speech-to-text"
+        elif integration.gateway:
+            role_label = f"{kind.label} gateway"
+        else:
+            role_label = f"Internal ({kind.label})"
         return {
             **integration.model_dump(mode="json"),
             "kind_label": kind.label,
+            "vendor_label": vendor.label if vendor is not None else integration.vendor,
+            "role_label": role_label,
             "api_key_present": bool(
                 integration.api_key_env
                 and os.environ.get(integration.api_key_env, "").strip()
@@ -303,17 +341,100 @@ class AISettingsService:
             "model": binding.model if binding is not None else "",
             "source": "admin" if integration is not None else "none",
             "integration_name": integration.name if integration is not None else "",
+            "vendor": integration.vendor if integration is not None else "",
+            "vendor_label": (
+                state.vendor(integration.vendor).label
+                if integration is not None and state.vendor(integration.vendor)
+                else ""
+            ),
         }
 
     # -- writes ----------------------------------------------------------
+
+    def _ensure_vendor(
+        self, state: AIState, vendor_id: str, *, create: bool
+    ) -> VendorRecord:
+        vendor = state.vendor(vendor_id)
+        if vendor is not None:
+            return vendor
+        if not create:
+            raise AINotFound(f"supplier not found: {vendor_id}")
+        vendor = VendorRecord(id=vendor_id, label=vendor_label_for(vendor_id))
+        state.vendors.append(vendor)
+        return vendor
+
+    def create_vendor(self, draft: VendorDraft) -> VendorRecord:
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            if state.vendor(draft.id) is not None:
+                raise AIConflict(f"a supplier named {draft.id!r} already exists")
+            vendor = VendorRecord(**draft.model_dump())
+            state.vendors.append(vendor)
+            self._commit(state)
+            return vendor
+
+    def update_vendor(self, vendor_id: str, draft: VendorDraft) -> VendorRecord:
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            if draft.id != vendor_id:
+                raise AIProviderError("supplier id in the body does not match the path")
+            index = next(
+                (
+                    position
+                    for position, vendor in enumerate(state.vendors)
+                    if vendor.id == vendor_id
+                ),
+                None,
+            )
+            if index is None:
+                raise AINotFound(f"supplier not found: {vendor_id}")
+            old = state.vendors[index]
+            removed = {
+                model.id for model in old.models
+            } - {model.id for model in draft.models}
+            if removed:
+                for integration in state.integrations:
+                    if integration.vendor != vendor_id:
+                        continue
+                    if integration.default_model in removed:
+                        raise AIProviderError(
+                            f"cannot remove model {integration.default_model!r}: "
+                            f"it is the default for {integration.name!r}"
+                        )
+                for feature, binding in state.bindings.items():
+                    if not binding.integration_id or binding.model not in removed:
+                        continue
+                    integration = state.integration(binding.integration_id)
+                    if integration is not None and integration.vendor == vendor_id:
+                        raise AIProviderError(
+                            f"cannot remove model {binding.model!r}: "
+                            f"{feature} is bound to it"
+                        )
+            merged = old.model_dump()
+            merged.update(draft.model_dump())
+            merged["updated_at"] = utcnow()
+            vendor = VendorRecord.model_validate(merged)
+            state.vendors[index] = vendor
+            self._commit(state)
+            return vendor
 
     def create_integration(self, draft: IntegrationDraft) -> IntegrationRecord:
         with self._lock:
             state = self.state().model_copy(deep=True)
             if any(item.name == draft.name for item in state.integrations):
                 raise AIConflict(f"an integration named {draft.name!r} already exists")
-            record = IntegrationRecord(**draft.model_dump())
+            vendor_id = draft.vendor or infer_vendor(draft.name, draft.base_url)
+            vendor = self._ensure_vendor(state, vendor_id, create=not draft.vendor)
+            merged = draft.model_dump()
+            merged["vendor"] = vendor.id
+            record = IntegrationRecord(**merged)
             state.integrations.append(record)
+            if (
+                record.kind != "fake"
+                and record.default_model
+                and not any(model.id == record.default_model for model in vendor.models)
+            ):
+                vendor.models.append(ModelRecord(id=record.default_model))
             self._commit(state)
             return record
 
@@ -337,8 +458,12 @@ class AISettingsService:
                 for item in state.integrations
             ):
                 raise AIConflict(f"an integration named {draft.name!r} already exists")
-            merged = state.integrations[index].model_dump()
+            existing = state.integrations[index]
+            vendor_id = draft.vendor or existing.vendor
+            vendor = self._ensure_vendor(state, vendor_id, create=False)
+            merged = existing.model_dump()
             merged.update(draft.model_dump())
+            merged["vendor"] = vendor.id
             merged["updated_at"] = utcnow()
             record = IntegrationRecord.model_validate(merged)
             for feature, binding in state.bindings.items():
@@ -357,6 +482,12 @@ class AISettingsService:
                             "model on the integration or the binding before "
                             "clearing the default model"
                         )
+            if (
+                record.kind != "fake"
+                and record.default_model
+                and not any(model.id == record.default_model for model in vendor.models)
+            ):
+                vendor.models.append(ModelRecord(id=record.default_model))
             state.integrations[index] = record
             self._commit(state)
             return record
@@ -407,6 +538,11 @@ class AISettingsService:
                         f"api_key_env before binding {feature}"
                     )
 
+            vendor = (
+                state.vendor(integration.vendor)
+                if integration is not None
+                else None
+            )
             model = draft.model
             if integration is None or integration.kind == "fake":
                 model = ""
@@ -416,6 +552,16 @@ class AISettingsService:
                     raise AIProviderError(
                         f"choose a model for {feature}: the integration has no "
                         "default_model"
+                    )
+                if vendor is None:
+                    raise AIProviderError(
+                        f"integration {integration.name!r} has no supplier; "
+                        "fix the registry before binding"
+                    )
+                if not any(item.id == model for item in vendor.models):
+                    raise AIProviderError(
+                        f"model {model!r} is not in the {vendor.label} catalog; "
+                        "add it under Models first"
                     )
             else:
                 model = ""

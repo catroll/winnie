@@ -18,7 +18,11 @@ from winnie_api.ai.schema import (
     BindingRecord,
     FEATURE_BY_KEY,
     IntegrationRecord,
+    ModelRecord,
+    VendorRecord,
+    infer_vendor,
     utcnow,
+    vendor_label_for,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle is avoided at runtime
@@ -58,13 +62,37 @@ def _unique_name(name: str, taken: set[str]) -> str:
 def seed_state(settings: Settings) -> AIState:
     """Build the first registry from the YAML configuration."""
     integrations: list[IntegrationRecord] = []
+    vendors: dict[str, VendorRecord] = {}
     taken: set[str] = set()
+
+    def ensure_vendor(vendor_id: str) -> VendorRecord:
+        vendor = vendors.get(vendor_id)
+        if vendor is None:
+            vendor = VendorRecord(
+                id=vendor_id,
+                label=vendor_label_for(vendor_id),
+            )
+            vendors[vendor_id] = vendor
+        return vendor
+
+    def add_model(vendor_id: str, model_id: str) -> None:
+        if not model_id:
+            return
+        vendor = ensure_vendor(vendor_id)
+        if not any(model.id == model_id for model in vendor.models):
+            vendor.models.append(ModelRecord(id=model_id))
 
     def add(**values: object) -> IntegrationRecord:
         name = _unique_name(str(values.pop("name")), taken)
         taken.add(name)
-        record = IntegrationRecord(name=name, **values)  # type: ignore[arg-type]
+        base_url = str(values.get("base_url") or "")
+        vendor_id = str(values.pop("vendor", "") or infer_vendor(name, base_url))
+        ensure_vendor(vendor_id)
+        record = IntegrationRecord(
+            name=name, vendor=vendor_id, **values  # type: ignore[arg-type]
+        )
         integrations.append(record)
+        add_model(vendor_id, record.default_model)
         return record
 
     for name, route in settings.routes.items():
@@ -121,72 +149,112 @@ def seed_state(settings: Settings) -> AIState:
         bind("meetings.transcribe", fake)
 
     assert set(bindings) == set(FEATURE_BY_KEY)
-    return AIState(version=2, integrations=integrations, bindings=bindings)
+    return AIState(
+        version=3,
+        vendors=list(vendors.values()),
+        integrations=integrations,
+        bindings=bindings,
+    )
+
+
+def _add_vendors(state: AIState) -> None:
+    """Group v2 endpoint records under suppliers and collect their models."""
+    vendors: dict[str, VendorRecord] = {vendor.id: vendor for vendor in state.vendors}
+    for integration in state.integrations:
+        vendor_id = integration.vendor or infer_vendor(
+            integration.name, integration.base_url
+        )
+        vendor = vendors.get(vendor_id)
+        if vendor is None:
+            vendor = VendorRecord(
+                id=vendor_id,
+                label=vendor_label_for(vendor_id),
+            )
+            vendors[vendor_id] = vendor
+        integration.vendor = vendor_id
+        if integration.kind == "fake" or not integration.default_model:
+            continue
+        if not any(model.id == integration.default_model for model in vendor.models):
+            vendor.models.append(ModelRecord(id=integration.default_model))
+
+    by_id = {integration.id: integration for integration in state.integrations}
+    for binding in state.bindings.values():
+        if not binding.integration_id or not binding.model:
+            continue
+        integration = by_id.get(binding.integration_id)
+        if integration is None or integration.kind == "fake":
+            continue
+        vendor = vendors[integration.vendor]
+        if not any(model.id == binding.model for model in vendor.models):
+            vendor.models.append(ModelRecord(id=binding.model))
+
+    state.vendors = list(vendors.values())
 
 
 def migrate_state(state: AIState) -> bool:
-    """Upgrade a v1 registry in place; return whether it must be written back.
+    """Upgrade an old registry in place; return whether it must be written back.
 
     v1 reused the OpenAI route whose base URL matched ``llm.base_url`` as the
     internal LLM. That put the server-side key on a public gateway route and
     made one record serve two roles. v2 stores the internal LLM separately and
-    adds an explicit ``gateway`` flag.
-
-    ``llm`` no longer exists in ``config.yaml``, so the combined record is
-    identified from the file itself: an OpenAI integration with a key that is
-    referenced by a binding. Its endpoint, key and model become the new
-    internal-only record.
+    adds an explicit ``gateway`` flag. v3 groups those endpoints under the
+    supplier they belong to and records the models each supplier offers.
     """
-    if state.version >= 2:
-        return False
+    changed = False
+    if state.version < 2:
+        for integration in state.integrations:
+            if integration.kind not in {"openai", "anthropic"}:
+                integration.gateway = False
+            # Only replace the label the old seed generated; keep manual edits.
+            if integration.label == integration.name.replace("-", " ").title():
+                label = _route_label(integration.name)
+                if label != integration.label:
+                    integration.label = label
 
-    for integration in state.integrations:
-        if integration.kind not in {"openai", "anthropic"}:
-            integration.gateway = False
-        # Only replace the label the old seed generated; keep manual edits.
-        if integration.label == integration.name.replace("-", " ").title():
-            label = _route_label(integration.name)
-            if label != integration.label:
-                integration.label = label
-
-    referenced = {
-        binding.integration_id
-        for binding in state.bindings.values()
-        if binding.integration_id is not None
-    }
-    combined = next(
-        (
-            integration
-            for integration in state.integrations
-            if integration.kind == "openai"
-            and integration.id in referenced
-            and integration.api_key_env
-        ),
-        None,
-    )
-    if combined is not None:
-        internal = IntegrationRecord(
-            name=_unique_name(
-                "internal-llm",
-                {integration.name for integration in state.integrations},
+        referenced = {
+            binding.integration_id
+            for binding in state.bindings.values()
+            if binding.integration_id is not None
+        }
+        combined = next(
+            (
+                integration
+                for integration in state.integrations
+                if integration.kind == "openai"
+                and integration.id in referenced
+                and integration.api_key_env
             ),
-            label="Internal LLM",
-            kind="openai",
-            base_url=combined.base_url,
-            api_key_env=combined.api_key_env,
-            default_model=combined.default_model,
-            enabled=combined.enabled,
-            gateway=False,
+            None,
         )
-        combined.api_key_env = ""
-        combined.default_model = ""
-        combined.gateway = True
-        combined.updated_at = utcnow()
-        for binding in state.bindings.values():
-            if binding.integration_id == combined.id:
-                binding.integration_id = internal.id
-                binding.updated_at = utcnow()
-        state.integrations.append(internal)
+        if combined is not None:
+            internal = IntegrationRecord(
+                name=_unique_name(
+                    "internal-llm",
+                    {integration.name for integration in state.integrations},
+                ),
+                label="Internal LLM",
+                kind="openai",
+                base_url=combined.base_url,
+                api_key_env=combined.api_key_env,
+                default_model=combined.default_model,
+                enabled=combined.enabled,
+                gateway=False,
+            )
+            combined.api_key_env = ""
+            combined.default_model = ""
+            combined.gateway = True
+            combined.updated_at = utcnow()
+            for binding in state.bindings.values():
+                if binding.integration_id == combined.id:
+                    binding.integration_id = internal.id
+                    binding.updated_at = utcnow()
+            state.integrations.append(internal)
+        state.version = 2
+        changed = True
 
-    state.version = 2
-    return True
+    if state.version < 3:
+        _add_vendors(state)
+        state.version = 3
+        changed = True
+
+    return changed
