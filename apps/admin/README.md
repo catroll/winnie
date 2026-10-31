@@ -212,8 +212,10 @@ vendors named by the AI integrations.
 Deliberately not part of this app yet:
 
 - Recording and audio upload (the Android client owns the capture path).
-- Account creation and registration (the first account is created through the
-  API; later registration is controlled by `auth.allow_registration`).
+- Account creation and user management. Planned as **Administration → Users**
+  together with explicit admin/user roles and grouped navigation; until then
+  the first account is created through the API and later registration is
+  controlled by `auth.allow_registration`. See [docs/todo.md](../../docs/todo.md).
 - Creating, editing or cancelling scheduled tasks. The assistant owns
   `tasks/tasks.json` through the chat tools, so the console only reads it; a
   second writer would also have to synchronise the scheduler's next-run state.
@@ -234,6 +236,10 @@ Deliberately not part of this app yet:
   `apps/api/config.yaml`, because a price is deployment billing data and the
   ledger re-prices history from that table.
 - Knowledge-base management, which is still planned.
+
+Planned next: frontend i18n with a no-reload language switch, and an explicit
+admin/user role split with a grouped menu. The concrete acceptance criteria are
+in [docs/todo.md](../../docs/todo.md).
 
 ## Stack
 

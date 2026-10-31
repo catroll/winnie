@@ -174,12 +174,94 @@ handset has not run them yet.
 - [x] Add password reset from the host: `python -m winnie_api.cli.reset_password`
       prompts or generates a password and revokes every session.
 - [ ] Add email-based password reset if multi-user deployment needs it.
-- [ ] Add account management/admin endpoints only when multi-user deployment
-      is real; keep single-user registration closed by default.
+- [ ] Add account management/admin endpoints; the scope and sequencing are in
+      the admin-console section below. Keep single-user registration closed by
+      default until the role model lands.
 - [x] Review token storage on Android: the bearer token is encrypted with an
       AES/GCM key held in the Android Keystore, not in plain preferences.
       Certificate pinning is not needed for the local MVP; revisit when the
       server is public.
+
+## P2 — admin console: i18n and user management
+
+> The console is English-only and has one implicit role. The shell, navigation
+> and every page carry hardcoded copy, and a hidden menu is not access control.
+> Sequence the work: role model and admin APIs first, then the Users page, then
+> i18n over the final menu structure.
+
+### Internationalization
+
+- [ ] Choose the frontend i18n layer before touching pages: evaluate
+      `i18next` + `react-i18next` and `react-intl` against React 19 / Vite 8 /
+      TypeScript 7, pin the maintained release, and record the reason in
+      [decisions](./decisions.md). Do not hand-roll a dictionary or reload the
+      page to switch language.
+- [ ] Extract every user-facing string under `apps/admin/src` into
+      `src/i18n/locales/en.json` and `zh-CN.json`: navigation, page titles,
+      cards, table headers, empty/loading/error states, form labels, help text,
+      validation messages and action confirmations. API payloads, status codes
+      and stored data stay English.
+- [ ] Add a language control in the header next to the theme menu (`en` /
+      `zh-CN`): persist the choice in `localStorage`, default from
+      `navigator.languages`, switch immediately without reload, update
+      `document.documentElement.lang`, and format dates/numbers with `Intl`.
+- [ ] Add a key-coverage check (script or test) that fails when `zh-CN` misses a
+      key or a component contains a hardcoded visible string; run it in
+      `npm run build` or CI.
+- [ ] Verify every page in both languages and both themes with the browser
+      driver, including long Chinese labels in the sidebar and table headers,
+      the mobile sidebar, and the language switch itself.
+
+### User management
+
+- [ ] Add an explicit `admin` / `user` role to `users` with an Alembic
+      migration. The first registered user becomes admin, later registrations
+      are users, and an auth-disabled local deployment acts as admin. For an
+      existing table, promote the oldest active user and document the backup.
+- [ ] Enforce the role server-side: `UserRead`, login and `GET /auth/me` return
+      it, and an `admin_required` dependency protects every `/api/v1/admin/*`
+      route with `403` for non-admins. Never rely on hidden menu items for
+      security.
+- [ ] Classify the existing API surface before gating it: operator-only routers
+      (AI registry, gateway route inspection, document-index admin, news, global
+      usage, users) require admin; meetings, chat, tasks, skills and account
+      remain owner-scoped. Add a test that a normal user gets `403` on every
+      operator route, not only on the new Users endpoint.
+- [ ] Treat the cached role as UI state only: refresh `/auth/me` on load and
+      after a `403`, and drop the Administration UI immediately when the server
+      no longer grants the role. The API is the authority on every request.
+- [ ] Add admin user APIs: list/search with pagination; create a user with a
+      generated temporary password shown once; reset a password (revoke all
+      sessions); activate/deactivate (deactivation revokes sessions); change
+      display name and role. Refuse to demote or deactivate the last active
+      admin, or to deactivate the caller's own account.
+- [ ] Add **Administration → Users**: table with username, display name, role,
+      status, created date and last session; search; create and reset-password
+      dialogs; role/status actions; and a clear `403` state when a non-admin
+      opens the route directly.
+- [ ] Emit one structured log line per role/status/password change (`actor`,
+      `target`, `action`, `result`); never log a password or hash.
+- [ ] Tests: every admin route rejects a user, last-admin and self-deactivation
+      guards, session revocation after deactivate/reset, pagination/search, and
+      admin/user menu visibility with a guarded route.
+
+### Menu information architecture
+
+- [ ] Replace the flat `NAVIGATION` array with one metadata source
+      (`path`, `labelKey`, `icon`, `group`, `adminOnly`) rendered through
+      AdminLTE's `nav-header`/treeview, so i18n, menu rendering and route guards
+      cannot drift.
+- [ ] Define the two groups:
+      **Workspace** — Chat, Meetings, Scheduled tasks, Skills, Account.
+      **Administration** — Overview/Dashboard, Users, AI providers, Gateway
+      routes, Document index, News, LLM usage.
+- [ ] Hide the Administration group for non-admin users; keep Account available
+      to everyone. Guard each admin route, not only its link, and choose a safe
+      non-admin landing page (Chat or a workspace overview) instead of rendering
+      the admin Dashboard at `/`.
+- [ ] Verify both roles in the expanded and collapsed/mobile sidebar, including
+      active state and the redirect from `/`; add a component test for menu
+      visibility.
 
 ## P2 — clients and realtime
 
