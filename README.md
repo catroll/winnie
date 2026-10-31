@@ -19,6 +19,9 @@ The model gateway is one requirement of the project, not its definition. It
 landed first because every later capability needs a vendor-neutral, observable
 way to talk to models.
 
+Milestone status, completion evidence and the next development plan are in
+[docs/plan.md](./docs/plan.md).
+
 ## Why Winnie
 
 - **No vendor lock-in.** Models are routes in a configuration file. Switching

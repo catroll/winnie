@@ -1,7 +1,8 @@
 # Winnie TODO
 
 Prioritized follow-ups for the personal-assistant backend. Keep entries concrete
-enough to start without re-reading the design.
+enough to start without re-reading the design. The milestone view and completion
+status are in [plan.md](./plan.md).
 
 ## P0 — first real meeting and bilingual fixture
 
@@ -128,11 +129,15 @@ enough to start without re-reading the design.
       Verified against the local backend with fake providers, including a
       JVM integration test that runs the same HTTP client the app uses.
 - [ ] Android client follow-ups: foreground-service recording so a backgrounded
-      app keeps recording, export/share, offline cache, automatic token-refresh
-      handling, and a physical-device run with a live ASR key.
-- [ ] Run the Android MVP on a phone against a real Doubao key and fix the
-      device-specific issues (mic permission UX, long-recording stability,
-      cleartext/TLS configuration).
+      app keeps recording, export/share, offline cache, and automatic
+      token-refresh handling.
+- [x] Exercise the file-first flow from a physical phone against the LAN API:
+      login, create, upload and transcribe. The first attempt exposed the
+      missing server `VOLCENGINE_ASR_API_KEY`; the same meeting reached `ready`
+      after the key was fixed. The app can read the resulting transcript.
+- [ ] Run the live-caption build on a phone and fix the device-specific issues
+      (mic permission UX, long-recording stability, cleartext/TLS
+      configuration).
 - [x] Realtime WebSocket ASR for live captions, reusing the final file-first
       pipeline for the finished recording. The backend proxies PCM to Doubao
       SAUC 2.0 over `/api/v1/meetings/{id}/stream`; the Android recorder shows

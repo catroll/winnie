@@ -1,0 +1,350 @@
+# Winnie project plan and status
+
+Last updated: 2026-10-31.
+
+This is the single high-level view of what Winnie is trying to become, how the
+work is sequenced, and what is actually finished. Deeper material stays in the
+linked documents: [meeting-notes design](./meetings.md),
+[backlog](./todo.md) and [decisions](./decisions.md).
+
+Status values used below:
+
+- **Done** — implemented and verified end to end.
+- **Core done** — the main path works and is verified; hardening or a named
+  validation is still open.
+- **Partial** — some pieces exist, but the capability is not usable end to end.
+- **Planned** — not started.
+
+## 1. Product goal
+
+Winnie is a personal assistant that belongs to its user. The user owns the
+knowledge, chooses the models, and keeps the rules; Winnie is not a chat window
+rented from a vendor.
+
+The assistant is the product. The model gateway, meeting notes, accounts and
+knowledge base exist to serve it. A capability is only useful if its data can
+later be read, corrected and used by the assistant.
+
+Success for the current phase:
+
+1. Capture a meeting end to end: record, see live captions, get an accurate
+   transcript, translate it, produce structured minutes, and write a Markdown
+   note.
+2. Keep every model call observable, replaceable and attributable to a route or
+   provider.
+3. Keep the resulting knowledge readable, editable, diffable and revertible.
+
+## 2. Scope and principles
+
+### In scope
+
+- One self-hosted backend and one Android client, for one user or a small
+  trusted group.
+- File-first meeting transcription as the canonical accuracy path, with live
+  captions as a provisional view while recording.
+- Provider ports behind stable interfaces: ASR, translation, summarization,
+  and the OpenAI/Anthropic gateway.
+- A personal knowledge base whose source of truth is Markdown in Git.
+- Local observability: request/response logs, usage records, health checks.
+
+### Out of scope for now
+
+- Multi-tenant SaaS, billing, quotas and an admin console.
+- A Go BFF or a second independently deployed service.
+- Speaker diarization, real-time translation of live captions, and mobile
+  background recording before the current path is validated.
+- Hosting vendor credentials on the phone. The Android app never sees them.
+
+### Engineering principles
+
+- **One backend, capability packages.** `apps/api` is the composition root;
+  capabilities cannot import the host or each other.
+- **One canonical transcript.** The file pipeline owns the final transcript,
+  translation and minutes. Live captions are a separate, provisional view.
+- **File-first before realtime.** Accuracy and failure recovery are easier to
+  prove on a recorded file; live captions reuse the same final pass.
+- **Verify by driving the real path.** Provider claims need a real request;
+  UI claims need a running app or a real HTTP/WebSocket call.
+- **Record decisions where they are made.** Provider choices, deliberate
+  non-goals and limitations belong in `docs/decisions.md` or the relevant
+  document, not only in a commit message.
+
+## 3. Capability map
+
+| Layer | Capability | Where it lives | Status |
+|---|---|---|---|
+| Assistant | Orchestration over knowledge, models and tools | Not started | Planned |
+| Knowledge base | Markdown in Git: browse, edit, classify, version, search | `winnie-knowledge` note sink only | Partial |
+| Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
+| Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
+| Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
+| Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
+| Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
+| Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
+
+## 4. Milestones
+
+| ID | Milestone | Exit criteria | Status |
+|---|---|---|---|
+| M0 | Foundation | Repository, capability packages, host composition root, Alembic baseline, Makefile entry points | **Done** |
+| M1 | Model gateway | OpenAI and Anthropic routes forward without translation; SSE passes through; paired ask/answer logs; live upstream test | **Done** |
+| M2 | Accounts | Register/login/logout, opaque bearer sessions, per-user meeting isolation, login throttling, password change and host reset | **Done** |
+| M3 | File-first meetings | Real bilingual meeting is recorded, transcribed, translated, summarized, exported and written as a note; retention and jobs verified | **Core done** — pipeline and live ASR work; long bilingual fixture and real LLM minutes still pending |
+| M4 | Live captions | PCM stream, live caption UI, canonical file pass, foreground recording and reconnect | **Core done** — captions and final pass work; foreground service, reconnect and streaming usage records are open |
+| M5 | Knowledge base | Markdown in Git is the source of truth; browse/edit/classify/version/search; notes are indexed and retrievable | Planned |
+| M6 | Assistant | Scheduling, development help and everyday tasks over the knowledge base and gateway | Planned |
+| M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
+
+The current milestone is **M3/M4 hardening**: the meeting capability is usable
+on the happy path, and the remaining work is validation and durability rather
+than new surface area.
+
+## 5. Completion by capability
+
+### 5.1 Model gateway — Done
+
+- OpenAI Chat Completions and Anthropic Messages are forwarded as-is; no
+  protocol translation.
+- Path-based routes can front OpenAI, Anthropic, DeepSeek and Qwen at once.
+- Client-supplied vendor keys pass through; Winnie does not store them.
+- SSE streaming is proxied; each ask/answer pair is recorded locally.
+- Covered by `apps/api/tests/test_gateway.py`.
+
+### 5.2 Accounts — Done
+
+- Argon2id password hashes; only a SHA-256 hash of the session token is stored.
+- Sessions expire after `auth.session_ttl_days`; password change and host reset
+  revoke every session.
+- First account can always register; later registration is controlled by
+  `auth.allow_registration`.
+- Login throttling is per normalized username and returns `429` with
+  `Retry-After`.
+- Android stores the bearer token encrypted with a Keystore-held AES/GCM key.
+- Covered by `apps/api/tests/test_auth.py` and the Android token tests.
+
+### 5.3 File-first meeting notes — Core done
+
+Working:
+
+- Meeting CRUD, 16 kHz mono WAV upload, local storage with a size limit.
+- Volcengine Doubao recording-file ASR 2.0 (`volc.seedasr.auc`), with the
+  original + translated segment model.
+- Script-based language detection when the provider omits a per-utterance
+  label; short segments inherit their neighbour.
+- OpenAI-compatible translation and structured-minutes adapters, including
+  chunking/map-reduce for long transcripts.
+- Transcript, minutes, regenerate, Markdown/TXT export, audio retention and
+  delete.
+- Markdown knowledge note sink (summary, topics, decisions, action items).
+- Inline and arq job backends; PostgreSQL migration path and worker path have
+  been rehearsed.
+- Usage records for file ASR, translation and summarization.
+
+Verified:
+
+- Live Doubao file ASR returns segments for Mandarin and English.
+- A real meeting recording (`你好。`) reached `ready` with one segment.
+- Minutes and transcript endpoints returned `200`.
+
+Open:
+
+- A 10–30 minute bilingual fixture (Chinese, English, code-switching, names,
+  numbers) has not been recorded; provider quality, timestamp drift and cost
+  are therefore not measured.
+- The current checkout keeps `translator: fake` and `summarizer: fake` in
+  `apps/api/config.yaml`. The real LLM adapters have passed a small live
+  smoke test but are not enabled here; a real bilingual meeting with
+  `openai_compatible` translation/minutes is still pending.
+
+### 5.4 Live captions — Core done
+
+Working:
+
+- `WS /api/v1/meetings/{id}/stream` accepts 16 kHz mono PCM, authenticates with
+  the bearer header (or `?token=` for browser clients), and checks meeting
+  ownership.
+- A Volcengine SAUC 2.0 adapter (`wss://openspeech.bytedance.com/api/v3/sauc/bigmodel`,
+  `volc.seedasr.sauc.duration`) returns cumulative captions; the vendor key
+  stays on the server.
+- The Android recorder sends 100 ms frames while writing the WAV and shows
+  provisional captions under the timer.
+- Stopping uploads the same WAV and runs the file pipeline; the final transcript
+  replaces the provisional text. A failed stream is a caption failure, not a
+  lost recording.
+
+Verified:
+
+- A real stream produced `ready` → `你好` → `你好。` → `final`.
+- A meeting created with `source=realtime` accepted the WAV and reached `ready`
+  through the file pass.
+- The WebSocket auth/ownership and fake-provider paths are covered by
+  `apps/api/tests/test_realtime_stream.py`.
+
+Open:
+
+- Foreground-service recording and reconnect after a dropped socket.
+- Streaming ASR usage is not written to `usage_records`, so the cost view only
+  counts the file pass. A realtime meeting currently pays for two ASR calls.
+- The live-caption build has not yet been run on a physical phone.
+
+### 5.5 Android client — MVP done
+
+Working:
+
+- Sign in or create the first account; server address is editable and persisted.
+- Record 16 kHz mono PCM to a WAV, with live captions over the meeting stream.
+- Meeting list, transcript with original + translation, structured minutes.
+- Discarding a recording deletes the draft meeting; finishing keeps it.
+
+Verified:
+
+- JVM unit tests pass, including the API client, WAV header and ws:// URL
+  derivation.
+- The debug APK builds at
+  `apps/android/app/build/outputs/apk/debug/app-debug.apk`.
+- The file flow has been exercised from a physical phone against the LAN API
+  (login, create, upload, transcribe); the first attempt exposed the missing
+  server ASR key, and the same meeting reached `ready` after the key was fixed.
+
+Open:
+
+- Run the live-caption build on the phone; the current build predates that run.
+- Foreground service, offline cache, export/share, token refresh, speaker
+  labels, certificate pinning.
+- The meeting language is fixed to `zh` in the Android MVP.
+
+### 5.6 Knowledge base — Partial
+
+- `winnie-knowledge` writes a Markdown note for finished minutes, with
+  summary/decisions/actions only.
+- The Git commit/versioning layer, browse/edit/classify/search UI, re-indexing
+  and retrieval are not implemented.
+- This is the next product milestone after meeting hardening (M5).
+
+### 5.7 Operations — Partial
+
+Working:
+
+- `/healthz` and `/readyz` (database and, when configured, Redis).
+- Alembic migrations; `alembic check` is clean; upgrade/downgrade tested.
+- Audio retention, session cleanup and standalone CLI jobs.
+- `make api`, `make stop`, `make restart`, `make android`, `make help`.
+- Secrets come from the process environment; `make api` loads the gitignored
+  `apps/api/.env` as a local convenience.
+
+Open:
+
+- TLS termination; the current Android/API path is cleartext HTTP/WS.
+- Production PostgreSQL + Redis deployment and a backup/restore rehearsal.
+- Reverse proxy, deployment guide, structured per-stage logs and a cost view.
+- The public domain's DNS still contains a stale `A` record; the LAN address is
+  the verified path.
+
+## 6. Verification snapshot
+
+| Check | Command or path | Result |
+|---|---|---|
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **83 passed** |
+| Live file ASR | Doubao recording-file 2.0 on real audio | `ready`, one segment |
+| Live streaming ASR | Doubao SAUC 2.0 via the WebSocket | `ready` → partial → `你好。` → `final` |
+| Realtime final pass | `/meetings/{id}/audio` + `/transcribe` on a `realtime` meeting | `uploaded` → `ready` |
+| Android JVM tests | `./gradlew testDebugUnitTest` | Passed |
+| Android APK | `make android` | `app-debug.apk` built |
+| API liveness | `curl http://[::1]:8000/healthz` | `{"status":"ok","version":"0.1.0"}` |
+
+Not yet verified:
+
+- A clean live-caption run from the installed APK on a physical phone.
+- A long bilingual meeting with real LLM translation and minutes.
+- TLS, public-domain routing and a production backup/restore.
+
+## 7. Known gaps and risks
+
+| Gap | Impact | Next action |
+|---|---|---|
+| Two ASR calls per realtime meeting | Double provider cost; streaming usage is invisible | Add streaming usage records; alternatively make the file pass configurable |
+| Cleartext HTTP/WS on a public IPv6 domain | Tokens, audio and transcripts cross the network unencrypted | Terminate TLS before real use; narrow the Android network-security config to that domain |
+| No foreground service / reconnect | Backgrounding or locking the phone stops recording and captions | Foreground service with a persistent notification; reconnect with bounded retry |
+| Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Enable `openai_compatible` with `WINNIE_LLM_API_KEY`; run a real bilingual meeting |
+| No long bilingual fixture | Provider quality, timestamps and cost are unmeasured | Add a local-only 10–30 minute fixture and an evaluation harness |
+| Knowledge base is only a note sink | Minutes cannot yet be browsed, corrected or retrieved | M5: Git write, index, browse/edit/search |
+| SQLite + inline jobs in the current checkout | Not a production topology | PostgreSQL, arq worker, reverse proxy, backups |
+| Stale domain `A` record | IPv4 to the domain can resolve to a different host | Remove it or set it to the LAN address; verify the router's inbound rules |
+| No speaker diarization or export/share on Android | Limited usefulness for multi-speaker meetings | Follow-ups after M4 hardening |
+
+## 8. Next development plan
+
+Ordered by dependency and risk, not by novelty:
+
+1. **Finish M4 hardening.**
+   - Install the current APK on the phone and run a live-caption meeting over
+     the LAN address.
+   - Add a foreground service so recording and the stream survive backgrounding.
+   - Add reconnect with bounded retry; fail over to the file pass on a dropped
+     stream.
+   - Write streaming usage records or explicitly document the double-cost
+     tradeoff in the UI.
+   - Exit criteria: a 10-minute meeting recorded on the phone with live
+     captions, screen locked for part of it, ending in a `ready` transcript.
+
+2. **Close M3 validation.**
+   - Add the bilingual fixture (local only, never committed).
+   - Enable real translation and summarization with `WINNIE_LLM_API_KEY`.
+   - Record a real meeting, fix timestamp/language/prompt issues, measure
+     latency, tokens and cost.
+   - Exit criteria: a real bilingual meeting produces a useful transcript,
+     translation, minutes and Markdown note, with usage rows.
+
+3. **M5 knowledge base MVP.**
+   - Git-backed Markdown write/commit; browse, edit, classify and version.
+   - Derived index and retrieval; notes remain the source of truth.
+   - Exit criteria: the meeting note is searchable and an answer cites it.
+
+4. **M6 assistant.**
+   - Orchestrate scheduling, development help and everyday tasks over the
+     knowledge base and gateway.
+   - Exit criteria: one real task completes with a traceable chain of model and
+     knowledge calls.
+
+5. **M7 production readiness.**
+   - TLS, PostgreSQL, Redis/arq, reverse proxy, backups and restore rehearsal,
+     deployment guide, structured logs and cost view.
+   - Exit criteria: a clean deployment can be backed up and restored, and meets
+     the security bar for real accounts.
+
+## 9. Running and verifying
+
+```bash
+# API: [::]:8000, loads apps/api/.env
+make api
+make stop
+make restart
+
+# Android debug APK
+make android
+
+# Tests
+cd apps/api && .venv/bin/python -m pytest -q
+cd apps/android && ./gradlew testDebugUnitTest
+```
+
+Local secrets are in `apps/api/.env` (gitignored):
+
+- `VOLCENGINE_ASR_API_KEY` — file and streaming Doubao ASR.
+- `WINNIE_LLM_API_KEY` — only needed when `translator`/`summarizer` are
+  `openai_compatible`.
+- `WINNIE_PUBLIC_URL` — build-time default server address for the APK.
+
+Changing `.env` requires `make restart`; `uvicorn --reload` watches Python
+files, not the environment file.
+
+## 10. References
+
+- [README](../README.md) — product overview, quick start, security notes.
+- [Meeting-notes design](./meetings.md) — domain model, API, provider
+  interfaces, delivery phases.
+- [Backlog](./todo.md) — concrete, prioritized follow-ups.
+- [Decisions](./decisions.md) — provider, storage, Android and live-caption
+  rationale.
+- [Android client](../apps/android/README.md) — build, run, tests and
+  limitations.

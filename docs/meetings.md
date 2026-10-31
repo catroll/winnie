@@ -1,9 +1,12 @@
 # Cross-lingual AI meeting notes — integration design
 
 Status: the backend, accounts, provider adapters and the Android MVP are
-implemented; live provider validation and device testing are pending. This
-document covers how the meeting-notes capability fits into Winnie, how it
-reuses the existing backend, and how it is delivered in increments.
+implemented; file and streaming ASR are validated against the live Doubao
+endpoints. A physical-device live-caption run, foreground-service recording and
+a long bilingual meeting remain. See [plan.md](./plan.md) for milestone status
+and completion evidence. This document covers how the meeting-notes capability
+fits into Winnie, how it reuses the existing backend, and how it is delivered
+in increments.
 
 ## 1. Where this fits
 
