@@ -20,6 +20,12 @@ API_HOST ?= ::
 API_PORT ?= 8000
 API_RELOAD ?= 1
 API_RELOAD_FLAG := $(if $(filter 1 true yes on,$(API_RELOAD)),--reload,)
+# Managed local services, in start order. Stop runs in reverse order.
+SERVICES ?= api index admin
+ADMIN_HOST ?= 127.0.0.1
+ADMIN_PORT ?= 5173
+INDEX_HOST ?= 127.0.0.1
+INDEX_PORT ?= 8790
 # The admin dev server proxies its API prefixes to this address.
 ADMIN_API_TARGET ?= http://127.0.0.1:$(API_PORT)
 # $HOME/.cache is read-only here, so keep the uv cache in the checkout.
@@ -34,13 +40,16 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android admin admin-build stop restart news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test
+.PHONY: help api android admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@printf '\nVariables:\n'
 	@printf '  API_HOST=%s API_PORT=%s API_RELOAD=%s\n' '$(API_HOST)' '$(API_PORT)' '$(API_RELOAD)'
+	@printf '  SERVICES=%s\n' '$(SERVICES)'
+	@printf '  ADMIN_HOST=%s ADMIN_PORT=%s\n' '$(ADMIN_HOST)' '$(ADMIN_PORT)'
+	@printf '  INDEX_HOST=%s INDEX_PORT=%s\n' '$(INDEX_HOST)' '$(INDEX_PORT)'
 	@printf '  JAVA_HOME=%s\n' '$(JAVA_HOME)'
 	@printf '  ANDROID_HOME=%s\n' '$(ANDROID_HOME)'
 	@printf '  ADMIN_API_TARGET=%s\n' '$(ADMIN_API_TARGET)'
@@ -67,56 +76,30 @@ api: ## Run the API on [::]:8000, reachable over IPv6, with reload enabled
 		exit 1; \
 	fi
 
-stop: ## Stop the API listening on API_PORT
-	@set -euo pipefail; \
-	port='$(API_PORT)'; \
-	pids=$$(ss -ltnpH "sport = :$$port" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u || true); \
-	if [ -z "$$pids" ]; then \
-		printf 'Nothing is listening on port %s.\n' "$$port"; \
-		exit 0; \
-	fi; \
-	targets=''; \
-	for pid in $$pids; do \
-		cmd=$$(ps -o args= -p "$$pid" 2>/dev/null || true); \
-		ppid=$$(ps -o ppid= -p "$$pid" 2>/dev/null | tr -d ' ' || true); \
-		parent=$$(ps -o args= -p "$$ppid" 2>/dev/null || true); \
-		case "$$cmd" in \
-			*uvicorn*winnie_api.main:app*) targets="$$targets $$pid";; \
-			*) case "$$parent" in \
-				*uvicorn*winnie_api.main:app*) targets="$$targets $$ppid";; \
-				*) printf 'Port %s is held by pid %s, not the Winnie API; leaving it alone.\n' "$$port" "$$pid";; \
-			esac;; \
-		esac; \
-	done; \
-	if [ -z "$$targets" ]; then \
-		printf 'Port %s is used by a process this target did not start; refusing to stop it.\n' "$$port" >&2; \
-		exit 1; \
-	fi; \
-	targets=$$(printf '%s\n' $$targets | sort -u | paste -sd ' ' -); \
-	printf 'Stopping the API on port %s (pid %s).\n' "$$port" "$$targets"; \
-	kill $$targets 2>/dev/null || true; \
-	for _ in $$(seq 1 50); do \
-		if ! ss -ltnH "sport = :$$port" 2>/dev/null | grep -q .; then \
-			printf 'Stopped.\n'; \
-			exit 0; \
-		fi; \
-		sleep 0.1; \
-	done; \
-	printf 'Port %s is still open after 5s; sending SIGKILL.\n' "$$port" >&2; \
-	kill -9 $$targets 2>/dev/null || true; \
-	exit 1
+# All-service lifecycle. The individual targets above stay in the foreground
+# for development; these start detached processes with logs under .cache/.
+SERVICE_ENV = ROOT='$(ROOT)' API_HOST='$(API_HOST)' API_PORT='$(API_PORT)' API_RELOAD='$(API_RELOAD)' ENV_FILE='$(ENV_FILE)' ADMIN_HOST='$(ADMIN_HOST)' ADMIN_PORT='$(ADMIN_PORT)' ADMIN_API_TARGET='$(ADMIN_API_TARGET)' INDEX_HOST='$(INDEX_HOST)' INDEX_PORT='$(INDEX_PORT)' INDEX_CONFIG='$(INDEX_CONFIG)' INDEX_PYTHON='$(INDEX_PYTHON)'
 
-restart: stop ## Stop the API, then start it again with the current environment
-	@$(MAKE) --no-print-directory api
+start: ## Start all SERVICES in the background (API, index, admin)
+	@$(SERVICE_ENV) SERVICES='$(SERVICES)' bash '$(ROOT)/scripts/services.sh' start
 
-admin: ## Run the admin console at http://127.0.0.1:5173
+stop: ## Stop all SERVICES (reverse start order)
+	@$(SERVICE_ENV) SERVICES='$(SERVICES)' bash '$(ROOT)/scripts/services.sh' stop
+
+restart: ## Stop then start all SERVICES
+	@$(SERVICE_ENV) SERVICES='$(SERVICES)' bash '$(ROOT)/scripts/services.sh' restart
+
+status: ## Show each managed service, its port and health
+	@$(SERVICE_ENV) SERVICES='$(SERVICES)' bash '$(ROOT)/scripts/services.sh' status
+
+admin: ## Run the admin console in the foreground (ADMIN_HOST:ADMIN_PORT)
 	@test -d '$(ADMIN_DIR)/node_modules' || { \
 		printf 'error: admin dependencies are not installed\n' >&2; \
 		printf '       run: cd apps/admin && npm install\n' >&2; \
 		exit 1; \
 	}
-	@printf 'Admin console: http://127.0.0.1:5173 (API proxy %s)\n' '$(ADMIN_API_TARGET)'
-	@cd '$(ADMIN_DIR)' && VITE_API_PROXY_TARGET='$(ADMIN_API_TARGET)' npm run dev
+	@printf 'Admin console: http://%s:%s (API proxy %s)\n' '$(ADMIN_HOST)' '$(ADMIN_PORT)' '$(ADMIN_API_TARGET)'
+	@cd '$(ADMIN_DIR)' && VITE_API_PROXY_TARGET='$(ADMIN_API_TARGET)' npm run dev -- --host '$(ADMIN_HOST)' --port '$(ADMIN_PORT)'
 
 admin-build: ## Build the admin console into apps/admin/dist
 	@test -d '$(ADMIN_DIR)/node_modules' || { \
@@ -167,8 +150,8 @@ index-dry: ## Report what the index would ingest, writing nothing
 index-build: ## Sweep the configured roots and index what changed
 	@$(INDEX_RUN) build
 
-index-serve: ## Run the index daemon: sweep loop plus HTTP and MCP on 127.0.0.1:8790
-	@$(INDEX_RUN) serve
+index-serve: ## Run the index daemon (sweep loop, HTTP and MCP) in the foreground
+	@$(INDEX_RUN) serve --host '$(INDEX_HOST)' --port '$(INDEX_PORT)'
 
 index-status: ## Show index coverage and failures
 	@$(INDEX_RUN) status

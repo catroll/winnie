@@ -111,17 +111,24 @@ are the exception: they are owned by the console. See
 ### Quick start
 
 ```bash
-make api        # [::]:8000, reachable over IPv6, reload enabled
-make stop       # stop the API listening on API_PORT
-make restart    # stop, then start again with the current environment
+make start      # start API, index and admin in the background
+make status     # port, state and PID for each service
+make stop       # stop all managed services
+make restart    # stop, then start all managed services
 make android    # debug APK for the Android client
-make admin      # admin console at http://127.0.0.1:5173
 make news-fetch # collect news material to /tmp/winnie-news-material.json
 make help       # targets and overridable variables
 ```
 
-`make api` uses `uv` and falls back to `apps/api/.venv` when `uv` is not on
-`PATH`; run `cd apps/api && uv sync` first on a fresh checkout. It sources
+The full local stack is three services: the API on `[::]:8000`, the document
+index on `127.0.0.1:8790`, and the admin console on `127.0.0.1:5173`. Ports,
+logs, optional worker/Redis/PostgreSQL and production shape are documented in
+[docs/operations.md](./docs/operations.md).
+
+`make api`, `make index-serve` and `make admin` run one service in the
+foreground for development. `make api` uses `uv` and falls back to
+`apps/api/.venv` when `uv` is not on `PATH`; run `cd apps/api && uv sync` first
+on a fresh checkout. It sources
 `apps/api/.env` when that file exists — gitignored, and only a local
 convenience: the application itself reads secrets from the process environment.
 That file also supplies `WINNIE_PUBLIC_URL`, the default server address baked
@@ -196,6 +203,8 @@ including the ASR evaluation and provider verification, are in
 ## Documentation
 
 - [DESIGN.md](./DESIGN.md) — goals, layers, knowledge model, architecture and roadmap
+- [docs/plan.md](./docs/plan.md) — project goals, milestones, completion status and next steps
+- [docs/operations.md](./docs/operations.md) — service inventory, ports, lifecycle and production shape
 - [EVAL.md](./EVAL.md) — living feasibility assessment
 - [docs/openai-proxy.md](./docs/openai-proxy.md) — gateway contract, configuration and examples
 - [docs/usage.md](./docs/usage.md) — what the usage ledger records, pricing, provider balances and limits

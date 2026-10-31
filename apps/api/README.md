@@ -23,10 +23,11 @@ incrementally.
 
 From the repository root, `make api` starts the same server, binds `[::]` for
 IPv6, and sources an optional `apps/api/.env`; `make help` lists the overridable
-variables. Use `API_HOST=0.0.0.0` for an IPv4-only network. `make stop` stops
-the process listening on `API_PORT`, and `make restart` stops then starts it
-again. Restart after editing `apps/api/.env`: `uvicorn --reload` watches Python
-files, not the environment file.
+variables. Use `API_HOST=0.0.0.0` for an IPv4-only network. `make start`
+starts the API, index and admin console; `make stop` and `make restart` manage
+that whole stack. Scope a command to the API with `SERVICES=api`, for example
+`make stop SERVICES=api`. Restart after editing `apps/api/.env`: `uvicorn
+--reload` watches Python files, not the environment file.
 
 ```bash
 # Edit config.yaml as needed.

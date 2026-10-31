@@ -339,7 +339,9 @@ Working:
 - `/healthz` and `/readyz` (database and, when configured, Redis).
 - Alembic migrations; `alembic check` is clean; upgrade/downgrade tested.
 - Audio retention, session cleanup and standalone CLI jobs.
-- `make api`, `make stop`, `make restart`, `make android`, `make help`.
+- `make start`, `make status`, `make stop`, `make restart` manage the API,
+  index and admin console as one stack; `make api`, `make index-serve` and
+  `make admin` remain foreground development commands.
 - Secrets come from the process environment; `make api` loads the gitignored
   `apps/api/.env` as a local convenience.
 
@@ -564,10 +566,16 @@ Ordered by dependency and risk, not by novelty:
 ## 9. Running and verifying
 
 ```bash
-# API: [::]:8000, loads apps/api/.env
-make api
+# Full local stack: API 8000, index 8790, admin 5173
+make start
+make status
 make stop
 make restart
+
+# Foreground single service
+make api
+make index-serve
+make admin
 
 # Android debug APK
 make android
@@ -576,6 +584,11 @@ make android
 cd apps/api && .venv/bin/python -m pytest -q
 cd apps/android && ./gradlew testDebugUnitTest
 ```
+
+The default `SERVICES` is `api index admin`; stop runs in reverse order. Logs
+and PID files live under `.cache/logs/` and `.cache/run/`. The arq worker is
+not part of the default stack because the checked-in configuration uses inline
+jobs; see [operations](./operations.md).
 
 Local secrets are in `apps/api/.env` (gitignored):
 
@@ -590,6 +603,8 @@ files, not the environment file.
 ## 10. References
 
 - [README](../README.md) — product overview, quick start, security notes.
+- [Operations](./operations.md) — service inventory, ports, lifecycle and
+  production shape.
 - [Meeting-notes design](./meetings.md) — domain model, API, provider
   interfaces, delivery phases.
 - [Backlog](./todo.md) — concrete, prioritized follow-ups.

@@ -138,7 +138,8 @@ npm_config_cache="$(git rev-parse --show-toplevel)/.cache/npm" npm install
 
 Open <http://127.0.0.1:5173> and sign in with an account from the API. From the
 repository root, `make admin` starts the same dev server after checking that
-dependencies are installed.
+dependencies are installed. `make start` starts the API, index and console
+together; see [docs/operations.md](../../docs/operations.md).
 
 The dev server proxies `/api`, `/healthz`, `/readyz` and `/routes` to
 `http://127.0.0.1:8000`. Override the target when the API runs elsewhere:
