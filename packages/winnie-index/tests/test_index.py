@@ -87,6 +87,52 @@ def test_delete_removes_hits(conn, config: Config, tree: Path):
     assert search(conn, config, "明天") == []
 
 
+def test_a_deleted_file_that_reappears_is_indexed_again(conn, config: Config, tree: Path):
+    scan(conn, config)
+    target = tree / "roots" / "notes" / "todo.txt"
+    target.unlink()
+    assert scan(conn, config).deleted == 1
+    target.write_text("明天把向量索引接上\n", encoding="utf-8")
+    stats = scan(conn, config)
+    assert stats.added == 1
+    assert stats.deleted == 0
+    assert search(conn, config, "向量索引")[0]["path"] == "todo.txt"
+    row = conn.execute(
+        "SELECT state, deleted_at FROM docs WHERE rel_path = 'todo.txt'"
+    ).fetchone()
+    assert row["state"] == "indexed"
+    assert row["deleted_at"] is None
+
+
+def test_a_tombstone_is_not_deleted_again_by_the_next_sweep(conn, config: Config, tree: Path):
+    scan(conn, config)
+    (tree / "roots" / "notes" / "todo.txt").unlink()
+    assert scan(conn, config).deleted == 1
+    again = scan(conn, config)
+    assert again.deleted == 0
+    assert again.added == 0
+
+
+def test_a_rename_never_lands_on_a_tombstoned_path(conn, config: Config, tree: Path):
+    scan(conn, config)
+    notes = tree / "roots" / "notes"
+    old = notes / "a.md"
+    old.write_text("# 甲\n\n部署一\n", encoding="utf-8")
+    scan(conn, config)
+    old.unlink()
+    assert scan(conn, config).deleted == 1
+    moved = notes / "b.md"
+    moved.write_text("# 乙\n\n部署二\n", encoding="utf-8")
+    scan(conn, config)
+    moved.rename(old)
+    stats = scan(conn, config)
+    assert stats.added == 1  # the tombstone at a.md is re-indexed in place
+    assert stats.deleted == 1  # b.md is gone
+    hits = search(conn, config, "部署二")
+    assert hits and hits[0]["path"] == "a.md"
+    assert search(conn, config, "部署一") == []
+
+
 def test_touch_without_content_change_does_not_rechunk(conn, config: Config, tree: Path):
     scan(conn, config)
     target = tree / "roots" / "notes" / "todo.txt"

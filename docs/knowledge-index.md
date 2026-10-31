@@ -89,6 +89,24 @@ re-chunk (+ re-embed that document only)
 - Daily reconciliation re-hashes a 1 % sample and every file whose mtime is in
   the future or predates its ctime, then compares row/chunk/vector counts.
 
+### One row per path, tombstones included
+
+`UNIQUE(root_id, rel_path)` is the catalog's ownership rule, and a soft-deleted
+row still owns its key. So the sweep loads *every* row for a root, then:
+
+- a file that reappears at a deleted path **resurrects** that row in place —
+  `state='new'`, `deleted_at=NULL`, chunks rebuilt (they were purged on delete,
+  so this must bypass the text-hash "no re-chunk" shortcut);
+- a **rename** may only move a live row into a path that holds no row at all,
+  tombstone included, which is what makes its `UPDATE` collision-free;
+- the end-of-sweep deletion pass skips rows that are already `deleted`, or every
+  sweep would re-count the same tombstones.
+
+The alternative — inserting a second row when the path is not in the live diff —
+is what broke here: the build died with
+`IntegrityError: UNIQUE constraint failed: docs.root_id, docs.rel_path` after one
+delete-then-restore, and no later sweep could get past it.
+
 The watcher is an accelerator, never the correctness mechanism: on overflow, a
 killed process or a network mount, the next sweep still converges. It is opt-in
 per root because `~/Projects` alone has 104k directories.

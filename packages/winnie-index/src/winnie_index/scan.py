@@ -279,6 +279,21 @@ def _insert_doc(conn: sqlite3.Connection, root_id: int, entry: FileEntry) -> int
     return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
 
+def _resurrect_doc(conn: sqlite3.Connection, doc_id: int) -> None:
+    """Return a tombstoned row to service, forcing a fresh chunk pass.
+
+    A deleted document keeps its row but loses its chunks, and
+    ``(root_id, rel_path)`` is unique, so a file reappearing at a deleted path
+    must reuse that row: inserting a second one hits the constraint. The state
+    is reset to 'new' so ``_index_document`` cannot take its text-hash shortcut
+    and leave an "indexed" document with no chunks.
+    """
+    conn.execute(
+        "UPDATE docs SET state='new', attempts=0, last_error=NULL, deleted_at=NULL WHERE id=?",
+        (doc_id,),
+    )
+
+
 def scan(
     conn: sqlite3.Connection,
     config: Config,
@@ -297,18 +312,26 @@ def scan(
         stats.roots += 1
         root_id = 0 if dry_run else _ensure_root(conn, root)
 
+        # Tombstones stay in this map on purpose. `(root_id, rel_path)` is
+        # unique, so a deleted document still owns its key: a file reappearing
+        # at that path must reuse the row instead of inserting a second one.
         existing = {}
         if not dry_run:
             existing = {
                 row["rel_path"]: row
                 for row in conn.execute(
                     "SELECT id, rel_path, size, mtime_ns, ino, dev, bytes_hash, text_hash, state "
-                    "FROM docs WHERE root_id = ? AND state != 'deleted'",
+                    "FROM docs WHERE root_id = ?",
                     (root_id,),
                 )
             }
+        # A tombstone's inode belongs to a file that no longer exists, and the
+        # kernel hands that inode out again, so only a live row can witness a
+        # rename.
         inode_map = {
-            (row["dev"], row["ino"]): row for row in existing.values() if row["ino"] and row["dev"]
+            (row["dev"], row["ino"]): row
+            for row in existing.values()
+            if row["ino"] and row["dev"] and row["state"] != "deleted"
         }
 
         entries = list(iter_files(root, config.prose_ext))
@@ -320,18 +343,22 @@ def scan(
         for entry in entries:
             seen.add(entry.rel_path)
             row = existing.get(entry.rel_path)
-            if row is None:
-                renamed = inode_map.get((entry.dev, entry.ino))
-                if renamed is not None and renamed["rel_path"] not in seen:
-                    if not dry_run:
-                        del existing[renamed["rel_path"]]
-                        conn.execute(
-                            "UPDATE docs SET rel_path=?, size=?, mtime_ns=? WHERE id=?",
-                            (entry.rel_path, entry.size, entry.mtime_ns, renamed["id"]),
-                        )
-                    stats.renamed += 1
-                    continue
-                pending.append((entry, None))
+            if row is None or row["state"] == "deleted":
+                # A rename only ever moves a live row into a path that holds no
+                # row at all, tombstone included: the target key is then
+                # provably free, so the UPDATE cannot collide.
+                if row is None:
+                    renamed = inode_map.get((entry.dev, entry.ino))
+                    if renamed is not None and renamed["rel_path"] not in seen:
+                        if not dry_run:
+                            del existing[renamed["rel_path"]]
+                            conn.execute(
+                                "UPDATE docs SET rel_path=?, size=?, mtime_ns=? WHERE id=?",
+                                (entry.rel_path, entry.size, entry.mtime_ns, renamed["id"]),
+                            )
+                        stats.renamed += 1
+                        continue
+                pending.append((entry, row))
                 continue
             if (
                 row["size"] == entry.size
@@ -352,6 +379,10 @@ def scan(
                 continue
             if row is None:
                 doc_id = _insert_doc(conn, root_id, entry)
+                stats.added += 1
+            elif row["state"] == "deleted":
+                doc_id = int(row["id"])
+                _resurrect_doc(conn, doc_id)
                 stats.added += 1
             else:
                 doc_id = int(row["id"])
@@ -388,7 +419,7 @@ def scan(
                 conn.commit()
 
         for relative, row in existing.items():
-            if relative in seen:
+            if relative in seen or row["state"] == "deleted":
                 continue
             if dry_run:
                 stats.deleted += 1
