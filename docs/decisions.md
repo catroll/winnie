@@ -217,12 +217,13 @@ between translation/minutes and the assistant, instead of a second HTTP client
 inside the capability. Tools are only added to the request body when passed, so
 the existing job payloads are byte-identical.
 
-**Default model.** `assistant.model: fake` in `config.yaml`, matching the
-meetings `translator`/`summarizer` fake defaults. A missing `WINNIE_LLM_API_KEY`
+**Default model (superseded 2026-11-01).** Originally `assistant.model: fake`
+in `config.yaml`, matching the meetings `translator`/`summarizer` fake defaults.
+The registry now owns the model and a fresh seed binds `assistant.chat` to
+`fake`; `assistant.model` and the `llm` block are gone. A missing integration key
 must not silently downgrade to a real-looking answer, and it must not stop the
-gateway and meeting APIs from starting; the assistant routes return `503` with
-the exact missing variable, which is what the chat page shows. Switching to the
-real model is `assistant.model: ""` plus the key in the environment.
+gateway and meeting APIs from starting; the chat route returns `502` naming the
+missing variable.
 
 **Chat surface.** A self-contained page served at `/api/v1/assistant/ui` rather
 than a panel in `apps/admin`. The console is a separate, still-uncommitted
@@ -350,13 +351,12 @@ needs, and would have made AI provider resolution impossible without `auth` or
 file is mode `0600`.
 
 **`config.yaml` seeds once; it is not a second live source.** On first start the
-registry is generated from `routes`, `llm`, `meetings` and `assistant`, so an
-upgrade keeps the exact behaviour it had. After the file exists the console is
-authoritative. A binding with no integration deliberately falls back to
-`config.yaml`, which gives an escape hatch without silently overriding an
-explicit admin choice. Re-reading the YAML on every resolve was rejected
-because it makes "the console changed something" indistinguishable from "an
-operator edited a file".
+registry is generated from `routes`, the Volcengine ASR block and the feature
+enable flags. After the file exists the console is authoritative. There is no
+YAML fallback for a feature: an unbound feature has no provider and fails with a
+named error. Re-reading the YAML on every resolve was rejected because it makes
+"the console changed something" indistinguishable from "an operator edited a
+file".
 
 **Keys stay in the environment.** An integration stores `api_key_env`, the name
 of a variable, and the console shows whether it is set. Pasting a key into that
@@ -376,6 +376,19 @@ than a control surface. Gateway routes are refreshed on every CRUD mutation in
 the API process; a second API worker would see a new route on its next restart,
 which is why a single API process remains the simple deployment and is stated
 in the operations doc.
+
+**There is no second model configuration.** `config.yaml` used to carry an
+`llm` block, `assistant.model`, `meetings.translator` and
+`meetings.summarizer`. Keeping them meant the console could say one thing while
+a fresh start silently used another, and the old `llm` block was the only way to
+configure the internal model. They are gone: the registry is the only source for
+base URL, key variable, model and binding. A fresh registry binds the model
+features to `fake`; the owner adds a real provider in the console. Runtime
+limits (timeouts, retries, token caps, chunk sizes) move with the choice into
+`data/ai.yaml` as a `runtime` section, editable in the console. The v1 migration
+still recovers an existing `internal-llm` from the file, because that record is
+the only evidence of the old `llm` configuration; it is then a normal
+integration.
 
 **Gateway exposure is separate from server-side credentials.** A vendor endpoint
 can be a public proxy route (`gateway: true`), an internal provider
@@ -523,7 +536,6 @@ owner's notes and code; a deployment with files elsewhere changes
 `workspace.root`/`extra_roots`, not code. The command tool can reach the rest of
 the machine after confirmation, which is the deliberate escape hatch.
 
-
 ## Local execution moved to winnie-local, with an LLM review and a whitelist (2026-11-01)
 
 **A package owns the whole path, not a tool handler.** The first local-tool
@@ -543,7 +555,7 @@ or argv/cwd, not the whole conversation. The prompt treats both as untrusted
 data. The answer must be JSON with `allow`, `risk` and `reason`; a timeout,
 provider error or malformed answer is a denial. The decision goes to
 `.state/review.jsonl` without file contents or command output. The reviewer
-reuses `assistant.model` by default rather than adding a second model
+reuses the bound `assistant.chat` model rather than adding a second model
 configuration; a separate reviewer model is a named follow-up.
 
 **Why not let the assistant's own reasoning be the review?** It is the party

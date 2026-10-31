@@ -1,13 +1,12 @@
-# AI providers and feature bindings
+# AI providers, feature bindings and model runtime
 
-The console owns the list of AI providers Winnie may call and which provider
-each AI-using feature uses. The state lives in a small YAML file, not in
-`config.yaml`, so it can be changed from the browser without editing comments
-or restarting the API.
+The registry is the **only** place that selects a model. `config.yaml` no longer
+has an `llm` block, `assistant.model`, `meetings.translator` or
+`meetings.summarizer`; those choices live here and are edited in the console.
 
 - Console page: **AI providers** (`/ai` in the admin app)
 - API prefix: `/api/v1/ai`
-- State file: `apps/api/../../data/ai.yaml` by default (gitignored)
+- State file: `data/ai.yaml` by default (gitignored)
 - No vendor keys are stored: an integration names an environment variable
 
 ## Concepts
@@ -37,18 +36,10 @@ kind. An OpenAI-compatible integration can be:
   meetings call it directly);
 - both, if the owner explicitly wants that.
 
-`volcengine_asr` and `fake` are always internal. The seeded `internal-llm`
-record is `gateway: false`; the seeded `deepseek-openai` route has an empty
-`api_key_env`. The two roles never share a record.
+`volcengine_asr` and `fake` are always internal.
 
-The `name` is a lowercase slug (letters, digits and dashes, up to 63 characters).
-When an OpenAI or Anthropic integration is exposed as a route, the name is the
-path prefix `/{name}/v1/...`. It cannot be changed in the console after
-creation; the API still accepts a rename, so changing it outside the console
-also changes the public path.
-
-A **feature binding** selects the integration (and optionally a model
-override) for one feature:
+A **feature binding** selects the integration (and optionally a model override)
+for one feature:
 
 | Feature | Uses | Model |
 |---|---|---|
@@ -57,36 +48,51 @@ override) for one feature:
 | `meetings.translate` | Segment translation | yes |
 | `meetings.summarize` | Structured minutes | yes |
 
-A binding with no integration inherits the value from `config.yaml`. Deleting an
-integration clears the bindings that referenced it back to that fallback.
+An unbound feature has **no provider** and fails with a clear
+`feature ... has no provider` error; there is no YAML fallback. Deleting an
+integration unbinds the features that referenced it, so choose a replacement
+before using them again. A fresh registry binds every model feature to `fake`
+and ASR to its configured default, so the app is usable before a real provider
+is added.
 
-## First start and precedence
+## Model runtime
 
-On the first start with `ai.enabled: true`, Winnie imports the current
-configuration into `data/ai.yaml`:
+The shared limits for every OpenAI-compatible call are stored in the registry,
+not in `config.yaml`:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `timeout_seconds` | `120` | Per-call timeout |
+| `max_output_tokens` | `4096` | Response cap |
+| `temperature` | `0.2` | Sampling temperature |
+| `max_retries` | `2` | Retries for transport/retryable HTTP failures |
+| `retry_backoff_seconds` | `1.0` | Base backoff |
+| `translation_batch_chars` | `6000` | Translation batch size |
+| `summary_chunk_chars` | `24000` | Transcript chunk size for minutes |
+
+They apply to the assistant, translation and minutes. The model and endpoint
+come from the binding; the runtime only supplies limits. Edit them in the
+**Model runtime** card or with `PUT /api/v1/ai/runtime`; a change applies on the
+next call.
+
+## First start
+
+On the first start with `ai.enabled: true`, Winnie writes `data/ai.yaml` from the
+remaining YAML inputs:
 
 - every entry under `routes` becomes an `openai` or `anthropic` integration with
   `gateway: true` and `api_key_env: ""` (gateway paths forward the client key);
-- a separate `internal-llm` integration is added when `llm.base_url` is set, with
-  `gateway: false`, `api_key_env: llm.api_key_env` and `default_model:
-  llm.model`; it is never merged into a matching route;
-- `meetings.asr_provider: volcengine` adds a `volcengine-asr` integration;
-- `assistant.model`, `meetings.translator` and `meetings.summarizer` select the
-  initial bindings; internal bindings point at `internal-llm`, never at a gateway
-  route;
-- a `fake` integration is always added.
+- `meetings.volcengine` supplies the endpoint/options for a `volcengine-asr`
+  integration; `meetings.asr_provider` selects the initial ASR binding
+  (`volcengine` or `fake`);
+- a `fake` integration is always added;
+- `assistant.chat`, `meetings.translate` and `meetings.summarize` start bound to
+  `fake`; the owner adds a real provider and rebinds them in the console.
 
-After that file exists, the console is authoritative. This keeps an upgrade
-non-breaking (the first start reproduces the old behaviour) while avoiding a
-second source of truth afterwards. To deliberately return a feature to the YAML
-behaviour, choose **Inherit from config.yaml** in its binding row.
-
-A file written by the first version of the registry (`version: 1`) is migrated
-on first read. v1 reused the route whose base URL matched `llm.base_url` as the
-internal LLM, so the server-side key appeared on a public route. The migration
-creates `internal-llm`, clears that route's key and model, repoints the
-affected bindings, replaces the auto-generated labels and writes `version: 2`.
-A manual label or a different key name is left alone.
+There is no `llm` block to import and no `internal-llm` generated on a fresh
+start. An existing registry that already has an `internal-llm` (from the v1
+migration) keeps it; it is a normal integration and can be edited, rebound or
+deleted like any other.
 
 `ai.enabled` defaults to `false` in a programmatic `Settings()` so tests and
 embedders never read or write the file. The shipped `apps/api/config.yaml`
@@ -99,6 +105,18 @@ ai:
   path: ../../data/ai.yaml
 ```
 
+### v1 migration
+
+A `version: 1` registry is migrated on first read. v1 reused a gateway route as
+the internal LLM, so its server-side key sat on a public path. The migration:
+
+- adds `gateway: false` to non-gateway kinds and `gateway: true` to the old
+  combined route;
+- finds an OpenAI integration that has an `api_key_env` and is referenced by a
+  binding (the old combined record), creates a separate `internal-llm` from its
+  endpoint/key/model, clears the route key/model and repoints the bindings;
+- replaces only auto-generated labels and writes `version: 2`.
+
 ## API keys
 
 The registry never stores a key. `api_key_env` is the *name* of an environment
@@ -108,7 +126,7 @@ environment** for each integration but never renders the value.
 
 A value pasted into the `api_key_env` field is rejected by validation. Set the
 key in the process environment (directly or through `apps/api/.env`) and restart
-the API: a running process keeps the environment it was started with.
+the API or worker: a running process keeps the environment it was started with.
 
 Gateway paths still forward the client's own vendor key. The environment
 variable matters for internal jobs and the assistant, which call the provider
@@ -116,19 +134,16 @@ directly. An OpenAI-compatible provider with an empty `api_key_env` is
 gateway-only and cannot be bound to an internal feature; the console filters it
 out of those dropdowns.
 
-The seeded `internal-llm` keeps `llm.api_key_env`, which is `WINNIE_LLM_API_KEY`
-in the shipped config, for backward compatibility. That name belongs to the
-generic internal LLM, not to DeepSeek. New providers get a conventional
-suggestion from their name (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`,
-`DASHSCOPE_API_KEY`, `ANTHROPIC_API_KEY`, `VOLCENGINE_ASR_API_KEY`); the field
-remains editable.
+New providers get a conventional suggestion from their name
+(`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `DASHSCOPE_API_KEY`,
+`ANTHROPIC_API_KEY`, `VOLCENGINE_ASR_API_KEY`); the field remains editable.
 
 ## Changes take effect without a restart
 
 The capability packages are built once, but their provider ports are thin
-wrappers that resolve the current binding on every call. Adding a provider,
-changing a model or switching a binding affects the next assistant turn, the
-next meeting pipeline stage and the next live-caption connection.
+wrappers that resolve the current binding and runtime on every call. Adding a
+provider, changing a model or switching a binding affects the next assistant
+turn, the next meeting pipeline stage and the next live-caption connection.
 
 The gateway route table is refreshed in the API process on every CRUD request.
 An OpenAI or Anthropic integration with `gateway: true` makes
@@ -143,11 +158,12 @@ All endpoints require the same bearer session as the rest of the console.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/ai/config` | Integrations, feature bindings, config fallback, kind metadata |
+| `GET` | `/api/v1/ai/config` | Integrations, feature bindings, runtime, kind metadata |
 | `POST` | `/api/v1/ai/integrations` | Create an integration |
 | `PUT` | `/api/v1/ai/integrations/{id}` | Update an integration |
-| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and clear its bindings |
-| `PUT` | `/api/v1/ai/features/{feature}` | Bind a feature (`integration_id: null` inherits config) |
+| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and unbind its features |
+| `PUT` | `/api/v1/ai/features/{feature}` | Bind a feature (`integration_id: null` unbinds) |
+| `PUT` | `/api/v1/ai/runtime` | Update the shared model limits |
 
 Create an OpenAI-compatible provider:
 
@@ -157,18 +173,17 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/ai/integrations \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "deepseek",
-    "label": "DeepSeek",
+    "label": "DeepSeek (internal)",
     "kind": "openai",
     "base_url": "https://api.deepseek.com",
     "api_key_env": "DEEPSEEK_API_KEY",
     "default_model": "deepseek-chat",
     "enabled": true,
-    "gateway": true
+    "gateway": false
   }'
 ```
 
-Set `"gateway": false` to keep a provider internal (no `/{name}` path). Point
-the assistant at it (the model falls back to `default_model`):
+Point the assistant at it (the model falls back to `default_model`):
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features/assistant.chat \
@@ -177,13 +192,24 @@ curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features/assistant.chat \
   -d '{"integration_id":"<id>","model":""}'
 ```
 
-Return the feature to `config.yaml`:
+Unbind it (the feature will report that it has no provider):
 
 ```bash
 curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features/assistant.chat \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"integration_id":null,"model":""}'
+```
+
+Tune the shared limits:
+
+```bash
+curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/runtime \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"timeout_seconds":90,"max_output_tokens":2048,"temperature":0.3,
+       "max_retries":2,"retry_backoff_seconds":1,
+       "translation_batch_chars":6000,"summary_chunk_chars":24000}'
 ```
 
 ## Operational notes
@@ -197,8 +223,8 @@ curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features/assistant.chat \
   read; back it up first if it contains manual edits.
 - Multiple API processes share the file. The process that handled the console
   write refreshes its gateway table immediately; another process only re-reads
-  feature bindings on the next provider resolution and does not rebuild its
-  gateway table, which is why keeping the API at one worker remains the simple
+  bindings/runtime on the next resolution and does not rebuild its gateway
+  table, which is why keeping the API at one worker remains the simple
   deployment. A TTL reload or a shared revision is a follow-up
   ([todo](./todo.md)).
 - `volcengine_asr` options are validated by the capability's own

@@ -164,15 +164,16 @@ fake) and which integration each AI-using feature calls:
 | `meetings.translate` | Transcript translation |
 | `meetings.summarize` | Structured minutes |
 
-`config.yaml` seeds the registry on first start from `routes`, `llm`,
-`meetings.asr_provider`, `meetings.translator`, `meetings.summarizer` and
-`assistant.model`, then writes `data/ai.yaml`. Routes seed as
-`gateway: true` with an empty `api_key_env`; a separate `internal-llm` record
-(`gateway: false`) carries `llm.api_key_env` and `llm.model` for the assistant
-and meetings. After that file exists the console is authoritative; a binding
-with no integration still falls back to the YAML value. `ai.enabled: false` (the
-programmatic `Settings()` default) disables both the file and the endpoints, and
-the capability factories build providers from the YAML configuration as before.
+`config.yaml` seeds the registry on first start from `routes`,
+`meetings.asr_provider` and `meetings.volcengine`, then writes `data/ai.yaml`.
+There is no `llm` block, `assistant.model`, `meetings.translator` or
+`meetings.summarizer`: the registry is the only model choice. Routes seed as
+`gateway: true` with an empty `api_key_env`; the three model features start bound
+to `fake`, and ASR follows the legacy `asr_provider` value. After that file
+exists the console is authoritative. An unbound feature has no provider and
+fails with a named error; there is no YAML fallback. `ai.enabled: false` (the
+programmatic `Settings()` default) leaves model features on fake and ASR on its
+YAML default.
 
 `gateway` controls exposure, not the kind: an OpenAI-compatible integration can
 be a public `/{name}/v1/...` route, an internal-only provider, or both. A
@@ -180,6 +181,10 @@ gateway-only provider has no `api_key_env`; binding it to an internal feature is
 rejected. A `version: 1` file (where a route doubled as the internal LLM) is
 migrated on first read: the route key/model are cleared, a separate
 `internal-llm` is created and the affected bindings are repointed.
+
+Shared model limits (timeout, token cap, temperature, retries, chunk sizes) live
+in the registry's `runtime` section and are edited from the console. They apply
+to the next call and have no `config.yaml` equivalent.
 
 ```yaml
 ai:
@@ -192,11 +197,12 @@ Endpoints (bearer session required):
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/ai/config` | Integrations, feature bindings, config fallback, kind metadata |
+| `GET` | `/api/v1/ai/config` | Integrations, feature bindings, runtime, kind metadata |
 | `POST` | `/api/v1/ai/integrations` | Create an integration |
 | `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
-| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and reset its bindings |
-| `PUT` | `/api/v1/ai/features/{feature}` | Bind a feature (`integration_id: null` inherits YAML) |
+| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and unbind its features |
+| `PUT` | `/api/v1/ai/features/{feature}` | Bind a feature (`integration_id: null` unbinds) |
+| `PUT` | `/api/v1/ai/runtime` | Update the shared model limits |
 
 ```bash
 curl -s -X POST http://[::1]:8000/api/v1/ai/integrations \
@@ -204,16 +210,16 @@ curl -s -X POST http://[::1]:8000/api/v1/ai/integrations \
   -H 'Content-Type: application/json' \
   -d '{"name":"deepseek","kind":"openai","base_url":"https://api.deepseek.com",
        "api_key_env":"DEEPSEEK_API_KEY","default_model":"deepseek-chat",
-       "gateway":true}'
+       "gateway":false}'
 ```
 
-Set `"gateway": false` for an internal-only provider. The registry stores
-`api_key_env` (the variable name), never the key; the API reads the value when it
-builds the provider. An OpenAI or Anthropic integration with `gateway: true`
-exposes its route at `/{name}/v1/...` immediately; disabling, deleting or
-clearing the flag removes the route. A provider change applies on the next model
-call, and the arq worker re-reads the file by modification time. The console
-page is documented in [docs/ai-providers.md](../../docs/ai-providers.md).
+Set `"gateway": true` to expose an OpenAI/Anthropic provider at
+`/{name}/v1/...`; the client supplies its own vendor key on those paths. An
+internal-only provider uses `api_key_env` for the assistant and meetings. The
+registry stores the variable name, never the key. A provider change applies on
+the next model call, and the arq worker re-reads the file by modification time.
+The console page is documented in
+[docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## LLM usage
 
@@ -265,11 +271,11 @@ page yet. Details, token normalization and limits are in
 
 The meeting backend is mounted under `/api/v1/meetings` when
 `meetings.enabled: true`. It uses local SQLite and local disk by default, so it
-runs without cloud storage. With the default `ai.enabled: true`, the first start
-copies `meetings.asr_provider`, `meetings.translator` and
-`meetings.summarizer` into the AI registry. Change them before that first start
-(or after deleting `data/ai.yaml`); afterwards choose providers on the AI
-providers page, or set a binding to inherit from `config.yaml`.
+runs without cloud storage. With the default `ai.enabled: true`, the first start uses
+`meetings.asr_provider` and `meetings.volcengine` to seed the ASR integration and
+binding. It does not seed a model: translation and minutes start on `fake`.
+After that first start, choose providers and bindings on the AI providers page;
+there is no YAML fallback for a model feature.
 
 For Doubao ASR, export the key named by the integration (default
 `VOLCENGINE_ASR_API_KEY`):
@@ -288,22 +294,9 @@ demos and tests only.
 
 For real translation and structured minutes, add an OpenAI-compatible
 integration with a base URL, an `api_key_env` and a model, export that variable,
-and bind both `meetings.translate` and `meetings.summarize` to it. The `llm`
-block still supplies timeouts, retries and chunk sizes, and its values seed the
-initial internal integration:
-
-```yaml
-meetings:
-  translator: openai_compatible
-  summarizer: openai_compatible
-llm:
-  base_url: https://api.deepseek.com/v1
-  api_key_env: WINNIE_LLM_API_KEY
-  model: deepseek-chat
-  max_retries: 2
-  retry_backoff_seconds: 1
-  summary_chunk_chars: 24000
-```
+and bind both `meetings.translate` and `meetings.summarize` to it. Timeouts,
+retries and chunk sizes come from the registry's **Model runtime** card, not
+from `config.yaml`.
 
 The internal LLM client calls the provider directly and does not route through
 the transparent gateway. It retries transient transport errors and retryable
@@ -389,11 +382,9 @@ curl -s -X POST http://[::1]:8000/api/v1/assistant/chat \
 ```
 
 Open `http://[::1]:8000/api/v1/assistant/ui` for the chat page. The model comes
-from the `assistant.chat` binding; its initial value is seeded from
-`assistant.model` (empty reuses `llm.model`), and the default `fake` answers
-deterministically so the routes work before a key exists. Change the provider or
-model on the AI providers page. Web search uses Bing RSS by default and needs no
-key.
+only from the `assistant.chat` binding; a fresh registry binds it to `fake`, which
+answers deterministically until a real provider is added and bound on the AI
+providers page. Web search uses Bing RSS by default and needs no key.
 
 Local recall goes through `winnie-index` (`make index-serve`, listening on
 `127.0.0.1:8790`). With the daemon down, chat still works and the local-document

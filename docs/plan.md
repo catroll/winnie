@@ -242,13 +242,17 @@ Working:
   execution and delivery errors.
 - AI providers: add, edit and delete integrations (OpenAI-compatible, Anthropic,
   Volcengine ASR and the deterministic fake), and choose the provider and model
-  for each AI-using feature. Each OpenAI/Anthropic integration is independently a
-  gateway route or an internal-only provider; the seed keeps the internal LLM on
-  its own record instead of reusing a public route. Changing a binding takes
-  effect on the next model call; adding a gateway provider adds its route
-  immediately. API keys are environment-variable names shown with a set/missing
-  indicator, never key values; a keyless OpenAI provider is gateway-only and
-  cannot serve an internal feature.
+  for each AI-using feature. This registry is the only model choice;
+  `config.yaml` has no `llm`, `assistant.model`, `meetings.translator` or
+  `meetings.summarizer`. A fresh registry binds the model features to `fake`;
+  the owner adds a real provider and rebinds them. Each OpenAI/Anthropic
+  integration is independently a gateway route or an internal-only provider.
+  Changing a binding takes effect on the next model call; adding a gateway
+  provider adds its route immediately. API keys are environment-variable names
+  shown with a set/missing indicator, never key values; a keyless OpenAI provider
+  is gateway-only and cannot serve an internal feature.
+- Model runtime: shared timeout, token, temperature, retry and chunk limits live
+  in the registry and are editable in the console; they apply to the next call.
 - Gateway routes: protocol, upstream, API base and proxy paths from the AI
   provider registry (or from `config.yaml` when the registry is disabled).
 - Account: profile, session expiry and password change. A password change
@@ -281,11 +285,10 @@ Verified:
   `web_search` block, light and dark mode, and a 390 px viewport with no
   horizontal overflow.
 - The AI providers page was checked in Firefox against a disposable API and
-  registry: the seeded `deepseek-openai` route had no server key, the separate
-  `internal-llm` record was marked internal-only, `assistant.chat` was bound to
-  it, and a provider was created through the modal, bound, then deleted with the
-  binding falling back to `config.yaml`. The Volcengine defaults, light and dark
-  mode were captured at 1440×1200.
+  registry: a fresh seed bound the model features to `fake`, a provider was
+  created through the modal, bound, then deleted so the feature became unbound
+  (no YAML fallback); the Model runtime card saved new limits; the Volcengine
+  defaults, light and dark mode were captured at 1440×1200.
 - A `version: 1` registry (combined route + internal LLM) was loaded and checked:
   the migration split it into `deepseek-openai` + `internal-llm`, cleared the
   route key/model, repointed the bindings and wrote `version: 2`.
@@ -343,7 +346,7 @@ Working:
   File paths are confined to `assistant.workspace.root` and protected paths;
   overwrites carry the sha256 they read, are backed up and require a later
   explicit confirmation. Every non-whitelisted action gets one LLM review
-  (`assistant.model`, fail-closed) before it can become pending; whitelisted
+  (the bound assistant.chat model, fail-closed) before it can become pending; whitelisted
   read-only operations skip it. Commands run as the API user after review and
   confirmation and are audited under `.state/`; they are not sandboxed.
   Scheduled task runs get neither group.
@@ -381,7 +384,7 @@ Verified:
 - The `winnie-local` suite covers the whitelist policy (paths, git options,
   path-qualified executables), reviewer JSON/timeout/error handling, redaction,
   whitelisted bypass, review allow/deny, and the fail-closed disabled path.
-- `191 passed` in the backend suite.
+- `180 passed` in the backend suite.
 
 Open:
 
@@ -392,7 +395,7 @@ Open:
 - A task cannot be edited or paused yet; cancel and recreate is the current path.
 - Commands are not sandboxed: they run as the API user. A bubblewrap/firejail or
   container sandbox is the next hardening step.
-- The LLM reviewer reuses `assistant.model`; a separate reviewer model is a
+- The LLM reviewer reuses the bound assistant.chat model; a separate reviewer model is a
   follow-up.
 - Scheduled task runs deliberately have no file or command tools; there is no
   human turn to confirm them.
@@ -401,7 +404,7 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **191 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **180 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -419,7 +422,7 @@ Open:
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
 | Local assistant tools | Disposable service with a scripted model | `read_file`/`write_file`; command pending until the next "确认" turn; file and command audit lines |
 | Local LLM review | `winnie-local` test suite | Whitelisted reads skipped the reviewer; non-whitelisted write/command allowed or denied; malformed JSON, timeout and provider errors denied; denied actions changed nothing |
-| Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Seeded `deepseek-openai` had no server key and `internal-llm` was internal-only; `assistant.chat` pointed at it; created `ui-llm` through the modal, rebound `assistant.chat` and the API reported `source=admin`, deleted it and the binding returned to `source=config`; light/dark captured |
+| Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Fresh seed bound model features to `fake`; created `ui-llm` through the modal, rebound `assistant.chat` and the API reported `source=admin`, deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
 | AI registry v1 migration | `pytest` against a hand-written v1 file | Split into `deepseek-openai` + `internal-llm`, cleared the route key/model, repointed `assistant.chat`, rewrote `version: 2` |
 | Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |
 | Admin LLM usage page | Firefox against the same disposal API | Period switch, metrics, balances (not-exposed and missing-key states), by-day/by-feature/by-model tables, feature filter (8 gateway calls), detail row without column resize, price table, light/dark and 500 px width with no page overflow |
@@ -437,7 +440,7 @@ Not yet verified:
 | Two ASR calls per realtime meeting | Double provider cost; streaming usage is invisible | Add streaming usage records; alternatively make the file pass configurable |
 | Cleartext HTTP/WS on a public IPv6 domain | Tokens, audio and transcripts cross the network unencrypted | Terminate TLS before real use; narrow the Android network-security config to that domain |
 | No foreground service / reconnect | Backgrounding or locking the phone stops recording and captions | Foreground service with a persistent notification; reconnect with bounded retry |
-| Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Bind those features to an OpenAI-compatible provider on the AI providers page (the `llm` config still supplies the timeouts); run a real bilingual meeting |
+| Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Bind those features to an OpenAI-compatible provider on the AI providers page; tune timeouts in Model runtime; run a real bilingual meeting |
 | No long bilingual fixture | Provider quality, timestamps and cost are unmeasured | Add a local-only 10–30 minute fixture and an evaluation harness |
 | Cost estimates need a hand-maintained price table | A stale or missing price shows as unpriced; peak/off-peak vendor rates are not modelled | Prefer provider-reported costs, keep the table small, review it when a vendor changes prices |
 | Knowledge base is only a note sink | Minutes cannot yet be browsed, corrected or retrieved | M5: Git write, index, browse/edit/search |

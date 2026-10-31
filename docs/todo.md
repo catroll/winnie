@@ -152,14 +152,19 @@ status are in [plan.md](./plan.md).
 - [x] Admin CRUD for integrations and feature bindings, with gateway routes
       derived from the registry. Changing a provider or binding applies on the
       next model call; the arq worker re-reads the file by mtime.
-- [x] Seed the registry from `config.yaml` on first start, validate kind/model
-      compatibility when a binding is saved, and fall back to the YAML value for
-      unbound features. Covered by `apps/api/tests/test_ai_admin.py` and a
+- [x] Seed gateway routes and the Volcengine ASR defaults on first start,
+      bind model features to `fake`, validate kind/model compatibility when a
+      binding is saved, and require a binding for every feature. There is no
+      YAML model fallback. Covered by `apps/api/tests/test_ai_admin.py` and a
       Firefox run of create → bind → delete.
+- [x] Remove `llm`, `assistant.model`, `meetings.translator` and
+      `meetings.summarizer` from `config.yaml`; the registry is the only model
+      choice. Move timeout/token/chunk tuning into the registry (`runtime`) and
+      expose it in the console.
 - [x] Separate gateway exposure from internal credentials: every
-      OpenAI/Anthropic integration has a `gateway` flag, the seed creates a
-      dedicated `internal-llm` record, and a keyless provider cannot serve an
-      internal feature. A `version: 1` file is migrated in place.
+      OpenAI/Anthropic integration has a `gateway` flag, and a keyless provider
+      cannot serve an internal feature. A `version: 1` file is migrated in place
+      and keeps its old `internal-llm` record as a normal integration.
 - [ ] Group protocol endpoints under their vendor in the console (DeepSeek →
       OpenAI/Anthropic endpoints) so the protocol split does not read as two
       suppliers. The records stay separate; only the presentation changes.

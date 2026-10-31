@@ -325,8 +325,8 @@ sandbox: they run as the API user, with a minimal environment that excludes
 `WINNIE_*` and vendor keys, a timeout, an output cap and an audit line.
 `exec.allow` is a guardrail, not a boundary.
 
-Every action that is not on the whitelist is reviewed once by `assistant.model`
-before it can become a pending confirmation. The review sees the current user
+Every action that is not on the whitelist is reviewed once by the bound
+`assistant.chat` model before it can become a pending confirmation. The review sees the current user
 message and the action (path, mode, preview/diff or argv/cwd), with common
 secret patterns redacted, and must return
 `{"allow": bool, "risk": "low|medium|high", "reason": "..."}`. A timeout,
@@ -457,8 +457,6 @@ assistant:
   enabled: true
   root: ~/Documents/Mine/Winnie
   timezone: Asia/Shanghai
-  # Empty means: reuse llm.base_url, llm.model and llm.api_key_env.
-  model: fake
   max_history_messages: 30
   max_tool_rounds: 4
   max_tool_output_chars: 4000
@@ -521,7 +519,8 @@ output cap; `allow: []` means any executable, and a non-empty list is a guardrai
 not a sandbox. `exec.pending_ttl_seconds` bounds how long a confirmation can wait.
 
 `local.review` is the second gate: non-whitelisted actions are denied unless
-`assistant.model` returns an explicit JSON allow. `local.whitelist` is the
+the bound `assistant.chat` model returns an explicit JSON allow.
+`local.whitelist` is the
 explicit bypass for read-only operations. The default git whitelist is
 `status`, `rev-parse` and `ls-files`; `diff`, `log` and `show` can run
 repository-configured textconv/external-diff helpers, so they are reviewed by
@@ -532,12 +531,13 @@ confirmation (if enabled) still applies.
 top-level `index` block for the console proxy; they are deliberately separate so
 hiding the console page does not break the assistant's recall.
 
-Secrets stay in the environment: the variable named by the bound integration
-(seeded from `llm.api_key_env`, default `WINNIE_LLM_API_KEY`) for the model and,
-if the daemon sets one, `WINNIE_INDEX_TOKEN` for the index. A missing model key
-leaves the rest of the API up; a chat turn returns `502` naming the variable,
-rather than silently answering from the fake model. The provider and model are
-selected on the AI providers page; see [ai-providers.md](./ai-providers.md).
+Secrets stay in the environment: the variable named by the bound `assistant.chat`
+integration for the model and, if the daemon sets one, `WINNIE_INDEX_TOKEN` for
+the index. A missing model key leaves the rest of the API up; a chat turn returns
+`502` naming the variable, rather than silently answering from the fake model.
+The provider and model are selected on the AI providers page; a fresh registry
+binds `assistant.chat` to `fake` until a real provider is added. See
+[ai-providers.md](./ai-providers.md).
 
 ## 10. Security and privacy
 
@@ -665,9 +665,9 @@ result.
 - Should commands run in an OS sandbox (bubblewrap, firejail or a container)?
   Today they run as the API user with an LLM review, a confirmation gate and an
   audit log.
-- Should the reviewer be a separate, smaller model from `assistant.model`?
-  Today it reuses the assistant model; a separate model would separate the
-  proposer and the reviewer.
+- Should the reviewer be a separate, smaller model from the bound
+  `assistant.chat` model? Today it reuses the assistant model; a separate model
+  would separate the proposer and the reviewer.
 - Which read-only commands belong on the default whitelist? The current batch is
   deliberately narrow; `git diff`/`log`/`show` are reviewed because a
   repository can configure helpers that execute.

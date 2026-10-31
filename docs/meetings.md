@@ -85,7 +85,7 @@ winnie/
     ├── winnie-core/                  # framework
     │   └── src/winnie_core/
     │       ├── capability.py         # Capability + WinnieFramework
-    │       ├── config.py             # AuthConfig, JobsConfig, LLMConfig
+    │       ├── config.py             # AuthConfig, JobsConfig, ModelRuntimeConfig
     │       ├── db.py, storage.py, types.py
     │       ├── auth/                 # models, service, router, CLI-free helpers
     │       ├── jobs/queue.py         # InlineJobQueue, ArqJobQueue
@@ -402,13 +402,14 @@ class Summarizer(Protocol):
   Qwen). The `openai_compatible` adapter requests one JSON object, validates
   the shape and filters highlights that reference missing segments. Prompts
   live in code for now; versioned prompt files remain a later refactor.
-- **Config** selects the implementation per capability. With `ai.enabled: true`
-  (the shipped default) the values below seed `data/ai.yaml` on first start and
-  the AI providers page owns the live binding afterwards; with `ai.enabled:
-  false` they are read directly. Credentials come from environment variables
-  (`VOLCENGINE_ASR_API_KEY`, and the variable named by each integration), never
-  from YAML committed to Git. The Doubao key is a single new-console API key
-  sent as `X-Api-Key`; the old APP ID + Access Token pair is not supported.
+- **Config** supplies only the ASR seed. `meetings.asr_provider` and
+  `meetings.volcengine` seed the first ASR integration/binding; translation,
+  minutes and the assistant are bound on the AI providers page. There is no
+  `llm`, `translator` or `summarizer` key in `config.yaml`. Credentials come from
+  environment variables (`VOLCENGINE_ASR_API_KEY`, and the variable named by each
+  integration), never from YAML committed to Git. The Doubao key is a single
+  new-console API key sent as `X-Api-Key`; the old APP ID + Access Token pair is
+  not supported.
 - **Cost**: every file ASR, translation and summarization call writes a
   `usage_records` row (audio seconds, tokens, characters). The live-caption
   stream does not, so a realtime meeting is currently billed twice for ASR but
@@ -458,8 +459,6 @@ meetings:
   audio_retention_days: 0        # 0 = keep forever; audio only, not minutes
   local_language: zh
   asr_provider: volcengine
-  translator: openai_compatible
-  summarizer: openai_compatible
   prompt_version: v1
   volcengine:
     base_url: https://openspeech.bytedance.com
@@ -471,17 +470,6 @@ meetings:
     poll_interval_seconds: 2
     poll_timeout_seconds: 300
 
-llm:
-  base_url: https://api.deepseek.com/v1
-  api_key_env: WINNIE_LLM_API_KEY
-  model: deepseek-chat
-  timeout_seconds: 120
-  max_output_tokens: 4096
-  temperature: 0.2
-  max_retries: 2
-  retry_backoff_seconds: 1
-  translation_batch_chars: 6000
-  summary_chunk_chars: 24000
 
 database:
   url: sqlite+aiosqlite:///../../data/winnie.db
@@ -491,24 +479,25 @@ jobs:
   redis_url: ""
 ```
 
-With the shipped `ai.enabled: true`, the `meetings` and `llm` values above are
-first-start seeds for `data/ai.yaml`; afterwards the AI providers page selects
-the live implementation. Set `ai.enabled: false` to keep this YAML authoritative.
-Secrets (`VOLCENGINE_ASR_API_KEY` and the key named by each integration) come
-from the environment. Unknown YAML keys are rejected at startup. Production
-should use PostgreSQL and run `uv run alembic upgrade head` with the same
-`WINNIE_CONFIG` before setting `database.auto_create_tables: false`. A database
-created by `auto_create_tables` has no `alembic_version`; back it up and
-`alembic stamp head` instead of replaying the initial revision.
+With the shipped `ai.enabled: true`, the `meetings.asr_provider` and
+`meetings.volcengine` values above are first-start seeds for `data/ai.yaml`;
+afterwards the AI providers page selects the live ASR binding. Translation and
+minutes start on `fake` and must be bound to a real provider there. Secrets
+(`VOLCENGINE_ASR_API_KEY` and the key named by each integration) come from the
+environment. Unknown YAML keys are rejected at startup. Production should use
+PostgreSQL and run `uv run alembic upgrade head` with the same `WINNIE_CONFIG`
+before setting `database.auto_create_tables: false`. A database created by
+`auto_create_tables` has no `alembic_version`; back it up and `alembic stamp
+head` instead of replaying the initial revision.
 
 ### 8.3 Gateway and LLM access
 
 - Do not call the transparent gateway over loopback from the pipeline. That adds
   latency, makes the proxy a dependency of internal jobs, and muddles its logs.
 - `integrations/llm/openai_compatible.py` is the internal model client. It talks
-  to the provider directly, records token usage, and is selected by
-  `meetings.translator` / `meetings.summarizer`. Both the gateway and the AI jobs
-  may use the same provider configuration, but through different call paths.
+  to the provider directly and records token usage; the provider and model come
+  from the `meetings.translate` / `meetings.summarize` binding in the AI
+  registry, and the limits come from its runtime section.
 - Do not reuse `InteractionRecorder` for pipeline calls. It records transparent
   client conversations with `client_url`/`upstream_url`; internal AI calls need
   prompts, token usage and cost, which belong in `usage_records` plus structured
@@ -706,10 +695,10 @@ Implemented:
   upload, polling, usage recording and mocked HTTP tests. The credential is the
   new-console API key from `VOLCENGINE_ASR_API_KEY`, sent as `X-Api-Key`.
 - OpenAI-compatible LLM adapters for batched translation and structured
-  minutes, selected with `meetings.translator` / `meetings.summarizer`; the key
-  comes from `llm.api_key_env` (default `WINNIE_LLM_API_KEY`). Transient
-  transport/HTTP failures are retried with backoff and `Retry-After` support;
-  long transcripts use chunked map-reduce summarization.
+  minutes, selected with the `meetings.translate` / `meetings.summarize` binding
+  on the AI providers page; the key comes from the bound integration's
+  `api_key_env`. Transient transport/HTTP failures are retried with backoff and
+  `Retry-After` support; long transcripts use chunked map-reduce summarization.
 - Provider ports for ASR, translation and summarization; deterministic fakes for
   tests and demos.
 - Inline job queue by default; the arq queue and `WorkerSettings` entry point
