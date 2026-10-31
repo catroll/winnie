@@ -179,6 +179,62 @@ async def test_full_calendar_snapshot_deletes_missing_events(
     assert listing[0]["id"] == "501"
 
 
+# A real Huawei/HarmonyOS calendar provider stores TimeZone.toString() in
+# Events.EVENT_TIMEZONE instead of an Olson id. The dump is 267 characters.
+JAVA_TIMEZONE_DUMP = (
+    "java.util.SimpleTimeZone[id=Asia/Shanghai,offset=28800000,dstSavings=0,"
+    "useDaylight=false,transitions=0,lastRule=null,startMode=0,startMonth=0,"
+    "startDay=0,startDayOfWeek=0,startTime=0,startTimeMode=0,endMode=0,"
+    "endMonth=0,endDay=0,endDayOfWeek=0,endTime=0,endTimeMode=0]"
+)
+
+
+@pytest.mark.asyncio
+async def test_provider_timezone_dump_is_normalised_not_rejected(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    """Keep the event and reduce the dump to the id it contains.
+
+    This exact value made every calendar batch fail on a real phone, and the
+    Android client aborted the whole sync run on that failure, so no kind
+    after ``calendar`` was ever uploaded.
+    """
+    assert len(JAVA_TIMEZONE_DUMP) > 64
+    device = await register(phone_client)
+    event = {
+        "external_id": "601",
+        "title": "Dentist",
+        "starts_at": iso(hours=2),
+        "timezone": JAVA_TIMEZONE_DUMP,
+    }
+    response = await sync(phone_client, device["id"], "calendar", [event])
+    assert response.status_code == 200, response.text
+    assert response.json()["accepted"] == 1
+
+    listing = (await phone_client.get("/api/v1/phone/calendar")).json()
+    assert listing[0]["timezone"] == "Asia/Shanghai"
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_item_is_422_not_500(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    """One malformed field names the field instead of an opaque 500.
+
+    The status matters: a 500 tells the phone nothing and reads like a server
+    crash, and this handler used to let the ValidationError escape.
+    """
+    device = await register(phone_client)
+    response = await sync(
+        phone_client,
+        device["id"],
+        "calendar",
+        [{"external_id": "602", "timezone": "x" * 200}],
+    )
+    assert response.status_code == 422, response.text
+    assert "timezone" in response.json()["detail"]
+
+
 @pytest.mark.asyncio
 async def test_incremental_delete_hides_a_message(
     phone_client: httpx.AsyncClient,

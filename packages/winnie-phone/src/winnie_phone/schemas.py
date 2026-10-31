@@ -7,11 +7,12 @@ field name fails at the edge instead of being ignored.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SyncKind = Literal[
     "calendar",
@@ -40,6 +41,30 @@ CommandKind = Literal[
     "sms.send",
 ]
 
+# A Java ``TimeZone.toString()`` carries its Olson id as ``id=...``. Some OEM
+# calendar providers store that whole dump in ``Events.EVENT_TIMEZONE``.
+_JAVA_TIMEZONE_ID = re.compile(r"\bid=([^,\]]+)")
+
+
+def normalize_timezone(value: Any) -> Any:
+    """Reduce a Java time-zone dump to the Olson id it contains.
+
+    A Huawei/HarmonyOS calendar provider was observed storing
+    ``java.util.SimpleTimeZone[id=Asia/Shanghai,offset=28800000,...]`` (267
+    characters) where an id belongs. That is a provider representation, not a
+    client error, and an event is worth more than its timezone label: rejecting
+    the row would drop the event and, with ``mode=full``, could delete it.
+    Anything that is not a known dump is returned unchanged so the length guard
+    still catches genuinely malformed input.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if "java." not in stripped:
+        return stripped
+    match = _JAVA_TIMEZONE_ID.search(stripped)
+    return match.group(1).strip() if match else stripped
+
 
 class CalendarItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -59,6 +84,11 @@ class CalendarItem(BaseModel):
     attendees: list[str] = Field(default_factory=list)
     status: str = Field(default="", max_length=32)
     updated_at: datetime | None = None
+
+    @field_validator("timezone", mode="before")
+    @classmethod
+    def _timezone(cls, value: Any) -> Any:
+        return normalize_timezone(value)
 
 
 class CallItem(BaseModel):

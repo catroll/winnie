@@ -33,19 +33,19 @@ class CalendarSource(private val context: Context) {
             CalendarContract.Events.ORGANIZER,
             CalendarContract.Events.STATUS,
         )
-        val cursor = try {
-            context.contentResolver.query(
-                CalendarContract.Events.CONTENT_URI,
-                projection,
-                "${CalendarContract.Events.DELETED} = 0 AND " +
-                    "${CalendarContract.Events.DTSTART} >= ? AND " +
-                    "${CalendarContract.Events.DTSTART} <= ?",
-                arrayOf(fromMillis.toString(), toMillis.toString()),
-                "${CalendarContract.Events.DTSTART} ASC",
-            )
-        } catch (_: Exception) {
-            return emptyList()
-        } ?: return emptyList()
+        // A failed read must not look like an empty calendar: this list is sent
+        // as a full snapshot, so an exception swallowed here would tell the
+        // server every stored event disappeared. Let the sync record the error
+        // for this scope instead.
+        val cursor = context.contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            projection,
+            "${CalendarContract.Events.DELETED} = 0 AND " +
+                "${CalendarContract.Events.DTSTART} >= ? AND " +
+                "${CalendarContract.Events.DTSTART} <= ?",
+            arrayOf(fromMillis.toString(), toMillis.toString()),
+            "${CalendarContract.Events.DTSTART} ASC",
+        ) ?: return emptyList()
 
         return cursor.use { mapCalendarCursor(it, names) }
     }
@@ -190,7 +190,9 @@ internal fun mapCalendarCursor(
                 null
             },
             allDay = allDay >= 0 && cursor.getInt(allDay) != 0,
-            timezone = if (timezone >= 0) cursor.getString(timezone).orEmpty() else "",
+            timezone = normalizeTimeZone(
+                if (timezone >= 0) cursor.getString(timezone).orEmpty() else ""
+            ),
             recurrence = if (rrule >= 0) cursor.getString(rrule).orEmpty() else "",
             organizer = if (organizer >= 0) cursor.getString(organizer).orEmpty() else "",
             status = when (if (status >= 0) cursor.getInt(status) else 1) {
@@ -201,4 +203,36 @@ internal fun mapCalendarCursor(
         )
     }
     return items
+}
+
+/** The wire column is 64 characters; anything longer is not a zone id. */
+internal const val MAX_TIMEZONE_CHARS = 64
+
+private val JAVA_TIMEZONE_ID = Regex("""\bid=([^,\]]+)""")
+
+/**
+ * Reduces `Events.EVENT_TIMEZONE` to a zone id.
+ *
+ * Most providers store an Olson id (`Asia/Shanghai`), but some OEM providers —
+ * a Huawei/HarmonyOS one was observed — store `TimeZone.toString()` instead:
+ *
+ * ```
+ * java.util.SimpleTimeZone[id=Asia/Shanghai,offset=28800000,dstSavings=0,...]
+ * ```
+ *
+ * That is 267 characters and used to make the server reject the whole calendar
+ * batch, so the id is extracted here. A value that is neither a dump nor short
+ * enough is capped at the wire limit rather than dropped: the event matters
+ * more than its timezone label.
+ */
+internal fun normalizeTimeZone(raw: String): String {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return ""
+    val id = if (trimmed.contains("java.")) {
+        JAVA_TIMEZONE_ID.find(trimmed)?.groupValues?.get(1)?.trim()
+    } else {
+        null
+    }
+    val value = id?.takeIf { it.isNotEmpty() } ?: trimmed
+    return value.take(MAX_TIMEZONE_CHARS)
 }

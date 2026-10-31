@@ -16,21 +16,22 @@ class ContactsSource(private val context: Context) {
         val resolver = context.contentResolver
         val contacts = linkedMapOf<Long, MutableContact>()
 
-        val contactCursor = try {
-            resolver.query(
-                ContactsContract.Contacts.CONTENT_URI,
-                arrayOf(
-                    ContactsContract.Contacts._ID,
-                    ContactsContract.Contacts.DISPLAY_NAME_PRIMARY,
-                    ContactsContract.Contacts.STARRED,
-                ),
-                null,
-                null,
-                "${ContactsContract.Contacts.DISPLAY_NAME_PRIMARY} ASC",
-            )
-        } catch (_: Exception) {
-            return emptyList()
-        } ?: return emptyList()
+        // The contact list is uploaded as a full snapshot, so a failed read
+        // must raise rather than return an empty list: an empty snapshot would
+        // tell the server every contact was deleted. The per-detail queries
+        // below stay guarded — a missing email column costs an email, not the
+        // whole contact.
+        val contactCursor = resolver.query(
+            ContactsContract.Contacts.CONTENT_URI,
+            arrayOf(
+                ContactsContract.Contacts._ID,
+                ContactsContract.Contacts.DISPLAY_NAME_PRIMARY,
+                ContactsContract.Contacts.STARRED,
+            ),
+            null,
+            null,
+            "${ContactsContract.Contacts.DISPLAY_NAME_PRIMARY} ASC",
+        ) ?: return emptyList()
 
         contactCursor.use {
             val id = it.getColumnIndexOrThrow(ContactsContract.Contacts._ID)

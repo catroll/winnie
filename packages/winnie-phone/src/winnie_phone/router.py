@@ -11,6 +11,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import ValidationError
 
 from winnie_core.auth.dependencies import get_user_id
 from winnie_phone.schemas import (
@@ -59,6 +60,26 @@ def _error(exc: Exception) -> HTTPException:
     if isinstance(exc, (InvalidCommand, PhoneError)):
         return HTTPException(status_code=400, detail=str(exc))
     return HTTPException(status_code=500, detail=str(exc))
+
+
+def _invalid_item(exc: ValidationError) -> HTTPException:
+    """Turn a rejected sync item into 422, never an unhandled 500.
+
+    ``PhoneService.sync`` validates each item against its per-kind model after
+    FastAPI has accepted the envelope. A ``ValidationError`` there used to
+    escape as a 500 with only a server-side traceback, so the device could not
+    tell that one field of one row was wrong.
+    """
+    errors = exc.errors()
+    first = errors[0] if errors else {}
+    field = ".".join(
+        str(part) for part in first.get("loc", ()) if part != "__root__"
+    )
+    message = str(first.get("msg") or "invalid item")
+    return HTTPException(
+        status_code=422,
+        detail=f"{message} ({field})" if field else message,
+    )
 
 
 @router.post("/devices", response_model=DeviceRead, status_code=201)
@@ -152,6 +173,8 @@ async def sync(
         return SyncResult.model_validate(
             await service.sync(user_id, device_id, payload)
         )
+    except ValidationError as exc:
+        raise _invalid_item(exc) from None
     except PhoneError as exc:
         raise _error(exc) from None
 

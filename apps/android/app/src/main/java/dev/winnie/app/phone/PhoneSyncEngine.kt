@@ -24,6 +24,7 @@ import dev.winnie.app.phone.sources.NotificationBuffer
 import dev.winnie.app.phone.sources.SmsSource
 import java.io.IOException
 import java.time.Instant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -80,11 +81,8 @@ class PhoneSyncEngine(
             suspend fun step(label: String, block: suspend () -> Int) {
                 try {
                     accepted += block()
-                } catch (e: UnauthorizedException) {
-                    throw e
-                } catch (e: IOException) {
-                    throw e
                 } catch (e: Exception) {
+                    if (stopsRun(e)) throw e
                     errors += "$label: ${e.friendlyMessage()}"
                 }
             }
@@ -173,6 +171,11 @@ class PhoneSyncEngine(
         } catch (e: UnauthorizedException) {
             prefs.lastError = "The session expired. Sign in again to resume syncing."
             PhoneSyncOutcome(unauthorized = true)
+        } catch (e: ApiException) {
+            // The server answered before any scope ran — registration or the
+            // device lookup. Retrying will not change that, so report it.
+            prefs.lastError = e.friendlyMessage()
+            PhoneSyncOutcome(errors = listOf(e.friendlyMessage()))
         } catch (e: IOException) {
             prefs.lastError = e.friendlyMessage()
             PhoneSyncOutcome(retry = true, errors = listOf(e.friendlyMessage()))
@@ -406,4 +409,25 @@ class PhoneSyncEngine(
         const val CALENDAR_AHEAD_DAYS = 365L
         const val DAY_MS = 24L * 60L * 60L * 1000L
     }
+}
+
+/**
+ * Whether an exception ends the whole run instead of just one scope.
+ *
+ * A transport failure or a dead session stops the run: the rest cannot succeed.
+ * An HTTP error does not — the server answered, so it is one scope's problem
+ * and the remaining scopes must still upload.
+ *
+ * The ordering is the point. `ApiException` extends `IOException`, so a plain
+ * `catch (e: IOException) throw e` — which this used to be — classifies every
+ * 4xx/5xx as a dead network and aborts the run. That is how one calendar row
+ * the server rejected kept calls, SMS, contacts, apps, notifications and
+ * location from ever being attempted.
+ */
+internal fun stopsRun(error: Throwable): Boolean = when (error) {
+    is CancellationException -> true
+    is UnauthorizedException -> true
+    is ApiException -> false
+    is IOException -> true
+    else -> false
 }
