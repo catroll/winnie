@@ -2,6 +2,7 @@ package dev.winnie.app.data
 
 import android.content.Context
 import androidx.core.content.edit
+import dev.winnie.app.BuildConfig
 
 /** Non-secret client settings: the Winnie server address. */
 class AppSettings(context: Context) {
@@ -22,11 +23,11 @@ class AppSettings(context: Context) {
 }
 
 /**
- * `10.0.2.2` is the host loopback address as seen from the Android emulator.
- * A physical device must point at the machine's LAN address; the login screen
- * lets the user change it, and the value is persisted.
+ * Baked in at build time from `WINNIE_PUBLIC_URL`. It falls back to `10.0.2.2`,
+ * the host loopback address as seen from the Android emulator; the login
+ * screen lets the user change it, and the value is persisted.
  */
-const val DEFAULT_SERVER_URL = "http://10.0.2.2:8000"
+val DEFAULT_SERVER_URL: String = BuildConfig.DEFAULT_SERVER_URL
 
 fun normalizeServerUrl(raw: String): String {
     val trimmed = raw.trim().trimEnd('/')

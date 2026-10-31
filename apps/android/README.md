@@ -38,7 +38,11 @@ make android
 # apps/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Or invoke Gradle directly:
+The default server address is baked into the APK from `WINNIE_PUBLIC_URL`.
+`make android` sources it from `apps/api/.env`; when unset, the build falls back
+to `http://10.0.2.2:8000`.
+
+Or invoke Gradle directly (export `WINNIE_PUBLIC_URL` yourself in this case):
 
 ```bash
 cd apps/android
@@ -66,11 +70,19 @@ meetings:
   summarizer: fake
 ```
 
-In the emulator the default server address `http://10.0.2.2:8000` reaches the
-host. On a phone, enter the computer's LAN address on the login screen, bind
-uvicorn to `0.0.0.0`, and allow port 8000 through the firewall. The MVP permits
-cleartext HTTP for the local network; put the server behind TLS before exposing
-it more widely.
+With the fallback build, `http://10.0.2.2:8000` reaches the host from the
+emulator. For a phone, set `WINNIE_PUBLIC_URL` to the server's reachable address
+— for example `http://eqr.hosts.d3v.cn:8000` — and rebuild the APK:
+
+```bash
+WINNIE_PUBLIC_URL=http://eqr.hosts.d3v.cn:8000 make android
+```
+
+`make api` binds `[::]` for IPv6; use `API_HOST=0.0.0.0` only on an IPv4-only
+network. Allow port 8000 through the firewall. The MVP permits cleartext HTTP
+for the local network. A public IPv6 domain is globally routable, so HTTP there
+sends passwords, tokens and meeting audio in clear: terminate TLS before using
+it with real accounts.
 
 With `meetings.asr_provider: volcengine`, the API process needs
 `VOLCENGINE_ASR_API_KEY`; the app itself never sees vendor credentials.
@@ -89,7 +101,7 @@ With `meetings.asr_provider: volcengine`, the API process needs
   against a real backend using the app's own HTTP client
 
 ```bash
-WINNIE_ANDROID_BASE_URL=http://127.0.0.1:8000 \
+WINNIE_ANDROID_BASE_URL=http://[::1]:8000 \
   ./gradlew :app:testDebugUnitTest --rerun
 ```
 

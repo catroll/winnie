@@ -4,6 +4,19 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// The APK's default server comes from the build environment, so a
+// machine-specific address never lands in the repository. `make android`
+// loads it from apps/api/.env.
+val defaultServerUrl = providers.environmentVariable("WINNIE_PUBLIC_URL")
+    .orElse("http://10.0.2.2:8000")
+    .get()
+    .trim()
+    .trimEnd('/')
+    .ifBlank { "http://10.0.2.2:8000" }
+
+fun buildConfigString(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
     namespace = "dev.winnie.app"
     compileSdk = 37
@@ -15,10 +28,12 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "DEFAULT_SERVER_URL", buildConfigString(defaultServerUrl))
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {

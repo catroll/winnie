@@ -42,10 +42,20 @@ library is deprecated and its replacement guidance is to use the Keystore
 directly. A plain preference would expose the bearer token to anyone who can
 read the app's data.
 
+**Server address.** `WINNIE_PUBLIC_URL` is read at build time and baked into
+`BuildConfig.DEFAULT_SERVER_URL`, so one checkout can produce an APK for the
+emulator, a LAN address or a public IPv6 domain without editing source. The
+fallback is `http://10.0.2.2:8000`; `make android` loads the value from
+`apps/api/.env`. A hard-coded constant was rejected because it made every
+non-emulator build a source change.
+
 **Cleartext HTTP.** Allowed through `network_security_config.xml` because the
-MVP talks to a laptop on the LAN or to `10.0.2.2` from the emulator. This is a
-development affordance, not a deployment choice: a public server must use TLS,
-and the config should then be narrowed to the deployed domain.
+MVP talks to a laptop on the LAN or to `10.0.2.2` from the emulator. A build can
+also point at a public IPv6 domain, but that path is still cleartext: bearer
+tokens, meeting audio and transcripts cross a globally routable network
+unencrypted. This is a development affordance, not a deployment choice. A real
+deployment must terminate TLS, and the network-security config should then be
+narrowed to that domain.
 
 **Verification.** This machine has no `/dev/kvm`, so an Android emulator cannot
 run. Verification is therefore: a debug/release APK build, JVM unit tests for

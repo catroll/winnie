@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.winnie.app.data.DEFAULT_SERVER_URL
 
 @Composable
 fun LoginScreen(
@@ -78,7 +79,7 @@ fun LoginScreen(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Use http://10.0.2.2:8000 in the emulator, or this computer's LAN address on a phone.",
+                text = "Default: $DEFAULT_SERVER_URL. Change it for your network.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

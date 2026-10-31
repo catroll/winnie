@@ -159,7 +159,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--base-url",
-        default="http://127.0.0.1:8000",
+        default="http://[::1]:8000",
         help="proxy base URL",
     )
     parser.add_argument(

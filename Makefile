@@ -11,7 +11,7 @@ API_DIR := $(ROOT)/apps/api
 ANDROID_DIR := $(ROOT)/apps/android
 ENV_FILE ?= $(API_DIR)/.env
 
-API_HOST ?= 127.0.0.1
+API_HOST ?= ::
 API_PORT ?= 8000
 API_RELOAD ?= 1
 API_RELOAD_FLAG := $(if $(filter 1 true yes on,$(API_RELOAD)),--reload,)
@@ -36,10 +36,12 @@ help: ## Show this help
 	@printf '  API_HOST=%s API_PORT=%s API_RELOAD=%s\n' '$(API_HOST)' '$(API_PORT)' '$(API_RELOAD)'
 	@printf '  JAVA_HOME=%s\n' '$(JAVA_HOME)'
 	@printf '  ANDROID_HOME=%s\n' '$(ANDROID_HOME)'
-	@printf '\nLocal secrets: put WINNIE_LLM_API_KEY and VOLCENGINE_ASR_API_KEY in %s\n' '$(ENV_FILE)'
-	@printf '(gitignored), or export them before running make.\n'
+	@printf '\nLocal environment: %s (gitignored)\n' '$(ENV_FILE)'
+	@printf '  WINNIE_LLM_API_KEY, VOLCENGINE_ASR_API_KEY  API secrets\n'
+	@printf '  WINNIE_PUBLIC_URL                           Android default server URL\n'
+	@printf 'Without WINNIE_PUBLIC_URL the APK falls back to http://10.0.2.2:8000.\n'
 
-api: ## Run the API at http://127.0.0.1:8000 with reload enabled
+api: ## Run the API on [::]:8000, reachable over IPv6, with reload enabled
 	@cd '$(API_DIR)' && \
 	if [ -f '$(ENV_FILE)' ]; then \
 		set -a; . '$(ENV_FILE)'; set +a; \
@@ -65,6 +67,8 @@ android: ## Build the debug APK at apps/android/app/build/outputs/apk/debug/
 		printf 'sdk.dir=%s\n' '$(ANDROID_HOME)' > '$(ANDROID_DIR)/local.properties'; \
 	fi
 	@cd '$(ANDROID_DIR)' && \
+	if [ -f '$(ENV_FILE)' ]; then set -a; . '$(ENV_FILE)'; set +a; fi; \
+	printf 'Default server URL: %s\n' "$${WINNIE_PUBLIC_URL:-http://10.0.2.2:8000}"; \
 	HOME='$(BUILD_HOME)' \
 	GRADLE_USER_HOME='$(GRADLE_USER_HOME)' \
 	ANDROID_HOME='$(ANDROID_HOME)' \

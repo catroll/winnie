@@ -60,7 +60,7 @@ backend; running it on a device with a live ASR key is still pending.
 ### Quick start
 
 ```bash
-make api        # http://127.0.0.1:8000, reload enabled
+make api        # [::]:8000, reachable over IPv6, reload enabled
 make android    # debug APK for the Android client
 make help       # targets and overridable variables
 ```
@@ -69,19 +69,22 @@ make help       # targets and overridable variables
 `PATH`; run `cd apps/api && uv sync` first on a fresh checkout. It sources
 `apps/api/.env` when that file exists — gitignored, and only a local
 convenience: the application itself reads secrets from the process environment.
-`make android` needs a JDK and the Android SDK; see
+That file also supplies `WINNIE_PUBLIC_URL`, the default server address baked
+into the Android APK; start from `apps/api/.env.example`. `make android` needs a
+JDK and the Android SDK; see
 [apps/android/README.md](./apps/android/README.md).
 
 Then check the proxy:
 
 ```bash
-curl -s http://127.0.0.1:8000/healthz
-curl -s http://127.0.0.1:8000/routes
+curl -s 'http://[::1]:8000/healthz'
+curl -s 'http://[::1]:8000/routes'
 ```
 
-Point any OpenAI-compatible client at `http://127.0.0.1:8000/<route>` and pass
-your vendor key in the request headers. Routing, configuration and request
-examples are in [docs/openai-proxy.md](./docs/openai-proxy.md).
+Point any OpenAI-compatible client at `http://[::1]:8000/<route>` (or
+`API_HOST=0.0.0.0 make api` for IPv4) and pass your vendor key in the request
+headers. Routing, configuration and request examples are in
+[docs/openai-proxy.md](./docs/openai-proxy.md).
 
 Accounts and meeting notes are mounted under `/api/v1` when enabled in
 `apps/api/config.yaml`. The first account can register, then login to receive a

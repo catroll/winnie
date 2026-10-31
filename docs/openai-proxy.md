@@ -52,25 +52,25 @@ ask 头部含 `client_url`（客户请求本代理的地址）与 `upstream_url`
 cd apps/api
 # 按需编辑 config.yaml；敏感覆盖写 config.local.yaml
 uv sync
-uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
+uv run uvicorn winnie_api.main:app --reload --host :: --port 8000
 ```
 
 ### 调用示例
 
 ```bash
-curl -s http://127.0.0.1:8000/deepseek-openai/v1/chat/completions \
+curl -s 'http://[::1]:8000/deepseek-openai/v1/chat/completions' \
   -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"ping"}]}'
 
-curl -s http://127.0.0.1:8000/anthropic/v1/messages \
+curl -s 'http://[::1]:8000/anthropic/v1/messages' \
   -H "x-api-key: $ANTHROPIC_API_KEY" \
   -H 'anthropic-version: 2023-06-01' \
   -H 'Content-Type: application/json' \
   -d '{"model":"claude-sonnet-4-5","max_tokens":64,"messages":[{"role":"user","content":"ping"}]}'
 ```
 
-客户端 `base_url` 设为 `http://127.0.0.1:8000/{route}`。
+客户端 `base_url` 设为 `http://[::1]:8000/{route}`。
 
 ## 冒烟测试
 

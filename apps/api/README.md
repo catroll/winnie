@@ -14,14 +14,15 @@ incrementally.
 
 ## Run
 
-From the repository root, `make api` starts the same server and sources an
-optional `apps/api/.env`; `make help` lists the overridable variables.
+From the repository root, `make api` starts the same server, binds `[::]` for
+IPv6, and sources an optional `apps/api/.env`; `make help` lists the overridable
+variables. Use `API_HOST=0.0.0.0` for an IPv4-only network.
 
 ```bash
 # Edit config.yaml as needed.
 uv sync
-uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
-curl -s http://127.0.0.1:8000/routes
+uv run uvicorn winnie_api.main:app --reload --host :: --port 8000
+curl -s 'http://[::1]:8000/routes'
 ```
 
 With the default `config.yaml`, accounts and meeting notes are enabled and the
@@ -29,7 +30,7 @@ database is created on startup for development. Create the first account
 (allowed even with `auth.allow_registration: false`):
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/auth/register \
+curl -s -X POST http://[::1]:8000/api/v1/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"username":"alice","password":"correct horse battery"}'
 ```
@@ -46,7 +47,7 @@ Change the password with the current password; this revokes every session, so
 log in again afterwards:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/auth/password \
+curl -s -X POST http://[::1]:8000/api/v1/auth/password \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"current_password":"...","new_password":"..."}'
@@ -191,22 +192,22 @@ production follow-ups.
 
 ```bash
 # create, upload, process (TOKEN is the access_token from registration/login)
-curl -s -X POST http://127.0.0.1:8000/api/v1/meetings \
+curl -s -X POST http://[::1]:8000/api/v1/meetings \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"title":"Weekly sync"}'
-curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/audio \
+curl -s -X POST http://[::1]:8000/api/v1/meetings/<id>/audio \
   -H "Authorization: Bearer $TOKEN" \
   -F 'file=@recording.m4a'
-curl -s -X POST http://127.0.0.1:8000/api/v1/meetings/<id>/transcribe \
+curl -s -X POST http://[::1]:8000/api/v1/meetings/<id>/transcribe \
   -H "Authorization: Bearer $TOKEN"
 
 # read
 curl -s -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:8000/api/v1/meetings/<id>/transcript
+  http://[::1]:8000/api/v1/meetings/<id>/transcript
 curl -s -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:8000/api/v1/meetings/<id>/minutes
+  http://[::1]:8000/api/v1/meetings/<id>/minutes
 curl -s -H "Authorization: Bearer $TOKEN" \
-  'http://127.0.0.1:8000/api/v1/meetings/<id>/export?format=markdown'
+  'http://[::1]:8000/api/v1/meetings/<id>/export?format=markdown'
 ```
 
 ## Smoke test

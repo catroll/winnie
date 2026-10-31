@@ -17,7 +17,7 @@ import org.junit.Test
  * backend. It is skipped unless WINNIE_ANDROID_BASE_URL is set, so the normal
  * test run stays hermetic:
  *
- *   WINNIE_ANDROID_BASE_URL=http://127.0.0.1:8000 ./gradlew test
+ *   WINNIE_ANDROID_BASE_URL=http://[::1]:8000 ./gradlew test
  *
  * The backend must allow registration and use a provider that does not need
  * cloud credentials (the fake ASR/translator/summarizer are enough to prove
