@@ -467,7 +467,7 @@ class AIState(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> AIState:
-        if self.version not in (1, 2, 3, 4):
+        if self.version not in (1, 2, 3, 4, 5):
             raise ValueError(f"unsupported ai settings version: {self.version}")
 
         vendor_ids: set[str] = set()

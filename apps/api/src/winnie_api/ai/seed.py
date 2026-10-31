@@ -16,7 +16,6 @@ from winnie_meetings.integrations.asr.volcengine import API_KEY_ENV
 from winnie_api.ai.schema import (
     AIState,
     BindingRecord,
-    FEATURE_BY_KEY,
     IntegrationRecord,
     ModelRecord,
     VendorRecord,
@@ -123,36 +122,19 @@ def seed_state(settings: Settings) -> AIState:
         options=asr_options,
     )
 
-    fake = add(
-        name="fake",
-        label="Deterministic fake (offline)",
-        kind="fake",
-        gateway=False,
-    )
-
     bindings: dict[str, BindingRecord] = {}
 
-    def bind(feature: str, integration: IntegrationRecord, model: str) -> None:
-        bindings[feature] = BindingRecord(
-            vendor=integration.vendor,
-            model=model,
+    # No fake supplier ships. A model feature stays unbound until the owner
+    # adds a supplier API, syncs its models and chooses one. ASR keeps its
+    # configured Volcengine default as the only seeded binding.
+    if settings.meetings.asr_provider == "volcengine":
+        bindings["meetings.transcribe"] = BindingRecord(
+            vendor=asr.vendor,
+            model=asr.default_model or "bigmodel",
         )
 
-    # Model choice is admin-managed: every model feature starts on the fake
-    # model. The owner syncs a real supplier's models and rebinds them.
-    for feature in FEATURE_BY_KEY:
-        if feature == "meetings.transcribe":
-            continue
-        bind(feature, fake, "fake")
-
-    if settings.meetings.asr_provider == "volcengine":
-        bind("meetings.transcribe", asr, asr.default_model or "bigmodel")
-    else:
-        bind("meetings.transcribe", fake, "fake")
-
-    assert set(bindings) == set(FEATURE_BY_KEY)
     return AIState(
-        version=4,
+        version=5,
         vendors=list(vendors.values()),
         integrations=integrations,
         bindings=bindings,
@@ -280,48 +262,26 @@ def migrate_state(state: AIState) -> bool:
             binding.model = model
             binding.integration_id = None
             binding.updated_at = utcnow()
-        _ensure_feature_bindings(state)
         state.version = 4
         changed = True
 
+    if state.version < 5:
+        state.integrations = [
+            integration
+            for integration in state.integrations
+            if integration.kind != "fake"
+        ]
+        state.vendors = [vendor for vendor in state.vendors if vendor.id != "fake"]
+        valid_vendors = {vendor.id for vendor in state.vendors}
+        for binding in state.bindings.values():
+            if binding.vendor == "fake" or (
+                binding.vendor and binding.vendor not in valid_vendors
+            ):
+                binding.vendor = ""
+                binding.model = ""
+                binding.integration_id = None
+                binding.updated_at = utcnow()
+        state.version = 5
+        changed = True
+
     return changed
-
-
-def _ensure_feature_bindings(state: AIState) -> None:
-    """Bind features added after the file was written to the fake provider.
-
-    A missing binding makes ``resolve`` raise, which would leave the new
-    capability unusable with no way to fix it from the console (the feature
-    list is built from FEATURES, and a binding cannot be created by editing a
-    delete). The fake is the documented first-start default; the owner rebinds
-    it like any other feature.
-    """
-    missing = [spec for spec in FEATURE_BY_KEY.values() if spec.key not in state.bindings]
-    if not missing:
-        return
-    fake = next(
-        (integration for integration in state.integrations if integration.kind == "fake"),
-        None,
-    )
-    if fake is None:
-        from winnie_api.ai.schema import IntegrationRecord, VendorRecord
-
-        vendor_id = "fake"
-        if not any(vendor.id == vendor_id for vendor in state.vendors):
-            state.vendors.append(
-                VendorRecord(id=vendor_id, label=vendor_label_for(vendor_id))
-            )
-        fake = IntegrationRecord(
-            name=_unique_name(
-                "fake", {integration.name for integration in state.integrations}
-            ),
-            label="Deterministic fake (offline)",
-            kind="fake",
-            vendor=vendor_id,
-            gateway=False,
-        )
-        state.integrations.append(fake)
-    for spec in missing:
-        state.bindings[spec.key] = BindingRecord(
-            vendor=fake.vendor or "fake", model="fake"
-        )

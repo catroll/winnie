@@ -60,9 +60,11 @@ async def test_config_seeds_routes_features_and_the_file(tmp_path: Path) -> None
         body = response.json()
 
     names = {item["name"] for item in body["integrations"]}
-    assert {"openai", "anthropic", "fake"} <= names
+    assert {"openai", "anthropic"} <= names
+    assert "fake" not in names
     vendors = {item["id"]: item for item in body["vendors"]}
-    assert {"openai", "anthropic", "volcengine", "fake"} <= set(vendors)
+    assert {"openai", "anthropic", "volcengine"} <= set(vendors)
+    assert "fake" not in vendors
     assert vendors["volcengine"]["models"][0]["id"] == "bigmodel"
     by_name = {item["name"]: item for item in body["integrations"]}
     assert by_name["openai"]["vendor"] == "openai"
@@ -79,12 +81,12 @@ async def test_config_seeds_routes_features_and_the_file(tmp_path: Path) -> None
         "news.write",
         "news.review",
     }
-    # The default assistant model is fake, so the seed binds the fake provider.
-    assert features["assistant.chat"]["integration_name"] == "fake"
-    assert features["assistant.chat"]["source"] == "admin"
+    # No model is configured by default; the console must choose one.
+    assert features["assistant.chat"]["source"] == "none"
+    assert features["assistant.chat"]["vendor"] == ""
 
     kinds = {item["kind"] for item in body["kinds"]}
-    assert kinds == {"openai", "anthropic", "volcengine_asr", "fake"}
+    assert kinds == {"openai", "anthropic", "volcengine_asr"}
 
 
 async def test_integration_crud_drives_the_gateway_route_table(tmp_path: Path) -> None:
@@ -429,6 +431,29 @@ async def test_meeting_translation_uses_the_bound_integration(
             "/api/v1/ai/features/meetings.translate",
             json={"integration_id": integration_id},
         )
+        # This test needs ASR; use an explicit test-only fake endpoint rather
+        # than a product fake supplier.
+        await client.post(
+            "/api/v1/ai/vendors",
+            json={
+                "id": "test-tools",
+                "label": "Test tools",
+                "models": [{"id": "fake"}],
+            },
+        )
+        await client.post(
+            "/api/v1/ai/integrations",
+            json={
+                "name": "fake-asr",
+                "vendor": "test-tools",
+                "kind": "fake",
+                "gateway": False,
+            },
+        )
+        await client.put(
+            "/api/v1/ai/features/meetings.transcribe",
+            json={"vendor": "test-tools", "model": "fake"},
+        )
 
         meeting = await client.post(
             "/api/v1/meetings", json={"title": "Bound provider"}
@@ -558,8 +583,8 @@ async def test_fresh_seed_leaves_model_choice_to_the_console(
 
     features = {item["key"]: item for item in config["features"]}
     for key in ("assistant.chat", "meetings.translate", "meetings.summarize"):
-        assert features[key]["integration_name"] == "fake"
-        assert features[key]["source"] == "admin"
+        assert features[key]["source"] == "none"
+        assert features[key]["vendor"] == ""
 
     # Runtime limits live in the registry, not in config.yaml.
     assert config["runtime"]["timeout_seconds"] == 120
@@ -618,9 +643,11 @@ bindings:
         routes = (await client.get("/routes")).json()["routes"]
 
     stored = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert stored["version"] == 4
+    assert stored["version"] == 5
     by_name = {item["name"]: item for item in config["integrations"]}
     vendors = {item["id"]: item for item in config["vendors"]}
+    assert "fake" not in by_name
+    assert "fake" not in vendors
     assert by_name["deepseek-openai"]["vendor"] == "deepseek"
     assert by_name["internal-llm"]["vendor"] == "deepseek"
     assert [model["id"] for model in vendors["deepseek"]["models"]] == [
@@ -636,10 +663,10 @@ bindings:
 
     features = {item["key"]: item for item in config["features"]}
     assert features["assistant.chat"]["integration_name"] == "internal-llm"
-    # Features added after this file was written are bound to the fake, so the
-    # capability is usable (and rebindable) instead of failing to resolve.
-    assert features["news.extract"]["integration_name"] == "fake"
-    assert features["news.review"]["integration_name"] == "fake"
+    # Features added after this file was written are left unbound; there is no
+    # implicit fake model.
+    assert features["news.extract"]["source"] == "none"
+    assert features["news.review"]["source"] == "none"
     assert [route["name"] for route in routes] == ["deepseek-openai"]
 
 

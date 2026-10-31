@@ -400,6 +400,7 @@ class AISettingsService:
                     ],
                 }
                 for kind in KINDS
+                if kind.kind != "fake"
             ],
             "updated_at": max(
                 [vendor.updated_at for vendor in state.vendors]

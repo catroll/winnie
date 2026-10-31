@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 
+from winnie_api.ai.schema import BindingDraft, IntegrationDraft, VendorDraft
 from winnie_api.main import create_app
 from winnie_assistant.config import AssistantConfig, SearchConfig as AssistantSearchConfig
 from winnie_api.settings import AIConfig, Settings
@@ -91,6 +92,30 @@ async def opened(tmp_path: Path):
     async with app.router.lifespan_context(app):
         service = app.state.news_service
         assert service is not None
+        # No fake supplier ships. This test configures an explicit test-only
+        # fake model for the news features.
+        ai = app.state.ai_settings
+        ai.create_vendor(
+            VendorDraft(
+                id="test-tools",
+                label="Test tools",
+                models=[{"id": "fake"}],
+            )
+        )
+        ai.create_integration(
+            IntegrationDraft(
+                name="fake-news",
+                label="Test fake",
+                vendor="test-tools",
+                kind="fake",
+                gateway=False,
+            )
+        )
+        for feature in ("news.extract", "news.write", "news.review"):
+            ai.set_binding(
+                feature,
+                BindingDraft(vendor="test-tools", model="fake"),
+            )
         # The collectors are the only network dependency left in this path.
         service._material_source = lambda **kwargs: material_batch()
         async with httpx.AsyncClient(
@@ -105,8 +130,7 @@ async def test_status_and_a_full_run(tmp_path: Path) -> None:
         status = (await client.get("/api/v1/news/status")).json()
         assert status["enabled"] is True
         assert status["ready"] is True
-        # A fresh registry binds news.* to the deterministic fake.
-        assert status["llm"] == "fake"
+        assert status["llm"] == "fake-news"
         assert status["active_run"] is None
 
         started = await client.post("/api/v1/news/runs", json={})
