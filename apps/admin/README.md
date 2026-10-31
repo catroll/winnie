@@ -6,9 +6,10 @@ adds no new backend service.
 
 It is for looking at and operating what the API already knows: your meetings,
 their transcripts and minutes, the assistant chat and every conversation it has
-recorded, the assistant's scheduled tasks and their run history, and the AI
-providers every AI-using feature calls. It is not a recording client and it does
-not store vendor API keys.
+recorded, the assistant's scheduled tasks and their run history, the data the
+Android client synced from the phone, and the AI providers every AI-using
+feature calls. It is not a recording client and it does not store vendor API
+keys.
 
 ## What you can do
 
@@ -17,6 +18,7 @@ not store vendor API keys.
 | **Dashboard** | Meeting count, configured routes, API version and readiness, plus the five most recent meetings |
 | **Chat** | A ChatGPT-like conversation with the assistant, plus the full history from every channel: console, phone page, API clients and scheduled task runs. Filter by channel, reopen any transcript including its tool blocks, and send from the console |
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
+| **Phone data** | A card per synced device with model, scopes, per-kind record counts, battery/network/storage, last sync and sync errors, plus revoke, restore and delete-server-data actions; tabs for calendar, calls, SMS, contacts, notifications, location and apps with a time window, text filter, call direction, unread-only and a result limit; a cross-kind search; the assistant action queue with status, result and error |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
@@ -28,6 +30,38 @@ not store vendor API keys.
 
 The API scopes meetings to the authenticated account, so the console shows the
 same data the Android client does for that user.
+
+## Phone data
+
+`/phone` reads the copy the Android client uploaded through
+`/api/v1/phone`; it never talks to the phone. A card per device shows its model,
+OS and app version, the scopes its owner enabled, how many records exist of each
+kind, its battery, network and free storage, the last sync and any per-kind sync
+error.
+
+Below the cards:
+
+- **Search across everything** sends one query to `/api/v1/phone/search` and
+  merges calendar, calls, SMS, contacts, notifications, location and apps by
+  time. A location fix appears only when the query matches its coordinates or
+  provider.
+- The **tabs** load one kind at a time with a window (24 hours to all time), a
+  text filter where the kind supports one, a call direction, an unread-only
+  switch for SMS, and a limit of 50–500. The API returns the newest N records;
+  the footer says so rather than implying pagination.
+- **Assistant actions** lists the deferred writes the assistant proposed: kind,
+  summary, status (`proposed` to `succeeded`/`failed`/`expired`), the result or
+  error, and when it was approved or completed.
+
+**Delete server data** removes every synced record for the device and resets its
+sync state; the phone stays registered and uploads again on its next sync.
+**Revoke** blocks the device at registration until **Restore**; a revoked phone
+cannot re-register itself. Both actions ask for confirmation. The page cannot
+edit a record: the phone owns the data and would overwrite a console edit on the
+next sync.
+
+The page is shown when `phone.enabled` is true in `apps/api/config.yaml`;
+otherwise the API returns 503 and the page reports why.
 
 ## Assistant chat and conversation history
 

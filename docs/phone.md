@@ -279,6 +279,25 @@ notice, a master switch, one switch per scope with its permission state, the two
 special-access rows, a manual sync, the last sync and error, server-side counts,
 and a confirmed "Delete data on server" action. Nothing is enabled by default.
 
+### The console view
+
+The Android app is the only writer; `/phone` in `apps/admin` is the read-and-
+operate view. It shows:
+
+- one card per device with model, OS/app version, scopes, per-kind record
+  counts, battery/network/storage, last sync, per-kind sync errors, and
+  **Revoke**, **Restore** and **Delete server data** actions;
+- a tab per kind (calendar, calls, SMS, contacts, notifications, location,
+  apps) with a time window, a text filter, call direction, unread-only and a
+  result limit;
+- **Assistant actions**, the command queue with status, summary, result or
+  error, and the device it belongs to;
+- a cross-kind search.
+
+The page cannot edit a record: the phone owns its data, and a console edit would
+be overwritten by the next sync. A full-text search includes a location fix only
+when the query matches its coordinates or provider, not on every query.
+
 ## 8. Privacy and security
 
 - **The server database is not encrypted at rest.** It is SQLite or PostgreSQL
@@ -354,8 +373,10 @@ phone database unless it asks for one.
 - No per-device scope enforcement on the server: the phone decides what it
   uploads, and the server accepts any kind. The scopes are context for the
   assistant, not an authorization boundary.
-- The admin console has no phone page yet; the API is the way to inspect and
-  delete data from a browser.
+- The console page is read/operate only (view, search, revoke, delete); it
+  cannot edit or add a phone record, because the phone is the writer.
+- The list endpoints use a limit, not pagination, so the console shows the most
+  recent N records per kind rather than every record.
 
 ## 11. Verification
 

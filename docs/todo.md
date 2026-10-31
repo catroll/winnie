@@ -115,8 +115,10 @@ handset has not run them yet. These are the next concrete steps.
       runtime grants, the notification-access grant, "allow all the time"
       location, a vendor calendar provider insert/update/delete, and
       WorkManager surviving a reboot and a process kill.
-- [ ] Add a phone page to the admin console: devices, counts, last sync, the
-      recent records per kind, and the same delete-on-server action.
+- [x] Add a phone page to the admin console: device cards with scopes and
+      counts, per-kind tabs with filters, a cross-kind search, the assistant
+      action queue, and revoke/restore/delete. Verified in headless Firefox in
+      light, dark and mobile layouts.
 - [ ] Poll approved commands on a short interval separate from the data sync,
       so a confirmed calendar change or SMS does not wait up to 30 minutes.
 - [ ] Report SMS delivery: the current result means "submitted to the carrier".

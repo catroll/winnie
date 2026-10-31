@@ -988,6 +988,17 @@ expiry for a kind. Wiping a device hard-deletes its records and sync states and
 the client resets its cursors; revocation is sticky until an explicit restore,
 so a phone cannot undo an administrative stop by re-registering.
 
+**The console shows phone data but does not edit it.** `/phone` in `apps/admin`
+is a read-and-operate view: devices, per-kind records with filters, cross-kind
+search, the command queue and the revoke/restore/delete actions. Editing a synced
+record was rejected because the phone is the writer: the next sync would either
+overwrite the edit or need a command to apply it, and a console that silently
+loses a change is worse than one that says it is read-only. Deleting is the
+exception and is deliberately destructive: it is how the owner withdraws data
+from a server, so it asks for confirmation and the phone uploads again
+afterwards. The page uses the same bearer session and the same per-account
+scoping as every other route; there is no separate admin credential.
+
 **The data is stored in clear text.** The database has the same protection as
 meeting transcripts: filesystem permissions. Encrypting only the phone tables
 would suggest a security property the rest of the store does not have, and

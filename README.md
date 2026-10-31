@@ -14,7 +14,7 @@ infrastructure below it exists to serve the assistant.
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
-| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, news runs and drafts, AI providers, LLM usage and gateway routes | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, synced phone data, scheduled tasks, news runs and drafts, AI providers, LLM usage and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
@@ -130,9 +130,11 @@ contracts and limits are in [docs/news.md](./docs/news.md).
 The AdminLTE management console in `apps/admin` operates the same data in a
 browser: sign in, dashboard, assistant chat with the full cross-channel
 conversation history, chat skills, meeting list and detail, transcript and
-minutes, Markdown/TXT export, regenerate and delete, assistant scheduled tasks and their
-run history, AI provider CRUD with per-feature provider selection, gateway route
-inspection, and account/password management. It is read-and-operate for
+minutes, Markdown/TXT export, regenerate and delete, the phone data the Android
+client synced (devices, per-kind records, search, assistant actions, revoke and
+delete), assistant scheduled tasks and their run history, AI provider CRUD with
+per-feature provider selection, gateway route inspection, and
+account/password management. It is read-and-operate for
 recordings — upload stays in the Android client, and scheduled tasks are created
 and cancelled through the assistant chat. AI vendors and their feature bindings
 are the exception: they are owned by the console. See

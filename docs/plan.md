@@ -82,7 +82,7 @@ Success for the current phase:
 | Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
 | Push | Durable notification backlog, WebSocket stream to the phone, assistant reminder tool, scheduled-task and phone-command events | `winnie-push` + `apps/android` + `notify` skill | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
 | Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
@@ -100,7 +100,7 @@ Success for the current phase:
 | M5 | Knowledge base | Markdown in Git is the source of truth; browse/edit/classify/version/search; notes are indexed and retrievable | Planned |
 | M6 | Assistant | A reachable assistant that chats, searches, runs conversation-managed tasks and remembers from local files through the index | **Core done** — chat, search, index-backed recall and chat-managed tasks work; streaming, vector retrieval and an out-of-process worker are open |
 | M8 | News production | A run over real sources groups reports into events, writes one sourced draft per event, reviews it and stops at a reviewed Markdown file; console and assistant operate it | **Core done** — end-to-end verified with the fake model; real-model quality, a worker-backed run and Markdown rendering are open |
-| M9 | Phone data | The phone syncs every enabled scope on a schedule; the assistant answers questions from it and a confirmed calendar/SMS write is executed by the phone | **Core done** — sync, query, tools and the command queue are implemented and tested; a physical-device run, a console page and SMS delivery receipts are open |
+| M9 | Phone data | The phone syncs every enabled scope on a schedule; the console shows it; the assistant answers questions from it and a confirmed calendar/SMS write is executed by the phone | **Core done** — sync, query, console page, tools and the command queue are implemented and tested; a physical-device run and SMS delivery receipts are open |
 | M10 | Push | A notification published on the server reaches the phone while it is idle, survives a reconnect from the backlog, and is used for reminders, scheduled briefs and phone-action results | **Core done** — stream, backlog, tool and Android service are implemented and tested; a device run, Redis fan-out and notification actions are open |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
@@ -252,6 +252,11 @@ Working:
   counts, the drafts a run produced with their review status, and the selected
   draft with its review and Markdown. A run is started from this page and polled
   while it is in flight.
+- Phone data: a card per synced device with scopes, per-kind counts, device
+  details, last sync and sync errors; per-kind tabs for calendar, calls, SMS,
+  contacts, notifications, location and apps with a window, text filter and
+  limit; a cross-kind search; the assistant action queue; revoke, restore and
+  delete-server-data actions.
 - Scheduled tasks: the assistant-created definitions with schedule, active or
   paused state, next and last run, last result and error, prompt, webhook target,
   ignored definitions and the scheduler's timezone. The page is read-only.
@@ -533,7 +538,7 @@ Open:
 
 - No run on a physical phone: permission flows, vendor calendar providers,
   notification access and background location are unverified on a handset.
-- No admin-console page for the synced data.
+- The console cannot edit a synced record; the phone owns the data.
 - SMS edits/deletions on the phone are not propagated; recurring events sync as
   one row with an RRULE rather than expanded instances.
 - MMS, attachments and delivery receipts are out of scope.
