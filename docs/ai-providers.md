@@ -16,7 +16,7 @@ model list. A feature never selects a supplier or an endpoint.
 ## Concepts
 
 A **supplier** is the vendor (`deepseek`, `openai`, `qwen`, `anthropic`,
-`volcengine`, `fake`) and owns:
+`volcengine`) and owns:
 
 - one **API endpoint** for internal calls: base URL, key variable and protocol;
 - a **model catalog**;
@@ -45,7 +45,7 @@ A **model** belongs to the supplier:
 `GET {base_url}/v1/models` with the supplier key, reads `data[].id` (plus
 `owned_by` and `created`), and writes the catalog. A model that is still used by
 a binding or an endpoint default is kept if the supplier temporarily omits it.
-**Models** is the manual fallback for ASR, the fake and custom endpoints.
+**Models** is the manual fallback for ASR and custom endpoints.
 
 A **feature binding** selects a supplier and a model:
 
@@ -58,9 +58,10 @@ A **feature binding** selects a supplier and a model:
 | `news.extract` / `news.write` / `news.review` | News extraction, drafting and review |
 
 An unbound feature has **no model** and fails with a clear error; there is no
-YAML fallback. A fresh registry binds every feature to the `fake` model. Deleting
-the supplier API or removing a model that a binding uses is rejected or unbinds
-the feature with a message; choose a replacement model first.
+YAML fallback. A fresh registry leaves every model feature unbound until the
+owner configures a supplier model. Deleting the supplier API or removing a model
+that a binding uses is rejected or unbinds the feature with a message; choose a
+replacement model first.
 
 ## Model runtime
 
@@ -91,11 +92,10 @@ remaining YAML inputs:
   route** with `api_key_env: ""`; routes are grouped under their supplier
   (`deepseek-openai` → **DeepSeek**);
 - `meetings.volcengine` supplies the endpoint/options for a `volcengine-asr`
-  supplier API; `meetings.asr_provider` selects the initial ASR model
-  (`bigmodel` or `fake`); its model name is added to the Volcengine catalog;
-- a `fake` supplier is always added;
-- every feature starts on the `fake` model; the owner adds a supplier API,
-  syncs its models and binds the feature to a real model.
+  supplier API; `meetings.asr_provider: volcengine` seeds the ASR binding to
+  `bigmodel`; otherwise ASR starts unbound;
+- no fake supplier is added; every model feature starts unbound until the owner
+  adds a supplier API, syncs its models and binds the feature.
 
 There is no `llm` block to import and no `internal-llm` generated on a fresh
 start. An existing registry that already has an `internal-llm` (from the v1
@@ -132,10 +132,12 @@ becomes `version: 3`.
 
 A `version: 3` registry is converted to model-first bindings: every
 `integration_id` binding becomes `vendor` + `model` (`model` falls back to the
-endpoint default; the fake endpoint uses `fake`). The integration id is cleared,
-so the console cannot bind a feature to an endpoint again. Features added by a
-later version (for example the news features) are bound to `fake`/`fake`. The
-file becomes `version: 4`.
+endpoint default). The integration id is cleared, so the console cannot bind a
+feature to an endpoint again. The file becomes `version: 4`.
+
+A `version: 4` registry is cleaned up: the seeded fake integration and vendor are
+removed, bindings to them are cleared, and features without a configured model
+stay unbound. The file becomes `version: 5`. No fake supplier is created again.
 
 ## API keys
 
@@ -228,8 +230,8 @@ supplier.
   loudly with the path and the validation error instead of silently falling
   back. Use the console for normal changes.
 - The file is written atomically (temporary file plus rename) with mode `0600`.
-- The file is `version: 4`. A `version: 1`, `2` or `3` file is migrated in place
-  on the next read; back it up first if it contains manual edits.
+- The file is `version: 5`. A `version: 1`, `2`, `3` or `4` file is migrated in
+  place on the next read; back it up first if it contains manual edits.
 - Multiple API processes share the file. The process that handled the console
   write refreshes its gateway table immediately; another process only re-reads
   bindings/runtime on the next resolution and does not rebuild its gateway

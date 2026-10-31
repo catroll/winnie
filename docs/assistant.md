@@ -584,8 +584,8 @@ Secrets stay in the environment: the variable named by the bound `assistant.chat
 integration for the model and, if the daemon sets one, `WINNIE_INDEX_TOKEN` for
 the index. A missing model key leaves the rest of the API up; a chat turn returns
 `502` naming the variable, rather than silently answering from the fake model.
-The provider and model are selected on the AI providers page; a fresh registry
-binds `assistant.chat` to `fake` until a real provider is added. See
+The provider and model are selected on the AI suppliers page; a fresh registry
+leaves `assistant.chat` unbound until a supplier model is configured. See
 [ai-providers.md](./ai-providers.md).
 
 ## 10. Security and privacy

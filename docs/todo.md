@@ -154,10 +154,10 @@ status are in [plan.md](./plan.md).
       supplier/model/binding applies on the next model call; the arq worker
       re-reads the file by mtime.
 - [x] Seed gateway routes and the Volcengine ASR defaults on first start,
-      bind model features to `fake`, validate kind/model compatibility when a
-      binding is saved, and require a binding for every feature. There is no
-      YAML model fallback. Covered by `apps/api/tests/test_ai_admin.py` and a
-      Firefox run of create → bind → delete.
+      leave model features unbound, validate kind/model compatibility when a
+      binding is saved, and require an explicit model. There is no YAML or fake
+      fallback. Covered by `apps/api/tests/test_ai_admin.py` and a Firefox run of
+      create → bind → delete.
 - [x] Remove `llm`, `assistant.model`, `meetings.translator` and
       `meetings.summarizer` from `config.yaml`; the registry is the only model
       choice. Move timeout/token/chunk tuning into the registry (`runtime`) and

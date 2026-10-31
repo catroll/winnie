@@ -408,15 +408,16 @@ in the operations doc.
 `meetings.summarizer`. Keeping them meant the console could say one thing while
 a fresh start silently used another, and the old `llm` block was the only way to
 configure the internal model. They are gone: the registry is the only source for
-base URL, key variable, model and binding. A fresh registry binds the model
-features to `fake`; the owner adds a real provider in the console. Runtime
+base URL, key variable, model and binding. A fresh registry leaves model
+features unbound; the owner adds a supplier API and model in the console. Runtime
 limits (timeouts, retries, token caps, chunk sizes) move with the choice into
 `data/ai.yaml` as a `runtime` section, editable in the console. The v1 migration
 still recovers an existing `internal-llm` from the file, because that record is
 the only evidence of the old `llm` configuration; it is then a normal endpoint.
 v2 files are grouped under suppliers and their endpoint defaults/bound models
 become the supplier model catalog; v3 files are converted to `{vendor, model}`
-bindings; the schema is version 4.
+bindings; v4 files have their fake supplier removed and fake bindings cleared;
+the schema is version 5.
 
 **Gateway exposure is separate from server-side credentials.** A vendor endpoint
 can be a public proxy route (`gateway: true`), an internal provider
@@ -434,11 +435,10 @@ cannot express that, and combining them is what caused the original confusion.
 the wire format and adapter, so DeepSeek's OpenAI and Anthropic endpoints must
 remain separate records: the gateway paths and payloads differ, and the internal
 adapters only speak OpenAI `/chat/completions`. They are no longer presented as
-separate suppliers: the console groups them under one **DeepSeek** supplier and
-labels the rows by role (`OpenAI-compatible gateway`,
-`Anthropic-compatible gateway`, `Internal (OpenAI-compatible)`). The endpoint
-`name` stays the gateway path prefix; the supplier `id` is the grouping key and
-the models are shared.
+separate suppliers: the console groups them under one **DeepSeek** supplier.
+Gateway rows are public proxy routes; the internal API is edited with **API** and
+is never shown as a feature target. The endpoint `name` stays the gateway path
+prefix; the supplier `id` is the grouping key and the models are shared.
 
 **Kind/model and credentials are validated at the binding.** An ASR endpoint
 cannot serve `assistant.chat`, an OpenAI-compatible endpoint with no model
@@ -449,10 +449,12 @@ error instead of a failed meeting pipeline later. The same validation runs on
 load, so a hand-edited file fails loudly. Removing a model that an endpoint
 default or binding still uses is rejected for the same reason.
 
-**The fake provider is a first-class integration.** It makes the registry
-usable offline and keeps the existing deterministic demos selectable from the
-console. A `fake` integration deliberately has no URL, key or model, and the
-binding form disables the model field for it.
+**The fake provider is test-only.** It used to be a first-class integration so
+the console was usable offline. That put an unconfigured model in a product where
+the requirement is "every feature calls the model selected in the registry".
+The seed no longer creates a fake supplier; the admin hides the kind, and the v5
+migration removes an existing fake supplier and clears its bindings. The
+deterministic fake classes remain for unit tests and are never a product default.
 
 ## LLM usage ledger and provider balances (2026-11-01)
 
@@ -731,10 +733,9 @@ on evidence.
 **DeepSeek-specific code is gone.** The model is an `LLMPort` with a purpose;
 the host resolves `news.extract`, `news.write` and `news.review` through the AI
 registry on every call. Extraction, writing and review can therefore use
-different models, and a rebind takes effect on the next run. New registry
-features are bound to the fake by a version-4 migration: a missing binding makes
-resolution raise and the console cannot create a binding, so the capability
-would be permanently unusable.
+different models, and a rebind takes effect on the next run. A new registry
+feature starts unbound; the console can create the binding, so the capability is
+not permanently unusable without an implicit fake.
 
 **The event store is a JSON file.** Recall is an in-memory inverted index
 rebuilt on load. A personal deployment holds thousands of events; a file the

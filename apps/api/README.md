@@ -159,7 +159,7 @@ The arq worker schedules the same purge daily at 03:47 UTC.
 ## AI providers
 
 The host owns a small AI registry at `/api/v1/ai`. A **supplier** (DeepSeek,
-OpenAI, Qwen, Anthropic, Volcengine, fake) owns one internal API, a **model
+OpenAI, Qwen, Anthropic, Volcengine) owns one internal API, a **model
 catalog** and any public gateway routes. Every AI-using feature binds to a
 **model**; the supplier is resolved from that model. Features never select an
 endpoint:
@@ -176,11 +176,13 @@ endpoint:
 There is no `llm` block, `assistant.model`, `meetings.translator` or
 `meetings.summarizer`: the registry is the only model choice. Routes seed as
 `gateway: true` endpoints with an empty `api_key_env` and are grouped under their
-supplier (`deepseek-openai` → DeepSeek); every feature starts on the `fake`
-model, and ASR follows the legacy `asr_provider` value. After that file exists
+supplier (`deepseek-openai` → DeepSeek). No fake supplier ships: every model
+feature starts unbound until the owner adds a supplier API, syncs its models and
+chooses one. ASR follows the legacy `asr_provider` value. After that file exists
 the console is authoritative. An unbound feature has no model and fails with a
 named error; there is no YAML fallback. `ai.enabled: false` (the programmatic
-`Settings()` default) leaves model features on fake and ASR on its YAML default.
+`Settings()` default) leaves model features unconfigured and ASR on its YAML
+default.
 
 `gateway` controls exposure, not the kind: an OpenAI-compatible record can be a
 public `/{name}/v1/...` route, the supplier's internal API, or both. A
@@ -188,7 +190,8 @@ gateway-only record cannot serve a feature; only the internal API can. A
 `version: 1` file is migrated in place: the old combined route is split into a
 gateway route and an internal API, and bindings are repointed. A `version: 2`
 file is grouped under suppliers and its models are collected. A `version: 3`
-file is converted to `{vendor, model}` bindings; the result is `version: 4`.
+file is converted to `{vendor, model}` bindings; a `version: 4` file drops the
+seeded fake supplier and clears its bindings. The result is `version: 5`.
 Removing a model that a binding or endpoint default still uses is rejected.
 
 Shared model limits (timeout, token cap, temperature, retries, chunk sizes) live
@@ -303,9 +306,9 @@ The meeting backend is mounted under `/api/v1/meetings` when
 `meetings.enabled: true`. It uses local SQLite and local disk by default, so it
 runs without cloud storage. With the default `ai.enabled: true`, the first start uses
 `meetings.asr_provider` and `meetings.volcengine` to seed the ASR integration and
-binding. It does not seed a model: translation and minutes start on `fake`.
-After that first start, choose providers and bindings on the AI providers page;
-there is no YAML fallback for a model feature.
+binding. It does not seed a model: translation and minutes start unbound.
+After that first start, choose models on the AI suppliers page; there is no YAML
+fallback for a model feature.
 
 For Doubao ASR, export the key named by the integration (default
 `VOLCENGINE_ASR_API_KEY`):
@@ -317,14 +320,9 @@ export VOLCENGINE_ASR_API_KEY=...
 This is the API key from the current Volcengine console, sent as `X-Api-Key`.
 The legacy APP ID + Access Token pair is no longer accepted.
 
-To try the full pipeline without cloud credentials, bind transcription,
-translation and minutes to the `fake` integration. The fake
-ASR/translation/summarization providers are deterministic and are for local
-demos and tests only.
-
-For real translation and structured minutes, add an OpenAI-compatible
-integration with a base URL, an `api_key_env` and a model, export that variable,
-and bind both `meetings.translate` and `meetings.summarize` to it. Timeouts,
+For real translation and structured minutes, add a supplier API and a model
+with a base URL and an `api_key_env`, sync its models, export that variable,
+and bind both `meetings.translate` and `meetings.summarize` to the model. Timeouts,
 retries and chunk sizes come from the registry's **Model runtime** card, not
 from `config.yaml`.
 
@@ -412,9 +410,9 @@ curl -s -X POST http://[::1]:8000/api/v1/assistant/chat \
 ```
 
 Open `http://[::1]:8000/api/v1/assistant/ui` for the chat page. The model comes
-only from the `assistant.chat` binding; a fresh registry binds it to `fake`, which
-answers deterministically until a real provider is added and bound on the AI
-providers page. Web search uses Bing RSS by default and needs no key.
+only from the `assistant.chat` binding; a fresh registry leaves it unbound until
+a supplier model is configured on the AI suppliers page. Web search uses Bing
+RSS by default and needs no key.
 
 Local recall goes through `winnie-index` (`make index-serve`, listening on
 `127.0.0.1:8790`). With the daemon down, chat still works and the local-document

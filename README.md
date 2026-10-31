@@ -60,8 +60,9 @@ The meeting-notes backend is functional but **not production-ready**. Meeting
 CRUD, audio upload, a file-first processing pipeline, transcript/minutes/export
 APIs and a Markdown knowledge sink are wired. Accounts, per-user meeting
 isolation, the Volcengine Doubao ASR adapter, and OpenAI-compatible translation
-and structured-minutes adapters are implemented. The fake providers remain the
-default for tests and local demos. The DeepSeek translation/minutes smoke test
+and structured-minutes adapters are implemented. The deterministic fakes are
+test-only; no fake supplier ships in the console. The DeepSeek
+translation/minutes smoke test
 passed, and the file and streaming Doubao ASR paths are validated against the
 real endpoints. The Android client MVP in `apps/android` runs the file-first
 flow with live captions — sign in, record, watch provisional captions, stop,
@@ -80,9 +81,9 @@ an LLM review and an explicit confirmation; the file and command tools are
 audited, whitelisted read-only operations skip the review, and the command
 runner is **not** a sandbox. Every conversation
 records its channel, so the console history also covers the phone page, direct
-API clients and unattended task runs. The default provider is the deterministic
-fake until an OpenAI-compatible integration and its environment key are chosen
-on the AI providers page. Design, decisions and operating notes are in
+API clients and unattended task runs. No model is configured by default: add a
+supplier API and bind the assistant to one of its models on the AI suppliers
+page. Design, decisions and operating notes are in
 [docs/assistant.md](./docs/assistant.md); the index is in
 [docs/knowledge-index.md](./docs/knowledge-index.md).
 

@@ -160,7 +160,7 @@ Open:
 - A 10–30 minute bilingual fixture (Chinese, English, code-switching, names,
   numbers) has not been recorded; provider quality, timestamp drift and cost
   are therefore not measured.
-- The current checkout keeps `translator: fake` and `summarizer: fake` in
+- The current checkout no longer has `translator`/`summarizer` switches in
   `apps/api/config.yaml`. The real LLM adapters have passed a small live
   smoke test but are not enabled here; a real bilingual meeting with
   `openai_compatible` translation/minutes is still pending.
@@ -253,16 +253,15 @@ Working:
   permissions, prompt instructions, availability and scheduled-run safety. The
   switch calls `PUT /assistant/skills/{name}`; the core skill is always on.
 - AI suppliers: add, edit and delete suppliers (DeepSeek, OpenAI, Qwen,
-  Anthropic, Volcengine, fake), their endpoints (OpenAI-compatible, Anthropic,
-  Volcengine ASR, fake) and their model catalogs. The console groups endpoints
-  under one supplier, so DeepSeek's gateway/internal records do not read as
+  Anthropic, Volcengine), their APIs and model catalogs. The console groups
+  endpoints under one supplier, so DeepSeek's gateway/API records do not read as
   three suppliers. Each feature selects a **model**; the supplier and its
   internal API are resolved from that model. The supplier model list is fetched
-  with **Sync models** from its `/models` API, and vendor marks come from the
-  WLB newicon catalog. This registry is the only model choice;
-  `config.yaml` has no `llm`, `assistant.model`, `meetings.translator` or
-  `meetings.summarizer`. A fresh registry binds the model features to `fake`;
-  the owner adds a real supplier/endpoint and rebinds them. Each
+  with **Sync models** from its `/models` API, and vendor marks come from the WLB
+  newicon catalog. This registry is the only model choice; `config.yaml` has no
+  `llm`, `assistant.model`, `meetings.translator` or `meetings.summarizer`. A
+  fresh registry leaves model features unbound; the owner adds a supplier
+  API/model and binds them. Each
   OpenAI/Anthropic endpoint is independently a gateway route or an internal-only
   provider. Changing a binding takes effect on the next model call; adding a
   gateway endpoint adds its route immediately. API keys are environment-variable
@@ -302,7 +301,7 @@ Verified:
   `web_search` block, light and dark mode, and a 390 px viewport with no
   horizontal overflow.
 - The AI suppliers page was checked in Firefox against a disposable API and
-  registry: a fresh seed bound every feature to the `fake` model; DeepSeek's
+  registry: a fresh seed left model features unbound; DeepSeek's
   gateway routes were grouped under one supplier; the feature table exposed a
   single model selector (no provider column); model sync/editor, supplier
   icons, API create and the unbound state were exercised; the Model runtime
@@ -490,8 +489,8 @@ Open:
 | Local LLM review | `winnie-local` test suite | Whitelisted reads skipped the reviewer; non-whitelisted write/command allowed or denied; malformed JSON, timeout and provider errors denied; denied actions changed nothing |
 | Chat engine and skills | `winnie-chat` and API tests | Registry persistence and duplicate rejection; enabled-only schemas and prompt; disabled-tool rejection; scheduled filtering; skills list/toggle/persistence |
 | Admin skills page | TypeScript/Vite build + Firefox production preview | Page typechecks and builds; six skills listed with instructions; unavailable index and always-on core; web toggle persisted; light/dark/mobile |
-| Admin AI suppliers page | Firefox against a disposable API and `ai.yaml` | Fresh seed bound model features to `fake`; DeepSeek endpoints were grouped under one supplier; added a model through **Models**; created `ui-llm`, rebound `assistant.chat` (`source=admin`), deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
-| AI registry migration | `pytest` against hand-written v1/v2/v3 files | v1 split into gateway + internal API; v2 grouped under suppliers and collected models; v3 converted bindings to `{vendor, model}`; rewritten `version: 4` |
+| Admin AI suppliers page | Firefox against a disposable API and `ai.yaml` | Fresh seed left model features unbound; DeepSeek gateway routes were grouped under one supplier; added a model through **Models**; created `ui-llm`, rebound `assistant.chat` (`source=admin`), deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
+| AI registry migration | `pytest` against hand-written v1/v2/v3 files | v1 split into gateway + internal API; v2 grouped under suppliers and collected models; v3 converted bindings to `{vendor, model}`; v4 removed the fake supplier; rewritten `version: 5` |
 | News pipeline | `pytest packages/winnie-news/tests` | 81 passed; six stages, fake model, file store, retry and duplicate-attach paths |
 | News run end to end | Throwaway API + two real RSS feeds + fake model | 60 materials → 10 cleaned → 10 events → 10 drafts, all reviews passed |
 | Admin news page | Firefox against the same disposable API | Sign-in, run table, stage badges, draft list, review and Markdown rendered; no console errors |
@@ -511,14 +510,14 @@ Not yet verified:
 | Two ASR calls per realtime meeting | Double provider cost; streaming usage is invisible | Add streaming usage records; alternatively make the file pass configurable |
 | Cleartext HTTP/WS on a public IPv6 domain | Tokens, audio and transcripts cross the network unencrypted | Terminate TLS before real use; narrow the Android network-security config to that domain |
 | No foreground service / reconnect | Backgrounding or locking the phone stops recording and captions | Foreground service with a persistent notification; reconnect with bounded retry |
-| Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Bind those features to an OpenAI-compatible provider on the AI providers page; tune timeouts in Model runtime; run a real bilingual meeting |
+| Current translation/minutes may be unbound | No fake supplier ships; a fresh registry has no model | Bind those features to a supplier model on the AI suppliers page; tune timeouts in Model runtime; run a real bilingual meeting |
 | No long bilingual fixture | Provider quality, timestamps and cost are unmeasured | Add a local-only 10–30 minute fixture and an evaluation harness |
 | Cost estimates need a hand-maintained price table | A stale or missing price shows as unpriced; peak/off-peak vendor rates are not modelled | Prefer provider-reported costs, keep the table small, review it when a vendor changes prices |
 | Knowledge base is only a note sink | Minutes cannot yet be browsed, corrected or retrieved | M5: Git write, index, browse/edit/search |
 | Admin console has no automated tests | Its flows are only checked manually | Add a Vitest/Playwright suite when the console grows beyond these pages |
 | SQLite + inline jobs in the current checkout | Not a production topology | PostgreSQL, arq worker, reverse proxy, backups |
 | Stale domain `A` record | IPv4 to the domain can resolve to a different host | Remove it or set it to the LAN address; verify the router's inbound rules |
-| News drafts are only as good as the writer model | The fake provider produces a repetitive demo draft; real quality is unmeasured | Bind `news.write` to a real model and compare the same batch; tune prompts and review rules |
+| News drafts are only as good as the writer model | Tests use a deterministic test model; real quality is unmeasured | Bind `news.write` to a real model and compare the same batch; tune prompts and review rules |
 | A news run is not worker-backed | A restart loses an in-flight run and leaves its record `running` | Move runs into the arq worker and add a recovery sweep |
 | No speaker diarization or export/share on Android | Limited usefulness for multi-speaker meetings | Follow-ups after M4 hardening |
 

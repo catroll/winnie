@@ -481,8 +481,8 @@ jobs:
 
 With the shipped `ai.enabled: true`, the `meetings.asr_provider` and
 `meetings.volcengine` values above are first-start seeds for `data/ai.yaml`;
-afterwards the AI providers page selects the live ASR binding. Translation and
-minutes start on `fake` and must be bound to a real provider there. Secrets
+afterwards the AI suppliers page selects the live ASR binding. Translation and
+minutes start unbound and must be bound to a supplier model there. Secrets
 (`VOLCENGINE_ASR_API_KEY` and the key named by each integration) come from the
 environment. Unknown YAML keys are rejected at startup. Production should use
 PostgreSQL and run `uv run alembic upgrade head` with the same `WINNIE_CONFIG`
