@@ -1216,3 +1216,16 @@ trade-off is weaker compile-time checking, so `npm run check:i18n` scans every
 static `tr('…')` call against `zh-CN.json` and the build fails on a gap. The
 choice of Chinese as the first translation follows the owner's language; the
 supported list is explicit, not inferred from the request.
+
+**Navigation groups express ownership, not visual taste.** The console has one
+shell but two audiences: Workspace (Chat, Meetings, Phone data, Scheduled tasks,
+Skills, Account) is the signed-in user's own data; Administration (Dashboard,
+Schedule, Users, AI providers, Gateway routes, Document index, News, LLM usage)
+is operator-only. One metadata table (`to`, `label`, `icon`, `group`,
+`adminOnly`) drives the AdminLTE `nav-header` groups and the filter, so a page
+cannot be visible but unguarded by accident. The API is still the authority:
+every Administration route has `admin_required`, and a direct URL renders a 403
+panel. A normal user lands on `/chat` rather than the admin Dashboard at `/`;
+the Dashboard is an operator overview, not a user home. A second console
+application was rejected because it would duplicate auth, routing and the API
+client for a small page set.

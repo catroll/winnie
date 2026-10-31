@@ -216,6 +216,11 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 - Accounts have an explicit `admin`/`user` role. The API enforces every
   operator route with `403`; hiding a menu item is not the access control. A
   `403` makes the console re-read `/auth/me` so a demotion reaches the UI.
+- The sidebar has two groups: **Workspace** (Chat, Meetings, Phone data,
+  Scheduled tasks, Skills, Account) and **Administration** (Dashboard,
+  Schedule, Users, AI providers, Gateway routes, Document index, News, LLM
+  usage). A normal user sees only Workspace, lands on `/chat`, and gets a 403
+  panel if they open an admin URL directly.
 - The bearer token is kept in `sessionStorage`. **Remember me** moves it to
   `localStorage`; signing out or a `401` clears both.
 - The console never renders a token and never sends one anywhere except the
@@ -252,8 +257,7 @@ Deliberately not part of this app yet:
 
 - Recording and audio upload (the Android client owns the capture path).
 - Hard-deleting an account, or email-based reset. Deactivation is the supported
-  removal path; a generated temporary password is shown once. Grouped
-  Workspace/Administration navigation is the remaining follow-up.
+  removal path; a generated temporary password is shown once.
 - Creating, editing or cancelling scheduled tasks. The assistant owns
   `tasks/tasks.json` through the chat tools, so the console only reads it; a
   second writer would also have to synchronise the scheduler's next-run state.
@@ -274,9 +278,6 @@ Deliberately not part of this app yet:
   `apps/api/config.yaml`, because a price is deployment billing data and the
   ledger re-prices history from that table.
 - Knowledge-base management, which is still planned.
-
-Planned next: grouped Workspace/Administration navigation. The concrete
-acceptance criteria are in [docs/todo.md](../../docs/todo.md).
 
 ## Stack
 

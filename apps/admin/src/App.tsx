@@ -1,7 +1,7 @@
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { AuthProvider } from './auth/AuthContext';
+import { AuthProvider, useAuth } from './auth/AuthContext';
 import { PublicOnly, RequireAdmin, RequireAuth } from './auth/guards';
 import { AppLayout } from './components/AppLayout';
 import { AccountPage } from './pages/AccountPage';
@@ -22,6 +22,11 @@ import { TasksPage } from './pages/TasksPage';
 import { UsagePage } from './pages/UsagePage';
 import { UsersPage } from './pages/UsersPage';
 
+function HomeRoute() {
+  const { isAdmin } = useAuth();
+  return isAdmin ? <DashboardPage /> : <Navigate to="/chat" replace />;
+}
+
 export function App() {
   // Subscribe the whole tree to language changes: page labels are translated
   // through the shared `tr()` helper, so a parent re-render is enough.
@@ -36,22 +41,22 @@ export function App() {
 
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
-            <Route index element={<DashboardPage />} />
+            <Route index element={<HomeRoute />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/chat/:conversationId" element={<ChatPage />} />
-            <Route path="/news" element={<NewsPage />} />
-            <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/phone" element={<PhonePage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/skills" element={<SkillsPage />} />
-            <Route path="/usage" element={<UsagePage />} />
-            <Route path="/ai" element={<AIPage />} />
-            <Route path="/gateway" element={<RoutesPage />} />
-            <Route path="/index" element={<IndexPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route element={<RequireAdmin />}>
+              <Route path="/schedule" element={<SchedulePage />} />
+              <Route path="/usage" element={<UsagePage />} />
+              <Route path="/news" element={<NewsPage />} />
+              <Route path="/ai" element={<AIPage />} />
+              <Route path="/gateway" element={<RoutesPage />} />
+              <Route path="/index" element={<IndexPage />} />
               <Route path="/users" element={<UsersPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />

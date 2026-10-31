@@ -1,27 +1,12 @@
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import { initialize } from 'admin-lte';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { tr } from '../i18n';
+import { NAVIGATION_GROUPS, visibleNavigation } from '../navigation';
 
-const NAVIGATION = [
-  { to: '/', label: 'Dashboard', icon: 'bi-speedometer2', end: true },
-  { to: '/chat', label: 'Chat', icon: 'bi-chat-dots', end: false },
-  { to: '/usage', label: 'LLM usage', icon: 'bi-graph-up-arrow', end: false },
-  { to: '/news', label: 'News', icon: 'bi-newspaper', end: false },
-  { to: '/schedule', label: 'Schedule', icon: 'bi-calendar-week', end: false, adminOnly: true },
-  { to: '/phone', label: 'Phone data', icon: 'bi-phone', end: false },
-  { to: '/meetings', label: 'Meetings', icon: 'bi-camera-video', end: false },
-  { to: '/tasks', label: 'Scheduled tasks', icon: 'bi-alarm', end: false },
-  { to: '/skills', label: 'Skills', icon: 'bi-puzzle', end: false },
-  { to: '/ai', label: 'AI providers', icon: 'bi-cpu', end: false },
-  { to: '/index', label: 'Document index', icon: 'bi-journal-text', end: false },
-  { to: '/gateway', label: 'Gateway routes', icon: 'bi-signpost-split', end: false },
-  { to: '/users', label: 'Users', icon: 'bi-people', end: false, adminOnly: true },
-  { to: '/account', label: 'Account', icon: 'bi-person-gear', end: false },
-];
 
 function closeMobileSidebar() {
   document.body.classList.remove('sidebar-open');
@@ -29,6 +14,7 @@ function closeMobileSidebar() {
 
 export function AppLayout() {
   const { user, isAdmin, logout } = useAuth();
+  const navigation = visibleNavigation(isAdmin);
   const navigate = useNavigate();
 
   // AdminLTE initialises its own widgets (push menu, treeview, colour mode,
@@ -208,19 +194,28 @@ export function AppLayout() {
               data-lte-toggle="treeview"
               data-accordion="false"
             >
-              {NAVIGATION.filter((item) => !item.adminOnly || isAdmin).map((item) => (
-                <li className="nav-item" key={item.to}>
-                  <NavLink
-                    to={item.to}
-                    end={item.end}
-                    onClick={closeMobileSidebar}
-                    className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                  >
-                    <i className={`nav-icon bi ${item.icon}`} aria-hidden="true" />
-                    <p>{tr(item.label)}</p>
-                  </NavLink>
-                </li>
-              ))}
+              {NAVIGATION_GROUPS.map((group) => {
+                const items = navigation.filter((item) => item.group === group.id);
+                if (items.length === 0) return null;
+                return (
+                  <Fragment key={group.id}>
+                    <li className="nav-header">{tr(group.label)}</li>
+                    {items.map((item) => (
+                      <li className="nav-item" key={item.to}>
+                        <NavLink
+                          to={item.to}
+                          end={item.end}
+                          onClick={closeMobileSidebar}
+                          className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                        >
+                          <i className={`nav-icon bi ${item.icon}`} aria-hidden="true" />
+                          <p>{tr(item.label)}</p>
+                        </NavLink>
+                      </li>
+                    ))}
+                  </Fragment>
+                );
+              })}
             </ul>
           </nav>
         </div>

@@ -249,21 +249,23 @@ handset has not run them yet.
 
 ### Menu information architecture
 
-- [ ] Replace the flat `NAVIGATION` array with one metadata source
-      (`path`, `labelKey`, `icon`, `group`, `adminOnly`) rendered through
+- [x] Replace the flat `NAVIGATION` array with one metadata source
+      (`to`, `label`, `icon`, `group`, `adminOnly`) rendered through
       AdminLTE's `nav-header`/treeview, so i18n, menu rendering and route guards
       cannot drift.
-- [ ] Define the two groups:
-      **Workspace** — Chat, Meetings, Scheduled tasks, Skills, Account.
-      **Administration** — Overview/Dashboard, Users, AI providers, Gateway
+- [x] Define the two groups:
+      **Workspace** — Chat, Meetings, Phone data, Scheduled tasks, Skills,
+      Account.
+      **Administration** — Dashboard, Schedule, Users, AI providers, Gateway
       routes, Document index, News, LLM usage.
-- [ ] Hide the Administration group for non-admin users; keep Account available
+- [x] Hide the Administration group for non-admin users; keep Account available
       to everyone. Guard each admin route, not only its link, and choose a safe
       non-admin landing page (Chat or a workspace overview) instead of rendering
       the admin Dashboard at `/`.
-- [ ] Verify both roles in the expanded and collapsed/mobile sidebar, including
-      active state and the redirect from `/`; add a component test for menu
-      visibility.
+- [x] Verify both roles in the browser: admin sees both groups and lands on
+      the Dashboard; a normal user sees only Workspace, lands on Chat, and gets
+      the 403 panel on a direct admin route. The mobile shell was checked at
+      390 px; the project still has no component-test runner.
 
 ## P2 — clients and realtime
 
