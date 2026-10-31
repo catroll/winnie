@@ -56,7 +56,9 @@ def material_batch() -> dict:
         "count": len(document["items"]),
         "documents": [document],
         "items": document["items"],
-        "sources": [],
+        "sources": [
+            {"type": "rss", "id": "test", "name": "Test Feed", "count": 2, "cached": False}
+        ],
     }
 
 
@@ -266,3 +268,52 @@ async def test_the_news_tools_operate_the_service(tmp_path: Path) -> None:
         assert markdown.startswith("# ")
     finally:
         await toolbox.http.aclose()
+
+
+async def test_source_health_and_draft_regeneration(tmp_path: Path) -> None:
+    async with opened(tmp_path) as client:
+        started = await client.post("/api/v1/news/runs", json={})
+        run = started.json()
+        for _ in range(100):
+            current = (await client.get(f"/api/v1/news/runs/{run['id']}")).json()
+            if current["status"] != "running":
+                break
+            await asyncio.sleep(0.05)
+
+        sources = (await client.get("/api/v1/news/sources")).json()
+        assert sources["updated_at"]
+        health = {entry["id"]: entry for entry in sources["sources"]}
+        assert health["test"]["last_status"] == "ok"
+        assert health["test"]["last_count"] == 2
+
+        drafts = (await client.get(f"/api/v1/news/runs/{run['id']}/drafts")).json()
+        event_id = drafts["drafts"][0]["event_id"]
+        assert drafts["drafts"][0]["revision"] == 1
+
+        regenerated = await client.post(
+            f"/api/v1/news/runs/{run['id']}/drafts/{event_id}/regenerate"
+        )
+        assert regenerated.status_code == 200
+        body = regenerated.json()
+        assert body["draft"]["revision"] == 2
+        assert body["review"]["event_id"] == event_id
+
+        after = (await client.get(f"/api/v1/news/runs/{run['id']}/drafts")).json()
+        entry = next(item for item in after["drafts"] if item["event_id"] == event_id)
+        assert entry["revision"] == 2
+
+
+async def test_regeneration_of_a_missing_draft_is_404(tmp_path: Path) -> None:
+    async with opened(tmp_path) as client:
+        started = await client.post("/api/v1/news/runs", json={})
+        run = started.json()
+        for _ in range(100):
+            if (await client.get(f"/api/v1/news/runs/{run['id']}")).json()[
+                "status"
+            ] != "running":
+                break
+            await asyncio.sleep(0.05)
+        response = await client.post(
+            f"/api/v1/news/runs/{run['id']}/drafts/evt_nope/regenerate"
+        )
+        assert response.status_code == 404

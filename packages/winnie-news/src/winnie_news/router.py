@@ -109,6 +109,24 @@ async def get_draft(
     return {"draft": draft.as_document(), "review": review}
 
 
+@router.post("/runs/{run_id}/drafts/{event_id}/regenerate")
+async def regenerate_draft(
+    run_id: str,
+    event_id: str,
+    service: NewsService = Depends(get_service),
+    user_id: str = Depends(get_user_id),
+) -> dict[str, Any]:
+    try:
+        draft, review = await service.regenerate_draft(run_id, event_id)
+    except RunNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RunBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except NewsUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"draft": draft.as_document(), "review": review.as_document()}
+
+
 @router.get(
     "/runs/{run_id}/drafts/{event_id}/markdown",
     response_class=PlainTextResponse,
@@ -124,6 +142,14 @@ async def get_draft_markdown(
     except RunNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
+
+
+@router.get("/sources")
+async def list_sources(
+    service: NewsService = Depends(get_service),
+    user_id: str = Depends(get_user_id),
+) -> dict[str, Any]:
+    return service.source_health()
 
 
 @router.get("/events")

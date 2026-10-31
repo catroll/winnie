@@ -18,9 +18,11 @@ covers the module itself.
 | 5 Generate | `winnie.news.draft/v1` | Done: sourced draft, JSON and Markdown |
 | 6 Review | `winnie.news.review/v1` | Done: rules plus one model review, bounded retry |
 
-Verified end to end against real sources with the deterministic fake model: two
-RSS feeds, 60 material items, 10 cleaned items, 10 events, 10 drafts and 10
-passing reviews. The console and the assistant skill operate the same run.
+Verified end to end against real sources with a test-only fake supplier: RSS
+feeds with 60 material items, cleaned items, events, drafts and reviews; a
+deliberate failure (unbound model) left a `failed` run; source health recorded
+`ok` and `error` per feed; a draft regenerated from revision 1 to 2. The console
+and the assistant skill operate the same service.
 
 Not verified: a real (non-fake) writing model on a full batch. Provider calls
 are exercised by the existing integration tests, but draft quality with a
@@ -161,6 +163,28 @@ run continues in the request process; with the `arq` job backend that execution
 still happens in the API process, which is a known limitation for a future
 worker.
 
+Because the process is the executor, a restart abandons an in-flight run. On the
+next startup the service marks every run still `running` as `failed` with
+`the service restarted while this run was in progress`, and its unfinished
+stages as `failed` or `skipped`. A run therefore never stays "running" for ever
+and the console never shows progress that will not happen.
+
+### Source health
+
+Each material batch records per-source outcomes in `data/news/source_health.json`:
+last status, last success, last error and the consecutive failure count. That
+turns "this batch has no items from feed X" into "feed X has failed 12 times
+since Tuesday". The console's Sources card lists failing sources first, and the
+record survives runs and restarts.
+
+### Regenerating one draft
+
+`POST /api/v1/news/runs/{run_id}/drafts/{event_id}/regenerate` repeats only the
+write/review loop for one event, reusing the run's stored search results and
+event. The new draft's revision is the previous revision plus one, and both the
+JSON and the Markdown are replaced. A running batch is refused (409): both paths
+write the event store and the drafts directory.
+
 ## Configuration
 
 `apps/api/config.yaml`, block `news` (defaults shown):
@@ -194,8 +218,8 @@ the generate stage is used outside the pipeline.
 
 ### Model bindings
 
-The pipeline asks for a purpose, and the console binds each purpose to an
-integration:
+The pipeline asks for a purpose, and the console binds each purpose to a
+supplier model:
 
 | Feature | Purpose |
 |---|---|
@@ -203,9 +227,11 @@ integration:
 | `news.write` | Draft writing |
 | `news.review` | Draft review |
 
-A new or migrated registry binds all three to the deterministic fake. Rebinding
-takes effect on the next run, without a restart. See
-[ai-providers.md](./ai-providers.md).
+A fresh registry leaves every model feature unbound, news included. Add a
+supplier and its API key in the console, sync its models, then bind all three;
+an unbound feature fails the clean stage with `feature news.extract has no
+model`, which the run record reports. Rebinding takes effect on the next run,
+without a restart. See [ai-providers.md](./ai-providers.md).
 
 ## HTTP API
 
@@ -220,6 +246,8 @@ All routes require the bearer token when accounts are enabled.
 | GET | `/api/v1/news/runs/{id}/drafts` | Draft summaries and reviews |
 | GET | `/api/v1/news/runs/{id}/drafts/{event_id}` | Draft JSON and review |
 | GET | `/api/v1/news/runs/{id}/drafts/{event_id}/markdown` | The Markdown draft |
+| GET | `/api/v1/news/sources` | Per-source health across runs |
+| POST | `/api/v1/news/runs/{id}/drafts/{event_id}/regenerate` | Rewrite and re-review one draft |
 | GET | `/api/v1/news/events` | Stored events with coverage |
 | GET | `/api/v1/news/events/{event_id}` | One event with its articles |
 
@@ -254,12 +282,12 @@ over untrusted articles.
   contributes nothing.
 - Publication is out of scope. The pipeline ends at a reviewed Markdown file
   under `data/news`; sending it anywhere is a later capability.
-- No rerun of a single draft or a single stage from the console yet; the JSON
-  files under the run directory make it straightforward to add.
+- Regeneration covers one draft, not one stage: re-cleaning or re-aggregating a
+  batch would have to reconcile the shared event store and is not exposed.
 - The console renders the draft as text. A safe Markdown renderer is a follow-up.
 
 ## Follow-ups
 
-Tracked in [todo.md](./todo.md): a worker-backed run, per-draft regeneration,
-Markdown rendering with sanitisation, source health reporting, and a real-model
-quality comparison over the same batch.
+Tracked in [todo.md](./todo.md): a worker-backed run, Markdown rendering with
+sanitisation, a real-model quality comparison over the same batch, and a
+publication hand-off.

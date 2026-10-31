@@ -209,7 +209,9 @@ async def _write_and_review(
         _save(store, run, on_update)
         hits = hits_by_event.get(event.id, [])
         try:
-            draft, review = await _one_event(event, hits, llm, config, requirements)
+            draft, review = await write_and_review_event(
+                event, hits, llm, config, requirements, revision=1
+            )
         except Exception as exc:  # noqa: BLE001 - isolate one event
             failures += 1
             event.status = "needs_review"
@@ -241,13 +243,26 @@ async def _write_and_review(
     return drafts, reviews, failures
 
 
-async def _one_event(event, hits, llm, config: NewsConfig, requirements):
+async def write_and_review_event(
+    event,
+    hits,
+    llm: LLMPort,
+    config: NewsConfig,
+    requirements,
+    *,
+    revision: int = 1,
+):
+    """Write one draft and review it, retrying the writer with the feedback.
+
+    Public because a manual regeneration of one draft must repeat exactly this
+    loop; duplicating it in the service would let the two paths drift.
+    """
     draft = await generate_draft(
         event,
         hits,
         llm,
         requirements=requirements,
-        revision=1,
+        revision=revision,
     )
     review = await review_draft(
         draft,

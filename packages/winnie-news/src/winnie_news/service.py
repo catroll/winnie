@@ -24,8 +24,11 @@ from winnie_news.common.timeutil import now_iso
 from winnie_news.config import NewsConfig
 from winnie_news.generate.models import Draft
 from winnie_news.material.fetcher import get_all_materials
-from winnie_news.pipeline import STAGES, run_pipeline
+from winnie_news.pipeline import STAGES, run_pipeline, write_and_review_event
 from winnie_news.ports import LLMPort, SearchPort
+from winnie_news.search.models import EventSearch
+from winnie_news.search.search import usable_hits
+from winnie_news.sources import SourceHealthStore
 from winnie_news.store import NewsStore, RunRecord, StageRun, new_run_id
 
 logger = logging.getLogger(__name__)
@@ -74,6 +77,32 @@ class NewsService:
         self.store.ensure()
         loaded = self.event_store.load(self.store.events_path)
         logger.info("news: %d events loaded from %s", loaded, self.store.events_path)
+        recovered = self.recover_abandoned_runs()
+        if recovered:
+            logger.warning(
+                "news: marked %d run(s) failed because the service restarted "
+                "while they were running: %s",
+                len(recovered),
+                ", ".join(recovered),
+            )
+
+    def recover_abandoned_runs(self) -> list[str]:
+        """Fail runs left `running` by a previous process.
+
+        A run executes in the request process, so a restart leaves its record
+        running for ever and the console shows a run that will never advance.
+        Recovery belongs at startup, before anything can start a new run.
+        """
+        recovered: list[str] = []
+        for record in self.store.list_runs(limit=10_000):
+            if record.status != "running":
+                continue
+            record.status = "failed"
+            record.error = "the service restarted while this run was in progress"
+            self._mark_running_stage_failed(record, record.error)
+            self.store.save_run(record)
+            recovered.append(record.id)
+        return recovered
 
     async def shutdown(self) -> None:
         task = self._task
@@ -153,6 +182,7 @@ class NewsService:
             run.set_stage("material", "running")
             self.store.save_run(run)
             materials = await asyncio.to_thread(self._fetch_materials, run.source_types)
+            self._record_source_health(materials)
             await run_pipeline(
                 run=run,
                 store=self.store,
@@ -199,6 +229,22 @@ class NewsService:
             workers=material.workers,
         )
 
+    def _record_source_health(self, materials: dict[str, Any]) -> None:
+        sources = materials.get("sources")
+        if not isinstance(sources, list):
+            return
+        try:
+            SourceHealthStore(self.root).apply(sources)
+        except Exception as exc:  # noqa: BLE001 - health is observability
+            logger.warning("could not record source health: %s", exc)
+
+    def source_health(self) -> dict[str, Any]:
+        health = SourceHealthStore(self.root).load()
+        return {
+            "updated_at": health.updated_at,
+            "sources": [state.model_dump() for state in health.ordered()],
+        }
+
     def _resolve(self, value: str) -> Path:
         path = Path(value).expanduser()
         if not path.is_absolute():
@@ -216,6 +262,10 @@ class NewsService:
             if stage.status == "running":
                 stage.status = "failed"
                 stage.detail = detail
+            elif stage.status == "pending":
+                # The run stopped before this stage; leaving it pending makes a
+                # failed run look like it is still about to advance.
+                stage.status = "skipped"
         run.updated_at = now_iso()
 
     def list_runs(self, *, limit: int = 20) -> list[RunRecord]:
@@ -244,6 +294,55 @@ class NewsService:
                 f"no draft for event {event_id!r} in run {run_id!r}"
             ) from exc
         return draft, self.store.load_review(run_id, event_id)
+
+    async def regenerate_draft(
+        self, run_id: str, event_id: str
+    ) -> tuple[Draft, Any]:
+        """Rewrite one draft of a finished run and review it again.
+
+        The run's stored search results are reused, so a regeneration costs one
+        write/review loop and not a new collection. A running batch is refused:
+        both paths write the event store and the drafts directory.
+        """
+        self.get_run(run_id)
+        if self._active is not None:
+            raise RunBusy(f"run {self._active} is already in progress")
+        event = self.event_store.events.get(event_id)
+        if event is None:
+            raise RunNotFound(f"event {event_id!r} is not in the event store")
+        try:
+            previous = self.store.load_draft(run_id, event_id)
+            revision = previous.revision + 1
+        except (FileNotFoundError, ValueError):
+            previous = None
+            revision = 1
+
+        requirements = self.config.writing.model_copy(
+            update={"language": self.config.language}
+        )
+        draft, review = await write_and_review_event(
+            event,
+            self._run_hits(run_id, event_id),
+            self._require_llm(),
+            self.config,
+            requirements,
+            revision=revision,
+        )
+        self.store.save_draft(run_id, draft)
+        self.store.save_review(run_id, review)
+        event.status = "ready" if review.passed else "needs_review"
+        self.event_store.save(self.store.events_path)
+        return draft, review
+
+    def _run_hits(self, run_id: str, event_id: str) -> list:
+        document = self.store.load_search(run_id)
+        for entry in (document or {}).get("events") or []:
+            if entry.get("event_id") == event_id:
+                try:
+                    return usable_hits(EventSearch.model_validate(entry))
+                except Exception:  # noqa: BLE001 - stale file, no leads
+                    return []
+        return []
 
     def draft_markdown(self, run_id: str, event_id: str) -> str:
         self.get_run(run_id)
