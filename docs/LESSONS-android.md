@@ -97,3 +97,57 @@ The Android DTOs mirror `meetings/schemas.py`: `detected_language`,
 first version of the upload test compared `request.path` to `"POST"` and failed
 on a mistake in the test, not the client. Assert against the schema and check
 the request method and path separately.
+
+## An adaptive icon is drawn at 1.5x the bounds, so preview it at 72 dp
+
+**Signal.** An icon that looked well proportioned in an SVG preview came out
+over-tight in the launcher: the paper disc nearly touched the mask edge.
+
+**Cause.** `AdaptiveIconDrawable` draws the 108 dp art into a rect 1.5x the
+bounds, centred, and the launcher mask crops that to the middle 72 dp. A preview
+that renders the 108 dp canvas as a square therefore shows 1.5x the margin the
+device will. Measured on a 162 px bounds: the paper disc came out 136 px across,
+i.e. 62/72 of the visible area, not 62/108.
+
+**Check.** Render at the 72 dp the launcher shows, with both a circular and a
+squircle mask, at 16/32/48/72/144 px. The squircle is the stricter case for a
+disc composition, the circle for a full-bleed one. `make android` plus a
+Robolectric rasterisation of the compiled drawable is the closest this machine
+gets to a home screen (`LauncherIconTest`).
+
+## A `VectorDrawable` clip lives in the group's space, and a hairline clip leaves a ring
+
+**Signal.** The themed-icon layer was supposed to be the bird alone; it rendered
+with a faint circle around it, and the painted area was scaled by an unexpected
+factor.
+
+**Cause 1.** `<clip-path>` inside a `<group>` is applied *after* the group's
+matrix, so its path data is in the group's local coordinates, not the parent's.
+An untransformed 108 dp circle there produces a clip of the wrong size and place.
+
+**Cause 2.** The mark's frame is a compound path welded to the body, so the frame
+cannot be deleted — it has to be clipped away. Clipping exactly on the frame's
+inner radius leaves that hairline's antialiasing inside the clip: a few dozen
+pixels at alpha 1-7 along a full circle. Panning it out by `1` canvas unit fixes
+it; the only cost is the tail's last 1 dp, where the mark draws the body into the
+ring anyway.
+
+**What works.** Bake the placement into the path data with a strict parser (the
+mark only uses absolute `M`/`L`/`A`/`Z`, so anything else should raise), then
+keep clip paths in the same coordinate space as the path they clip. Verify the
+baked form against the transform form by rasterising both and diffing: an exact
+match (max channel difference 0) is achievable and much stronger than eyeballing.
+
+## `Rect.isEmpty` is not an "uninitialised" flag
+
+**Signal.** A bounding-box helper returned `Rect(100, 118 - 100, 118)` — a single
+pixel — although the bitmap had thousands of opaque pixels.
+
+**Cause.** The loop used `bounds.isEmpty` to detect the first hit, but `isEmpty`
+is also true for a 1x1 rect (`left == right`), so every later pixel overwrote the
+bounds instead of expanding them. A sentinel that is itself a valid state does
+not mark "not set".
+
+**Fix.** Track `right < 0` (or a boolean), and assert the result is non-empty
+before using it — the assertion is what turned a wrong-looking icon into a
+message that named the helper.

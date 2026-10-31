@@ -185,6 +185,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan
+- [docs/brand.md](./docs/brand.md) — the woodpecker mark: app icon and console icon geometry, palette and regeneration
 - [packages/winnie-index/README.md](./packages/winnie-index/README.md) — the index service: commands, surfaces and limits
 - [apps/api/README.md](./apps/api/README.md) — backend layout, running and tests
 - [apps/android/README.md](./apps/android/README.md) — Android MVP: build, run and limitations
