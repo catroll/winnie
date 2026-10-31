@@ -256,7 +256,6 @@ def assistant_settings(tmp_path: Path) -> Settings:
             enabled=True,
             root=str(tmp_path / "assistant"),
             timezone="Asia/Shanghai",
-            model="fake",
             search=SearchConfig(provider="fake"),
             index=IndexConfig(enabled=False),
             memory=MemoryConfig(auto_distill=False),

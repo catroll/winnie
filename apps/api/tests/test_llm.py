@@ -7,14 +7,10 @@ import re
 import httpx
 import pytest
 
-from winnie_meetings.integrations.factory import build_summarizer, build_translator
 from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
 from winnie_meetings.integrations.summarize.base import TranscriptLine, TranscriptView
 from winnie_meetings.integrations.summarize.llm import LLMSummarizer
 from winnie_meetings.integrations.translate.llm import LLMTranslator
-from winnie_api.settings import Settings
-from winnie_core.config import LLMConfig
-from winnie_meetings.config import MeetingsConfig
 
 
 def _llm(
@@ -186,6 +182,7 @@ async def test_summarizer_parses_structured_minutes() -> None:
     assert draft.decisions[0].text == "本周只做文件转写。"
     assert draft.action_items[0].owner == "alice"
     assert [item.segment_seq for item in draft.highlights] == [1]
+    assert draft.model == "test-model"
     assert draft.usage is not None
     assert draft.usage.quantity == 88
 
@@ -216,136 +213,6 @@ async def test_summarizer_rejects_empty_summary() -> None:
                 ],
             )
         )
-
-
-def test_factory_selects_llm_adapters_and_requires_key(monkeypatch) -> None:
-    settings = Settings(
-        meetings=MeetingsConfig(
-            translator="openai_compatible",
-            summarizer="openai_compatible",
-        ),
-        llm=LLMConfig(
-            base_url="https://llm.example/v1",
-            api_key_env="WINNIE_TEST_LLM_KEY",
-            model="test-model",
-        ),
-    )
-    monkeypatch.setenv("WINNIE_TEST_LLM_KEY", "secret")
-    assert isinstance(build_translator(settings.meetings, settings.llm), LLMTranslator)
-    assert isinstance(build_summarizer(settings.meetings, settings.llm), LLMSummarizer)
-
-    monkeypatch.delenv("WINNIE_TEST_LLM_KEY")
-    with pytest.raises(RuntimeError, match="WINNIE_TEST_LLM_KEY"):
-        build_translator(settings.meetings, settings.llm)
-
-
-async def test_pipeline_uses_llm_adapters(meeting_settings, monkeypatch) -> None:
-    settings = meeting_settings.model_copy(
-        update={
-            "meetings": meeting_settings.meetings.model_copy(
-                update={
-                    "translator": "openai_compatible",
-                    "summarizer": "openai_compatible",
-                }
-            ),
-            "llm": LLMConfig(
-                base_url="https://llm.example/v1",
-                api_key_env="WINNIE_TEST_LLM_KEY",
-                model="test-model",
-            ),
-        }
-    )
-    monkeypatch.setenv("WINNIE_TEST_LLM_KEY", "secret")
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        payload = json.loads(request.content)
-        system = payload["messages"][0]["content"]
-        if "interpreter" in system:
-            lines = json.loads(payload["messages"][1]["content"])["lines"]
-            content = json.dumps([f"EN:{line}" for line in lines])
-        else:
-            content = json.dumps(
-                {
-                    "summary": "LLM summary",
-                    "topics": [{"title": "Scope", "points": ["file first"]}],
-                    "decisions": [],
-                    "action_items": [],
-                    "highlights": [{"segment_seq": 1, "text": "大家好"}],
-                }
-            )
-        return httpx.Response(
-            200,
-            json={
-                "model": "test-model",
-                "choices": [{"message": {"content": content}}],
-                "usage": {"total_tokens": 30},
-            },
-        )
-
-    llm_http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-
-    def fake_build_llm(_settings, **_kwargs):
-        return OpenAICompatibleLLM(
-            base_url="https://llm.example/v1",
-            api_key="secret",
-            model="test-model",
-            http=llm_http,
-        )
-
-    monkeypatch.setattr(
-        "winnie_meetings.integrations.factory.build_llm", fake_build_llm
-    )
-
-    gateway_http = httpx.AsyncClient(
-        transport=httpx.MockTransport(lambda request: httpx.Response(500))
-    )
-    from winnie_api.main import create_app
-
-    app = create_app(settings=settings, http=gateway_http)
-    try:
-        async with app.router.lifespan_context(app):
-            transport = httpx.ASGITransport(app=app)
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as client:
-                created = await client.post(
-                    "/api/v1/meetings", json={"title": "Pipeline"}
-                )
-                assert created.status_code == 201, created.text
-                meeting_id = created.json()["id"]
-
-                upload = await client.post(
-                    f"/api/v1/meetings/{meeting_id}/audio",
-                    files={"file": ("a.m4a", b"fake audio", "audio/mp4")},
-                )
-                assert upload.status_code == 200, upload.text
-
-                processed = await client.post(
-                    f"/api/v1/meetings/{meeting_id}/transcribe"
-                )
-                assert processed.status_code == 202, processed.text
-                assert processed.json()["status"] == "ready", processed.text
-
-                transcript = await client.get(
-                    f"/api/v1/meetings/{meeting_id}/transcript"
-                )
-                assert transcript.status_code == 200, transcript.text
-                translated = [
-                    segment["translated_text"]
-                    for segment in transcript.json()["segments"]
-                    if segment["translated_text"]
-                ]
-                assert translated and all(item.startswith("EN:") for item in translated)
-
-                minutes = await client.get(
-                    f"/api/v1/meetings/{meeting_id}/minutes"
-                )
-                assert minutes.status_code == 200, minutes.text
-                assert minutes.json()["summary"] == "LLM summary"
-                assert minutes.json()["model"] == "test-model"
-    finally:
-        await llm_http.aclose()
-        await gateway_http.aclose()
 
 
 async def test_transient_http_error_is_retried(monkeypatch) -> None:

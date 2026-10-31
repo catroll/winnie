@@ -17,6 +17,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from winnie_core.config import ModelRuntimeConfig
+
 from winnie_meetings.config import VolcengineASRConfig
 
 IntegrationKind = Literal["openai", "anthropic", "volcengine_asr", "fake"]
@@ -284,6 +286,8 @@ class AIState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int = 2
+    # Shared tuning only; provider base URL/model/key belong to an integration.
+    runtime: ModelRuntimeConfig = Field(default_factory=ModelRuntimeConfig)
     integrations: list[IntegrationRecord] = Field(default_factory=list)
     bindings: dict[str, BindingRecord] = Field(default_factory=dict)
 

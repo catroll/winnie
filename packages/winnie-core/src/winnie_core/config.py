@@ -25,14 +25,17 @@ class AuthConfig(BaseModel):
     login_lockout_seconds: int = Field(default=900, ge=10, le=604800)
 
 
-class LLMConfig(BaseModel):
-    """Internal OpenAI-compatible model access for capability jobs."""
+class ModelRuntimeConfig(BaseModel):
+    """Shared tuning for model calls; provider choice lives in the AI registry.
+
+    This is deliberately not a provider configuration: base URL, model name and
+    the key variable belong to an admin-managed integration. Only the values
+    that apply to every provider stay here, and the AI registry stores them so
+    the console can edit them.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    base_url: str = ""
-    api_key_env: str = "WINNIE_LLM_API_KEY"
-    model: str = "fake"
     timeout_seconds: float = Field(default=120.0, ge=1.0, le=600.0)
     max_output_tokens: int = Field(default=4096, ge=1, le=32768)
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)

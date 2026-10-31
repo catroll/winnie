@@ -41,6 +41,9 @@ class MinutesDraft:
     decisions: list[Decision] = field(default_factory=list)
     action_items: list[ActionItem] = field(default_factory=list)
     highlights: list[Highlight] = field(default_factory=list)
+    # The model that produced the draft, recorded with the minutes. "" means
+    # the caller should treat it as the fake provider.
+    model: str = "fake"
     usage: Usage | None = None
 
 

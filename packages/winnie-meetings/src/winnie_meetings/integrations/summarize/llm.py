@@ -40,7 +40,10 @@ class LLMSummarizer(Summarizer):
         if len(chunks) == 1:
             completion = await self.llm.complete(_messages(transcript))
             return _parse_draft(
-                completion.text, transcript, usage=completion.usage
+                completion.text,
+                transcript,
+                usage=completion.usage,
+                model=self.llm.model,
             )
 
         usages: list[Usage] = []
@@ -53,7 +56,10 @@ class LLMSummarizer(Summarizer):
             )
             completion = await self.llm.complete(_messages(view))
             partial = _parse_draft(
-                completion.text, view, usage=completion.usage
+                completion.text,
+                view,
+                usage=completion.usage,
+                model=self.llm.model,
             )
             partials.append(_draft_payload(partial))
             usages.append(completion.usage)
@@ -64,6 +70,7 @@ class LLMSummarizer(Summarizer):
             completion.text,
             transcript,
             usage=_merge_usage(usages),
+            model=self.llm.model,
         )
 
 
@@ -204,6 +211,7 @@ def _parse_draft(
     transcript: TranscriptView,
     *,
     usage: Usage,
+    model: str,
 ) -> MinutesDraft:
     data = parse_json_value(text)
     if isinstance(data, list) and data and isinstance(data[0], dict):
@@ -267,6 +275,7 @@ def _parse_draft(
 
     return MinutesDraft(
         summary=summary,
+        model=model,
         topics=topics,
         decisions=decisions,
         action_items=action_items,

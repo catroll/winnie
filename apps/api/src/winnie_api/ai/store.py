@@ -33,12 +33,9 @@ from winnie_api.ai.schema import (
     ResolvedProvider,
     utcnow,
 )
-from winnie_api.ai.seed import (
-    config_provider,
-    describe_provider,
-    migrate_state,
-    seed_state,
-)
+from winnie_api.ai.seed import migrate_state, seed_state
+
+from winnie_core.config import ModelRuntimeConfig
 
 _HEADER = (
     "# Winnie AI providers and feature bindings.\n"
@@ -84,7 +81,7 @@ class AISettingsService:
             raise AIProviderError(
                 f"invalid AI settings at {self.path}: {exc}"
             ) from exc
-        if migrate_state(state, self.settings):
+        if migrate_state(state):
             try:
                 state = AIState.model_validate(state.model_dump(mode="json"))
             except ValidationError as exc:
@@ -193,7 +190,10 @@ class AISettingsService:
                 model=model,
                 options=dict(integration.options),
             )
-        return config_provider(self.settings, feature)
+        raise AIProviderError(
+            f"feature {feature} has no provider; choose one in "
+            "Admin -> AI providers"
+        )
 
     def route_table(self) -> dict[str, Route]:
         table: dict[str, Route] = {}
@@ -211,10 +211,21 @@ class AISettingsService:
             )
         return table
 
+    def runtime(self) -> ModelRuntimeConfig:
+        return self.state().runtime
+
+    def set_runtime(self, runtime: ModelRuntimeConfig) -> ModelRuntimeConfig:
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            state.runtime = runtime
+            self._commit(state)
+            return runtime
+
     def view(self) -> dict[str, Any]:
         state = self.state()
         return {
             "path": str(self.path),
+            "runtime": state.runtime.model_dump(mode="json"),
             "integrations": [
                 self._integration_view(integration, state)
                 for integration in state.integrations
@@ -282,10 +293,6 @@ class AISettingsService:
             if binding is not None and binding.integration_id
             else None
         )
-        try:
-            default = describe_provider(config_provider(self.settings, feature))
-        except AIProviderError as exc:
-            default = f"unavailable: {exc}"
         return {
             "key": feature,
             "label": spec.label,
@@ -294,9 +301,8 @@ class AISettingsService:
             "requires_model": spec.requires_model,
             "integration_id": binding.integration_id if binding is not None else None,
             "model": binding.model if binding is not None else "",
-            "source": "admin" if integration is not None else "config",
+            "source": "admin" if integration is not None else "none",
             "integration_name": integration.name if integration is not None else "",
-            "config_default": default,
         }
 
     # -- writes ----------------------------------------------------------

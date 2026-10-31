@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-
-from winnie_core.config import LLMConfig
-from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
-from winnie_core.usage.ledger import UsageSink
 
 from winnie_assistant.agent import AssistantAgent, ChatModel
 from winnie_assistant.config import AssistantConfig
@@ -41,18 +36,16 @@ from winnie_assistant.tools import ToolBox
 def build_assistant_service(
     *,
     config: AssistantConfig,
-    llm: LLMConfig,
     root: Path,
     tasks_file: Path,
     http: httpx.AsyncClient,
     clock=None,
     model: ChatModel | None = None,
     model_name: str = "",
-    usage: UsageSink | None = None,
 ) -> AssistantService:
     timezone = _timezone(config.timezone)
-    resolved_name = model_name or (config.model or llm.model or "fake").strip()
-    resolved_model = model or _build_model(resolved_name, llm, http, usage)
+    resolved_model = model or FakeChatModel()
+    resolved_name = model_name or getattr(resolved_model, "name", "fake")
     search = _build_search(config, http)
     index = (
         IndexClient(
@@ -261,37 +254,6 @@ def _build_local(
         pending=PendingActions(ttl_seconds=config.exec.pending_ttl_seconds),
         model_name=model_name,
         max_review_detail_chars=config.local.review.max_action_chars,
-    )
-
-
-def _build_model(
-    model_name: str,
-    llm: LLMConfig,
-    http: httpx.AsyncClient,
-    usage: UsageSink | None,
-) -> ChatModel:
-    if model_name == "fake":
-        return FakeChatModel()
-    api_key = os.environ.get(llm.api_key_env, "").strip()
-    if not api_key:
-        raise RuntimeError(
-            f"assistant.chat needs the model API key: set {llm.api_key_env} "
-            "(or set assistant.model: fake for an offline demo)"
-        )
-    if not llm.base_url:
-        raise RuntimeError("assistant.chat needs llm.base_url for the model")
-    return OpenAICompatibleLLM(
-        base_url=llm.base_url,
-        api_key=api_key,
-        model=model_name,
-        timeout_seconds=llm.timeout_seconds,
-        max_output_tokens=llm.max_output_tokens,
-        temperature=llm.temperature,
-        max_retries=llm.max_retries,
-        retry_backoff_seconds=llm.retry_backoff_seconds,
-        http=http,
-        usage=usage,
-        capability="assistant.chat",
     )
 
 

@@ -44,5 +44,6 @@ class FakeSummarizer(Summarizer):
                 if highlight_line
                 else [Highlight(segment_seq=1, text=first_line)]
             ),
+            model="fake",
             usage=Usage(provider="fake-summarizer", unit="token", quantity=120.0),
         )

@@ -52,8 +52,8 @@ class OpenAICompatibleLLM:
     ) -> None:
         if not base_url or not api_key or not model or model == "fake":
             raise ValueError(
-                "llm.base_url, llm.model and the API key environment variable "
-                "must be set for openai_compatible providers"
+                "base_url, model and the API key environment variable must be "
+                "set for an openai-compatible provider"
             )
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key

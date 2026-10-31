@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from winnie_core.auth.dependencies import get_user_id
+from winnie_core.config import ModelRuntimeConfig
 
 from winnie_api.ai.errors import AIConflict, AINotFound, AIProviderError
 from winnie_api.ai.schema import BindingDraft, IntegrationDraft
@@ -105,6 +106,16 @@ async def delete_integration(
         raise _error(exc) from exc
     _refresh_routes(request, service)
     return {"name": name, "cleared_features": cleared}
+
+
+@router.put("/runtime")
+async def set_runtime(
+    request: Request,
+    payload: ModelRuntimeConfig,
+    _: str = Depends(get_user_id),
+) -> dict[str, Any]:
+    runtime = _service(request).set_runtime(payload)
+    return {"runtime": runtime.model_dump(mode="json")}
 
 
 @router.put("/features/{feature}")

@@ -79,24 +79,18 @@ def build_runtime(
     meeting_service = (
         build_meeting_service(
             config=settings.meetings,
-            llm=settings.llm,
             jobs=settings.jobs,
             session_factory=session_factory,
             meetings_root=settings.resolve_meetings_root(),
             notes_root=settings.resolve_notes_root(),
-            asr=DynamicASRProvider(settings, ai, http) if ai is not None else None,
-            realtime_asr=DynamicRealtimeASR(settings, ai) if ai is not None else None,
+            asr=DynamicASRProvider(ai, http) if ai is not None else None,
+            realtime_asr=DynamicRealtimeASR(ai) if ai is not None else None,
             translator=(
-                DynamicTranslator(settings, ai, http, usage)
-                if ai is not None
-                else None
+                DynamicTranslator(ai, http, usage) if ai is not None else None
             ),
             summarizer=(
-                DynamicSummarizer(settings, ai, http, usage)
-                if ai is not None
-                else None
+                DynamicSummarizer(ai, http, usage) if ai is not None else None
             ),
-            usage=usage,
         )
         if settings.meetings.enabled
         else None

@@ -240,7 +240,6 @@ async def test_documents_search_uses_the_local_index(tmp_path) -> None:
         assistant=AssistantConfig(
             enabled=True,
             root=str(tmp_path / "assistant"),
-            model="fake",
             search=SearchConfig(provider="fake"),
             index=IndexConfig(enabled=True, url="http://index.invalid:8790"),
             memory=MemoryConfig(auto_distill=False),
@@ -311,7 +310,6 @@ async def test_assistant_routes_require_a_token_when_auth_is_enabled(
         assistant=AssistantConfig(
             enabled=True,
             root=str(tmp_path / "assistant"),
-            model="fake",
             search=SearchConfig(provider="fake"),
             index=IndexConfig(enabled=False),
             memory=MemoryConfig(auto_distill=False),

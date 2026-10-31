@@ -11,7 +11,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 from winnie_assistant.config import AssistantConfig
-from winnie_core.config import AuthConfig, JobsConfig, LLMConfig
+from winnie_core.config import AuthConfig, JobsConfig
 from winnie_core.usage.config import UsageConfig
 from winnie_gateway.config import GatewayConfig, RouteConfig
 from winnie_meetings.config import MeetingsConfig
@@ -61,7 +61,6 @@ class Settings(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     jobs: JobsConfig = Field(default_factory=JobsConfig)
-    llm: LLMConfig = Field(default_factory=LLMConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
     assistant: AssistantConfig = Field(default_factory=AssistantConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)

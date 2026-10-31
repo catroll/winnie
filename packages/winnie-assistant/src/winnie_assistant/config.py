@@ -118,8 +118,6 @@ class AssistantConfig(BaseModel):
     # documents, so the local index service can index them.
     root: str = "~/Documents/Mine/Winnie"
     timezone: str = "Asia/Shanghai"
-    # Empty means: reuse llm.base_url, llm.model and llm.api_key_env.
-    model: str = ""
     max_history_messages: int = Field(default=30, ge=2, le=200)
     max_tool_rounds: int = Field(default=4, ge=1, le=10)
     max_tool_output_chars: int = Field(default=4000, ge=200, le=20000)

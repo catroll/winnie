@@ -1,15 +1,14 @@
-"""Build provider adapters from configuration.
+"""Build static ASR adapters from configuration.
 
-The fake providers keep tests and local demos deterministic. Volcengine
-Doubao is the first real ASR adapter, and the LLM adapters use one internal
-OpenAI-compatible client for translation and structured minutes.
+Model providers (translation, minutes, assistant) are chosen in the AI
+registry; only ASR still has a YAML default for deployments that do not enable
+the registry. The fake providers keep tests and local demos deterministic.
 """
 
 from __future__ import annotations
 
 import os
 
-from winnie_core.config import LLMConfig
 from winnie_meetings.config import MeetingsConfig
 from winnie_meetings.integrations.asr.base import ASRProvider
 from winnie_meetings.integrations.asr.fake import FakeASRProvider, FakeRealtimeASR
@@ -21,14 +20,6 @@ from winnie_meetings.integrations.asr.volcengine import (
 from winnie_meetings.integrations.asr.volcengine_stream import (
     VolcengineRealtimeASR,
 )
-from winnie_core.llm.factory import build_llm
-from winnie_core.usage.ledger import UsageSink
-from winnie_meetings.integrations.summarize.base import Summarizer
-from winnie_meetings.integrations.summarize.fake import FakeSummarizer
-from winnie_meetings.integrations.summarize.llm import LLMSummarizer
-from winnie_meetings.integrations.translate.base import Translator
-from winnie_meetings.integrations.translate.fake import FakeTranslator
-from winnie_meetings.integrations.translate.llm import LLMTranslator
 
 
 def build_asr_provider(config: MeetingsConfig) -> ASRProvider:
@@ -67,44 +58,4 @@ def build_realtime_asr_provider(config: MeetingsConfig) -> RealtimeASRProvider:
     raise ValueError(
         f"unsupported realtime ASR provider {name!r}; implement it under "
         "winnie_meetings/integrations/asr/ and register it here"
-    )
-
-
-def build_translator(
-    config: MeetingsConfig,
-    llm: LLMConfig,
-    *,
-    usage: UsageSink | None = None,
-) -> Translator:
-    name = config.translator
-    if name == "fake":
-        return FakeTranslator()
-    if name == "openai_compatible":
-        return LLMTranslator(
-            build_llm(llm, usage=usage, capability="meetings.translate"),
-            max_batch_chars=llm.translation_batch_chars,
-        )
-    raise ValueError(
-        f"unsupported translator {name!r}; implement it under "
-        "winnie_meetings/integrations/translate/ and register it here"
-    )
-
-
-def build_summarizer(
-    config: MeetingsConfig,
-    llm: LLMConfig,
-    *,
-    usage: UsageSink | None = None,
-) -> Summarizer:
-    name = config.summarizer
-    if name == "fake":
-        return FakeSummarizer()
-    if name == "openai_compatible":
-        return LLMSummarizer(
-            build_llm(llm, usage=usage, capability="meetings.summarize"),
-            max_chunk_chars=llm.summary_chunk_chars,
-        )
-    raise ValueError(
-        f"unsupported summarizer {name!r}; implement it under "
-        "winnie_meetings/integrations/summarize/ and register it here"
     )

@@ -1,6 +1,6 @@
 """Deterministic chat model for tests and offline demos.
 
-Selected explicitly with ``assistant.model: fake``; it is never a silent
+Selected by the ``fake`` integration in the AI registry; it is never a silent
 fallback for a missing API key.
 """
 

@@ -92,9 +92,8 @@ meetings:
   # days; the transcript and minutes stay available.
   audio_retention_days: 0
   # "fake" is for local demos and tests only; "volcengine" uses Doubao.
+  # This seeds the first ASR binding; the AI providers page owns it afterwards.
   asr_provider: volcengine
-  translator: fake
-  summarizer: fake
   prompt_version: v1
   # Doubao big-model recording-file ASR. The API key comes from the
   # VOLCENGINE_ASR_API_KEY environment variable (new-console API key, sent as
@@ -111,25 +110,6 @@ meetings:
     max_inline_mb: 100
     poll_interval_seconds: 2
     poll_timeout_seconds: 300
-
-# Internal LLM access for translation and minutes. The gateway routes above
-# stay independent; internal jobs call the provider directly.
-# Set meetings.translator / meetings.summarizer to "openai_compatible" to use
-# this block. The API key is read from the named environment variable.
-llm:
-  base_url: https://api.deepseek.com/v1
-  api_key_env: WINNIE_LLM_API_KEY
-  model: deepseek-chat
-  timeout_seconds: 120
-  max_output_tokens: 4096
-  temperature: 0.2
-  # Retry transient HTTP/transport failures; 4xx responses fail immediately.
-  max_retries: 2
-  retry_backoff_seconds: 1
-  translation_batch_chars: 6000
-  # Long transcripts are summarized in chunks, then one merge call combines
-  # the partial minutes. 0 is not allowed; lower values cost more calls.
-  summary_chunk_chars: 24000
 
 # Meeting data. SQLite is the development default; production should use
 # PostgreSQL, for example postgresql+asyncpg://user:pass@host:5432/winnie
@@ -154,9 +134,6 @@ assistant:
   enabled: true
   root: ~/Documents/Mine/Winnie
   timezone: Asia/Shanghai
-  # "fake" answers deterministically and needs no API key. Set it to "" to
-  # reuse llm.model, which requires WINNIE_LLM_API_KEY in the environment.
-  model: fake
   max_history_messages: 30
   max_tool_rounds: 4
   max_tool_output_chars: 4000
@@ -218,7 +195,7 @@ assistant:
     require_confirmation: true
     pending_ttl_seconds: 300
   # Every local action that is not on the whitelist gets one LLM review before
-  # it can run. The review uses assistant.model; a review error or malformed
+  # it can run. The review uses the bound assistant.chat model; a review error or malformed
   # answer denies the action. Whitelisted operations are read-only file tools
   # and a small set of read-only commands whose paths stay in the workspace.
   local:

@@ -34,7 +34,6 @@ from winnie_meetings.language import detect_language
 from winnie_meetings.models import Meeting, Minutes, Segment, utcnow
 from winnie_meetings.repository import MeetingRepository
 from winnie_core.storage import Storage
-from winnie_core.config import LLMConfig
 from winnie_meetings.config import MeetingsConfig
 
 logger = logging.getLogger(__name__)
@@ -58,7 +57,6 @@ class MeetingService:
         *,
         session_factory: async_sessionmaker[AsyncSession],
         config: MeetingsConfig,
-        llm: LLMConfig,
         storage: Storage,
         asr: ASRProvider,
         realtime_asr: RealtimeASRProvider,
@@ -69,7 +67,6 @@ class MeetingService:
     ) -> None:
         self.session_factory = session_factory
         self.config = config
-        self.llm = llm
         self.storage = storage
         self.asr = asr
         self.realtime_asr = realtime_asr
@@ -470,11 +467,7 @@ class MeetingService:
         draft: MinutesDraft,
     ) -> Minutes:
         # Do not claim a real model produced fake minutes.
-        model = (
-            self.llm.model
-            if self.config.summarizer != "fake"
-            else "fake"
-        )
+        model = draft.model or "fake"
         async with self.session_factory() as session:
             return await MeetingRepository(session).upsert_minutes(
                 meeting_id,

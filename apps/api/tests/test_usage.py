@@ -17,7 +17,6 @@ from winnie_api.ai.schema import BindingDraft, IntegrationDraft
 from winnie_api.ai.store import AISettingsService
 from winnie_api.main import create_app
 from winnie_api.settings import AIConfig, DatabaseConfig, RouteConfig, Settings
-from winnie_core.config import LLMConfig
 from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
 from winnie_core.usage.config import ModelPriceConfig, UsageConfig
 from winnie_core.usage.event import UsageEvent
@@ -661,11 +660,6 @@ async def test_dynamic_translator_records_the_bound_integration(
     settings = _settings(
         tmp_path,
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
-        llm=LLMConfig(
-            base_url="https://llm.example/v1",
-            api_key_env="TEST_LLM_KEY",
-            model="test-model",
-        ),
     )
     monkeypatch.setenv("TEST_LLM_KEY", "secret")
     ai = AISettingsService(settings)
@@ -701,7 +695,6 @@ async def test_dynamic_translator_records_the_bound_integration(
 
     ledger = UsageLedger(settings.resolve_usage_root())
     translator = DynamicTranslator(
-        settings,
         ai,
         httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         ledger,

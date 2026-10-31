@@ -16,6 +16,7 @@ import httpx
 
 from winnie_assistant.agent import ChatModel
 from winnie_assistant.fake import FakeChatModel
+from winnie_core.config import ModelRuntimeConfig
 from winnie_core.llm.base import ChatResult
 from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
 from winnie_core.types import AudioRef
@@ -91,20 +92,19 @@ def _require_base_url(provider: ResolvedProvider) -> str:
 
 def _build_openai(
     provider: ResolvedProvider,
-    settings: Any,
+    runtime: ModelRuntimeConfig,
     http: httpx.AsyncClient | None,
     usage: UsageSink | None = None,
 ) -> OpenAICompatibleLLM:
-    llm = settings.llm
     return OpenAICompatibleLLM(
         base_url=_openai_base(_require_base_url(provider)),
         api_key=_api_key(provider),
         model=_require_model(provider),
-        timeout_seconds=llm.timeout_seconds,
-        max_output_tokens=llm.max_output_tokens,
-        temperature=llm.temperature,
-        max_retries=llm.max_retries,
-        retry_backoff_seconds=llm.retry_backoff_seconds,
+        timeout_seconds=runtime.timeout_seconds,
+        max_output_tokens=runtime.max_output_tokens,
+        temperature=runtime.temperature,
+        max_retries=runtime.max_retries,
+        retry_backoff_seconds=runtime.retry_backoff_seconds,
         http=http,
         usage=usage,
         capability=provider.feature,
@@ -119,12 +119,10 @@ class DynamicChatModel:
 
     def __init__(
         self,
-        settings: Any,
         ai: AISettingsService,
         http: httpx.AsyncClient | None,
         usage: UsageSink | None = None,
     ) -> None:
-        self.settings = settings
         self.ai = ai
         self.http = http
         self.usage = usage
@@ -147,7 +145,7 @@ class DynamicChatModel:
             model: ChatModel = FakeChatModel()
         elif provider.kind == "openai":
             model = _build_openai(
-                provider, self.settings, self.http, self.usage
+                provider, self.ai.runtime(), self.http, self.usage
             )
         else:
             raise AIProviderError(
@@ -160,12 +158,10 @@ class DynamicChatModel:
 class DynamicTranslator:
     def __init__(
         self,
-        settings: Any,
         ai: AISettingsService,
         http: httpx.AsyncClient | None,
         usage: UsageSink | None = None,
     ) -> None:
-        self.settings = settings
         self.ai = ai
         self.http = http
         self.usage = usage
@@ -181,9 +177,10 @@ class DynamicTranslator:
         if provider.kind == "fake":
             implementation: Translator = FakeTranslator()
         elif provider.kind == "openai":
+            runtime = self.ai.runtime()
             implementation = LLMTranslator(
-                _build_openai(provider, self.settings, self.http, self.usage),
-                max_batch_chars=self.settings.llm.translation_batch_chars,
+                _build_openai(provider, runtime, self.http, self.usage),
+                max_batch_chars=runtime.translation_batch_chars,
             )
         else:
             raise AIProviderError(
@@ -196,12 +193,10 @@ class DynamicTranslator:
 class DynamicSummarizer:
     def __init__(
         self,
-        settings: Any,
         ai: AISettingsService,
         http: httpx.AsyncClient | None,
         usage: UsageSink | None = None,
     ) -> None:
-        self.settings = settings
         self.ai = ai
         self.http = http
         self.usage = usage
@@ -211,9 +206,10 @@ class DynamicSummarizer:
         if provider.kind == "fake":
             implementation: Summarizer = FakeSummarizer()
         elif provider.kind == "openai":
+            runtime = self.ai.runtime()
             implementation = LLMSummarizer(
-                _build_openai(provider, self.settings, self.http, self.usage),
-                max_chunk_chars=self.settings.llm.summary_chunk_chars,
+                _build_openai(provider, runtime, self.http, self.usage),
+                max_chunk_chars=runtime.summary_chunk_chars,
             )
         else:
             raise AIProviderError(
@@ -223,15 +219,13 @@ class DynamicSummarizer:
         return await implementation.summarize(transcript)
 
 
-def _volcengine_config(
-    provider: ResolvedProvider, settings: Any
-) -> VolcengineASRConfig:
+def _volcengine_config(provider: ResolvedProvider) -> VolcengineASRConfig:
     options = dict(provider.options)
     if "base_url" in options:
         # Older seed files may carry it here; the integration field wins.
         options.pop("base_url")
     merged = {
-        "base_url": provider.base_url or settings.meetings.volcengine.base_url,
+        "base_url": provider.base_url or VolcengineASRConfig().base_url,
         **options,
     }
     try:
@@ -243,7 +237,7 @@ def _volcengine_config(
 
 
 def _build_asr(
-    provider: ResolvedProvider, settings: Any, http: httpx.AsyncClient | None
+    provider: ResolvedProvider, http: httpx.AsyncClient | None
 ) -> ASRProvider:
     if provider.kind == "fake":
         return FakeASRProvider()
@@ -252,7 +246,7 @@ def _build_asr(
             f"meetings.transcribe cannot use a {provider.kind} integration; "
             "choose Volcengine ASR or fake"
         )
-    config = _volcengine_config(provider, settings)
+    config = _volcengine_config(provider)
     return VolcengineASRProvider(
         api_key=_api_key(provider, default_env=API_KEY_ENV),
         base_url=config.base_url,
@@ -265,9 +259,7 @@ def _build_asr(
     )
 
 
-def _build_realtime_asr(
-    provider: ResolvedProvider, settings: Any
-) -> RealtimeASRProvider:
+def _build_realtime_asr(provider: ResolvedProvider) -> RealtimeASRProvider:
     if provider.kind == "fake":
         return FakeRealtimeASR()
     if provider.kind != "volcengine_asr":
@@ -275,7 +267,7 @@ def _build_realtime_asr(
             f"live captions cannot use a {provider.kind} integration; "
             "choose Volcengine ASR or fake"
         )
-    config = _volcengine_config(provider, settings)
+    config = _volcengine_config(provider)
     return VolcengineRealtimeASR(
         api_key=_api_key(provider, default_env=API_KEY_ENV),
         endpoint=config.stream_endpoint,
@@ -285,13 +277,7 @@ def _build_realtime_asr(
 
 
 class DynamicASRProvider:
-    def __init__(
-        self,
-        settings: Any,
-        ai: AISettingsService,
-        http: httpx.AsyncClient | None,
-    ) -> None:
-        self.settings = settings
+    def __init__(self, ai: AISettingsService, http: httpx.AsyncClient | None) -> None:
         self.ai = ai
         self.http = http
 
@@ -302,13 +288,12 @@ class DynamicASRProvider:
         language_hint: str | None = None,
     ) -> ASRResult:
         provider = self.ai.resolve("meetings.transcribe")
-        implementation = _build_asr(provider, self.settings, self.http)
+        implementation = _build_asr(provider, self.http)
         return await implementation.transcribe(audio, language_hint=language_hint)
 
 
 class DynamicRealtimeASR:
-    def __init__(self, settings: Any, ai: AISettingsService) -> None:
-        self.settings = settings
+    def __init__(self, ai: AISettingsService) -> None:
         self.ai = ai
 
     async def stream(
@@ -319,7 +304,7 @@ class DynamicRealtimeASR:
     ) -> AsyncIterator[RealtimeEvent]:
         try:
             provider = self.ai.resolve("meetings.transcribe")
-            implementation = _build_realtime_asr(provider, self.settings)
+            implementation = _build_realtime_asr(provider)
             async for event in implementation.stream(
                 audio, language_hint=language_hint
             ):

@@ -16,7 +16,7 @@ from winnie_assistant.config import (
     SearchConfig,
     TasksConfig,
 )
-from winnie_core.config import JobsConfig, LLMConfig
+from winnie_core.config import JobsConfig
 from winnie_gateway.config import RouteConfig
 from winnie_meetings.config import MeetingsConfig
 
@@ -74,7 +74,6 @@ async def test_config_seeds_routes_features_and_the_file(tmp_path: Path) -> None
     # The default assistant model is fake, so the seed binds the fake provider.
     assert features["assistant.chat"]["integration_name"] == "fake"
     assert features["assistant.chat"]["source"] == "admin"
-    assert "from config.yaml" in features["assistant.chat"]["config_default"]
 
     kinds = {item["kind"] for item in body["kinds"]}
     assert kinds == {"openai", "anthropic", "volcengine_asr", "fake"}
@@ -201,7 +200,7 @@ async def test_feature_binding_validates_kind_model_and_delete(
         feature = next(
             item for item in config["features"] if item["key"] == "assistant.chat"
         )
-        assert feature["source"] == "config"
+        assert feature["source"] == "none"
         assert feature["integration_id"] is None
 
 
@@ -258,7 +257,6 @@ def _assistant_settings(tmp_path: Path, ai_path: Path) -> Settings:
         assistant=AssistantConfig(
             enabled=True,
             root=str(tmp_path / "assistant"),
-            model="fake",
             search=SearchConfig(provider="fake"),
             index=IndexConfig(enabled=False),
             memory=MemoryConfig(auto_distill=False),
@@ -302,17 +300,17 @@ async def test_assistant_chat_uses_the_bound_integration(
         assert reply.status_code == 200, reply.text
         assert reply.json()["reply"] == "pong"
 
-        # Deleting the provider resets the binding to the config.yaml fallback;
-        # the next turn uses the fake model without an API restart.
+        # Deleting the provider leaves the feature unbound; there is no
+        # config.yaml model fallback anymore.
         deleted = await client.delete(
             f"/api/v1/ai/integrations/{integration_id}"
         )
         assert deleted.status_code == 200, deleted.text
-        fallback = await client.post(
+        unbound = await client.post(
             "/api/v1/assistant/chat", json={"message": "again"}
         )
-        assert fallback.status_code == 200, fallback.text
-        assert fallback.json()["reply"].startswith("Fake reply")
+        assert unbound.status_code == 502, unbound.text
+        assert "no provider" in unbound.json()["detail"]
 
     assert len(upstream.requests) == 1
     forwarded = upstream.requests[-1]
@@ -395,8 +393,6 @@ async def test_meeting_translation_uses_the_bound_integration(
             notes_root=str(tmp_path / "notes"),
             max_upload_mb=1,
             asr_provider="fake",
-            translator="fake",
-            summarizer="fake",
         ),
         database=DatabaseConfig(
             url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
@@ -467,39 +463,6 @@ async def test_the_registry_survives_a_new_service_instance(tmp_path: Path) -> N
         assert "persisted" in {item["name"] for item in config["integrations"]}
 
 
-async def test_seed_does_not_bind_openai_without_a_real_model(
-    tmp_path: Path,
-) -> None:
-    settings = Settings(
-        log_root=str(tmp_path / "logs"),
-        routes={},
-        ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
-        llm=LLMConfig(base_url="https://api.deepseek.com/v1", model="fake"),
-        meetings=MeetingsConfig(
-            enabled=True,
-            local_root=str(tmp_path / "meetings"),
-            notes_root=str(tmp_path / "notes"),
-            translator="openai_compatible",
-            summarizer="openai_compatible",
-        ),
-        database=DatabaseConfig(
-            url=f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
-            auto_create_tables=True,
-        ),
-        jobs=JobsConfig(backend="inline"),
-    )
-    async with _open(settings, lambda request: httpx.Response(500)) as client:
-        response = await client.get("/api/v1/ai/config")
-        assert response.status_code == 200, response.text
-        features = {item["key"]: item for item in response.json()["features"]}
-
-    # No model was available to seed the binding, so the feature stays on the
-    # config fallback and reports why instead of blocking startup.
-    assert features["meetings.translate"]["source"] == "config"
-    assert features["meetings.translate"]["integration_id"] is None
-    assert "unavailable" in features["meetings.translate"]["config_default"]
-
-
 async def test_editing_a_bound_integration_cannot_break_the_binding(
     tmp_path: Path,
 ) -> None:
@@ -554,7 +517,7 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
         assert feature["source"] == "admin"
 
 
-async def test_seed_separates_the_gateway_route_from_the_internal_llm(
+async def test_fresh_seed_leaves_model_choice_to_the_console(
     tmp_path: Path,
 ) -> None:
     settings = Settings(
@@ -564,11 +527,6 @@ async def test_seed_separates_the_gateway_route_from_the_internal_llm(
                 protocol="openai", base_url="https://api.deepseek.com"
             )
         },
-        llm=LLMConfig(
-            base_url="https://api.deepseek.com/v1",
-            api_key_env="WINNIE_LLM_API_KEY",
-            model="deepseek-chat",
-        ),
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
     )
     async with _open(settings, lambda request: httpx.Response(500)) as client:
@@ -576,24 +534,22 @@ async def test_seed_separates_the_gateway_route_from_the_internal_llm(
         routes = (await client.get("/routes")).json()["routes"]
 
     by_name = {item["name"]: item for item in config["integrations"]}
-    gateway = by_name["deepseek-openai"]
-    assert gateway["api_key_env"] == ""
-    assert gateway["gateway"] is True
-    assert gateway["label"] == "DeepSeek (OpenAI-compatible)"
-    assert gateway["gateway_paths"]
-
-    internal = by_name["internal-llm"]
-    assert internal["api_key_env"] == "WINNIE_LLM_API_KEY"
-    assert internal["gateway"] is False
-    assert internal["gateway_paths"] == []
-    assert internal["default_model"] == "deepseek-chat"
+    # No llm block exists, so the seed cannot and must not invent an internal
+    # provider. The console owns that choice.
+    assert "internal-llm" not in by_name
+    assert by_name["deepseek-openai"]["api_key_env"] == ""
+    assert by_name["deepseek-openai"]["gateway"] is True
+    assert by_name["deepseek-openai"]["label"] == "DeepSeek (OpenAI-compatible)"
 
     features = {item["key"]: item for item in config["features"]}
-    assert features["assistant.chat"]["integration_name"] == "internal-llm"
-    assert features["assistant.chat"]["model"] == "deepseek-chat"
+    for key in ("assistant.chat", "meetings.translate", "meetings.summarize"):
+        assert features[key]["integration_name"] == "fake"
+        assert features[key]["source"] == "admin"
 
-    names = [route["name"] for route in routes]
-    assert names == ["deepseek-openai"]
+    # Runtime limits live in the registry, not in config.yaml.
+    assert config["runtime"]["timeout_seconds"] == 120
+    assert config["runtime"]["max_output_tokens"] == 4096
+    assert [route["name"] for route in routes] == ["deepseek-openai"]
 
 
 async def test_v1_registry_is_split_and_rewritten(tmp_path: Path) -> None:
@@ -640,11 +596,6 @@ bindings:
                 protocol="openai", base_url="https://api.deepseek.com"
             )
         },
-        llm=LLMConfig(
-            base_url="https://api.deepseek.com/v1",
-            api_key_env="WINNIE_LLM_API_KEY",
-            model="deepseek-chat",
-        ),
         ai=AIConfig(enabled=True, path=str(path)),
     )
     async with _open(settings, lambda request: httpx.Response(500)) as client:
@@ -713,3 +664,36 @@ async def test_a_gateway_only_provider_cannot_serve_an_internal_feature(
         assert bound.status_code == 200, bound.text
         routes = (await client.get("/routes")).json()["routes"]
         assert "internal-only" not in [route["name"] for route in routes]
+
+
+async def test_model_runtime_is_admin_managed(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        config = (await client.get("/api/v1/ai/config")).json()
+        assert config["runtime"]["timeout_seconds"] == 120
+        assert config["runtime"]["max_output_tokens"] == 4096
+
+        updated = await client.put(
+            "/api/v1/ai/runtime",
+            json={
+                "timeout_seconds": 45,
+                "max_output_tokens": 2048,
+                "temperature": 0.7,
+                "max_retries": 1,
+                "retry_backoff_seconds": 0.5,
+                "translation_batch_chars": 4000,
+                "summary_chunk_chars": 12000,
+            },
+        )
+        assert updated.status_code == 200, updated.text
+
+        config = (await client.get("/api/v1/ai/config")).json()
+        assert config["runtime"]["timeout_seconds"] == 45
+        assert config["runtime"]["max_output_tokens"] == 2048
+        assert config["runtime"]["translation_batch_chars"] == 4000
+
+        invalid = await client.put(
+            "/api/v1/ai/runtime",
+            json={**config["runtime"], "timeout_seconds": 0},
+        )
+        assert invalid.status_code == 422

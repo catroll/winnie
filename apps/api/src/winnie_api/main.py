@@ -100,21 +100,17 @@ def create_app(
         if resolved.assistant.enabled:
             try:
                 model = (
-                    DynamicChatModel(
-                        resolved, ai_settings, http_client, usage_ledger
-                    )
+                    DynamicChatModel(ai_settings, http_client, usage_ledger)
                     if ai_settings is not None
                     else None
                 )
                 assistant = build_assistant_service(
                     config=resolved.assistant,
-                    llm=resolved.llm,
                     root=resolved.resolve_assistant_root(),
                     tasks_file=resolved.resolve_assistant_tasks_file(),
                     http=http_client,
                     model=model,
                     model_name=getattr(model, "name", "") if model is not None else "",
-                    usage=usage_ledger,
                 )
                 await assistant.startup()
                 app.state.assistant_service = assistant
