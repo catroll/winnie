@@ -1,8 +1,15 @@
+import { useState } from 'react';
+
 import { api } from '../api/client';
-import type { AssistantStatus, AssistantTaskList } from '../api/types';
+import type {
+  AssistantStatus,
+  AssistantTask,
+  AssistantTaskList,
+  AssistantTaskRunList,
+} from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
-import { formatDateTime } from '../lib/format';
+import { formatDateTime, formatElapsed } from '../lib/format';
 import { useApi } from '../lib/hooks';
 import { taskRunStatus } from '../lib/status';
 
@@ -237,14 +244,193 @@ export function TasksPage() {
                     </>
                   ) : null}
                   . Tasks are created and cancelled by chatting with the assistant; this page is
-                  read-only. Only the last persisted result is shown; the full run history stays in
+                  read-only. The execution history is below; the raw append-only log stays in
                   <code> tasks/runs.jsonl</code>.
                 </div>
               </div>
+
+              <RunHistory tasks={tasks} />
             </>
           ) : null}
         </div>
       </div>
     </>
+  );
+}
+
+const RUN_PAGE_SIZE = 25;
+
+function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
+  const [taskId, setTaskId] = useState('');
+  const [offset, setOffset] = useState(0);
+  const result = useApi(
+    () =>
+      api.assistantTaskRuns({
+        task_id: taskId || undefined,
+        limit: RUN_PAGE_SIZE,
+        offset,
+      }),
+    [taskId, offset],
+  );
+
+  const data: AssistantTaskRunList | null =
+    result.status === 'success' ? result.data : null;
+  const titles = new Map(tasks.map((task) => [task.id, task.title]));
+  const first = data && data.runs.length > 0 ? data.offset + 1 : 0;
+  const last = data ? data.offset + data.runs.length : 0;
+  const hasNewer = Boolean(data && data.offset > 0);
+  const hasOlder = Boolean(data && data.offset + data.limit < data.total);
+
+  return (
+    <div className="card mt-3">
+      <div className="card-header d-flex flex-wrap align-items-center gap-2">
+        <h3 className="card-title mb-0">Run history</h3>
+        <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
+          <label className="visually-hidden" htmlFor="run-task-filter">
+            Filter runs by task
+          </label>
+          <select
+            id="run-task-filter"
+            className="form-select form-select-sm"
+            style={{ width: 'auto' }}
+            value={taskId}
+            onChange={(event) => {
+              setTaskId(event.target.value);
+              setOffset(0);
+            }}
+          >
+            <option value="">All tasks</option>
+            {tasks.map((task) => (
+              <option key={task.id} value={task.id}>
+                {task.title}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            onClick={result.reload}
+          >
+            <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="card-body p-0">
+        {result.status === 'loading' ? (
+          <div className="p-4 text-center" role="status" aria-live="polite">
+            <div className="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
+            <span className="ms-2 text-secondary">Loading run history…</span>
+          </div>
+        ) : result.status === 'error' ? (
+          <div className="p-3">
+            <ErrorBlock error={result.error} onRetry={result.reload} />
+          </div>
+        ) : !data || data.runs.length === 0 ? (
+          <div className="p-3">
+            <EmptyState
+              message={
+                taskId
+                  ? 'No runs recorded for this task yet.'
+                  : 'No task runs recorded yet. A task that fires, or a manual run through the API, appends a line here.'
+              }
+            />
+          </div>
+        ) : (
+          <div className="table-responsive">
+            <table className="table table-striped align-middle mb-0">
+              <thead>
+                <tr>
+                  <th scope="col">Started</th>
+                  <th scope="col">Task</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Conversation</th>
+                  <th scope="col">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.runs.map((run, index) => {
+                  const meta = taskRunStatus(run.status);
+                  return (
+                    <tr key={`${run.task_id}-${run.started_at}-${index}`}>
+                      <td className="text-nowrap">{formatDateTime(run.started_at)}</td>
+                      <td style={{ minWidth: '12rem' }}>
+                        <div className="fw-semibold">
+                          {titles.get(run.task_id) ?? run.task_id}
+                        </div>
+                        <code className="small text-secondary">{run.task_id}</code>
+                      </td>
+                      <td>
+                        <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                      </td>
+                      <td className="text-nowrap">
+                        {formatElapsed(run.started_at, run.finished_at)}
+                      </td>
+                      <td>
+                        <code className="small text-break">{run.conversation_id || '—'}</code>
+                      </td>
+                      <td style={{ minWidth: '14rem' }}>
+                        {run.error ? (
+                          <div className="small text-danger text-break">{run.error}</div>
+                        ) : null}
+                        {run.delivery_error ? (
+                          <div className="small text-warning-emphasis text-break">
+                            Delivery: {run.delivery_error}
+                          </div>
+                        ) : null}
+                        {!run.error && !run.delivery_error ? (
+                          <span className="text-secondary">—</span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="card-footer d-flex flex-wrap align-items-center gap-2 small text-secondary">
+        <span>
+          {data
+            ? `Showing ${first}–${last} of ${data.total} run${data.total === 1 ? '' : 's'} · newest first`
+            : 'Run history'}
+          {data && data.skipped > 0
+            ? ` · ${data.skipped} unreadable line${data.skipped === 1 ? '' : 's'} skipped`
+            : ''}
+          {data ? (
+            <>
+              {' '}
+              · raw log <code>tasks/runs.jsonl</code>
+            </>
+          ) : null}
+        </span>
+        <div
+          className="ms-auto btn-group btn-group-sm"
+          role="group"
+          aria-label="Run history pages"
+        >
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            disabled={!hasNewer}
+            onClick={() => setOffset(Math.max(0, offset - RUN_PAGE_SIZE))}
+          >
+            Newer
+          </button>
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            disabled={!hasOlder}
+            onClick={() => setOffset(offset + RUN_PAGE_SIZE)}
+          >
+            Older
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

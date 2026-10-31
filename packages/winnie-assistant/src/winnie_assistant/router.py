@@ -29,6 +29,7 @@ from winnie_assistant.schemas import (
     StatusRead,
     TaskListRead,
     TaskRead,
+    TaskRunListRead,
     TaskRunRead,
 )
 from winnie_assistant.service import AssistantService
@@ -233,6 +234,36 @@ async def list_tasks(
             )
         )
     return TaskListRead(tasks=tasks, errors=service.scheduler.errors)
+
+
+@router.get("/tasks/runs", response_model=TaskRunListRead)
+async def list_task_runs(
+    task_id: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=5000),
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> TaskRunListRead:
+    """Recorded task executions, newest first, optionally for one task."""
+    page = service.task_runs(task_id=task_id or None, limit=limit, offset=offset)
+    return TaskRunListRead(
+        runs=[
+            TaskRunRead(
+                task_id=run.task_id,
+                status=run.status,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                conversation_id=run.conversation_id,
+                error=run.error,
+                delivery_error=run.delivery_error,
+            )
+            for run in page.runs
+        ],
+        total=page.total,
+        offset=offset,
+        limit=limit,
+        skipped=page.skipped,
+    )
 
 
 @router.post("/tasks/{task_id}/run", response_model=TaskRunRead)

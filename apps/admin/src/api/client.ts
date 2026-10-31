@@ -1,6 +1,7 @@
 import type {
   AssistantStatus,
   AssistantTaskList,
+  AssistantTaskRunList,
   Health,
   IndexConfigResponse,
   IndexEditableConfig,
@@ -199,6 +200,27 @@ export const api = {
 
   assistantStatus(): Promise<AssistantStatus> {
     return request<AssistantStatus>('/api/v1/assistant/status');
+  },
+
+  assistantTaskRuns(params: {
+    task_id?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<AssistantTaskRunList> {
+    const search = new URLSearchParams();
+    if (params.task_id) {
+      search.set('task_id', params.task_id);
+    }
+    if (params.limit !== undefined) {
+      search.set('limit', String(params.limit));
+    }
+    if (params.offset !== undefined) {
+      search.set('offset', String(params.offset));
+    }
+    const query = search.toString();
+    return request<AssistantTaskRunList>(
+      `/api/v1/assistant/tasks/runs${query ? `?${query}` : ''}`,
+    );
   },
 
   login(username: string, password: string): Promise<TokenResponse> {

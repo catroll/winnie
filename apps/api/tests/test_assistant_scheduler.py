@@ -12,6 +12,7 @@ from winnie_assistant.scheduler import (
     TaskDefinitionError,
     TaskStore,
     parse_schedule,
+    read_task_runs,
 )
 from winnie_assistant.types import ChatReply
 
@@ -213,3 +214,45 @@ async def test_creating_a_task_with_a_bad_schedule_is_rejected(tmp_path) -> None
         )
     with pytest.raises(TaskDefinitionError):
         await scheduler.create_task(title="bad", schedule="daily 07:30", prompt="")
+
+
+def _run_line(task_id, status, started, finished, **extra):
+    return json.dumps(
+        {
+            "task_id": task_id,
+            "status": status,
+            "started_at": started,
+            "finished_at": finished,
+            "conversation_id": "",
+            "error": "",
+            "delivery_error": "",
+            **extra,
+        }
+    )
+
+
+def test_run_history_is_paged_newest_first_and_skips_bad_lines(tmp_path) -> None:
+    path = tmp_path / "runs.jsonl"
+    lines = [
+        _run_line("brief", "error", "2026-11-01T07:30:00+08:00", "2026-11-01T07:30:05+08:00"),
+        "not json",
+        _run_line("brief", "ok", "2026-11-02T07:30:00+08:00", "2026-11-02T07:30:03+08:00"),
+        _run_line("other", "ok", "2026-11-02T09:00:00+08:00", "2026-11-02T09:00:01+08:00"),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    newest = read_task_runs(path, task_id="brief", limit=1)
+    assert newest.total == 2
+    assert newest.skipped == 1
+    assert [run.status for run in newest.runs] == ["ok"]
+
+    older = read_task_runs(path, task_id="brief", limit=1, offset=1)
+    assert [run.status for run in older.runs] == ["error"]
+    assert older.total == 2
+
+    everything = read_task_runs(path, limit=10)
+    assert everything.total == 3
+    assert [run.task_id for run in everything.runs] == ["other", "brief", "brief"]
+
+    assert read_task_runs(path, task_id="missing").total == 0
+    assert read_task_runs(tmp_path / "missing.jsonl").runs == []

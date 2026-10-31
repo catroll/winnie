@@ -114,6 +114,15 @@ class TaskRunRead(BaseModel):
     delivery_error: str = ""
 
 
+class TaskRunListRead(BaseModel):
+    runs: list[TaskRunRead]
+    total: int
+    offset: int
+    limit: int
+    # Lines the log reader could not parse (for example a partial last line).
+    skipped: int = 0
+
+
 class StatusRead(BaseModel):
     model: str
     search: str

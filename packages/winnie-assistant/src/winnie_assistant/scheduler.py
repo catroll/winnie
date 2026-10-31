@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import secrets
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -90,6 +91,15 @@ class TaskRun:
     conversation_id: str = ""
     error: str = ""
     delivery_error: str = ""
+
+
+@dataclass(frozen=True)
+class TaskRunPage:
+    """One page of the append-only run log, newest first."""
+
+    runs: list[TaskRun]
+    total: int
+    skipped: int
 
 
 def parse_schedule(value: str) -> Schedule:
@@ -224,6 +234,77 @@ def _parse_task(entry: Any, index: int) -> ScheduledTask:
         webhook=webhook,
         parsed=parse_schedule(schedule),
         created_at=str(entry.get("created_at") or ""),
+    )
+
+
+def read_task_runs(
+    path: Path,
+    *,
+    task_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> TaskRunPage:
+    """Read one page of ``runs.jsonl``, newest first.
+
+    The log is append-only and can grow for years, so the page is collected in a
+    bounded deque while counting matches: memory is proportional to the
+    requested page, not to the file. Malformed lines are counted and skipped. A
+    crash can leave a partial last line, and one bad line must not hide the rest
+    of the history.
+    """
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    if not path.is_file():
+        return TaskRunPage(runs=[], total=0, skipped=0)
+
+    kept: deque[TaskRun] = deque(maxlen=offset + limit)
+    total = 0
+    skipped = 0
+    try:
+        with path.open("r", encoding="utf-8") as stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                run = _parse_run_line(line)
+                if run is None:
+                    skipped += 1
+                    continue
+                if task_id and run.task_id != task_id:
+                    continue
+                total += 1
+                kept.append(run)
+    except OSError:
+        logger.warning("scheduled task run history is unreadable: %s", path)
+        return TaskRunPage(runs=[], total=0, skipped=skipped)
+
+    newest_first = list(kept)[::-1]
+    return TaskRunPage(
+        runs=newest_first[offset : offset + limit],
+        total=total,
+        skipped=skipped,
+    )
+
+
+def _parse_run_line(line: str) -> TaskRun | None:
+    try:
+        raw = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    task_id = str(raw.get("task_id") or "").strip()
+    started = _parse_iso(raw.get("started_at"))
+    finished = _parse_iso(raw.get("finished_at"))
+    if not task_id or started is None or finished is None:
+        return None
+    return TaskRun(
+        task_id=task_id,
+        status=str(raw.get("status") or "unknown"),
+        started_at=started,
+        finished_at=finished,
+        conversation_id=str(raw.get("conversation_id") or ""),
+        error=str(raw.get("error") or ""),
+        delivery_error=str(raw.get("delivery_error") or ""),
     )
 
 
@@ -511,6 +592,17 @@ class AssistantScheduler:
 
     def state_for(self, task_id: str) -> dict[str, Any]:
         return dict(self._state.get(task_id) or {})
+
+    def task_runs(
+        self,
+        *,
+        task_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> TaskRunPage:
+        return read_task_runs(
+            self.runs_path, task_id=task_id, limit=limit, offset=offset
+        )
 
     def _append_run(self, record: TaskRun) -> None:
         self.runs_path.parent.mkdir(parents=True, exist_ok=True)

@@ -19,7 +19,12 @@ from winnie_assistant.index_client import IndexClient, IndexHit
 from winnie_assistant.layout import ensure_layout
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.memory_builder import DistillResult, MemoryBuilder
-from winnie_assistant.scheduler import AssistantScheduler, ScheduledTask, TaskRun
+from winnie_assistant.scheduler import (
+    AssistantScheduler,
+    ScheduledTask,
+    TaskRun,
+    TaskRunPage,
+)
 from winnie_assistant.search import SearchProvider
 from winnie_assistant.types import ChatReply
 
@@ -150,6 +155,18 @@ class AssistantService:
 
     async def run_task(self, task_id: str) -> TaskRun:
         return await self.scheduler.run_now(task_id)
+
+    def task_runs(
+        self,
+        *,
+        task_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> TaskRunPage:
+        """Read the append-only run log; the scheduler owns its path."""
+        return self.scheduler.task_runs(
+            task_id=task_id, limit=limit, offset=offset
+        )
 
     async def chat_task(self, task: ScheduledTask) -> ChatReply:
         """One scheduled task turn, recorded as a task-sourced conversation."""

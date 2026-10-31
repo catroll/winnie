@@ -247,6 +247,27 @@ export interface AssistantTaskList {
   errors: string[];
 }
 
+/** One recorded execution of an assistant scheduled task. */
+
+export interface AssistantTaskRun {
+  task_id: string;
+  status: string;
+  started_at: string;
+  finished_at: string;
+  conversation_id: string;
+  error: string;
+  delivery_error: string;
+}
+
+export interface AssistantTaskRunList {
+  runs: AssistantTaskRun[];
+  total: number;
+  offset: number;
+  limit: number;
+  /** Log lines the API could not parse, for example a partial last line. */
+  skipped: number;
+}
+
 export interface AssistantStatus {
   model: string;
   search: string;

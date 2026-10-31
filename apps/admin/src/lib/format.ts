@@ -56,6 +56,32 @@ export function formatSegmentTime(milliseconds: number | null): string {
   return milliseconds === null ? '—' : formatDuration(milliseconds);
 }
 
+/** Elapsed time between two API timestamps, for example `6.7 s` or `1 m 12 s`. */
+export function formatElapsed(start: string, end: string): string {
+  const from = parseApiDate(start);
+  const to = parseApiDate(end);
+  if (!from || !to) {
+    return '—';
+  }
+  const milliseconds = to.getTime() - from.getTime();
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+    return '—';
+  }
+  if (milliseconds < 1000) {
+    return `${Math.round(milliseconds)} ms`;
+  }
+  const seconds = milliseconds / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)} s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} m ${Math.round(seconds % 60)} s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return `${hours} h ${minutes % 60} m`;
+}
+
 export function formatLanguage(code: string | null): string {
   if (!code) {
     return 'Unknown';
