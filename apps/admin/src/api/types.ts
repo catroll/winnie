@@ -225,3 +225,35 @@ export interface IndexSearchResponse {
   hits: IndexSearchHit[];
   files: IndexSearchFile[];
 }
+
+/** Assistant scheduled tasks, as defined by the assistant and read by the console. */
+
+export interface AssistantTask {
+  id: string;
+  title: string;
+  schedule: string;
+  prompt: string;
+  enabled: boolean;
+  webhook: string;
+  next_run: string | null;
+  last_run: string | null;
+  last_status: string | null;
+  last_error: string | null;
+}
+
+export interface AssistantTaskList {
+  tasks: AssistantTask[];
+  /** Definitions the scheduler ignored, with the reason. */
+  errors: string[];
+}
+
+export interface AssistantStatus {
+  model: string;
+  search: string;
+  timezone: string;
+  root: string;
+  conversations: number;
+  memory: { enabled: boolean; entries: number; files: number };
+  index: { enabled: boolean; url: string };
+  scheduler: { running: boolean; tasks: number; errors: string[] };
+}

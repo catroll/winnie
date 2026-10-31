@@ -13,10 +13,10 @@ stdio shim) and HTTP; the Agent Skill only declares those two surfaces.
 filesystem, that any agent can query through a tool it already understands, with
 every answer traceable to a file and a line range.
 
-**Non-goals.** Cloud sync, multi-user access control, a web UI, a write path into
-the indexed files, and replacing the assistant's long-term memory: memory holds
-distilled facts about the owner, this index holds the source text those facts can
-be checked against.
+**Non-goals.** Cloud sync, multi-user access control, a web UI, and a write path
+into the indexed files. The assistant's memory is not a second store: its
+profile notes and conversations are Markdown under `Documents/Mine/Winnie` and
+are indexed here like any other document.
 
 ## 1. What the index must do
 
@@ -304,9 +304,9 @@ is visibly sealed, not silently garbled.
 
 ### 7.1 Lexical
 
-**CJK bigrams, pre-tokenised, indexed by FTS5 `unicode61`.** This mirrors
-`winnie_assistant.memory.tokenize`, which already made the same decision for
-memory, so the project keeps one tokenisation rule instead of two.
+**CJK bigrams, pre-tokenised, indexed by FTS5 `unicode61`.** Two-character
+bigrams are the unit because that is what Chinese words look like at the
+boundary; the rule lives here and nowhere else.
 
 Tested on this host, not assumed:
 
@@ -430,16 +430,17 @@ reach a port. Tool descriptions are written for selection, not documentation.
 
 ### 8.3 HTTP
 
-`POST /search`, `GET /doc/{id}`, `GET /status`, `GET /healthz`. Loopback only; a
-non-loopback bind requires `WINNIE_INDEX_TOKEN` and warns at startup. This is what
-Winnie's assistant calls.
+`POST /search`, `GET /doc?path=…&from=…&lines=…`, `GET /status`, `GET /healthz`.
+Loopback only; a non-loopback bind requires `WINNIE_INDEX_TOKEN` and warns at
+startup. This is what Winnie's assistant calls.
 
 ### 8.4 Winnie
 
-One assistant tool, `search_documents`, modelled on the existing `memory_search`
-contract: plain text, bounded, `path:line` citations, empty when nothing matches.
-Memory and documents remain separate tools — memory is what the assistant was
-told, the index is where the source is.
+The assistant calls `/search` and `/doc` directly through `IndexClient`;
+`search_documents` and `read_document` are the model-facing tools. Results are
+plain text, bounded by the tool output limit, with `path:line` citations.
+Memory is not a separate index: the assistant's profile notes and conversations
+live under `Documents/Mine/Winnie` and are part of this corpus.
 
 ### 8.5 Admin console
 

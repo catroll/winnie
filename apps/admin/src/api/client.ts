@@ -1,4 +1,6 @@
 import type {
+  AssistantStatus,
+  AssistantTaskList,
   Health,
   IndexConfigResponse,
   IndexEditableConfig,
@@ -189,6 +191,14 @@ export const api = {
 
   indexSkill(action: 'install' | 'check'): Promise<{ ok: boolean; path: string }> {
     return request('/api/v1/index/skill', { method: 'POST', body: { action } });
+  },
+
+  assistantTasks(): Promise<AssistantTaskList> {
+    return request<AssistantTaskList>('/api/v1/assistant/tasks');
+  },
+
+  assistantStatus(): Promise<AssistantStatus> {
+    return request<AssistantStatus>('/api/v1/assistant/status');
   },
 
   login(username: string, password: string): Promise<TokenResponse> {

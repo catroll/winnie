@@ -50,8 +50,7 @@ directories exist.
 - **Dedupe.** Identical bytes share one decode and one set of chunks; search
   returns one result per text with the other paths in `also_at`.
 - **Chinese.** FTS5's own tokenizers treat a whole Chinese run as one token, so
-  text is pre-tokenised into overlapping bigrams before indexing. This is the
-  same rule the assistant's memory index uses.
+  text is pre-tokenised into overlapping bigrams before indexing.
 - **Sealed, not guessed.** A binary file, a non-decodable encoding or a file
   over `index.max_file_mb` is recorded as `sealed` with a reason, never indexed
   as mojibake.

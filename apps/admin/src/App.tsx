@@ -11,6 +11,7 @@ import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RoutesPage } from './pages/RoutesPage';
+import { TasksPage } from './pages/TasksPage';
 
 export function App() {
   return (
@@ -25,6 +26,7 @@ export function App() {
             <Route index element={<DashboardPage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
+            <Route path="/tasks" element={<TasksPage />} />
             <Route path="/gateway" element={<RoutesPage />} />
             <Route path="/index" element={<IndexPage />} />
             <Route path="/account" element={<AccountPage />} />

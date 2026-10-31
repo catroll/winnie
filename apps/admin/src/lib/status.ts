@@ -44,6 +44,20 @@ export function sourceLabel(source: string): string {
   return source === 'realtime' ? 'Live recording' : 'File upload';
 }
 
+const TASK_RUN_STATUS: Record<string, StatusMeta> = {
+  ok: { label: 'Succeeded', badge: 'text-bg-success' },
+  error: { label: 'Failed', badge: 'text-bg-danger' },
+  skipped: { label: 'Skipped', badge: 'text-bg-warning' },
+};
+
+/** Last persisted result of an assistant scheduled task. */
+export function taskRunStatus(status: string | null): StatusMeta {
+  if (!status) {
+    return { label: 'No runs yet', badge: 'text-bg-secondary' };
+  }
+  return TASK_RUN_STATUS[status] ?? { label: status, badge: 'text-bg-secondary' };
+}
+
 export function stageLabel(stage: string | null): string | null {
   if (!stage) {
     return null;

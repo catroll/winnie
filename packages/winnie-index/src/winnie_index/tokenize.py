@@ -1,9 +1,7 @@
 """Tokens for a mixed Chinese/English corpus.
 
 Chinese has no spaces, and a personal corpus does not justify a segmenter
-dependency: overlapping bigrams are the unit. This matches
-`winnie_assistant.memory.tokenize`, so the project keeps one tokenisation rule
-instead of two.
+dependency: overlapping bigrams are the unit.
 
 The same function serves indexing and querying; a query segment with several
 tokens becomes an FTS5 phrase, because the tokens are meant to be adjacent.

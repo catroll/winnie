@@ -132,7 +132,38 @@ re-sign-in, dark mode, the mobile sidebar, and redirect to login after the
 server session was revoked. There is no committed frontend test suite yet; the
 browser checks were run against a disposable copy of the database.
 
+## Assistant scheduled tasks in the console (2026-11-01)
+
+**Read-only by design.** The console renders `GET /api/v1/assistant/tasks`
+(schedule, active state, next and last run, last result, prompt, webhook) and
+has no create, edit, pause or cancel controls. The assistant owns
+`tasks/tasks.json` through the `schedule_task`, `list_tasks` and `cancel_task`
+chat tools, and the scheduler holds next-run state in memory. A console writer
+would be a second writer to the same file and would have to re-synchronise that
+state, duplicating a path that already works conversationally. The console's job
+here is to make an unattended mechanism inspectable, which is exactly the gap a
+chat-only task list leaves.
+
+**One result, not the log.** The page shows the last persisted result per task
+and says so; the full history stays in `tasks/runs.jsonl`. Adding a read
+endpoint for the log is a small, additive follow-up. Reading the log from the
+browser is not an option because the file is on the API host, and copying the
+history into the task definition would make the definition file grow without
+bound.
+
+**Status route is optional.** The page also reads `/assistant/status` for the
+timezone and the scheduler's running flag, but tolerates that call failing: the
+task list still renders, with the scheduler box marked unavailable. A task list
+that disappears because a secondary status call failed would hide the data the
+page exists to show.
+
 ## Assistant: files first, no orchestration framework yet (2026-11-01)
+
+**Superseded in part.** The storage location, memory retrieval and scheduling
+parts of this entry were replaced later the same day; see
+[Assistant: index-backed memory and conversation-managed tasks](#assistant-index-backed-memory-and-conversation-managed-tasks-2026-11-01).
+The tool-loop, search-provider, model-client and default-model decisions below
+still stand.
 
 **Storage.** One Markdown file per conversation under
 `data/assistant/conversations/<day>/`, append-only, with the tool trace as
@@ -193,3 +224,58 @@ than a panel in `apps/admin`. The console is a separate, still-uncommitted
 deliverable, and the chat page must work on a phone over the LAN with no build
 step. It stores the bearer token in `localStorage` and uses `textContent` for
 rendering, so model output cannot inject markup.
+
+
+## Assistant: index-backed memory and conversation-managed tasks (2026-11-01)
+
+**Storage moved out of the repository.** The assistant's files live in
+`~/Documents/Mine/Winnie`, not `data/assistant`. Two reasons: the user asked for
+the location, and it puts the files inside the index's existing `Documents/Mine`
+root, so memory and conversations are indexed by the same sweep as the owner's
+notes. Keeping them in the checkout would have required a second root and would
+have mixed personal records into the code repository. `tasks.json`, `runs.jsonl`
+and the JSON under `.state/` are not `.md`/`.txt`, so they are not indexed.
+
+**Retrieval is `winnie-index`, not a second index.** The in-process lexical
+`MemoryStore.search` and its tokenizer were deleted. The index already does
+mixed Chinese/English tokenisation, chunking by heading, BM25 ranking, dedupe
+and read-time revalidation; a second implementation would drift from it and
+double the code that has to stay correct. The assistant sends `POST /search` and
+reads windows with `GET /doc`. The pinned profile digest stays in process: it is
+a bounded slice of the system prompt, not a retrieval result, and it must be
+current on the same turn a fact is written.
+
+**The index has no path filter, and this is acceptable.** `search_documents`
+searches the whole root rather than only `Winnie/`. A separate root or a new
+`prefix` parameter was considered and rejected for now: the owner's notes and
+the assistant's memory are one corpus on purpose, every hit carries its path so
+the model can tell them apart, and changing the running daemon's API or config
+to isolate a few files is not worth it before the noise is measured.
+
+**Tasks are created in conversation.** `tasks/tasks.json` is written by the
+assistant, not by the user. The earlier `tasks.yaml` was a config file the user
+had to edit by hand, which contradicted "the assistant manages its schedule".
+Ids are a slug plus a random suffix so a Chinese title still yields a usable id.
+The model must restate the schedule and content and wait for an explicit yes
+before calling `schedule_task`; the confirmation is in the system prompt and the
+tool description because it is a product requirement, not a suggestion.
+
+**A task run cannot manage tasks, and hiding a tool is not enforcing it.** The
+scheduler passes the agent a tool set without
+`schedule_task`/`list_tasks`/`cancel_task`, and the tool dispatcher refuses
+those names when the turn is a task run. Both are needed: the first test run
+emitted `schedule_task` from a task turn even though the schema was not offered,
+and the agent executed it, because the loop trusts the model's tool name. The
+schema filter keeps the model from *seeing* the tool; the dispatcher check keeps
+a wrong or adversarial name from *working*. `test_a_task_run_cannot_create_tasks`
+is the regression guard.
+
+**No pause/update tool yet.** Cancelling and recreating is the current edit
+path. `enabled: false` in the JSON is honoured by the scheduler, so a pause is
+expressible in the file, but no tool writes it; adding one before there is a
+real request would be surface area without a user.
+
+**Freshness is split and documented.** Pinned profile facts are in the prompt on
+the same turn. Everything else waits for the index sweep (300 s by default) or a
+build. Promising immediate recall would be false; the conversation history
+covers the gap for the current session.

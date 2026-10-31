@@ -94,7 +94,7 @@ Success for the current phase:
 | M3 | File-first meetings | Real bilingual meeting is recorded, transcribed, translated, summarized, exported and written as a note; retention and jobs verified | **Core done** — pipeline and live ASR work; long bilingual fixture and real LLM minutes still pending |
 | M4 | Live captions | PCM stream, live caption UI, canonical file pass, foreground recording and reconnect | **Core done** — captions and final pass work; foreground service, reconnect and streaming usage records are open |
 | M5 | Knowledge base | Markdown in Git is the source of truth; browse/edit/classify/version/search; notes are indexed and retrievable | Planned |
-| M6 | Assistant | A reachable assistant that chats, searches, runs scheduled tasks and remembers from local files | **Core done** — chat, search, memory and scheduling work; streaming, task creation from chat and vector retrieval are open |
+| M6 | Assistant | A reachable assistant that chats, searches, runs conversation-managed tasks and remembers from local files through the index | **Core done** — chat, search, index-backed recall and chat-managed tasks work; streaming, vector retrieval and an out-of-process worker are open |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 The current work is **M3/M4 hardening** plus the first slice of **M6**: the
@@ -288,13 +288,57 @@ Open:
 - The public domain's DNS still contains a stale `A` record; the LAN address is
   the verified path.
 
+### 5.9 Assistant — Core done
+
+Working:
+
+- `POST /api/v1/assistant/chat` runs a bounded tool loop; the page at
+  `/api/v1/assistant/ui` is phone-sized and needs no build step.
+- Files live in `~/Documents/Mine/Winnie`: append-only conversations, profile
+  notes per memory category, `tasks/tasks.json` and `tasks/runs.jsonl`. The
+  directory is created on startup with a README explaining the layout.
+- Recall is served by `winnie-index`: `search_documents` returns ranked hits
+  with `path:line`, `read_document` revalidates before returning text. The
+  assistant has no index of its own; the pinned profile digest is the only
+  memory read in process.
+- Memory is distilled from the conversation files with a per-conversation
+  watermark, deduplicated, and written back with provenance.
+- Scheduled tasks are created, listed and cancelled **in conversation**
+  (`schedule_task`, `list_tasks`, `cancel_task`); the model must confirm the
+  schedule and content before creating one. Task runs cannot create tasks.
+- Web tools: `web_search` (Bing RSS) and `fetch_page` (SSRF-guarded).
+
+Verified:
+
+- A live DeepSeek turn restated a daily 07:30 brief and waited; after "可以" it
+  called `schedule_task`, wrote `tasks/tasks.json`, and reported the id and next
+  run.
+- `remember` wrote `profile/preferences.md`; the index build added the new
+  `Winnie/` files, and a later question was answered with
+  `Winnie/profile/preferences.md:7` after `search_documents` + `read_document`.
+- A manual task run finished in 6.7 s, wrote a task-sourced conversation with
+  tool blocks and one `runs.jsonl` line; after a restart the task, next run,
+  conversations and profile survived.
+- `128 passed` in the backend suite.
+
+Open:
+
+- Streaming replies (SSE).
+- The scheduler lives in the API process, so tasks do not run while the API is
+  down; a separate worker is the next step for true 24/7 behaviour.
+- Vector retrieval would grow a dense tier in the index, not in the assistant.
+- A task cannot be edited or paused yet; cancel and recreate is the current path.
+
 ## 6. Verification snapshot
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **111 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **128 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
-| Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written from the conversation file |
+| Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
+| Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
+| Tasks created in chat | DeepSeek turn, confirmation, `schedule_task` | `tasks/tasks.json` with model-written prompt and next run 07:30 |
+| Task execution | Manual run of the chat-created task | 6.7 s, `ok`, task conversation and one `runs.jsonl` line |
 | Live file ASR | Doubao recording-file 2.0 on real audio | `ready`, one segment |
 | Live streaming ASR | Doubao SAUC 2.0 via the WebSocket | `ready` → partial → `你好。` → `final` |
 | Realtime final pass | `/meetings/{id}/audio` + `/transcribe` on a `realtime` meeting | `uploaded` → `ready` |
@@ -354,12 +398,13 @@ Ordered by dependency and risk, not by novelty:
    - Exit criteria: the meeting note is searchable and an answer cites it.
 
 4. **M6 assistant.**
-   - Done: chat, web search, tools, memory from conversation files and
-     declarative scheduled tasks, verified with a live model.
-   - Next: SSE streaming, task creation from chat with confirmation, vector
-     retrieval, and a worker so tasks run while the API is down.
+   - Done: chat, web search, index-backed recall, memory distilled from
+     conversation files, and tasks created and cancelled in conversation.
+   - Next: SSE streaming, vector retrieval in the index, a worker so tasks run
+     while the API is down, and task editing.
    - Exit criteria for the slice: a scheduled brief arrives on a phone through a
-     webhook, and a later chat answers from the distilled memory.
+     webhook, and a later chat answers from the distilled memory with a cited
+     path.
 
 5. **M7 production readiness.**
    - TLS, PostgreSQL, Redis/arq, reverse proxy, backups and restore rehearsal,

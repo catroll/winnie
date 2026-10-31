@@ -64,11 +64,14 @@ upload, transcript and minutes — and is verified against the local backend;
 running it on a device with a live ASR key is still pending.
 
 The assistant capability is usable end to end: a phone-sized chat page at
-`/api/v1/assistant/ui`, a bounded tool loop with web search and page fetch,
-append-only Markdown conversations, long-term memory distilled from those same
-files, and declarative scheduled tasks with run history. Its default
-`assistant.model` is `fake` until `WINNIE_LLM_API_KEY` is set, and the design,
-decisions and operating notes are in [docs/assistant.md](./docs/assistant.md).
+`/api/v1/assistant/ui`, a bounded tool loop with web and local-document search,
+append-only Markdown conversations under `~/Documents/Mine/Winnie`, long-term
+memory distilled from those files and recalled through the local index service,
+and scheduled tasks the assistant creates and cancels when asked in
+conversation. Its default `assistant.model` is `fake` until
+`WINNIE_LLM_API_KEY` is set. Design, decisions and operating notes are in
+[docs/assistant.md](./docs/assistant.md); the index is in
+[docs/knowledge-index.md](./docs/knowledge-index.md).
 
 The AdminLTE management console in `apps/admin` operates the same data in a
 browser: sign in, dashboard, meeting list and detail, transcript and minutes,

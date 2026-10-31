@@ -252,9 +252,10 @@ tried, which is the single most useful error here.
 ## Assistant
 
 The assistant capability is enabled by `assistant.enabled` in `config.yaml` and
-mounts `/api/v1/assistant`. It stores conversations and memory as Markdown under
-`assistant.root` (`data/assistant` by default), so the records survive a restart
-and can be edited by hand.
+mounts `/api/v1/assistant`. Conversations, memory notes, tasks and run history
+live under `assistant.root` (`~/Documents/Mine/Winnie` by default), which is
+inside the local index root, so the index service finds them on its next sweep.
+The files survive a restart and can be edited by hand.
 
 ```bash
 # Login first when accounts are enabled; skip the header otherwise.
@@ -273,7 +274,11 @@ Open `http://[::1]:8000/api/v1/assistant/ui` for the chat page. The model is
 routes work before a key exists. Web search uses Bing RSS by default and needs
 no key.
 
-Scheduled tasks live in `data/assistant/tasks.yaml`; copy
-`data/assistant/tasks.example.yaml` and see
-[docs/assistant.md](../../docs/assistant.md) for the schedule forms, memory
-pipeline and API surface.
+Local recall goes through `winnie-index` (`make index-serve`, listening on
+`127.0.0.1:8790`). With the daemon down, chat still works and the local-document
+tools report why they failed. `GET /api/v1/assistant/documents/search?q=` exposes
+the same search for debugging.
+
+Scheduled tasks are created by asking the assistant; there is no file to edit.
+The JSON at `<root>/tasks/tasks.json`, the schedule forms and the memory
+pipeline are documented in [docs/assistant.md](../../docs/assistant.md).
