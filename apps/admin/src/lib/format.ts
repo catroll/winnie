@@ -1,3 +1,6 @@
+import i18n from '../i18n';
+import { tr } from '../i18n';
+
 /**
  * The API stores UTC. SQLite drops the offset, so timestamps can arrive
  * without a zone designator; treat those as UTC rather than local time.
@@ -16,7 +19,7 @@ export function formatDateTime(value: string | null): string {
   if (!date) {
     return '—';
   }
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(i18n.resolvedLanguage ?? 'en', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date);
@@ -30,7 +33,9 @@ export function formatDate(value: string | null): string {
   if (!date) {
     return '—';
   }
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
+  return new Intl.DateTimeFormat(i18n.resolvedLanguage ?? 'en', {
+    dateStyle: 'medium',
+  }).format(date);
 }
 
 function pad(value: number): string {
@@ -84,7 +89,7 @@ export function formatElapsed(start: string, end: string): string {
 
 export function formatLanguage(code: string | null): string {
   if (!code) {
-    return 'Unknown';
+    return tr('Unknown');
   }
   const clean = code.split('-')[0].toLowerCase();
   const names: Record<string, string> = {
@@ -99,5 +104,5 @@ export function formatLanguage(code: string | null): string {
     pt: 'Portuguese',
     it: 'Italian',
   };
-  return names[clean] ?? code;
+  return names[clean] ? tr(names[clean]) : code;
 }

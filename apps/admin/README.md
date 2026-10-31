@@ -24,6 +24,7 @@ keys.
 | **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
 | **LLM usage** | Recorded model calls with token classes, latency, status and cost; breakdowns by day, feature and model; provider balances with a refresh; the configured price table |
 | **AI suppliers** | Manage suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether `winnie-llm/.env` supplies the supplier key |
+| **Schedule** | One week of the owner's Markdown schedule: the seven day sections with their events, the week-level items, times, tags and links; add an event to a day or to the week list, check it off, edit text and time, delete it, and move between weeks. Pre-2024 files render read-only |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
 | **Account** | Profile, session expiry and password change |
@@ -271,9 +272,8 @@ Deliberately not part of this app yet:
   ledger re-prices history from that table.
 - Knowledge-base management, which is still planned.
 
-Planned next: frontend i18n with a no-reload language switch, and an explicit
-admin/user role split with a grouped menu. The concrete acceptance criteria are
-in [docs/todo.md](../../docs/todo.md).
+Planned next: an explicit admin/user role split with a grouped menu. The
+concrete acceptance criteria are in [docs/todo.md](../../docs/todo.md).
 
 ## Stack
 

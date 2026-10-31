@@ -1,3 +1,5 @@
+import { tr } from '../i18n';
+
 export interface StatusMeta {
   label: string;
   badge: string;
@@ -15,8 +17,14 @@ const MEETING_STATUS: Record<string, StatusMeta> = {
   failed: { label: 'Failed', badge: 'text-bg-danger' },
 };
 
+function localized(meta: StatusMeta): StatusMeta {
+  return { ...meta, label: tr(meta.label) };
+}
+
 export function meetingStatus(status: string): StatusMeta {
-  return MEETING_STATUS[status] ?? { label: status, badge: 'text-bg-secondary' };
+  return localized(
+    MEETING_STATUS[status] ?? { label: status, badge: 'text-bg-secondary' },
+  );
 }
 
 /** Statuses that still have work left and benefit from a refresh. */
@@ -32,16 +40,16 @@ const TRANSLATION_STATUS: Record<string, StatusMeta> = {
 };
 
 export function translationStatus(status: string): StatusMeta {
-  return (
+  return localized(
     TRANSLATION_STATUS[status] ?? {
       label: status,
       badge: 'text-bg-secondary',
-    }
+    },
   );
 }
 
 export function sourceLabel(source: string): string {
-  return source === 'realtime' ? 'Live recording' : 'File upload';
+  return tr(source === 'realtime' ? 'Live recording' : 'File upload');
 }
 
 const TASK_RUN_STATUS: Record<string, StatusMeta> = {
@@ -53,9 +61,11 @@ const TASK_RUN_STATUS: Record<string, StatusMeta> = {
 /** Last persisted result of an assistant scheduled task. */
 export function taskRunStatus(status: string | null): StatusMeta {
   if (!status) {
-    return { label: 'No runs yet', badge: 'text-bg-secondary' };
+    return localized({ label: 'No runs yet', badge: 'text-bg-secondary' });
   }
-  return TASK_RUN_STATUS[status] ?? { label: status, badge: 'text-bg-secondary' };
+  return localized(
+    TASK_RUN_STATUS[status] ?? { label: status, badge: 'text-bg-secondary' },
+  );
 }
 
 export function stageLabel(stage: string | null): string | null {
@@ -70,7 +80,7 @@ export function stageLabel(stage: string | null): string | null {
     minutes: 'Minutes',
     done: 'Done',
   };
-  return labels[stage] ?? stage;
+  return tr(labels[stage] ?? stage);
 }
 
 const CONVERSATION_CHANNELS: Record<string, StatusMeta> = {
@@ -83,10 +93,10 @@ const CONVERSATION_CHANNELS: Record<string, StatusMeta> = {
 
 /** Where an assistant conversation arrived from. */
 export function conversationChannel(channel: string): StatusMeta {
-  return (
+  return localized(
     CONVERSATION_CHANNELS[channel] ?? {
       label: channel || 'Unknown',
       badge: 'text-bg-secondary',
-    }
+    },
   );
 }

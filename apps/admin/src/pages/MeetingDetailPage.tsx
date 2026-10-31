@@ -5,6 +5,7 @@ import { ApiError, api } from '../api/client';
 import type { Meeting, Minutes, Transcript } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { saveBlob } from '../lib/download';
 import {
   formatDateTime,
@@ -39,7 +40,7 @@ function messageOf(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
-  return 'The request failed.';
+  return tr('The request failed.');
 }
 
 function settledError(result: PromiseSettledResult<unknown>): string | null {
@@ -59,7 +60,7 @@ export function MeetingDetailPage() {
 
   const result = useApi<DetailData>(async () => {
     if (!meetingId) {
-      throw new ApiError(404, 'No meeting was selected.');
+      throw new ApiError(404, tr('No meeting was selected.'));
     }
     const meeting = await api.getMeeting(meetingId);
     const [transcript, minutes] = await Promise.allSettled([
@@ -87,7 +88,7 @@ export function MeetingDetailPage() {
     try {
       const exported = await api.exportMeeting(result.data.meeting.id, format);
       saveBlob(exported.blob, exported.filename);
-      setNotice(`Downloaded ${exported.filename}.`);
+      setNotice(tr('Downloaded {{filename}}.', { filename: exported.filename }));
     } catch (error) {
       setActionError(messageOf(error));
     } finally {
@@ -100,7 +101,7 @@ export function MeetingDetailPage() {
       return;
     }
     const confirmed = window.confirm(
-      'Regenerate the minutes? This replaces the current minutes and may call the model again.',
+      tr('Regenerate the minutes? This replaces the current minutes and may call the model again.'),
     );
     if (!confirmed) {
       return;
@@ -110,7 +111,7 @@ export function MeetingDetailPage() {
     setNotice(null);
     try {
       await api.regenerateMinutes(result.data.meeting.id);
-      setNotice('Minutes regenerated.');
+      setNotice(tr('Minutes regenerated.'));
       result.reload();
     } catch (error) {
       setActionError(messageOf(error));
@@ -124,7 +125,9 @@ export function MeetingDetailPage() {
       return;
     }
     const confirmed = window.confirm(
-      `Delete "${result.data.meeting.title}"? This removes its audio, transcript and minutes.`,
+      tr('Delete "{{title}}"? This removes its audio, transcript and minutes.', {
+        title: result.data.meeting.title,
+      }),
     );
     if (!confirmed) {
       return;
@@ -155,7 +158,7 @@ export function MeetingDetailPage() {
               <ErrorBlock error={result.error} onRetry={result.reload} />
               <Link to="/meetings" className="btn btn-outline-secondary">
                 <i className="bi bi-arrow-left me-1" aria-hidden="true" />
-                Back to meetings
+                {tr('Back to meetings')}
               </Link>
             </>
           ) : (
@@ -175,18 +178,23 @@ export function MeetingDetailPage() {
                 <div className="alert alert-info d-flex align-items-start gap-2" role="status">
                   <i className="bi bi-hourglass-split mt-1" aria-hidden="true" />
                   <div>
-                    Processing is in progress
                     {stageLabel(result.data.meeting.stage)
-                      ? ` (${stageLabel(result.data.meeting.stage)})`
-                      : ''}
-                    . Refresh to see the latest state.
+                      ? tr(
+                          'Processing is in progress ({{stage}}). Refresh to see the latest state.',
+                          {
+                            stage: stageLabel(result.data.meeting.stage) ?? '',
+                          },
+                        )
+                      : tr(
+                          'Processing is in progress. Refresh to see the latest state.',
+                        )}
                   </div>
                 </div>
               ) : null}
 
               <div className="card mb-4">
                 <div className="card-header">
-                  <h3 className="card-title">Overview</h3>
+                  <h3 className="card-title">{tr('Overview')}</h3>
                   <div className="card-tools">
                     <button
                       type="button"
@@ -195,49 +203,53 @@ export function MeetingDetailPage() {
                       disabled={busy}
                     >
                       <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                      Refresh
+                      {tr('Refresh')}
                     </button>
                   </div>
                 </div>
                 <div className="card-body">
                   <dl className="row mb-0">
-                    <dt className="col-sm-3 text-secondary fw-normal">Status</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Status')}</dt>
                     <dd className="col-sm-9">
                       <span className={`badge ${meetingStatus(result.data.meeting.status).badge}`}>
                         {meetingStatus(result.data.meeting.status).label}
                       </span>
                       {stageLabel(result.data.meeting.stage) ? (
                         <span className="ms-2 text-secondary small">
-                          Stage: {stageLabel(result.data.meeting.stage)}
+                          {tr('Stage: {{stage}}', {
+                            stage: stageLabel(result.data.meeting.stage) ?? '',
+                          })}
                         </span>
                       ) : null}
                     </dd>
 
-                    <dt className="col-sm-3 text-secondary fw-normal">Source</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Source')}</dt>
                     <dd className="col-sm-9">{sourceLabel(result.data.meeting.source)}</dd>
 
-                    <dt className="col-sm-3 text-secondary fw-normal">Local language</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Local language')}</dt>
                     <dd className="col-sm-9">{formatLanguage(result.data.meeting.local_language)}</dd>
 
-                    <dt className="col-sm-3 text-secondary fw-normal">Duration</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Duration')}</dt>
                     <dd className="col-sm-9">
                       {formatDuration(result.data.meeting.audio_duration_ms)}
                     </dd>
 
-                    <dt className="col-sm-3 text-secondary fw-normal">Created</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Created')}</dt>
                     <dd className="col-sm-9">{formatDateTime(result.data.meeting.created_at)}</dd>
 
-                    <dt className="col-sm-3 text-secondary fw-normal">Updated</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Updated')}</dt>
                     <dd className="col-sm-9">{formatDateTime(result.data.meeting.updated_at)}</dd>
 
-                    <dt className="col-sm-3 text-secondary fw-normal">Audio</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Audio')}</dt>
                     <dd className="col-sm-9">
                       {result.data.meeting.audio_deleted_at
-                        ? `Deleted ${formatDateTime(result.data.meeting.audio_deleted_at)}`
-                        : 'Retained'}
+                        ? tr('Deleted {{date}}', {
+                            date: formatDateTime(result.data.meeting.audio_deleted_at),
+                          })
+                        : tr('Retained')}
                     </dd>
 
-                    <dt className="col-sm-3 text-secondary fw-normal">Meeting ID</dt>
+                    <dt className="col-sm-3 text-secondary fw-normal">{tr('Meeting ID')}</dt>
                     <dd className="col-sm-9 font-monospace text-break">
                       {result.data.meeting.id}
                     </dd>
@@ -245,7 +257,7 @@ export function MeetingDetailPage() {
 
                   {result.data.meeting.error ? (
                     <div className="alert alert-danger mt-3 mb-0" role="alert">
-                      <strong>Processing error:</strong> {result.data.meeting.error}
+                      <strong>{tr('Processing error:')}</strong> {result.data.meeting.error}
                     </div>
                   ) : null}
                 </div>
@@ -274,7 +286,7 @@ export function MeetingDetailPage() {
                     ) : (
                       <i className="bi bi-filetype-txt me-1" aria-hidden="true" />
                     )}
-                    Plain text
+                    {tr('Plain text')}
                   </button>
                   <button
                     type="button"
@@ -287,7 +299,7 @@ export function MeetingDetailPage() {
                     ) : (
                       <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
                     )}
-                    Regenerate minutes
+                    {tr('Regenerate minutes')}
                   </button>
                   <button
                     type="button"
@@ -300,7 +312,7 @@ export function MeetingDetailPage() {
                     ) : (
                       <i className="bi bi-trash me-1" aria-hidden="true" />
                     )}
-                    Delete meeting
+                    {tr('Delete meeting')}
                   </button>
                 </div>
               </div>
@@ -318,7 +330,7 @@ export function MeetingDetailPage() {
                         aria-selected={tab === 'transcript'}
                         onClick={() => setTab('transcript')}
                       >
-                        Transcript
+                        {tr('Transcript')}
                         <span className="badge text-bg-secondary ms-2">
                           {result.data.transcript?.segments.length ?? 0}
                         </span>
@@ -334,7 +346,7 @@ export function MeetingDetailPage() {
                         aria-selected={tab === 'minutes'}
                         onClick={() => setTab('minutes')}
                       >
-                        Minutes
+                        {tr('Minutes')}
                       </button>
                     </li>
                   </ul>
@@ -388,7 +400,7 @@ function TranscriptView({
   if (error) {
     return (
       <div className="alert alert-warning mb-0" role="alert">
-        The transcript could not be loaded: {error}
+        {tr('The transcript could not be loaded: {{error}}', { error })}
       </div>
     );
   }
@@ -401,10 +413,10 @@ function TranscriptView({
       <table className="table table-striped align-middle mb-0">
         <thead>
           <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Speaker</th>
-            <th scope="col">Language</th>
-            <th scope="col">Text</th>
+            <th scope="col">{tr('Time')}</th>
+            <th scope="col">{tr('Speaker')}</th>
+            <th scope="col">{tr('Language')}</th>
+            <th scope="col">{tr('Text')}</th>
           </tr>
         </thead>
         <tbody>
@@ -426,7 +438,9 @@ function TranscriptView({
                   <div className="winnie-pre-line">{segment.text}</div>
                   {segment.translated_text ? (
                     <div className="mt-2 text-secondary winnie-pre-line">
-                      <span className="badge text-bg-light text-dark me-2">Translation</span>
+                      <span className="badge text-bg-light text-dark me-2">
+                        {tr('Translation')}
+                      </span>
                       {segment.translated_text}
                     </div>
                   ) : null}
@@ -444,7 +458,7 @@ function MinutesView({ minutes, error }: { minutes: Minutes | null; error: strin
   if (error) {
     return (
       <div className="alert alert-warning mb-0" role="alert">
-        Minutes are not available yet: {error}
+        {tr('Minutes are not available yet: {{error}}', { error })}
       </div>
     );
   }
@@ -454,12 +468,12 @@ function MinutesView({ minutes, error }: { minutes: Minutes | null; error: strin
 
   return (
     <div>
-      <h4 className="h5">Summary</h4>
-      <p className="winnie-pre-line">{minutes.summary || 'No summary was produced.'}</p>
+      <h4 className="h5">{tr('Summary')}</h4>
+      <p className="winnie-pre-line">{minutes.summary || tr('No summary was produced.')}</p>
 
-      <h4 className="h5 mt-4">Topics</h4>
+      <h4 className="h5 mt-4">{tr('Topics')}</h4>
       {minutes.topics.length === 0 ? (
-        <p className="text-secondary">No topics were extracted.</p>
+        <p className="text-secondary">{tr('No topics were extracted.')}</p>
       ) : (
         <div className="row g-3">
           {minutes.topics.map((topic, index) => (
@@ -468,7 +482,7 @@ function MinutesView({ minutes, error }: { minutes: Minutes | null; error: strin
                 <div className="card-body">
                   <h5 className="h6">{topic.title}</h5>
                   {topic.points.length === 0 ? (
-                    <p className="text-secondary mb-0 small">No points.</p>
+                    <p className="text-secondary mb-0 small">{tr('No points.')}</p>
                   ) : (
                     <ul className="mb-0">
                       {topic.points.map((point, pointIndex) => (
@@ -483,9 +497,9 @@ function MinutesView({ minutes, error }: { minutes: Minutes | null; error: strin
         </div>
       )}
 
-      <h4 className="h5 mt-4">Decisions</h4>
+      <h4 className="h5 mt-4">{tr('Decisions')}</h4>
       {minutes.decisions.length === 0 ? (
-        <p className="text-secondary">No decisions were recorded.</p>
+        <p className="text-secondary">{tr('No decisions were recorded.')}</p>
       ) : (
         <ul className="list-group">
           {minutes.decisions.map((decision, index) => (
@@ -499,18 +513,18 @@ function MinutesView({ minutes, error }: { minutes: Minutes | null; error: strin
         </ul>
       )}
 
-      <h4 className="h5 mt-4">Action items</h4>
+      <h4 className="h5 mt-4">{tr('Action items')}</h4>
       {minutes.action_items.length === 0 ? (
-        <p className="text-secondary">No action items were recorded.</p>
+        <p className="text-secondary">{tr('No action items were recorded.')}</p>
       ) : (
         <div className="table-responsive">
           <table className="table table-sm align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">Action</th>
-                <th scope="col">Owner</th>
-                <th scope="col">Due</th>
-                <th scope="col">Status</th>
+                <th scope="col">{tr('Action')}</th>
+                <th scope="col">{tr('Owner')}</th>
+                <th scope="col">{tr('Due')}</th>
+                <th scope="col">{tr('Status')}</th>
               </tr>
             </thead>
             <tbody>
@@ -539,15 +553,15 @@ function MinutesView({ minutes, error }: { minutes: Minutes | null; error: strin
         </div>
       )}
 
-      <h4 className="h5 mt-4">Highlights</h4>
+      <h4 className="h5 mt-4">{tr('Highlights')}</h4>
       {minutes.highlights.length === 0 ? (
-        <p className="text-secondary">No highlights were recorded.</p>
+        <p className="text-secondary">{tr('No highlights were recorded.')}</p>
       ) : (
         <ul className="list-group">
           {minutes.highlights.map((highlight, index) => (
             <li className="list-group-item" key={`${highlight.segment_seq}-${index}`}>
               <span className="badge text-bg-light text-dark me-2">
-                Segment {highlight.segment_seq}
+                {tr('Segment {{number}}', { number: highlight.segment_seq })}
               </span>
               {highlight.text}
             </li>
@@ -556,8 +570,11 @@ function MinutesView({ minutes, error }: { minutes: Minutes | null; error: strin
       )}
 
       <p className="small text-secondary mt-4 mb-0">
-        Model {minutes.model || '—'} · prompt {minutes.prompt_version} · generated{' '}
-        {formatDateTime(minutes.created_at)}
+        {tr('Model {{model}} · prompt {{prompt}} · generated {{date}}', {
+          model: minutes.model || '—',
+          prompt: minutes.prompt_version,
+          date: formatDateTime(minutes.created_at),
+        })}
       </p>
     </div>
   );

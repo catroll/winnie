@@ -14,6 +14,7 @@ import type {
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { VendorIcon } from '../lib/vendorIcons';
 import { useApi } from '../lib/hooks';
 
@@ -210,7 +211,9 @@ export function AIPage() {
     if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(editor.draft.name.trim())) {
       setMessage({
         kind: 'danger',
-        text: 'Name must be lowercase letters, digits and dashes, up to 63 characters.',
+        text: tr(
+          'Name must be lowercase letters, digits and dashes, up to 63 characters.',
+        ),
       });
       return;
     }
@@ -222,7 +225,9 @@ export function AIPage() {
         const id = editor.draft.new_vendor.trim();
         if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) {
           throw new Error(
-            'Supplier id must be lowercase letters, digits and dashes, up to 63 characters.',
+            tr(
+              'Supplier id must be lowercase letters, digits and dashes, up to 63 characters.',
+            ),
           );
         }
         await api.createAIVendor({
@@ -233,13 +238,16 @@ export function AIPage() {
         vendor = id;
       }
       if (!vendor) {
-        throw new Error('Choose a supplier, or create a new one.');
+        throw new Error(tr('Choose a supplier, or create a new one.'));
       }
       if (editor.mode === 'create') {
         await api.createAIIntegration(toInput(editor.draft, vendor));
         setMessage({
           kind: 'success',
-          text: `Created ${editor.draft.name}. It is available to the bound features immediately.`,
+          text: tr(
+            'Created {{name}}. It is available to the bound features immediately.',
+            { name: editor.draft.name },
+          ),
         });
       } else {
         await api.updateAIIntegration(
@@ -248,7 +256,7 @@ export function AIPage() {
         );
         setMessage({
           kind: 'success',
-          text: `Updated ${editor.draft.name}.`,
+          text: tr('Updated {{name}}.', { name: editor.draft.name }),
         });
       }
       setEditor(null);
@@ -268,12 +276,17 @@ export function AIPage() {
     setMessage(null);
     try {
       const response = await api.deleteAIIntegration(deleteTarget.id);
-      const cleared = response.cleared_features.length
-        ? ` These features now have no provider: ${response.cleared_features.join(', ')}.`
-        : '';
       setMessage({
         kind: 'success',
-        text: `Deleted ${response.name}.${cleared}`,
+        text: response.cleared_features.length
+          ? tr(
+              'Deleted {{name}}. These features now have no provider: {{features}}.',
+              {
+                name: response.name,
+                features: response.cleared_features.join(', '),
+              },
+            )
+          : tr('Deleted {{name}}.', { name: response.name }),
       });
       setDeleteTarget(null);
       result.reload();
@@ -298,11 +311,12 @@ export function AIPage() {
       );
       setMessage({
         kind: 'success',
-        text: `${feature.label} now uses ${
-          selectedVendor
-            ? `${selectedVendor.label} / ${binding.model || 'no model'}`
-            : 'no model (choose one before using it)'
-        }.`,
+        text: tr('{{feature}} now uses {{target}}.', {
+          feature: feature.label,
+          target: selectedVendor
+            ? `${selectedVendor.label} / ${binding.model || tr('no model')}`
+            : tr('no model (choose one before using it)'),
+        }),
       });
       result.reload();
     } catch (error) {
@@ -323,7 +337,7 @@ export function AIPage() {
       setRuntimeDraft(response.runtime);
       setMessage({
         kind: 'success',
-        text: 'Model runtime saved. The next model call uses the new limits.',
+        text: tr('Model runtime saved. The next model call uses the new limits.'),
       });
       result.reload();
     } catch (error) {
@@ -340,7 +354,9 @@ export function AIPage() {
       const response = await api.updateAIVendor(vendor.id, input);
       setMessage({
         kind: 'success',
-        text: `Saved ${response.vendor.label} models.`,
+        text: tr('Saved {{label}} models.', {
+          label: response.vendor.label,
+        }),
       });
       setModelsError('');
       setModelsEditor(null);
@@ -359,7 +375,10 @@ export function AIPage() {
       const response = await api.syncAIVendor(vendor.id);
       setMessage({
         kind: 'success',
-        text: `${response.vendor.label}: ${response.vendor.models.length} models synced from the supplier.`,
+        text: tr('{{label}}: {{count}} models synced from the supplier.', {
+          label: response.vendor.label,
+          count: response.vendor.models.length,
+        }),
       });
       result.reload();
     } catch (error) {
@@ -410,24 +429,30 @@ export function AIPage() {
             <>
               <ErrorBlock error={result.error} onRetry={result.reload} />
               <div className="alert alert-secondary" role="note">
-                The AI provider registry is available when <code>ai.enabled</code> is
-                true in <code>apps/api/config.yaml</code>. With it disabled, model
-                features have no model and ASR keeps its YAML default; enable it to
-                choose a model here.
+                {tr('The AI provider registry is available when')}{' '}
+                <code>ai.enabled</code> {tr('is true in')}{' '}
+                <code>apps/api/config.yaml</code>
+                {tr(
+                  '. With it disabled, model features have no model and ASR keeps its YAML default; enable it to choose a model here.',
+                )}
               </div>
             </>
           ) : data ? (
             <>
               <div className="alert alert-info" role="note">
                 <i className="bi bi-cpu-fill me-2" aria-hidden="true" />
-                Suppliers group endpoints and models; feature bindings and model
-                runtime are stored in <code>{data.path}</code>. Changes take effect
-                on the next model call without restarting the API. This registry is
-                the only model choice: <code>config.yaml</code> has no{' '}
-                <code>llm</code> block. API keys are <strong>not</strong> stored
-                here: <code>winnie-llm</code> reads them from{' '}
-                <code>{data.env_path}</code> and derives the variable from the
-                supplier id.
+                {tr(
+                  'Suppliers group endpoints and models; feature bindings and model runtime are stored in',
+                )}{' '}
+                <code>{data.path}</code>
+                {tr(
+                  '. Changes take effect on the next model call without restarting the API. This registry is the only model choice:',
+                )}{' '}
+                <code>config.yaml</code> {tr('has no')} <code>llm</code>{' '}
+                {tr('block. API keys are')} <strong>{tr('not')}</strong>{' '}
+                {tr('stored here:')} <code>winnie-llm</code>{' '}
+                {tr('reads them from')} <code>{data.env_path}</code>{' '}
+                {tr('and derives the variable from the supplier id.')}
               </div>
 
               <div className="row g-3 mb-3">
@@ -435,12 +460,15 @@ export function AIPage() {
                   <div className="small-box text-bg-primary">
                     <div className="inner">
                       <h3>{vendorGroups.length}</h3>
-                      <p>Suppliers</p>
+                      <p>{tr('Suppliers')}</p>
                     </div>
                     <i className="small-box-icon bi bi-hdd-network" aria-hidden="true" />
                     <span className="small-box-footer">
-                      {integrations.length} endpoints ·{' '}
-                      {integrations.filter((item) => item.enabled).length} enabled
+                      {tr('{{endpoints}} endpoints · {{enabled}} enabled', {
+                        endpoints: integrations.length,
+                        enabled: integrations.filter((item) => item.enabled)
+                          .length,
+                      })}
                     </span>
                   </div>
                 </div>
@@ -448,11 +476,11 @@ export function AIPage() {
                   <div className="small-box text-bg-success">
                     <div className="inner">
                       <h3>{gatewayRoutes}</h3>
-                      <p>Gateway routes</p>
+                      <p>{tr('Gateway routes')}</p>
                     </div>
                     <i className="small-box-icon bi bi-signpost-split" aria-hidden="true" />
                     <span className="small-box-footer">
-                      OpenAI and Anthropic providers
+                      {tr('OpenAI and Anthropic providers')}
                     </span>
                   </div>
                 </div>
@@ -462,15 +490,17 @@ export function AIPage() {
                       <h3>
                         {configured}/{features.length}
                       </h3>
-                      <p>Bound features</p>
+                      <p>{tr('Bound features')}</p>
                     </div>
                     <i className="small-box-icon bi bi-diagram-3" aria-hidden="true" />
                     <span className="small-box-footer">
                       {features.length === 0
-                        ? 'No AI features are registered'
+                        ? tr('No AI features are registered')
                         : configured === features.length
-                          ? 'Every feature has an explicit provider'
-                          : `${features.length - configured} need a provider`}
+                          ? tr('Every feature has an explicit provider')
+                          : tr('{{count}} need a provider', {
+                              count: features.length - configured,
+                            })}
                     </span>
                   </div>
                 </div>
@@ -488,13 +518,19 @@ export function AIPage() {
                           ? '0'
                           : `${keysPresent.length}/${keyed.length}`}
                       </h3>
-                      <p>Keys configured</p>
+                      <p>{tr('Keys configured')}</p>
                     </div>
                     <i className="small-box-icon bi bi-key" aria-hidden="true" />
                     <span className="small-box-footer">
                       {keyed.length === 0
-                        ? 'No provider reads a server-side key'
-                        : `${keysPresent.length} of ${keyed.length} internal endpoints have a key in winnie-llm/.env`}
+                        ? tr('No provider reads a server-side key')
+                        : tr(
+                            '{{present}} of {{total}} internal endpoints have a key in winnie-llm/.env',
+                            {
+                              present: keysPresent.length,
+                              total: keyed.length,
+                            },
+                          )}
                     </span>
                   </div>
                 </div>
@@ -502,7 +538,7 @@ export function AIPage() {
 
               <div className="card mb-3">
                 <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                  <h3 className="card-title mb-0">Suppliers</h3>
+                  <h3 className="card-title mb-0">{tr('Suppliers')}</h3>
                   <div className="ms-auto d-flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -511,7 +547,7 @@ export function AIPage() {
                       disabled={disabled}
                     >
                       <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                      Refresh
+                      {tr('Refresh')}
                     </button>
                     <button
                       type="button"
@@ -520,7 +556,7 @@ export function AIPage() {
                       disabled={disabled}
                     >
                       <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-                      Add route/API
+                      {tr('Add route/API')}
                     </button>
                   </div>
                 </div>
@@ -534,14 +570,14 @@ export function AIPage() {
                       <table className="table table-striped align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Gateway route</th>
-                            <th scope="col">Base URL</th>
-                            <th scope="col">API key</th>
-                            <th scope="col">Used by</th>
-                            <th scope="col">Gateway</th>
-                            <th scope="col">State</th>
+                            <th scope="col">{tr('Gateway route')}</th>
+                            <th scope="col">{tr('Base URL')}</th>
+                            <th scope="col">{tr('API key')}</th>
+                            <th scope="col">{tr('Used by')}</th>
+                            <th scope="col">{tr('Gateway')}</th>
+                            <th scope="col">{tr('State')}</th>
                             <th scope="col" className="text-end">
-                              Actions
+                              {tr('Actions')}
                             </th>
                           </tr>
                         </thead>
@@ -556,10 +592,13 @@ export function AIPage() {
                                     {vendor.id}
                                   </code>
                                   <span className="badge text-bg-secondary">
-                                    {vendor.gateway_count}{' '}
                                     {vendor.gateway_count === 1
-                                      ? 'gateway route'
-                                      : 'gateway routes'}
+                                      ? tr('{{count}} gateway route', {
+                                          count: vendor.gateway_count,
+                                        })
+                                      : tr('{{count}} gateway routes', {
+                                          count: vendor.gateway_count,
+                                        })}
                                   </span>
                                   {vendor.base_url ? (
                                     <code className="small text-secondary">
@@ -567,7 +606,7 @@ export function AIPage() {
                                     </code>
                                   ) : (
                                     <span className="small text-warning">
-                                      no API endpoint
+                                      {tr('no API endpoint')}
                                     </span>
                                   )}
                                   {vendor.api_key_env ? (
@@ -578,15 +617,18 @@ export function AIPage() {
                                           : 'text-bg-warning'
                                       }`}
                                     >
-                                      {vendor.api_key_env}
-                                      {vendor.api_key_present ? '' : ' missing'}
+                                      {vendor.api_key_present
+                                        ? vendor.api_key_env
+                                        : tr('{{env}} missing', {
+                                            env: vendor.api_key_env,
+                                          })}
                                     </span>
                                   ) : null}
                                 </div>
                                 <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
                                   {vendor.models.length === 0 ? (
                                     <span className="small text-secondary">
-                                      No models yet; sync them from the supplier.
+                                      {tr('No models yet; sync them from the supplier.')}
                                     </span>
                                   ) : (
                                     vendor.models.slice(0, 5).map((model) => (
@@ -620,7 +662,7 @@ export function AIPage() {
                                             }
                                           }}
                                           disabled={disabled}
-                                          title="Edit the supplier API endpoint"
+                                          title={tr('Edit the supplier API endpoint')}
                                         >
                                           <i
                                             className="bi bi-plug me-1"
@@ -643,13 +685,13 @@ export function AIPage() {
                                             }
                                           }}
                                           disabled={disabled}
-                                          title="Remove the supplier API endpoint"
+                                          title={tr('Remove the supplier API endpoint')}
                                         >
                                           <i
                                             className="bi bi-trash me-1"
                                             aria-hidden="true"
                                           />
-                                          Remove API
+                                          {tr('Remove API')}
                                         </button>
                                         {vendor.kind === 'openai' ? (
                                           <button
@@ -657,7 +699,9 @@ export function AIPage() {
                                             className="btn btn-sm btn-outline-secondary"
                                             onClick={() => syncVendor(vendor)}
                                             disabled={disabled}
-                                            title="Fetch the model list from the supplier /models API"
+                                            title={tr(
+                                              'Fetch the model list from the supplier /models API',
+                                            )}
                                           >
                                             {busy === `sync:${vendor.id}` ? (
                                               <>
@@ -665,7 +709,7 @@ export function AIPage() {
                                                   className="spinner-border spinner-border-sm me-1"
                                                   aria-hidden="true"
                                                 />
-                                                Syncing…
+                                                {tr('Syncing…')}
                                               </>
                                             ) : (
                                               <>
@@ -673,7 +717,7 @@ export function AIPage() {
                                                   className="bi bi-arrow-repeat me-1"
                                                   aria-hidden="true"
                                                 />
-                                                Sync models
+                                                {tr('Sync models')}
                                               </>
                                             )}
                                           </button>
@@ -681,7 +725,7 @@ export function AIPage() {
                                       </>
                                     ) : (
                                       <span className="small text-secondary">
-                                        No supplier API; add one with Add route/API.
+                                        {tr('No supplier API; add one with Add route/API.')}
                                       </span>
                                     )}
                                     <button
@@ -698,7 +742,7 @@ export function AIPage() {
                                         className="bi bi-sliders me-1"
                                         aria-hidden="true"
                                       />
-                                      Models
+                                      {tr('Models')}
                                     </button>
                                   </div>
                                 </div>
@@ -708,7 +752,9 @@ export function AIPage() {
                               <tr key={integration.id}>
                                 <td style={{ minWidth: '12rem' }}>
                                   <div className="fw-semibold">
-                                    Gateway route · {integration.kind_label}
+                                    {tr('Gateway route · {{kind}}', {
+                                      kind: integration.kind_label,
+                                    })}
                                   </div>
                                   <div className="small text-secondary">
                                     <code>{integration.name}</code>
@@ -724,7 +770,7 @@ export function AIPage() {
                                 </td>
                                 <td style={{ minWidth: '8rem' }}>
                                   <span className="text-secondary">
-                                    client supplies the key
+                                    {tr('client supplies the key')}
                                   </span>
                                 </td>
                                 <td style={{ minWidth: '8rem' }}>
@@ -740,11 +786,11 @@ export function AIPage() {
                                 <td>
                                   {integration.enabled ? (
                                     <span className="badge text-bg-success">
-                                      Enabled
+                                      {tr('Enabled')}
                                     </span>
                                   ) : (
                                     <span className="badge text-bg-secondary">
-                                      Disabled
+                                      {tr('Disabled')}
                                     </span>
                                   )}
                                 </td>
@@ -755,7 +801,7 @@ export function AIPage() {
                                     onClick={() => openEdit(integration)}
                                     disabled={disabled}
                                   >
-                                    Edit
+                                    {tr('Edit')}
                                   </button>
                                   <button
                                     type="button"
@@ -766,7 +812,7 @@ export function AIPage() {
                                     }}
                                     disabled={disabled}
                                   >
-                                    Delete
+                                    {tr('Delete')}
                                   </button>
                                 </td>
                               </tr>
@@ -778,30 +824,31 @@ export function AIPage() {
                   )}
                 </div>
                 <div className="card-footer small text-secondary">
-                  A supplier owns its API endpoint, the models it offers and any
-                  public gateway routes. Feature bindings select a model, not an
-                  endpoint. The API button edits the supplier's server-side
-                  endpoint; <strong>Sync models</strong> reads its{' '}
-                  <code>/models</code> API. Gateway routes forward the client's own
-                  vendor key at <code>/{'{name}'}/v1/…</code>; the environment
-                  variable is only for internal calls.
+                  {tr(
+                    "A supplier owns its API endpoint, the models it offers and any public gateway routes. Feature bindings select a model, not an endpoint. The API button edits the supplier's server-side endpoint;",
+                  )}{' '}
+                  <strong>{tr('Sync models')}</strong> {tr('reads its')}{' '}
+                  <code>/models</code>{' '}
+                  {tr("API. Gateway routes forward the client's own vendor key at")}{' '}
+                  <code>/{'{name}'}/v1/…</code>
+                  {tr('; the environment variable is only for internal calls.')}
                 </div>
               </div>
 
               <div className="card">
                 <div className="card-header">
-                  <h3 className="card-title mb-0">Feature bindings</h3>
+                  <h3 className="card-title mb-0">{tr('Feature bindings')}</h3>
                 </div>
                 <div className="card-body p-0">
                   <div className="table-responsive">
                     <table className="table align-middle mb-0">
                       <thead>
                         <tr>
-                          <th scope="col">Feature</th>
-                          <th scope="col">Model</th>
-                          <th scope="col">Source</th>
+                          <th scope="col">{tr('Feature')}</th>
+                          <th scope="col">{tr('Model')}</th>
+                          <th scope="col">{tr('Source')}</th>
                           <th scope="col" className="text-end">
-                            Action
+                            {tr('Action')}
                           </th>
                         </tr>
                       </thead>
@@ -860,7 +907,9 @@ export function AIPage() {
                                   className="visually-hidden"
                                   htmlFor={`model-${feature.key}`}
                                 >
-                                  Model for {feature.label}
+                                  {tr('Model for {{feature}}', {
+                                    feature: feature.label,
+                                  })}
                                 </label>
                                 <select
                                   id={`model-${feature.key}`}
@@ -880,7 +929,7 @@ export function AIPage() {
                                   }}
                                   disabled={disabled || rowBusy}
                                 >
-                                  <option value="">Not configured</option>
+                                  <option value="">{tr('Not configured')}</option>
                                   {modelGroups.map((group) => (
                                     <optgroup
                                       label={group.vendor.label}
@@ -892,35 +941,45 @@ export function AIPage() {
                                           key={model.id}
                                         >
                                           {model.label || model.id}
-                                          {model.context_window
-                                            ? ` · ${model.context_window.toLocaleString()} ctx`
-                                            : ''}
+                                          {model.context_window ? (
+                                            <>
+                                              {' · '}
+                                              {tr('{{tokens}} ctx', {
+                                                tokens:
+                                                  model.context_window.toLocaleString(),
+                                              })}
+                                            </>
+                                          ) : null}
                                         </option>
                                       ))}
                                     </optgroup>
                                   ))}
                                   {binding.vendor && binding.model && !known ? (
                                     <option value={value}>
-                                      {binding.model} (not in the catalog)
+                                      {binding.model} {tr('(not in the catalog)')}
                                     </option>
                                   ) : null}
                                 </select>
                                 <div className="form-text">
                                   {feature.source === 'none'
-                                    ? 'Choose the model this feature calls.'
+                                    ? tr('Choose the model this feature calls.')
                                     : !known
-                                      ? 'This model is not in a supplier catalog; sync it first.'
-                                      : 'Every feature calls the model selected here.'}
+                                      ? tr(
+                                          'This model is not in a supplier catalog; sync it first.',
+                                        )
+                                      : tr(
+                                          'Every feature calls the model selected here.',
+                                        )}
                                 </div>
                               </td>
                               <td>
                                 {feature.source === 'admin' ? (
                                   <span className="badge text-bg-success">
-                                    Admin
+                                    {tr('Admin')}
                                   </span>
                                 ) : (
                                   <span className="badge text-bg-warning">
-                                    Not configured
+                                    {tr('Not configured')}
                                   </span>
                                 )}
                               </td>
@@ -937,10 +996,10 @@ export function AIPage() {
                                         className="spinner-border spinner-border-sm me-1"
                                         aria-hidden="true"
                                       />
-                                      Saving…
+                                      {tr('Saving…')}
                                     </>
                                   ) : (
-                                    'Save'
+                                    tr('Save')
                                   )}
                                 </button>
                               </td>
@@ -952,12 +1011,12 @@ export function AIPage() {
                   </div>
                 </div>
                 <div className="card-footer small text-secondary">
-                  Every feature calls the model selected here. The supplier is
-                  resolved from that model; there is no endpoint/provider choice in
-                  a feature binding. Models come from the supplier catalog; sync
-                  them with <strong>Sync models</strong> or add them under{' '}
-                  <strong>Models</strong>. <code>config.yaml</code> no longer
-                  selects a model.
+                  {tr(
+                    'Every feature calls the model selected here. The supplier is resolved from that model; there is no endpoint/provider choice in a feature binding. Models come from the supplier catalog; sync them with',
+                  )}{' '}
+                  <strong>{tr('Sync models')}</strong> {tr('or add them under')}{' '}
+                  <strong>{tr('Models')}</strong>. <code>config.yaml</code>{' '}
+                  {tr('no longer selects a model.')}
                 </div>
               </div>
 
@@ -1052,42 +1111,42 @@ function RuntimeCard({
   return (
     <div className="card mt-3">
       <div className="card-header">
-        <h3 className="card-title mb-0">Model runtime</h3>
+        <h3 className="card-title mb-0">{tr('Model runtime')}</h3>
       </div>
       <div className="card-body">
         <p className="small text-secondary">
-          Shared limits for every OpenAI-compatible call. They apply to the
-          assistant, translation and minutes; the model and endpoint come from
-          the provider binding above.
+          {tr(
+            'Shared limits for every OpenAI-compatible call. They apply to the assistant, translation and minutes; the model and endpoint come from the provider binding above.',
+          )}
         </p>
         <div className="row g-3">
           <div className="col-md-4">
             <label className="form-label" htmlFor="runtime-timeout_seconds">
-              Timeout (seconds)
+              {tr('Timeout (seconds)')}
             </label>
             {number('timeout_seconds')}
           </div>
           <div className="col-md-4">
             <label className="form-label" htmlFor="runtime-max_output_tokens">
-              Max output tokens
+              {tr('Max output tokens')}
             </label>
             {number('max_output_tokens')}
           </div>
           <div className="col-md-4">
             <label className="form-label" htmlFor="runtime-temperature">
-              Temperature
+              {tr('Temperature')}
             </label>
             {number('temperature', '0.1')}
           </div>
           <div className="col-md-4">
             <label className="form-label" htmlFor="runtime-max_retries">
-              Max retries
+              {tr('Max retries')}
             </label>
             {number('max_retries')}
           </div>
           <div className="col-md-4">
             <label className="form-label" htmlFor="runtime-retry_backoff_seconds">
-              Retry backoff (seconds)
+              {tr('Retry backoff (seconds)')}
             </label>
             {number('retry_backoff_seconds', '0.1')}
           </div>
@@ -1096,13 +1155,13 @@ function RuntimeCard({
               className="form-label"
               htmlFor="runtime-translation_batch_chars"
             >
-              Translation batch (characters)
+              {tr('Translation batch (characters)')}
             </label>
             {number('translation_batch_chars', '100', '500')}
           </div>
           <div className="col-md-4">
             <label className="form-label" htmlFor="runtime-summary_chunk_chars">
-              Minutes chunk (characters)
+              {tr('Minutes chunk (characters)')}
             </label>
             {number('summary_chunk_chars', '1000', '2000')}
           </div>
@@ -1121,10 +1180,10 @@ function RuntimeCard({
                 className="spinner-border spinner-border-sm me-1"
                 aria-hidden="true"
               />
-              Saving…
+              {tr('Saving…')}
             </>
           ) : (
-            'Save runtime'
+            tr('Save runtime')
           )}
         </button>
       </div>
@@ -1209,12 +1268,12 @@ function ModelsEditor({
           <form className="modal-content" onSubmit={submit}>
             <div className="modal-header">
               <h5 className="modal-title" id="ai-models-title">
-                Models for {vendor.label}
+                {tr('Models for {{vendor}}', { vendor: vendor.label })}
               </h5>
               <button
                 type="button"
                 className="btn-close"
-                aria-label="Close"
+                aria-label={tr('Close')}
                 onClick={onCancel}
                 disabled={busy}
               />
@@ -1228,7 +1287,7 @@ function ModelsEditor({
               <div className="row g-3 mb-3">
                 <div className="col-md-6">
                   <label className="form-label" htmlFor="vendor-label">
-                    Supplier label
+                    {tr('Supplier label')}
                   </label>
                   <input
                     id="vendor-label"
@@ -1239,7 +1298,7 @@ function ModelsEditor({
                   />
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label">Supplier id</label>
+                  <label className="form-label">{tr('Supplier id')}</label>
                   <input
                     className="form-control font-monospace"
                     value={vendor.id}
@@ -1248,21 +1307,21 @@ function ModelsEditor({
                 </div>
               </div>
               <p className="small text-secondary">
-                Model ids are sent to the endpoint. A feature binding may use the
-                endpoint default or one of these entries; removing a model that is
-                still used is rejected.
+                {tr(
+                  'Model ids are sent to the endpoint. A feature binding may use the endpoint default or one of these entries; removing a model that is still used is rejected.',
+                )}
               </p>
               <div className="table-responsive">
                 <table className="table align-middle">
                   <thead>
                     <tr>
-                      <th scope="col">Model id</th>
-                      <th scope="col">Label</th>
-                      <th scope="col">Context</th>
-                      <th scope="col">Max output</th>
-                      <th scope="col">Notes</th>
+                      <th scope="col">{tr('Model id')}</th>
+                      <th scope="col">{tr('Label')}</th>
+                      <th scope="col">{tr('Context')}</th>
+                      <th scope="col">{tr('Max output')}</th>
+                      <th scope="col">{tr('Notes')}</th>
                       <th scope="col" className="text-end">
-                        Action
+                        {tr('Action')}
                       </th>
                     </tr>
                   </thead>
@@ -1327,7 +1386,7 @@ function ModelsEditor({
                             onChange={(event) =>
                               update(index, { notes: event.target.value })
                             }
-                            placeholder="Optional"
+                            placeholder={tr('Optional')}
                             disabled={busy}
                           />
                         </td>
@@ -1338,7 +1397,7 @@ function ModelsEditor({
                             onClick={() => remove(index)}
                             disabled={busy}
                           >
-                            Remove
+                            {tr('Remove')}
                           </button>
                         </td>
                       </tr>
@@ -1356,7 +1415,7 @@ function ModelsEditor({
                 disabled={busy}
               >
                 <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-                Add model
+                {tr('Add model')}
               </button>
             </div>
             <div className="modal-footer">
@@ -1366,7 +1425,7 @@ function ModelsEditor({
                 onClick={onCancel}
                 disabled={busy}
               >
-                Cancel
+                {tr('Cancel')}
               </button>
               <button type="submit" className="btn btn-primary" disabled={busy}>
                 {busy ? (
@@ -1375,10 +1434,10 @@ function ModelsEditor({
                       className="spinner-border spinner-border-sm me-1"
                       aria-hidden="true"
                     />
-                    Saving…
+                    {tr('Saving…')}
                   </>
                 ) : (
-                  'Save models'
+                  tr('Save models')
                 )}
               </button>
             </div>
@@ -1429,12 +1488,14 @@ function IntegrationEditor({
           <form className="modal-content" onSubmit={onSubmit}>
             <div className="modal-header">
               <h5 className="modal-title" id="ai-editor-title">
-                {editor.mode === 'create' ? 'Add endpoint' : `Edit ${draft.name}`}
+                {editor.mode === 'create'
+                  ? tr('Add endpoint')
+                  : tr('Edit {{name}}', { name: draft.name })}
               </h5>
               <button
                 type="button"
                 className="btn-close"
-                aria-label="Close"
+                aria-label={tr('Close')}
                 onClick={onCancel}
                 disabled={busy}
               />
@@ -1443,7 +1504,7 @@ function IntegrationEditor({
               <div className="row g-3">
                 <div className="col-md-6">
                   <label className="form-label" htmlFor="ai-vendor">
-                    Supplier
+                    {tr('Supplier')}
                   </label>
                   {editor.mode === 'create' ? (
                     <select
@@ -1456,13 +1517,13 @@ function IntegrationEditor({
                       disabled={busy}
                       required
                     >
-                      <option value="">Choose a supplier</option>
+                      <option value="">{tr('Choose a supplier')}</option>
                       {vendors.map((vendor) => (
                         <option value={vendor.id} key={vendor.id}>
                           {vendor.label}
                         </option>
                       ))}
-                      <option value="__new__">New supplier…</option>
+                      <option value="__new__">{tr('New supplier…')}</option>
                     </select>
                   ) : (
                     <input
@@ -1474,15 +1535,17 @@ function IntegrationEditor({
                   )}
                   <div className="form-text">
                     {editor.mode === 'create'
-                      ? 'A supplier can own several protocol/role endpoints and a model catalog.'
-                      : 'The supplier is fixed for an existing endpoint.'}
+                      ? tr(
+                          'A supplier can own several protocol/role endpoints and a model catalog.',
+                        )
+                      : tr('The supplier is fixed for an existing endpoint.')}
                   </div>
                 </div>
                 {editor.mode === 'create' && draft.vendor === '__new__' ? (
                   <>
                     <div className="col-md-3">
                       <label className="form-label" htmlFor="ai-new-vendor">
-                        Supplier id
+                        {tr('Supplier id')}
                       </label>
                       <input
                         id="ai-new-vendor"
@@ -1502,7 +1565,7 @@ function IntegrationEditor({
                         className="form-label"
                         htmlFor="ai-new-vendor-label"
                       >
-                        Supplier label
+                        {tr('Supplier label')}
                       </label>
                       <input
                         id="ai-new-vendor-label"
@@ -1519,7 +1582,7 @@ function IntegrationEditor({
                 ) : null}
                 <div className="col-md-6">
                   <label className="form-label" htmlFor="ai-name">
-                    Endpoint name
+                    {tr('Endpoint name')}
                   </label>
                   <input
                     id="ai-name"
@@ -1531,28 +1594,28 @@ function IntegrationEditor({
                     disabled={busy || editor.mode === 'edit'}
                   />
                   <div className="form-text">
-                    Lowercase slug. It becomes the gateway path prefix when the
-                    provider is exposed as a route; it cannot change after
-                    creation.
+                    {tr(
+                      'Lowercase slug. It becomes the gateway path prefix when the provider is exposed as a route; it cannot change after creation.',
+                    )}
                   </div>
                 </div>
                 <div className="col-md-6">
                   <label className="form-label" htmlFor="ai-label">
-                    Label
+                    {tr('Label')}
                   </label>
                   <input
                     id="ai-label"
                     className="form-control"
                     value={draft.label}
                     onChange={(event) => onChange({ label: event.target.value })}
-                    placeholder="Shown in the console"
+                    placeholder={tr('Shown in the console')}
                     disabled={busy}
                   />
                 </div>
 
                 <div className="col-md-6">
                   <label className="form-label" htmlFor="ai-kind">
-                    Kind
+                    {tr('Kind')}
                   </label>
                   <select
                     id="ai-kind"
@@ -1563,7 +1626,7 @@ function IntegrationEditor({
                     }
                     disabled={busy}
                   >
-                    <option value="openai">OpenAI-compatible</option>
+                    <option value="openai">{tr('OpenAI-compatible')}</option>
                     <option value="anthropic">Anthropic</option>
                     <option value="volcengine_asr">Volcengine Doubao ASR</option>
                   </select>
@@ -1581,7 +1644,7 @@ function IntegrationEditor({
                       disabled={busy}
                     />
                     <label className="form-check-label" htmlFor="ai-enabled">
-                      Enabled
+                      {tr('Enabled')}
                     </label>
                   </div>
                   {isGatewayKind ? (
@@ -1597,7 +1660,7 @@ function IntegrationEditor({
                         disabled={busy}
                       />
                       <label className="form-check-label" htmlFor="ai-gateway">
-                        Gateway route
+                        {tr('Gateway route')}
                       </label>
                     </div>
                   ) : null}
@@ -1606,7 +1669,7 @@ function IntegrationEditor({
                 <>
                     <div className="col-12">
                       <label className="form-label" htmlFor="ai-base-url">
-                        Base URL
+                        {tr('Base URL')}
                       </label>
                       <input
                         id="ai-base-url"
@@ -1621,16 +1684,20 @@ function IntegrationEditor({
                       />
                       <div className="form-text">
                         {isVolcengine
-                          ? 'Volcengine speech endpoint root; no /v1 suffix is added.'
+                          ? tr(
+                              'Volcengine speech endpoint root; no /v1 suffix is added.',
+                            )
                           : draft.kind === 'anthropic'
-                            ? 'Anthropic API root; /v1 is added when missing.'
-                            : 'OpenAI-compatible: the part before /v1; it is added automatically when missing.'}
+                            ? tr('Anthropic API root; /v1 is added when missing.')
+                            : tr(
+                                'OpenAI-compatible: the part before /v1; it is added automatically when missing.',
+                              )}
                       </div>
                     </div>
                     {!isVolcengine ? (
                       <div className="col-md-6">
                         <label className="form-label" htmlFor="ai-default-model">
-                          Default model
+                          {tr('Default model')}
                         </label>
                         <input
                           id="ai-default-model"
@@ -1643,7 +1710,7 @@ function IntegrationEditor({
                           disabled={busy}
                         />
                         <div className="form-text">
-                          Used when a feature binding does not override it.
+                          {tr('Used when a feature binding does not override it.')}
                         </div>
                       </div>
                     ) : null}
@@ -1652,11 +1719,11 @@ function IntegrationEditor({
                 {isVolcengine ? (
                   <div className="col-12">
                     <hr />
-                    <h6>Volcengine Doubao options</h6>
+                    <h6>{tr('Volcengine Doubao options')}</h6>
                     <div className="row g-3">
                       <div className="col-md-6">
                         <label className="form-label" htmlFor="ai-resource-id">
-                          Resource ID
+                          {tr('Resource ID')}
                         </label>
                         <input
                           id="ai-resource-id"
@@ -1670,7 +1737,7 @@ function IntegrationEditor({
                       </div>
                       <div className="col-md-6">
                         <label className="form-label" htmlFor="ai-model-name">
-                          Model name
+                          {tr('Model name')}
                         </label>
                         <input
                           id="ai-model-name"
@@ -1687,7 +1754,7 @@ function IntegrationEditor({
                           className="form-label"
                           htmlFor="ai-stream-endpoint"
                         >
-                          Streaming endpoint
+                          {tr('Streaming endpoint')}
                         </label>
                         <input
                           id="ai-stream-endpoint"
@@ -1704,7 +1771,7 @@ function IntegrationEditor({
                           className="form-label"
                           htmlFor="ai-stream-resource-id"
                         >
-                          Streaming resource ID
+                          {tr('Streaming resource ID')}
                         </label>
                         <input
                           id="ai-stream-resource-id"
@@ -1723,7 +1790,7 @@ function IntegrationEditor({
                           className="form-label"
                           htmlFor="ai-max-inline"
                         >
-                          Max inline upload (MB)
+                          {tr('Max inline upload (MB)')}
                         </label>
                         <input
                           id="ai-max-inline"
@@ -1743,7 +1810,7 @@ function IntegrationEditor({
                           className="form-label"
                           htmlFor="ai-poll-interval"
                         >
-                          Poll interval (seconds)
+                          {tr('Poll interval (seconds)')}
                         </label>
                         <input
                           id="ai-poll-interval"
@@ -1768,7 +1835,7 @@ function IntegrationEditor({
                           className="form-label"
                           htmlFor="ai-poll-timeout"
                         >
-                          Poll timeout (seconds)
+                          {tr('Poll timeout (seconds)')}
                         </label>
                         <input
                           id="ai-poll-timeout"
@@ -1796,7 +1863,7 @@ function IntegrationEditor({
                 onClick={onCancel}
                 disabled={busy}
               >
-                Cancel
+                {tr('Cancel')}
               </button>
               <button type="submit" className="btn btn-primary" disabled={busy}>
                 {busy ? (
@@ -1805,12 +1872,12 @@ function IntegrationEditor({
                       className="spinner-border spinner-border-sm me-1"
                       aria-hidden="true"
                     />
-                    Saving…
+                    {tr('Saving…')}
                   </>
                 ) : editor.mode === 'create' ? (
-                  'Add endpoint'
+                  tr('Add endpoint')
                 ) : (
-                  'Save changes'
+                  tr('Save changes')
                 )}
               </button>
             </div>
@@ -1845,24 +1912,27 @@ function DeleteDialog({
           <div className="modal-content">
             <div className="modal-header">
               <h5 className="modal-title" id="ai-delete-title">
-                Delete {integration.label || integration.name}?
+                {tr('Delete {{name}}?', {
+                  name: integration.label || integration.name,
+                })}
               </h5>
               <button
                 type="button"
                 className="btn-close"
-                aria-label="Close"
+                aria-label={tr('Close')}
                 onClick={onCancel}
                 disabled={busy}
               />
             </div>
             <div className="modal-body">
               <p className="mb-2">
-                The provider is removed from the registry and its gateway route
-                disappears immediately.
+                {tr(
+                  'The provider is removed from the registry and its gateway route disappears immediately.',
+                )}
               </p>
               {integration.used_by.length > 0 ? (
                 <div className="alert alert-warning mb-0" role="alert">
-                  These features will fall back to{' '}
+                  {tr('These features will fall back to')}{' '}
                   <code>apps/api/config.yaml</code>:{' '}
                   {integration.used_by.map((feature) => (
                     <code className="me-1" key={feature}>
@@ -1879,7 +1949,7 @@ function DeleteDialog({
                 onClick={onCancel}
                 disabled={busy}
               >
-                Cancel
+                {tr('Cancel')}
               </button>
               <button
                 type="button"
@@ -1893,10 +1963,10 @@ function DeleteDialog({
                       className="spinner-border spinner-border-sm me-1"
                       aria-hidden="true"
                     />
-                    Deleting…
+                    {tr('Deleting…')}
                   </>
                 ) : (
-                  'Delete provider'
+                  tr('Delete provider')
                 )}
               </button>
             </div>

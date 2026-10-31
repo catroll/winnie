@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { useApi } from '../lib/hooks';
 import { meetingStatus, sourceLabel } from '../lib/status';
@@ -27,7 +28,7 @@ export function MeetingsPage() {
         <div className="container-fluid">
           <div className="card">
             <div className="card-header">
-              <h3 className="card-title">All meetings</h3>
+              <h3 className="card-title">{tr('All meetings')}</h3>
               <div className="card-tools">
                 <button
                   type="button"
@@ -36,7 +37,7 @@ export function MeetingsPage() {
                   disabled={result.status === 'loading'}
                 >
                   <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                  Refresh
+                  {tr('Refresh')}
                 </button>
               </div>
             </div>
@@ -57,13 +58,13 @@ export function MeetingsPage() {
                   <table className="table table-striped table-hover align-middle mb-0">
                     <thead>
                       <tr>
-                        <th scope="col">Meeting</th>
-                        <th scope="col">Status</th>
-                        <th scope="col">Source</th>
-                        <th scope="col">Duration</th>
-                        <th scope="col">Updated</th>
+                        <th scope="col">{tr('Meeting')}</th>
+                        <th scope="col">{tr('Status')}</th>
+                        <th scope="col">{tr('Source')}</th>
+                        <th scope="col">{tr('Duration')}</th>
+                        <th scope="col">{tr('Updated')}</th>
                         <th scope="col" className="text-end">
-                          <span className="visually-hidden">Actions</span>
+                          <span className="visually-hidden">{tr('Actions')}</span>
                         </th>
                       </tr>
                     </thead>
@@ -103,7 +104,7 @@ export function MeetingsPage() {
                                 to={`/meetings/${meeting.id}`}
                                 className="btn btn-sm btn-outline-primary text-nowrap"
                               >
-                                View
+                                {tr('View')}
                               </Link>
                             </td>
                           </tr>
@@ -119,10 +120,14 @@ export function MeetingsPage() {
               <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <span className="small text-secondary">
                   {total === 0
-                    ? 'No meetings'
-                    : `Showing ${firstRow}–${lastRow} of ${total}`}
+                    ? tr('No meetings')
+                    : tr('Showing {{first}}–{{last}} of {{total}}', {
+                        first: firstRow,
+                        last: lastRow,
+                        total,
+                      })}
                 </span>
-                <nav aria-label="Meeting pagination">
+                <nav aria-label={tr('Meeting pagination')}>
                   <ul className="pagination pagination-sm mb-0">
                     <li className={`page-item${offset === 0 ? ' disabled' : ''}`}>
                       <button
@@ -131,12 +136,12 @@ export function MeetingsPage() {
                         onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                         disabled={offset === 0}
                       >
-                        Previous
+                        {tr('Previous')}
                       </button>
                     </li>
                     <li className="page-item disabled">
                       <span className="page-link">
-                        Page {page} of {pageCount}
+                        {tr('Page {{page}} of {{pages}}', { page, pages: pageCount })}
                       </span>
                     </li>
                     <li className={`page-item${offset + PAGE_SIZE >= total ? ' disabled' : ''}`}>
@@ -146,7 +151,7 @@ export function MeetingsPage() {
                         onClick={() => setOffset(offset + PAGE_SIZE)}
                         disabled={offset + PAGE_SIZE >= total}
                       >
-                        Next
+                        {tr('Next')}
                       </button>
                     </li>
                   </ul>

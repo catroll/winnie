@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { ApiError, api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { tr } from '../i18n';
+import { LanguageSelect } from '../i18n/LanguageSwitcher';
 import { useApi, useTitle } from '../lib/hooks';
 
 interface LoginLocationState {
@@ -27,7 +29,7 @@ export function LoginPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!username.trim() || !password) {
-      setError('Enter your username and password.');
+      setError(tr('Enter your username and password.'));
       return;
     }
 
@@ -42,18 +44,21 @@ export function LoginPage() {
     } catch (caught) {
       if (caught instanceof ApiError) {
         if (caught.status === 401) {
-          setError('Invalid username or password.');
+          setError(tr('Invalid username or password.'));
         } else if (caught.status === 429) {
           setError(
             caught.retryAfterSeconds
-              ? `Too many failed sign-in attempts. Try again in ${caught.retryAfterSeconds} seconds.`
-              : 'Too many failed sign-in attempts. Try again later.',
+              ? tr(
+                  'Too many failed sign-in attempts. Try again in {{seconds}} seconds.',
+                  { seconds: caught.retryAfterSeconds },
+                )
+              : tr('Too many failed sign-in attempts. Try again later.'),
           );
         } else {
           setError(caught.detail);
         }
       } else {
-        setError('Sign in failed. Check that the API is running and try again.');
+        setError(tr('Sign in failed. Check that the API is running and try again.'));
       }
     } finally {
       setSubmitting(false);
@@ -62,6 +67,9 @@ export function LoginPage() {
 
   return (
     <div className="login-page bg-body-secondary">
+      <div className="position-fixed top-0 end-0 p-3" style={{ zIndex: 1080 }}>
+        <LanguageSelect className="w-auto" />
+      </div>
       <h1 className="login-logo">
         <Link to="/login">
           <b>Winnie</b> Admin
@@ -71,11 +79,11 @@ export function LoginPage() {
       <div className="login-box">
         <div className="card">
           <div className="card-body login-card-body">
-            <p className="login-box-msg">Sign in to manage your Winnie instance</p>
+            <p className="login-box-msg">{tr('Sign in to manage your Winnie instance')}</p>
 
             {flash ? (
               <div className="alert alert-success py-2" role="status">
-                {flash}
+                {tr(flash)}
               </div>
             ) : null}
             {error ? (
@@ -86,7 +94,7 @@ export function LoginPage() {
 
             <form onSubmit={handleSubmit} noValidate>
               <label className="visually-hidden" htmlFor="login-username">
-                Username
+                {tr('Username')}
               </label>
               <div className="input-group mb-3">
                 <input
@@ -94,7 +102,7 @@ export function LoginPage() {
                   name="username"
                   type="text"
                   className="form-control"
-                  placeholder="Username"
+                  placeholder={tr('Username')}
                   autoComplete="username"
                   autoFocus
                   value={username}
@@ -108,7 +116,7 @@ export function LoginPage() {
               </div>
 
               <label className="visually-hidden" htmlFor="login-password">
-                Password
+                {tr('Password')}
               </label>
               <div className="input-group mb-3">
                 <input
@@ -116,7 +124,7 @@ export function LoginPage() {
                   name="password"
                   type="password"
                   className="form-control"
-                  placeholder="Password"
+                  placeholder={tr('Password')}
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
@@ -140,7 +148,7 @@ export function LoginPage() {
                       disabled={submitting}
                     />
                     <label className="form-check-label" htmlFor="login-remember">
-                      Remember me
+                      {tr('Remember me')}
                     </label>
                   </div>
                 </div>
@@ -157,10 +165,10 @@ export function LoginPage() {
                             className="spinner-border spinner-border-sm me-1"
                             aria-hidden="true"
                           />
-                          Signing in…
+                          {tr('Signing in…')}
                         </>
                       ) : (
-                        'Sign in'
+                        tr('Sign in')
                       )}
                     </button>
                   </div>
@@ -175,15 +183,15 @@ export function LoginPage() {
         {health.status === 'success' && health.data ? (
           <>
             <i className="bi bi-check-circle-fill text-success me-1" aria-hidden="true" />
-            API {health.data.version} online
+            {tr('API {{version}} online', { version: health.data.version })}
           </>
         ) : health.status === 'error' ? (
           <>
             <i className="bi bi-exclamation-circle-fill text-danger me-1" aria-hidden="true" />
-            API unreachable
+            {tr('API unreachable')}
           </>
         ) : (
-          'Checking API…'
+          tr('Checking API…')
         )}
       </p>
     </div>

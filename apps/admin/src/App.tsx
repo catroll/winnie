@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import { AuthProvider } from './auth/AuthContext';
 import { PublicOnly, RequireAuth } from './auth/guards';
@@ -15,11 +16,16 @@ import { NewsPage } from './pages/NewsPage';
 import { PhonePage } from './pages/PhonePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RoutesPage } from './pages/RoutesPage';
+import { SchedulePage } from './pages/SchedulePage';
 import { SkillsPage } from './pages/SkillsPage';
 import { TasksPage } from './pages/TasksPage';
 import { UsagePage } from './pages/UsagePage';
 
 export function App() {
+  // Subscribe the whole tree to language changes: page labels are translated
+  // through the shared `tr()` helper, so a parent re-render is enough.
+  useTranslation();
+
   return (
     <AuthProvider>
       <Routes>
@@ -33,6 +39,7 @@ export function App() {
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/chat/:conversationId" element={<ChatPage />} />
             <Route path="/news" element={<NewsPage />} />
+            <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/phone" element={<PhonePage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />

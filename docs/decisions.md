@@ -1203,3 +1203,16 @@ the page works there; with accounts enabled, only an admin sees it.
 **The page does not create week files.** Same boundary as the CLI: the skeleton
 and the routine items belong to WLB `tools/weekly.py`. A week that does not exist
 yet answers 404 with the path and the reason, which is what the page shows.
+
+**Admin internationalization uses i18next + react-i18next.** The console is a
+Vite/React SPA with no server rendering, so the language switch must be wholly
+client-side and instant. `react-intl` is a credible alternative, but its
+message-descriptor layer and ICU compilation add ceremony for a UI whose copy is
+mostly plain labels; `i18next` + `react-i18next` is the smaller maintained
+choice and supports the English string itself as the key (`keySeparator: false`).
+That keeps the diff mechanical, makes a missing translation fall back to the
+source copy instead of a key name, and needs no extraction build step. The
+trade-off is weaker compile-time checking, so `npm run check:i18n` scans every
+static `tr('…')` call against `zh-CN.json` and the build fails on a gap. The
+choice of Chinese as the first translation follows the owner's language; the
+supported list is explicit, not inferred from the request.

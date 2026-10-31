@@ -9,6 +9,7 @@ import type {
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { formatDateTime, formatElapsed } from '../lib/format';
 import { useApi } from '../lib/hooks';
 import { taskRunStatus } from '../lib/status';
@@ -46,8 +47,10 @@ export function TasksPage() {
             <>
               <ErrorBlock error={result.error} onRetry={result.reload} />
               <div className="alert alert-secondary" role="note">
-                The console reads scheduled tasks through the Winnie API. They are only
-                available when <code>assistant.enabled</code> is true in
+                {tr(
+                  'The console reads scheduled tasks through the Winnie API. They are only available when',
+                )}{' '}
+                <code>assistant.enabled</code> {tr('is true in')}{' '}
                 <code> apps/api/config.yaml</code>.
               </div>
             </>
@@ -56,8 +59,11 @@ export function TasksPage() {
               {schedulerRunning === false ? (
                 <div className="alert alert-warning" role="alert">
                   <i className="bi bi-pause-circle-fill me-2" aria-hidden="true" />
-                  The scheduler is disabled (<code>assistant.tasks.enabled: false</code>).
-                  The definitions below are readable, but none of them will fire.
+                  {tr('The scheduler is disabled (')}
+                  <code>assistant.tasks.enabled: false</code>
+                  {tr(
+                    '). The definitions below are readable, but none of them will fire.',
+                  )}
                 </div>
               ) : null}
 
@@ -65,9 +71,15 @@ export function TasksPage() {
                 <div className="alert alert-warning" role="alert">
                   <p className="mb-1">
                     <strong>
-                      {errors.length} task definition{errors.length === 1 ? '' : 's'} ignored.
+                      {errors.length === 1
+                        ? tr('{{count}} task definition ignored.', {
+                            count: errors.length,
+                          })
+                        : tr('{{count}} task definitions ignored.', {
+                            count: errors.length,
+                          })}
                     </strong>{' '}
-                    The scheduler cannot use these entries.
+                    {tr('The scheduler cannot use these entries.')}
                   </p>
                   <ul className="mb-0 small">
                     {errors.map((error) => (
@@ -82,11 +94,14 @@ export function TasksPage() {
                   <div className="small-box text-bg-primary">
                     <div className="inner">
                       <h3>{tasks.length}</h3>
-                      <p>Scheduled tasks</p>
+                      <p>{tr('Scheduled tasks')}</p>
                     </div>
                     <i className="small-box-icon bi bi-alarm" aria-hidden="true" />
                     <span className="small-box-footer">
-                      {active} active · {tasks.length - active} paused
+                      {tr('{{active}} active · {{paused}} paused', {
+                        active,
+                        paused: tasks.length - active,
+                      })}
                     </span>
                   </div>
                 </div>
@@ -97,13 +112,13 @@ export function TasksPage() {
                   >
                     <div className="inner">
                       <h3>{failing}</h3>
-                      <p>Last run failed</p>
+                      <p>{tr('Last run failed')}</p>
                     </div>
                     <i className="small-box-icon bi bi-exclamation-octagon" aria-hidden="true" />
                     <span className="small-box-footer">
                       {failing > 0
-                        ? 'Open the task row for the recorded error'
-                        : 'Every last run succeeded'}
+                        ? tr('Open the task row for the recorded error')
+                        : tr('Every last run succeeded')}
                     </span>
                   </div>
                 </div>
@@ -119,16 +134,16 @@ export function TasksPage() {
                     }`}
                   >
                     <div className="inner">
-                      <h3>{schedulerRunning === null ? '—' : schedulerRunning ? 'On' : 'Off'}</h3>
-                      <p>Scheduler</p>
+                      <h3>{schedulerRunning === null ? '—' : schedulerRunning ? tr('On') : tr('Off')}</h3>
+                      <p>{tr('Scheduler')}</p>
                     </div>
                     <i className="small-box-icon bi bi-clock-history" aria-hidden="true" />
                     <span className="small-box-footer">
                       {schedulerRunning === null
-                        ? 'Scheduler status unavailable'
+                        ? tr('Scheduler status unavailable')
                         : schedulerRunning
-                          ? 'Runs on the API process'
-                          : 'Disabled in configuration'}
+                          ? tr('Runs on the API process')
+                          : tr('Disabled in configuration')}
                     </span>
                   </div>
                 </div>
@@ -141,11 +156,13 @@ export function TasksPage() {
                   >
                     <div className="inner">
                       <h3>{errors.length}</h3>
-                      <p>Ignored definitions</p>
+                      <p>{tr('Ignored definitions')}</p>
                     </div>
                     <i className="small-box-icon bi bi-file-earmark-x" aria-hidden="true" />
                     <span className="small-box-footer">
-                      {errors.length > 0 ? 'Fix the entries listed above' : 'All entries are valid'}
+                      {errors.length > 0
+                        ? tr('Fix the entries listed above')
+                        : tr('All entries are valid')}
                     </span>
                   </div>
                 </div>
@@ -153,7 +170,7 @@ export function TasksPage() {
 
               <div className="card">
                 <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                  <h3 className="card-title mb-0">Tasks</h3>
+                  <h3 className="card-title mb-0">{tr('Tasks')}</h3>
                   <div className="ms-auto">
                     <button
                       type="button"
@@ -161,7 +178,7 @@ export function TasksPage() {
                       onClick={result.reload}
                     >
                       <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                      Refresh
+                      {tr('Refresh')}
                     </button>
                   </div>
                 </div>
@@ -176,12 +193,12 @@ export function TasksPage() {
                       <table className="table table-striped align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Task</th>
-                            <th scope="col">Schedule</th>
-                            <th scope="col">State</th>
-                            <th scope="col">Next run</th>
-                            <th scope="col">Last run</th>
-                            <th scope="col">Last result</th>
+                            <th scope="col">{tr('Task')}</th>
+                            <th scope="col">{tr('Schedule')}</th>
+                            <th scope="col">{tr('State')}</th>
+                            <th scope="col">{tr('Next run')}</th>
+                            <th scope="col">{tr('Last run')}</th>
+                            <th scope="col">{tr('Last result')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -194,15 +211,15 @@ export function TasksPage() {
                                   <code className="small text-secondary">{task.id}</code>
                                   <details className="mt-1">
                                     <summary className="small text-secondary">
-                                      Prompt and delivery
+                                      {tr('Prompt and delivery')}
                                     </summary>
                                     <pre className="small mt-2 mb-1 text-wrap">{task.prompt}</pre>
                                     <div className="small text-secondary text-break">
-                                      Webhook:{' '}
+                                      {tr('Webhook')}:{' '}
                                       {task.webhook ? (
                                         <code>{task.webhook}</code>
                                       ) : (
-                                        'none (stored conversation only)'
+                                        tr('none (stored conversation only)')
                                       )}
                                     </div>
                                   </details>
@@ -212,9 +229,9 @@ export function TasksPage() {
                                 </td>
                                 <td className="text-nowrap">
                                   {task.enabled ? (
-                                    <span className="badge text-bg-success">Active</span>
+                                    <span className="badge text-bg-success">{tr('Active')}</span>
                                   ) : (
-                                    <span className="badge text-bg-secondary">Paused</span>
+                                    <span className="badge text-bg-secondary">{tr('Paused')}</span>
                                   )}
                                 </td>
                                 <td className="text-nowrap">{formatDateTime(task.next_run)}</td>
@@ -237,14 +254,15 @@ export function TasksPage() {
                 </div>
 
                 <div className="card-footer small text-secondary">
-                  Times are shown in the assistant&apos;s timezone
+                  {tr("Times are shown in the assistant's timezone")}
                   {loaded.status ? (
                     <>
                       , <code>{loaded.status.timezone}</code>
                     </>
                   ) : null}
-                  . Tasks are created and cancelled by chatting with the assistant; this page is
-                  read-only. The execution history is below; the raw append-only log stays in
+                  {tr(
+                    '. Tasks are created and cancelled by chatting with the assistant; this page is read-only. The execution history is below; the raw append-only log stays in',
+                  )}
                   <code> tasks/runs.jsonl</code>.
                 </div>
               </div>
@@ -284,10 +302,10 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
   return (
     <div className="card mt-3">
       <div className="card-header d-flex flex-wrap align-items-center gap-2">
-        <h3 className="card-title mb-0">Run history</h3>
+        <h3 className="card-title mb-0">{tr('Run history')}</h3>
         <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
           <label className="visually-hidden" htmlFor="run-task-filter">
-            Filter runs by task
+            {tr('Filter runs by task')}
           </label>
           <select
             id="run-task-filter"
@@ -299,7 +317,7 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
               setOffset(0);
             }}
           >
-            <option value="">All tasks</option>
+            <option value="">{tr('All tasks')}</option>
             {tasks.map((task) => (
               <option key={task.id} value={task.id}>
                 {task.title}
@@ -312,7 +330,7 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
             onClick={result.reload}
           >
             <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-            Refresh
+            {tr('Refresh')}
           </button>
         </div>
       </div>
@@ -321,7 +339,7 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
         {result.status === 'loading' ? (
           <div className="p-4 text-center" role="status" aria-live="polite">
             <div className="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
-            <span className="ms-2 text-secondary">Loading run history…</span>
+            <span className="ms-2 text-secondary">{tr('Loading run history…')}</span>
           </div>
         ) : result.status === 'error' ? (
           <div className="p-3">
@@ -342,12 +360,12 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
             <table className="table table-striped align-middle mb-0">
               <thead>
                 <tr>
-                  <th scope="col">Started</th>
-                  <th scope="col">Task</th>
-                  <th scope="col">Result</th>
-                  <th scope="col">Duration</th>
-                  <th scope="col">Conversation</th>
-                  <th scope="col">Details</th>
+                  <th scope="col">{tr('Started')}</th>
+                  <th scope="col">{tr('Task')}</th>
+                  <th scope="col">{tr('Result')}</th>
+                  <th scope="col">{tr('Duration')}</th>
+                  <th scope="col">{tr('Conversation')}</th>
+                  <th scope="col">{tr('Details')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -377,7 +395,7 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
                         ) : null}
                         {run.delivery_error ? (
                           <div className="small text-warning-emphasis text-break">
-                            Delivery: {run.delivery_error}
+                            {tr('Delivery: {{error}}', { error: run.delivery_error })}
                           </div>
                         ) : null}
                         {!run.error && !run.delivery_error ? (
@@ -395,23 +413,46 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
 
       <div className="card-footer d-flex flex-wrap align-items-center gap-2 small text-secondary">
         <span>
-          {data
-            ? `Showing ${first}–${last} of ${data.total} run${data.total === 1 ? '' : 's'} · newest first`
-            : 'Run history'}
-          {data && data.skipped > 0
-            ? ` · ${data.skipped} unreadable line${data.skipped === 1 ? '' : 's'} skipped`
-            : ''}
+          {data ? (
+            data.total === 1 ? (
+              tr('Showing {{first}}–{{last}} of {{total}} run · newest first', {
+                first,
+                last,
+                total: data.total,
+              })
+            ) : (
+              tr('Showing {{first}}–{{last}} of {{total}} runs · newest first', {
+                first,
+                last,
+                total: data.total,
+              })
+            )
+          ) : (
+            tr('Run history')
+          )}
+          {data && data.skipped > 0 ? (
+            <>
+              {' · '}
+              {data.skipped === 1
+                ? tr('{{count}} unreadable line skipped', {
+                    count: data.skipped,
+                  })
+                : tr('{{count}} unreadable lines skipped', {
+                    count: data.skipped,
+                  })}
+            </>
+          ) : null}
           {data ? (
             <>
               {' '}
-              · raw log <code>tasks/runs.jsonl</code>
+              · {tr('raw log')} <code>tasks/runs.jsonl</code>
             </>
           ) : null}
         </span>
         <div
           className="ms-auto btn-group btn-group-sm"
           role="group"
-          aria-label="Run history pages"
+          aria-label={tr('Run history pages')}
         >
           <button
             type="button"
@@ -419,7 +460,7 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
             disabled={!hasNewer}
             onClick={() => setOffset(Math.max(0, offset - RUN_PAGE_SIZE))}
           >
-            Newer
+            {tr('Newer')}
           </button>
           <button
             type="button"
@@ -427,7 +468,7 @@ function RunHistory({ tasks }: { tasks: AssistantTask[] }) {
             disabled={!hasOlder}
             onClick={() => setOffset(offset + RUN_PAGE_SIZE)}
           >
-            Older
+            {tr('Older')}
           </button>
         </div>
       </div>

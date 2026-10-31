@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { tr } from '../i18n';
 import { PageHeader } from '../components/PageHeader';
 import { formatDateTime } from '../lib/format';
 
@@ -13,7 +14,7 @@ function messageOf(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
-  return 'The request failed.';
+  return tr('The request failed.');
 }
 
 export function AccountPage() {
@@ -30,15 +31,15 @@ export function AccountPage() {
     event.preventDefault();
 
     if (newPassword.length < 8) {
-      setError('The new password must be at least 8 characters.');
+      setError(tr('The new password must be at least 8 characters.'));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('The new passwords do not match.');
+      setError(tr('The new passwords do not match.'));
       return;
     }
     if (newPassword === currentPassword) {
-      setError('The new password must differ from the current password.');
+      setError(tr('The new password must differ from the current password.'));
       return;
     }
 
@@ -51,7 +52,7 @@ export function AccountPage() {
       navigate('/login', { replace: true });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
-        setError('The current password is incorrect.');
+        setError(tr('The current password is incorrect.'));
       } else {
         setError(messageOf(caught));
       }
@@ -74,30 +75,30 @@ export function AccountPage() {
             <div className="col-lg-5">
               <div className="card mb-4">
                 <div className="card-header">
-                  <h3 className="card-title">Profile</h3>
+                  <h3 className="card-title">{tr('Profile')}</h3>
                 </div>
                 <div className="card-body">
                   <dl className="row mb-0">
-                    <dt className="col-5 text-secondary fw-normal">Username</dt>
+                    <dt className="col-5 text-secondary fw-normal">{tr('Username')}</dt>
                     <dd className="col-7 text-end font-monospace">{user?.username}</dd>
 
-                    <dt className="col-5 text-secondary fw-normal">Display name</dt>
+                    <dt className="col-5 text-secondary fw-normal">{tr('Display name')}</dt>
                     <dd className="col-7 text-end">{user?.display_name || '—'}</dd>
 
-                    <dt className="col-5 text-secondary fw-normal">Member since</dt>
+                    <dt className="col-5 text-secondary fw-normal">{tr('Member since')}</dt>
                     <dd className="col-7 text-end">{formatDateTime(user?.created_at ?? null)}</dd>
 
-                    <dt className="col-5 text-secondary fw-normal">Session expires</dt>
+                    <dt className="col-5 text-secondary fw-normal">{tr('Session expires')}</dt>
                     <dd className="col-7 text-end">{formatDateTime(expiresAt)}</dd>
 
-                    <dt className="col-5 text-secondary fw-normal">User ID</dt>
+                    <dt className="col-5 text-secondary fw-normal">{tr('User ID')}</dt>
                     <dd className="col-7 text-end font-monospace text-break">{user?.id}</dd>
                   </dl>
                 </div>
                 <div className="card-footer">
                   <button type="button" className="btn btn-outline-secondary btn-sm" onClick={handleLogout}>
                     <i className="bi bi-box-arrow-right me-1" aria-hidden="true" />
-                    Sign out
+                    {tr('Sign out')}
                   </button>
                 </div>
               </div>
@@ -106,7 +107,7 @@ export function AccountPage() {
             <div className="col-lg-7">
               <div className="card mb-4">
                 <div className="card-header">
-                  <h3 className="card-title">Change password</h3>
+                  <h3 className="card-title">{tr('Change password')}</h3>
                 </div>
                 <form onSubmit={handleSubmit}>
                   <div className="card-body">
@@ -118,7 +119,7 @@ export function AccountPage() {
 
                     <div className="mb-3">
                       <label className="form-label" htmlFor="current-password">
-                        Current password
+                        {tr('Current password')}
                       </label>
                       <input
                         id="current-password"
@@ -134,7 +135,7 @@ export function AccountPage() {
 
                     <div className="mb-3">
                       <label className="form-label" htmlFor="new-password">
-                        New password
+                        {tr('New password')}
                       </label>
                       <input
                         id="new-password"
@@ -147,12 +148,12 @@ export function AccountPage() {
                         disabled={submitting}
                         required
                       />
-                      <div className="form-text">At least 8 characters.</div>
+                      <div className="form-text">{tr('At least 8 characters.')}</div>
                     </div>
 
                     <div className="mb-0">
                       <label className="form-label" htmlFor="confirm-password">
-                        Confirm new password
+                        {tr('Confirm new password')}
                       </label>
                       <input
                         id="confirm-password"
@@ -170,7 +171,7 @@ export function AccountPage() {
                   <div className="card-footer">
                     <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
                       <span className="small text-secondary">
-                        Changing the password signs out every session, including this one.
+                        {tr('Changing the password signs out every session, including this one.')}
                       </span>
                       <button type="submit" className="btn btn-primary" disabled={submitting}>
                         {submitting ? (
@@ -179,10 +180,10 @@ export function AccountPage() {
                               className="spinner-border spinner-border-sm me-1"
                               aria-hidden="true"
                             />
-                            Updating…
+                            {tr('Updating…')}
                           </>
                         ) : (
-                          'Change password'
+                          tr('Change password')
                         )}
                       </button>
                     </div>

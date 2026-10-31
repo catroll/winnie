@@ -17,6 +17,7 @@ import type {
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { formatDateTime, formatDuration } from '../lib/format';
 import { useApi } from '../lib/hooks';
 
@@ -113,12 +114,12 @@ function emptyMessage(tab: TabKey): string {
 }
 
 function staleLabel(minutes: number | null): string {
-  if (minutes === null) return 'never synced';
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes === null) return tr('never synced');
+  if (minutes < 1) return tr('just now');
+  if (minutes < 60) return tr('{{count}} min ago', { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return `${Math.floor(hours / 24)} d ago`;
+  if (hours < 24) return tr('{{hours}} h ago', { hours });
+  return tr('{{days}} d ago', { days: Math.floor(hours / 24) });
 }
 
 function snippet(text: string, limit = 160): string {
@@ -145,7 +146,7 @@ function commandDevices(summary: PhoneSummary | null): Record<string, string> {
   const names: Record<string, string> = {};
   for (const entry of summary?.devices ?? []) {
     names[entry.device.id] =
-      entry.device.name || entry.device.model || 'Android phone';
+      entry.device.name || entry.device.model || tr('Android phone');
   }
   return names;
 }
@@ -256,7 +257,7 @@ export function PhonePage() {
     } catch (error) {
       setNotice({
         kind: 'danger',
-        text: error instanceof Error ? error.message : 'The action failed.',
+        text: error instanceof Error ? error.message : tr('The action failed.'),
       });
     } finally {
       setBusy(false);
@@ -264,36 +265,44 @@ export function PhonePage() {
   };
 
   const wipeDevice = (device: PhoneDevice) => {
-    const name = device.name || device.model || 'this phone';
+    const name = device.name || device.model || tr('this phone');
     if (
       !window.confirm(
-        `Delete every synced record for ${name}?\n\n` +
-          'The phone stays registered, and its next sync uploads the selected scopes again.',
+        tr(
+          'Delete every synced record for {{name}}?\n\nThe phone stays registered, and its next sync uploads the selected scopes again.',
+          { name },
+        ),
       )
     ) {
       return;
     }
-    void runAction(`Deleted the server copies for ${name}.`, () =>
+    void runAction(tr('Deleted the server copies for {{name}}.', { name }), () =>
       api.wipePhoneDevice(device.id),
     );
   };
 
   const revokeDevice = (device: PhoneDevice) => {
-    const name = device.name || device.model || 'this phone';
+    const name = device.name || device.model || tr('this phone');
     if (
       !window.confirm(
-        `Revoke ${name}?\n\nThe phone is refused at registration and cannot sync ` +
-          'until you restore it.',
+        tr(
+          'Revoke {{name}}?\n\nThe phone is refused at registration and cannot sync until you restore it.',
+          { name },
+        ),
       )
     ) {
       return;
     }
-    void runAction(`Revoked ${name}.`, () => api.revokePhoneDevice(device.id));
+    void runAction(tr('Revoked {{name}}.', { name }), () =>
+      api.revokePhoneDevice(device.id),
+    );
   };
 
   const restoreDevice = (device: PhoneDevice) => {
-    const name = device.name || device.model || 'this phone';
-    void runAction(`Restored ${name}.`, () => api.restorePhoneDevice(device.id));
+    const name = device.name || device.model || tr('this phone');
+    void runAction(tr('Restored {{name}}.', { name }), () =>
+      api.restorePhoneDevice(device.id),
+    );
   };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -320,7 +329,7 @@ export function PhonePage() {
               <button
                 type="button"
                 className="btn-close"
-                aria-label="Dismiss"
+                aria-label={tr('Dismiss')}
                 onClick={() => setNotice(null)}
               />
             </div>
@@ -328,7 +337,7 @@ export function PhonePage() {
 
           <div className="card">
             <div className="card-header">
-              <h3 className="card-title">Devices</h3>
+              <h3 className="card-title">{tr('Devices')}</h3>
               <div className="card-tools">
                 <button
                   type="button"
@@ -337,7 +346,7 @@ export function PhonePage() {
                   disabled={summary.status === 'loading'}
                 >
                   <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                  Refresh
+                  {tr('Refresh')}
                 </button>
               </div>
             </div>
@@ -363,8 +372,13 @@ export function PhonePage() {
                     ))}
                   </div>
                   <p className="small text-secondary mb-0 mt-3">
-                    Last sync overall {staleLabel(summaryData?.stale_minutes ?? null)} ·{' '}
-                    {summaryData?.pending_commands ?? 0} pending assistant action(s)
+                    {tr(
+                      'Last sync overall {{when}} · {{count}} pending assistant action(s)',
+                      {
+                        when: staleLabel(summaryData?.stale_minutes ?? null),
+                        count: summaryData?.pending_commands ?? 0,
+                      },
+                    )}
                   </p>
                 </>
               )}
@@ -375,26 +389,28 @@ export function PhonePage() {
             <div className="card-header">
               <h3 className="card-title">
                 <i className="bi bi-search me-1" aria-hidden="true" />
-                Search across everything
+                {tr('Search across everything')}
               </h3>
             </div>
             <div className="card-body">
               <form className="row g-2 align-items-end" onSubmit={submitSearch}>
                 <div className="col-12 col-md-8">
                   <label className="form-label small mb-1" htmlFor="phone-search">
-                    Text
+                    {tr('Text')}
                   </label>
                   <input
                     id="phone-search"
                     className="form-control form-control-sm"
-                    placeholder="A name, a number, words from a message, a title…"
+                    placeholder={tr(
+                      'A name, a number, words from a message, a title…',
+                    )}
                     value={searchInput}
                     onChange={(event) => setSearchInput(event.target.value)}
                   />
                 </div>
                 <div className="col-auto">
                   <button type="submit" className="btn btn-sm btn-primary">
-                    Search
+                    {tr('Search')}
                   </button>
                   {searchQuery ? (
                     <button
@@ -405,7 +421,7 @@ export function PhonePage() {
                         setSearchQuery('');
                       }}
                     >
-                      Clear
+                      {tr('Clear')}
                     </button>
                   ) : null}
                 </div>
@@ -413,25 +429,25 @@ export function PhonePage() {
 
               {searchQuery ? (
                 search.status === 'loading' ? (
-                  <p className="small text-secondary mb-0 mt-3">Searching…</p>
+                  <p className="small text-secondary mb-0 mt-3">{tr('Searching…')}</p>
                 ) : search.status === 'error' ? (
                   <div className="mt-3">
                     <ErrorBlock error={search.error} onRetry={search.reload} />
                   </div>
                 ) : search.data.hits.length === 0 ? (
                   <p className="small text-secondary mb-0 mt-3">
-                    Nothing matched “{searchQuery}”.
+                    {tr('Nothing matched “{{query}}”.', { query: searchQuery })}
                   </p>
                 ) : (
                   <div className="table-responsive mt-3">
                     <table className="table table-sm table-striped align-middle mb-0">
                       <thead>
                         <tr>
-                          <th scope="col">Kind</th>
-                          <th scope="col">When</th>
-                          <th scope="col">Record</th>
-                          <th scope="col">Text</th>
-                          <th scope="col">Device</th>
+                          <th scope="col">{tr('Kind')}</th>
+                          <th scope="col">{tr('When')}</th>
+                          <th scope="col">{tr('Record')}</th>
+                          <th scope="col">{tr('Text')}</th>
+                          <th scope="col">{tr('Device')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -461,8 +477,9 @@ export function PhonePage() {
                 )
               ) : (
                 <p className="small text-secondary mb-0 mt-2">
-                  Searches calendar, calls, SMS, contacts, notifications, location and apps
-                  in one query.
+                  {tr(
+                    'Searches calendar, calls, SMS, contacts, notifications, location and apps in one query.',
+                  )}
                 </p>
               )}
             </div>
@@ -477,7 +494,7 @@ export function PhonePage() {
                   onClick={() => setTab(item.key)}
                 >
                   <i className={`bi ${item.icon} me-1`} aria-hidden="true" />
-                  {item.label}
+                  {tr(item.label)}
                 </button>
               </li>
             ))}
@@ -485,7 +502,7 @@ export function PhonePage() {
 
           <div className="card card-outline card-primary">
             <div className="card-header">
-              <h3 className="card-title">{activeTab.label}</h3>
+              <h3 className="card-title">{tr(activeTab.label)}</h3>
               <div className="card-tools">
                 <button
                   type="button"
@@ -494,7 +511,7 @@ export function PhonePage() {
                   disabled={rows.status === 'loading'}
                 >
                   <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                  Refresh
+                  {tr('Refresh')}
                 </button>
               </div>
             </div>
@@ -504,7 +521,7 @@ export function PhonePage() {
                 {isTimeBased(tab) ? (
                   <div className="col-auto">
                     <label className="form-label small mb-1" htmlFor="phone-window">
-                      Window
+                      {tr('Window')}
                     </label>
                     <select
                       id="phone-window"
@@ -512,12 +529,12 @@ export function PhonePage() {
                       value={days}
                       onChange={(event) => setDays(Number(event.target.value))}
                     >
-                      <option value={1}>Last 24 hours</option>
-                      <option value={7}>Last 7 days</option>
-                      <option value={30}>Last 30 days</option>
-                      <option value={90}>Last 90 days</option>
-                      <option value={365}>Last year</option>
-                      <option value={0}>All time</option>
+                      <option value={1}>{tr('Last 24 hours')}</option>
+                      <option value={7}>{tr('Last 7 days')}</option>
+                      <option value={30}>{tr('Last 30 days')}</option>
+                      <option value={90}>{tr('Last 90 days')}</option>
+                      <option value={365}>{tr('Last year')}</option>
+                      <option value={0}>{tr('All time')}</option>
                     </select>
                   </div>
                 ) : null}
@@ -525,7 +542,7 @@ export function PhonePage() {
                 {tab === 'call' ? (
                   <div className="col-auto">
                     <label className="form-label small mb-1" htmlFor="phone-direction">
-                      Direction
+                      {tr('Direction')}
                     </label>
                     <select
                       id="phone-direction"
@@ -533,13 +550,13 @@ export function PhonePage() {
                       value={direction}
                       onChange={(event) => setDirection(event.target.value)}
                     >
-                      <option value="">Any</option>
-                      <option value="incoming">Incoming</option>
-                      <option value="outgoing">Outgoing</option>
-                      <option value="missed">Missed</option>
-                      <option value="rejected">Rejected</option>
-                      <option value="blocked">Blocked</option>
-                      <option value="voicemail">Voicemail</option>
+                      <option value="">{tr('Any')}</option>
+                      <option value="incoming">{tr('Incoming')}</option>
+                      <option value="outgoing">{tr('Outgoing')}</option>
+                      <option value="missed">{tr('Missed')}</option>
+                      <option value="rejected">{tr('Rejected')}</option>
+                      <option value="blocked">{tr('Blocked')}</option>
+                      <option value="voicemail">{tr('Voicemail')}</option>
                     </select>
                   </div>
                 ) : null}
@@ -548,14 +565,14 @@ export function PhonePage() {
                   <div className="col-12 col-md">
                     <label className="form-label small mb-1" htmlFor="phone-filter">
                       {tab === 'message'
-                        ? 'Number or text'
+                        ? tr('Number or text')
                         : tab === 'notification'
-                          ? 'App or text'
+                          ? tr('App or text')
                           : tab === 'contact'
-                            ? 'Name or organisation'
+                            ? tr('Name or organisation')
                             : tab === 'app'
-                              ? 'Label or package'
-                              : 'Title, number or text'}
+                              ? tr('Label or package')
+                              : tr('Title, number or text')}
                     </label>
                     <form className="input-group input-group-sm" onSubmit={submitFilter}>
                       <input
@@ -563,10 +580,10 @@ export function PhonePage() {
                         className="form-control"
                         value={queryInput}
                         onChange={(event) => setQueryInput(event.target.value)}
-                        placeholder="Optional filter"
+                        placeholder={tr('Optional filter')}
                       />
                       <button type="submit" className="btn btn-outline-secondary">
-                        Apply
+                        {tr('Apply')}
                       </button>
                     </form>
                   </div>
@@ -583,7 +600,7 @@ export function PhonePage() {
                         onChange={(event) => setUnreadOnly(event.target.checked)}
                       />
                       <label className="form-check-label small" htmlFor="phone-unread">
-                        Unread only
+                        {tr('Unread only')}
                       </label>
                     </div>
                   </div>
@@ -592,7 +609,7 @@ export function PhonePage() {
                 {tab === 'command' ? (
                   <div className="col-auto">
                     <label className="form-label small mb-1" htmlFor="phone-command-status">
-                      Status
+                      {tr('Status')}
                     </label>
                     <select
                       id="phone-command-status"
@@ -600,7 +617,7 @@ export function PhonePage() {
                       value={commandStatus}
                       onChange={(event) => setCommandStatus(event.target.value)}
                     >
-                      <option value="">Any</option>
+                      <option value="">{tr('Any')}</option>
                       {COMMAND_STATUSES.map((status) => (
                         <option key={status} value={status}>
                           {status}
@@ -612,7 +629,7 @@ export function PhonePage() {
 
                 <div className="col-auto">
                   <label className="form-label small mb-1" htmlFor="phone-device">
-                    Device
+                    {tr('Device')}
                   </label>
                   <select
                     id="phone-device"
@@ -621,7 +638,7 @@ export function PhonePage() {
                     onChange={(event) => setDeviceId(event.target.value)}
                     disabled={tab === 'command'}
                   >
-                    <option value="all">All devices</option>
+                    <option value="all">{tr('All devices')}</option>
                     {devices.map((entry) => (
                       <option key={entry.device.id} value={entry.device.id}>
                         {entry.device.name || entry.device.model || entry.device.id.slice(0, 8)}
@@ -632,7 +649,7 @@ export function PhonePage() {
 
                 <div className="col-auto">
                   <label className="form-label small mb-1" htmlFor="phone-limit">
-                    Limit
+                    {tr('Limit')}
                   </label>
                   <select
                     id="phone-limit"
@@ -652,7 +669,11 @@ export function PhonePage() {
             <div className="card-body p-0">
               {rows.status === 'loading' ? (
                 <div className="p-3">
-                  <LoadingBlock label={`Loading ${activeTab.label.toLowerCase()}…`} />
+                  <LoadingBlock
+                    label={tr('Loading {{what}}…', {
+                      what: tr(activeTab.label).toLowerCase(),
+                    })}
+                  />
                 </div>
               ) : rows.status === 'error' ? (
                 <div className="p-3">
@@ -667,7 +688,10 @@ export function PhonePage() {
 
             <div className="card-footer small text-secondary">
               {rows.status === 'success'
-                ? `${rows.data.items.length} record(s) · newest first · the server returns ${limit} at most per request`
+                ? tr(
+                    '{{count}} record(s) · newest first · the server returns {{limit}} at most per request',
+                    { count: rows.data.items.length, limit },
+                  )
                 : ' '}
             </div>
           </div>
@@ -691,7 +715,7 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
   const network = infoText(device, 'network');
   const storage = formatBytes(device.info['storage_free_bytes']);
   const charging = infoText(device, 'battery_charging') === 'yes';
-  const label = device.name || device.model || 'Android phone';
+  const label = device.name || device.model || tr('Android phone');
 
   return (
     <div className="col-12 col-xl-6">
@@ -699,26 +723,38 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
         <div className="card-header d-flex flex-wrap align-items-center gap-2">
           <h3 className="card-title mb-0">{label}</h3>
           {device.revoked ? (
-            <span className="badge text-bg-danger">Revoked</span>
+            <span className="badge text-bg-danger">{tr('Revoked')}</span>
           ) : (
-            <span className="badge text-bg-success">Active</span>
+            <span className="badge text-bg-success">{tr('Active')}</span>
           )}
         </div>
         <div className="card-body">
           <div className="small text-secondary">
             {[device.manufacturer, device.model].filter(Boolean).join(' ') || device.platform}
-            {device.os_version ? ` · Android ${device.os_version}` : ''}
-            {device.app_version ? ` · app ${device.app_version}` : ''}
+            {device.os_version ? (
+              <>
+                {' · '}
+                {tr('Android {{version}}', { version: device.os_version })}
+              </>
+            ) : null}
+            {device.app_version ? (
+              <>
+                {' · '}
+                {tr('app {{version}}', { version: device.app_version })}
+              </>
+            ) : null}
           </div>
           <div className="small text-secondary">
-            Last sync: {formatDateTime(device.last_sync_at)} · seen{' '}
-            {formatDateTime(device.last_seen_at)}
+            {tr('Last sync: {{sync}} · seen {{seen}}', {
+              sync: formatDateTime(device.last_sync_at),
+              seen: formatDateTime(device.last_seen_at),
+            })}
           </div>
 
           <div className="mt-2">
-            <span className="small text-secondary me-1">Scopes:</span>
+            <span className="small text-secondary me-1">{tr('Scopes:')}</span>
             {device.scopes.length === 0 ? (
-              <span className="small text-secondary">none</span>
+              <span className="small text-secondary">{tr('none')}</span>
             ) : (
               device.scopes.map((scope) => (
                 <span key={scope} className="badge text-bg-info me-1">
@@ -729,7 +765,7 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
           </div>
 
           <div className="mt-2">
-            <span className="small text-secondary me-1">Records:</span>
+            <span className="small text-secondary me-1">{tr('Records:')}</span>
             {counts.map((count) => (
               <span key={count.kind} className="badge text-bg-light me-1">
                 {count.kind} {count.count}
@@ -739,12 +775,17 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
 
           <div className="small text-secondary mt-2">
             {[
-              battery ? `battery ${battery}%${charging ? ' (charging)' : ''}` : '',
-              network ? `network ${network}` : '',
-              storage ? `storage ${storage} free` : '',
+              battery
+                ? tr('battery {{percent}}%{{charging}}', {
+                    percent: battery,
+                    charging: charging ? tr(' (charging)') : '',
+                  })
+                : '',
+              network ? tr('network {{network}}', { network }) : '',
+              storage ? tr('storage {{size}} free', { size: storage }) : '',
             ]
               .filter(Boolean)
-              .join(' · ') || 'No device details beyond the model.'}
+              .join(' · ') || tr('No device details beyond the model.')}
           </div>
 
           {device.states.some((state) => state.last_error) ? (
@@ -764,7 +805,7 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
               onClick={onRestore}
               disabled={busy}
             >
-              Restore
+              {tr('Restore')}
             </button>
           ) : (
             <button
@@ -773,7 +814,7 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
               onClick={onRevoke}
               disabled={busy}
             >
-              Revoke
+              {tr('Revoke')}
             </button>
           )}
           <button
@@ -783,7 +824,7 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
             disabled={busy}
           >
             <i className="bi bi-trash me-1" aria-hidden="true" />
-            Delete server data
+            {tr('Delete server data')}
           </button>
         </div>
       </div>
@@ -804,11 +845,11 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">When</th>
-                <th scope="col">Event</th>
-                <th scope="col">Calendar</th>
-                <th scope="col">Location</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('When')}</th>
+                <th scope="col">{tr('Event')}</th>
+                <th scope="col">{tr('Calendar')}</th>
+                <th scope="col">{tr('Location')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
@@ -817,18 +858,22 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                   <td className="text-nowrap">
                     {formatDateTime(event.starts_at)}
                     <div className="small text-secondary">
-                      {event.all_day ? 'All day' : `to ${formatDateTime(event.ends_at)}`}
+                      {event.all_day
+                        ? tr('All day')
+                        : tr('to {{date}}', {
+                            date: formatDateTime(event.ends_at),
+                          })}
                     </div>
                   </td>
                   <td>
-                    <div className="fw-semibold">{event.title || '(untitled)'}</div>
+                    <div className="fw-semibold">{event.title || tr('(untitled)')}</div>
                     {event.description ? (
                       <div className="small text-secondary">
                         {snippet(event.description)}
                       </div>
                     ) : null}
                     <div className="small text-secondary font-monospace">
-                      id {event.id}
+                      {tr('id {{id}}', { id: event.id })}
                       {event.recurrence ? ` · ${event.recurrence}` : ''}
                     </div>
                   </td>
@@ -847,11 +892,11 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">When</th>
-                <th scope="col">Direction</th>
-                <th scope="col">Who</th>
-                <th scope="col">Duration</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('When')}</th>
+                <th scope="col">{tr('Direction')}</th>
+                <th scope="col">{tr('Who')}</th>
+                <th scope="col">{tr('Duration')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
@@ -871,11 +916,11 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                       {call.direction}
                     </span>
                     {call.is_new ? (
-                      <span className="badge text-bg-info ms-1">new</span>
+                      <span className="badge text-bg-info ms-1">{tr('new')}</span>
                     ) : null}
                   </td>
                   <td>
-                    <div>{call.cached_name || call.number || 'unknown'}</div>
+                    <div>{call.cached_name || call.number || tr('unknown')}</div>
                     {call.cached_name && call.number ? (
                       <div className="small text-secondary font-monospace">{call.number}</div>
                     ) : null}
@@ -896,19 +941,19 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">When</th>
-                <th scope="col">Address</th>
-                <th scope="col">Direction</th>
-                <th scope="col">Message</th>
-                <th scope="col">State</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('When')}</th>
+                <th scope="col">{tr('Address')}</th>
+                <th scope="col">{tr('Direction')}</th>
+                <th scope="col">{tr('Message')}</th>
+                <th scope="col">{tr('State')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((message) => (
                 <tr key={`${message.device_id}-${message.id}`}>
                   <td className="text-nowrap">{formatDateTime(message.received_at)}</td>
-                  <td className="font-monospace">{message.address || 'unknown'}</td>
+                  <td className="font-monospace">{message.address || tr('unknown')}</td>
                   <td>{message.direction}</td>
                   <td>
                     <span
@@ -916,10 +961,12 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                       style={{ maxWidth: '30rem' }}
                       title={message.body}
                     >
-                      {snippet(message.body, 200) || '(empty)'}
+                      {snippet(message.body, 200) || tr('(empty)')}
                     </span>
                     {message.subject ? (
-                      <div className="small text-secondary">subject: {message.subject}</div>
+                      <div className="small text-secondary">
+                        {tr('subject: {{subject}}', { subject: message.subject })}
+                      </div>
                     ) : null}
                   </td>
                   <td>
@@ -928,7 +975,7 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                         message.is_read ? 'text-bg-light' : 'text-bg-warning'
                       }`}
                     >
-                      {message.is_read ? 'read' : 'unread'}
+                      {message.is_read ? tr('read') : tr('unread')}
                     </span>
                   </td>
                   <td className="text-nowrap">{message.device_name}</td>
@@ -944,20 +991,20 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Numbers</th>
-                <th scope="col">Email</th>
-                <th scope="col">Organisation</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('Name')}</th>
+                <th scope="col">{tr('Numbers')}</th>
+                <th scope="col">{tr('Email')}</th>
+                <th scope="col">{tr('Organisation')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((contact) => (
                 <tr key={`${contact.device_id}-${contact.id}`}>
                   <td>
-                    <span className="fw-semibold">{contact.display_name || '(no name)'}</span>
+                    <span className="fw-semibold">{contact.display_name || tr('(no name)')}</span>
                     {contact.starred ? (
-                      <span className="badge text-bg-warning ms-1">starred</span>
+                      <span className="badge text-bg-warning ms-1">{tr('starred')}</span>
                     ) : null}
                   </td>
                   <td className="font-monospace small">
@@ -980,11 +1027,11 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">When</th>
-                <th scope="col">App</th>
-                <th scope="col">Notification</th>
-                <th scope="col">Category</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('When')}</th>
+                <th scope="col">{tr('App')}</th>
+                <th scope="col">{tr('Notification')}</th>
+                <th scope="col">{tr('Category')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
@@ -998,7 +1045,7 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                     </div>
                   </td>
                   <td>
-                    <div className="fw-semibold">{notification.title || '(no title)'}</div>
+                    <div className="fw-semibold">{notification.title || tr('(no title)')}</div>
                     <span
                       className="d-inline-block text-truncate small text-secondary"
                       style={{ maxWidth: '34rem' }}
@@ -1021,11 +1068,11 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">When</th>
-                <th scope="col">Coordinates</th>
-                <th scope="col">Accuracy</th>
-                <th scope="col">Provider</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('When')}</th>
+                <th scope="col">{tr('Coordinates')}</th>
+                <th scope="col">{tr('Accuracy')}</th>
+                <th scope="col">{tr('Provider')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1059,12 +1106,12 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">App</th>
-                <th scope="col">Package</th>
-                <th scope="col">Version</th>
-                <th scope="col">Kind</th>
-                <th scope="col">Updated</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('App')}</th>
+                <th scope="col">{tr('Package')}</th>
+                <th scope="col">{tr('Version')}</th>
+                <th scope="col">{tr('Kind')}</th>
+                <th scope="col">{tr('Updated')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1075,10 +1122,10 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                   <td>{app.version_name || '—'}</td>
                   <td>
                     <span className={`badge ${app.is_system ? 'text-bg-secondary' : 'text-bg-light'}`}>
-                      {app.is_system ? 'system' : 'user'}
+                      {app.is_system ? tr('system') : tr('user')}
                     </span>
                     {app.is_enabled ? null : (
-                      <span className="badge text-bg-warning ms-1">disabled</span>
+                      <span className="badge text-bg-warning ms-1">{tr('disabled')}</span>
                     )}
                   </td>
                   <td className="text-nowrap text-secondary">
@@ -1097,11 +1144,11 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
           <table className="table table-striped table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th scope="col">Created</th>
-                <th scope="col">Action</th>
-                <th scope="col">Status</th>
-                <th scope="col">Result</th>
-                <th scope="col">Device</th>
+                <th scope="col">{tr('Created')}</th>
+                <th scope="col">{tr('Action')}</th>
+                <th scope="col">{tr('Status')}</th>
+                <th scope="col">{tr('Result')}</th>
+                <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1129,10 +1176,16 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                     )}
                     <div className="text-secondary">
                       {command.completed_at
-                        ? `completed ${formatDateTime(command.completed_at)}`
+                        ? tr('completed {{date}}', {
+                            date: formatDateTime(command.completed_at),
+                          })
                         : command.approved_at
-                          ? `approved ${formatDateTime(command.approved_at)}`
-                          : `expires ${formatDateTime(command.expires_at)}`}
+                          ? tr('approved {{date}}', {
+                              date: formatDateTime(command.approved_at),
+                            })
+                          : tr('expires {{date}}', {
+                              date: formatDateTime(command.expires_at),
+                            })}
                     </div>
                   </td>
                   <td className="text-nowrap">{commandDeviceName(command)}</td>

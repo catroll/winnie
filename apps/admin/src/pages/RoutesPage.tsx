@@ -1,6 +1,7 @@
 import { api } from '../api/client';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { useApi } from '../lib/hooks';
 
 export function RoutesPage() {
@@ -13,10 +14,14 @@ export function RoutesPage() {
         <div className="container-fluid">
           <div className="alert alert-info" role="note">
             <i className="bi bi-info-circle-fill me-2" aria-hidden="true" />
-            OpenAI and Anthropic providers managed on <strong>AI providers</strong> appear
-            here as routes; disable or delete one there to remove its path. Winnie never
-            stores vendor API keys: clients pass their own key on every request to the
-            proxy path.
+            {tr('OpenAI and Anthropic providers managed on')}{' '}
+            <strong>{tr('AI providers')}</strong>{' '}
+            {tr(
+              'appear here as routes; disable or delete one there to remove its path.',
+            )}{' '}
+            {tr(
+              'Winnie never stores vendor API keys: clients pass their own key on every request to the proxy path.',
+            )}
           </div>
 
           {result.status === 'loading' ? (
@@ -33,8 +38,13 @@ export function RoutesPage() {
             <div className="card">
               <div className="card-header">
                 <h3 className="card-title">
-                  {result.data.routes.length} configured route
-                  {result.data.routes.length === 1 ? '' : 's'}
+                  {result.data.routes.length === 1
+                    ? tr('{{count}} configured route', {
+                        count: result.data.routes.length,
+                      })
+                    : tr('{{count}} configured routes', {
+                        count: result.data.routes.length,
+                      })}
                 </h3>
               </div>
               <div className="card-body p-0">
@@ -42,10 +52,10 @@ export function RoutesPage() {
                   <table className="table table-striped align-middle mb-0">
                     <thead>
                       <tr>
-                        <th scope="col">Route</th>
-                        <th scope="col">Protocol</th>
-                        <th scope="col">Upstream</th>
-                        <th scope="col">Proxy paths</th>
+                        <th scope="col">{tr('Route')}</th>
+                        <th scope="col">{tr('Protocol')}</th>
+                        <th scope="col">{tr('Upstream')}</th>
+                        <th scope="col">{tr('Proxy paths')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -64,7 +74,7 @@ export function RoutesPage() {
                           <td>
                             <div className="text-break">{route.base_url}</div>
                             <div className="small text-secondary text-break">
-                              API base: {route.api_base}
+                              {tr('API base: {{url}}', { url: route.api_base })}
                             </div>
                           </td>
                           <td>

@@ -4,6 +4,7 @@ import { ApiError, api } from '../api/client';
 import type { AssistantSkill } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { useApi } from '../lib/hooks';
 
 function describe(error: unknown): string {
@@ -66,10 +67,9 @@ export function SkillsPage() {
         <div className="container-fluid">
           <div className="alert alert-info" role="note">
             <i className="bi bi-info-circle-fill me-2" aria-hidden="true" />
-            A skill bundles tools with the prompt instructions that teach their
-            use. Disabling one removes both from the next chat turn. Availability
-            shows whether the service behind it is configured; a disabled skill
-            stays listed so you can see what is off.
+            {tr(
+              'A skill bundles tools with the prompt instructions that teach their use. Disabling one removes both from the next chat turn. Availability shows whether the service behind it is configured; a disabled skill stays listed so you can see what is off.',
+            )}
           </div>
 
           {error ? (
@@ -85,8 +85,10 @@ export function SkillsPage() {
             <>
               <ErrorBlock error={result.error} onRetry={result.reload} />
               <div className="alert alert-secondary" role="note">
-                Skills are served by the assistant capability. They are available
-                when <code>assistant.enabled</code> is true in
+                {tr(
+                  'Skills are served by the assistant capability. They are available when',
+                )}{' '}
+                <code>assistant.enabled</code> {tr('is true in')}{' '}
                 <code> apps/api/config.yaml</code>.
               </div>
             </>
@@ -99,46 +101,46 @@ export function SkillsPage() {
                   <div className="small-box text-bg-primary">
                     <div className="inner">
                       <h3>{skills.length}</h3>
-                      <p>Skills</p>
+                      <p>{tr('Skills')}</p>
                     </div>
                     <i className="small-box-icon bi bi-puzzle" aria-hidden="true" />
-                    <span className="small-box-footer">Registered bundles</span>
+                    <span className="small-box-footer">{tr('Registered bundles')}</span>
                   </div>
                 </div>
                 <div className="col-6 col-lg-3">
                   <div className="small-box text-bg-success">
                     <div className="inner">
                       <h3>{enabled.length}</h3>
-                      <p>Enabled</p>
+                      <p>{tr('Enabled')}</p>
                     </div>
                     <i className="small-box-icon bi bi-toggle-on" aria-hidden="true" />
-                    <span className="small-box-footer">In the next chat turn</span>
+                    <span className="small-box-footer">{tr('In the next chat turn')}</span>
                   </div>
                 </div>
                 <div className="col-6 col-lg-3">
                   <div className="small-box text-bg-warning">
                     <div className="inner">
                       <h3>{ownerDisabled.length}</h3>
-                      <p>Disabled by owner</p>
+                      <p>{tr('Disabled by owner')}</p>
                     </div>
                     <i className="small-box-icon bi bi-toggle-off" aria-hidden="true" />
-                    <span className="small-box-footer">Tools and instructions off</span>
+                    <span className="small-box-footer">{tr('Tools and instructions off')}</span>
                   </div>
                 </div>
                 <div className="col-6 col-lg-3">
                   <div className="small-box text-bg-secondary">
                     <div className="inner">
                       <h3>{unavailable.length}</h3>
-                      <p>Unavailable</p>
+                      <p>{tr('Unavailable')}</p>
                     </div>
                     <i className="small-box-icon bi bi-plug" aria-hidden="true" />
-                    <span className="small-box-footer">Service not configured</span>
+                    <span className="small-box-footer">{tr('Service not configured')}</span>
                   </div>
                 </div>
               </div>
 
               <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-                <h2 className="h5 mb-0">Registered skills</h2>
+                <h2 className="h5 mb-0">{tr('Registered skills')}</h2>
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-secondary ms-auto"
@@ -146,7 +148,7 @@ export function SkillsPage() {
                   disabled={busy !== null}
                 >
                   <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                  Refresh
+                  {tr('Refresh')}
                 </button>
               </div>
 
@@ -162,16 +164,16 @@ export function SkillsPage() {
                           <h3 className="card-title mb-0">{skill.title}</h3>
                           <code className="small text-secondary">{skill.name}</code>
                           {!skill.toggleable ? (
-                            <Badge label="Always on" className="text-bg-dark" />
+                            <Badge label={tr('Always on')} className="text-bg-dark" />
                           ) : null}
                           {!skill.scheduled_safe ? (
                             <Badge
-                              label="Chat only"
+                              label={tr('Chat only')}
                               className="text-bg-warning"
                             />
                           ) : null}
                           {!skill.available ? (
-                            <Badge label="Unavailable" className="text-bg-secondary" />
+                            <Badge label={tr('Unavailable')} className="text-bg-secondary" />
                           ) : null}
                           <div className="ms-auto">
                             <div className="form-check form-switch mb-0">
@@ -182,7 +184,7 @@ export function SkillsPage() {
                                 id={`skill-${skill.name}`}
                                 checked={skill.enabled && skill.available}
                                 disabled={switchDisabled}
-                                aria-label={`Enable ${skill.title}`}
+                                aria-label={tr('Enable {{name}}', { name: skill.title })}
                                 onChange={(event) =>
                                   void toggle(skill, event.target.checked)
                                 }
@@ -191,7 +193,7 @@ export function SkillsPage() {
                                 className="form-check-label small"
                                 htmlFor={`skill-${skill.name}`}
                               >
-                                {isBusy ? 'Saving…' : 'Enable'}
+                                {isBusy ? tr('Saving…') : tr('Enable')}
                               </label>
                             </div>
                           </div>
@@ -205,14 +207,18 @@ export function SkillsPage() {
                                 className="bi bi-slash-circle me-1"
                                 aria-hidden="true"
                               />
-                              Not available: {skill.unavailable_reason || 'disabled in configuration'}.
+                              {tr('Not available: {{reason}}.', {
+                                reason:
+                                  skill.unavailable_reason ||
+                                  tr('disabled in configuration'),
+                              })}
                             </div>
                           ) : null}
 
                           <div className="d-flex flex-wrap gap-1 mb-2">
                             {skill.tools.length === 0 ? (
                               <span className="text-secondary small">
-                                No tools; prompt instructions only.
+                                {tr('No tools; prompt instructions only.')}
                               </span>
                             ) : (
                               skill.tools.map((tool) => (
@@ -225,7 +231,7 @@ export function SkillsPage() {
 
                           {skill.permissions.length > 0 ? (
                             <div className="small text-secondary mb-2">
-                              Permissions:{' '}
+                              {tr('Permissions')}{' '}
                               {skill.permissions.map((permission) => (
                                 <code className="me-2" key={permission}>
                                   {permission}
@@ -236,14 +242,14 @@ export function SkillsPage() {
 
                           <div className="small text-secondary">
                             {skill.scheduled_safe
-                              ? 'Available in chat and scheduled task runs.'
-                              : 'Available in chat, not in scheduled task runs.'}
+                              ? tr('Available in chat and scheduled task runs.')
+                              : tr('Available in chat, not in scheduled task runs.')}
                           </div>
 
                           {skill.instructions ? (
                             <details className="mt-2">
                               <summary className="small text-secondary">
-                                Prompt instructions
+                                {tr('Prompt instructions')}
                               </summary>
                               <pre className="small mt-2 mb-0 text-wrap">
                                 {skill.instructions}

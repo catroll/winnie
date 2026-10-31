@@ -3,6 +3,8 @@ import { initialize } from 'admin-lte';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
+import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
+import { tr } from '../i18n';
 
 const NAVIGATION = [
   { to: '/', label: 'Dashboard', icon: 'bi-speedometer2', end: true },
@@ -40,7 +42,7 @@ export function AppLayout() {
     navigate('/login', { replace: true });
   };
 
-  const displayName = user?.display_name?.trim() || user?.username || 'Signed in';
+  const displayName = user?.display_name?.trim() || user?.username || tr('Signed in');
 
   return (
     <div className="app-wrapper">
@@ -52,14 +54,14 @@ export function AppLayout() {
                 className="nav-link"
                 href="#"
                 role="button"
-                aria-label="Toggle sidebar"
+                aria-label={tr('Toggle sidebar')}
                 data-lte-toggle="sidebar"
               >
                 <i className="bi bi-list" aria-hidden="true" />
               </a>
             </li>
             <li className="nav-item d-none d-md-block">
-              <span className="nav-link text-secondary">Winnie management console</span>
+              <span className="nav-link text-secondary">{tr('Winnie management console')}</span>
             </li>
           </ul>
 
@@ -68,7 +70,7 @@ export function AppLayout() {
               <a
                 className="nav-link"
                 href="#"
-                aria-label="Toggle fullscreen"
+                aria-label={tr('Toggle fullscreen')}
                 data-lte-toggle="fullscreen"
               >
                 <i data-lte-icon="maximize" className="bi bi-arrows-fullscreen" aria-hidden="true" />
@@ -80,12 +82,14 @@ export function AppLayout() {
               </a>
             </li>
 
+            <LanguageSwitcher />
+
             <li className="nav-item dropdown">
               <a
                 className="nav-link"
                 href="#"
                 id="theme-menu"
-                aria-label="Toggle colour scheme"
+                aria-label={tr('Toggle colour scheme')}
                 data-bs-toggle="dropdown"
                 aria-expanded="false"
               >
@@ -114,7 +118,7 @@ export function AppLayout() {
                     aria-pressed="false"
                   >
                     <i className="bi bi-sun-fill me-2" aria-hidden="true" />
-                    Light
+                    {tr('Light')}
                     <i className="bi bi-check-lg ms-auto d-none" aria-hidden="true" />
                   </button>
                 </li>
@@ -126,7 +130,7 @@ export function AppLayout() {
                     aria-pressed="false"
                   >
                     <i className="bi bi-moon-fill me-2" aria-hidden="true" />
-                    Dark
+                    {tr('Dark')}
                     <i className="bi bi-check-lg ms-auto d-none" aria-hidden="true" />
                   </button>
                 </li>
@@ -138,7 +142,7 @@ export function AppLayout() {
                     aria-pressed="true"
                   >
                     <i className="bi bi-circle-half me-2" aria-hidden="true" />
-                    Auto
+                    {tr('Auto')}
                     <i className="bi bi-check-lg ms-auto d-none" aria-hidden="true" />
                   </button>
                 </li>
@@ -154,7 +158,7 @@ export function AppLayout() {
               >
                 <i className="bi bi-person-circle me-1" aria-hidden="true" />
                 <span className="d-none d-md-inline">{displayName}</span>
-                <span className="visually-hidden d-md-none">Account menu</span>
+                <span className="visually-hidden d-md-none">{tr('Account menu')}</span>
               </a>
               <ul className="dropdown-menu dropdown-menu-end">
                 <li className="px-3 py-2">
@@ -167,13 +171,13 @@ export function AppLayout() {
                 <li>
                   <Link className="dropdown-item" to="/account" onClick={closeMobileSidebar}>
                     <i className="bi bi-person-gear me-2" aria-hidden="true" />
-                    Account
+                    {tr('Account')}
                   </Link>
                 </li>
                 <li>
                   <button type="button" className="dropdown-item" onClick={handleLogout}>
                     <i className="bi bi-box-arrow-right me-2" aria-hidden="true" />
-                    Sign out
+                    {tr('Sign out')}
                   </button>
                 </li>
               </ul>
@@ -195,7 +199,7 @@ export function AppLayout() {
         </div>
 
         <div className="sidebar-wrapper">
-          <nav className="mt-2" aria-label="Main navigation">
+          <nav className="mt-2" aria-label={tr('Main navigation')}>
             <ul
               className="nav sidebar-menu flex-column"
               id="navigation"
@@ -211,7 +215,7 @@ export function AppLayout() {
                     className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
                   >
                     <i className={`nav-icon bi ${item.icon}`} aria-hidden="true" />
-                    <p>{item.label}</p>
+                    <p>{tr(item.label)}</p>
                   </NavLink>
                 </li>
               ))}
@@ -226,7 +230,7 @@ export function AppLayout() {
 
       <footer className="app-footer">
         <div className="float-end d-none d-sm-inline">
-          Built on{' '}
+          {tr('Built on')}{' '}
           <a
             href="https://adminlte.io"
             className="link-secondary"
@@ -236,7 +240,7 @@ export function AppLayout() {
             AdminLTE 4
           </a>
         </div>
-        <strong>Winnie</strong> management console
+        <strong>Winnie</strong> {tr('management console')}
       </footer>
     </div>
   );

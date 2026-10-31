@@ -11,6 +11,7 @@ import type {
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { Markdown } from '../components/Markdown';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 
@@ -146,7 +147,7 @@ export function NewsPage() {
     setMessage(null);
     try {
       const run = await api.startNewsRun();
-      setMessage({ kind: 'success', text: `Started run ${run.id}.` });
+      setMessage({ kind: 'success', text: tr('Started run {{id}}.', { id: run.id }) });
       setSelectedRunId(run.id);
       result.reload();
     } catch (error) {
@@ -188,7 +189,10 @@ export function NewsPage() {
       setMarkdown(await api.newsDraftMarkdown(selectedRun.id, detail.draft.event_id));
       setMessage({
         kind: 'success',
-        text: `Regenerated ${detail.draft.event_id} (revision ${updated.draft.revision}).`,
+        text: tr('Regenerated {{id}} (revision {{revision}}).', {
+          id: detail.draft.event_id,
+          revision: updated.draft.revision,
+        }),
       });
       result.reload();
     } catch (error) {
@@ -231,10 +235,11 @@ export function NewsPage() {
               {!loaded.status.ready ? (
                 <div className="alert alert-warning" role="alert">
                   <i className="bi bi-exclamation-triangle-fill me-2" aria-hidden="true" />
-                  News cannot run yet. Bind <code>news.extract</code>,{' '}
-                  <code>news.write</code> and <code>news.review</code> to a supplier on
-                  the <a href="/ai">AI providers</a> page and set that supplier&rsquo;s
-                  API key.
+                  {tr('News cannot run yet. Bind')} <code>news.extract</code>,{' '}
+                  <code>news.write</code> {tr('and')} <code>news.review</code>{' '}
+                  {tr('to a supplier on the')}{' '}
+                  <a href="/ai">{tr('AI providers')}</a>{' '}
+                  {tr('page and set that supplier’s API key.')}
                   {modelError ? (
                     <p className="mb-0 mt-1 small font-monospace">{modelError}</p>
                   ) : null}
@@ -246,7 +251,7 @@ export function NewsPage() {
                   <div className="small-box text-bg-primary">
                     <div className="inner">
                       <h3>{loaded.status.events}</h3>
-                      <p>Events stored</p>
+                      <p>{tr('Events stored')}</p>
                     </div>
                     <i className="small-box-icon bi bi-collection" aria-hidden="true" />
                   </div>
@@ -255,7 +260,7 @@ export function NewsPage() {
                   <div className="small-box text-bg-info">
                     <div className="inner">
                       <h3>{loaded.status.runs}</h3>
-                      <p>Runs kept</p>
+                      <p>{tr('Runs kept')}</p>
                     </div>
                     <i className="small-box-icon bi bi-clock-history" aria-hidden="true" />
                   </div>
@@ -263,8 +268,8 @@ export function NewsPage() {
                 <div className="col-sm-6 col-xl-3">
                   <div className="small-box text-bg-success">
                     <div className="inner">
-                      <h3 className="fs-5">{loaded.status.llm || 'none'}</h3>
-                      <p>Model binding</p>
+                      <h3 className="fs-5">{loaded.status.llm || tr('none')}</h3>
+                      <p>{tr('Model binding')}</p>
                     </div>
                     <i className="small-box-icon bi bi-cpu" aria-hidden="true" />
                   </div>
@@ -272,8 +277,8 @@ export function NewsPage() {
                 <div className="col-sm-6 col-xl-3">
                   <div className="small-box text-bg-secondary">
                     <div className="inner">
-                      <h3 className="fs-5">{loaded.status.search || 'disabled'}</h3>
-                      <p>Search provider</p>
+                      <h3 className="fs-5">{loaded.status.search || tr('disabled')}</h3>
+                      <p>{tr('Search provider')}</p>
                     </div>
                     <i className="small-box-icon bi bi-search" aria-hidden="true" />
                   </div>
@@ -282,7 +287,7 @@ export function NewsPage() {
 
               <div className="card mb-3">
                 <div className="card-header d-flex align-items-center justify-content-between">
-                  <h2 className="card-title mb-0">Runs</h2>
+                  <h2 className="card-title mb-0">{tr('Runs')}</h2>
                   <button
                     type="button"
                     className="btn btn-sm btn-primary"
@@ -290,7 +295,7 @@ export function NewsPage() {
                     disabled={busy || !loaded.status.ready || loaded.status.active_run !== null}
                   >
                     <i className="bi bi-play-fill me-1" aria-hidden="true" />
-                    {loaded.status.active_run ? 'Run in progress' : 'New run'}
+                    {loaded.status.active_run ? tr('Run in progress') : tr('New run')}
                   </button>
                 </div>
                 <div className="card-body p-0">
@@ -301,13 +306,13 @@ export function NewsPage() {
                       <table className="table table-sm table-hover mb-0 align-middle">
                         <thead>
                           <tr>
-                            <th scope="col">Run</th>
-                            <th scope="col">Status</th>
-                            <th scope="col">Started</th>
-                            <th scope="col">Materials</th>
-                            <th scope="col">Events</th>
-                            <th scope="col">Drafts</th>
-                            <th scope="col">Passed</th>
+                            <th scope="col">{tr('Run')}</th>
+                            <th scope="col">{tr('Status')}</th>
+                            <th scope="col">{tr('Started')}</th>
+                            <th scope="col">{tr('Materials')}</th>
+                            <th scope="col">{tr('Events')}</th>
+                            <th scope="col">{tr('Drafts')}</th>
+                            <th scope="col">{tr('Passed')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -344,9 +349,11 @@ export function NewsPage() {
 
               <div className="card mb-3">
                 <div className="card-header d-flex align-items-center justify-content-between">
-                  <h2 className="card-title mb-0">Sources</h2>
+                  <h2 className="card-title mb-0">{tr('Sources')}</h2>
                   <span className="text-secondary small">
-                    updated {formatDateTime(loaded.sources.updated_at)}
+                    {tr('updated {{date}}', {
+                      date: formatDateTime(loaded.sources.updated_at),
+                    })}
                   </span>
                 </div>
                 <div className="card-body p-0">
@@ -357,12 +364,12 @@ export function NewsPage() {
                       <table className="table table-sm mb-0 align-middle">
                         <thead>
                           <tr>
-                            <th scope="col">Source</th>
-                            <th scope="col">Status</th>
-                            <th scope="col">Items</th>
-                            <th scope="col">Last success</th>
-                            <th scope="col">Failures</th>
-                            <th scope="col">Last error</th>
+                            <th scope="col">{tr('Source')}</th>
+                            <th scope="col">{tr('Status')}</th>
+                            <th scope="col">{tr('Items')}</th>
+                            <th scope="col">{tr('Last success')}</th>
+                            <th scope="col">{tr('Failures')}</th>
+                            <th scope="col">{tr('Last error')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -397,7 +404,9 @@ export function NewsPage() {
               {selectedRun ? (
                 <div className="card mb-3">
                   <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
-                    <h2 className="card-title mb-0">Run {selectedRun.id}</h2>
+                    <h2 className="card-title mb-0">
+                      {tr('Run {{id}}', { id: selectedRun.id })}
+                    </h2>
                     <span className={`badge ${RUN_BADGE[selectedRun.status] ?? 'text-bg-secondary'}`}>
                       {selectedRun.status}
                     </span>
@@ -429,11 +438,11 @@ export function NewsPage() {
                         <table className="table table-sm align-middle mb-0">
                           <thead>
                             <tr>
-                              <th scope="col">Draft</th>
-                              <th scope="col">Revision</th>
-                              <th scope="col">Sources</th>
-                              <th scope="col">Review</th>
-                              <th scope="col">Score</th>
+                              <th scope="col">{tr('Draft')}</th>
+                              <th scope="col">{tr('Revision')}</th>
+                              <th scope="col">{tr('Sources')}</th>
+                              <th scope="col">{tr('Review')}</th>
+                              <th scope="col">{tr('Score')}</th>
                               <th scope="col" />
                             </tr>
                           </thead>
@@ -466,7 +475,7 @@ export function NewsPage() {
                                       className="btn btn-sm btn-outline-primary"
                                       onClick={() => void openDraft(entry.event_id)}
                                     >
-                                      Open
+                                      {tr('Open')}
                                     </button>
                                   </td>
                                 </tr>
@@ -495,12 +504,14 @@ export function NewsPage() {
                         disabled={busy || running}
                         title={
                           running
-                            ? 'Wait for the active run to finish'
-                            : 'Rewrite this draft from the run material and review it again'
+                            ? tr('Wait for the active run to finish')
+                            : tr(
+                                'Rewrite this draft from the run material and review it again',
+                              )
                         }
                       >
                         <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
-                        Regenerate
+                        {tr('Regenerate')}
                       </button>
                       <button
                         type="button"
@@ -510,7 +521,7 @@ export function NewsPage() {
                           setMarkdown('');
                         }}
                       >
-                        Close
+                        {tr('Close')}
                       </button>
                     </div>
                   </div>
@@ -523,9 +534,15 @@ export function NewsPage() {
                         role="status"
                       >
                         <p className="mb-1">
-                          <strong>Review:</strong> {detail.review.status} · score{' '}
-                          {detail.review.score.toFixed(2)} · retry {detail.review.retry}/
-                          {detail.review.max_retries}
+                          <strong>{tr('Review:')}</strong> {detail.review.status} ·{' '}
+                          {tr('score {{score}}', {
+                            score: detail.review.score.toFixed(2),
+                          })}{' '}
+                          ·{' '}
+                          {tr('retry {{retry}}/{{max}}', {
+                            retry: detail.review.retry,
+                            max: detail.review.max_retries,
+                          })}
                         </p>
                         {detail.review.problems.length > 0 ? (
                           <ul className="mb-1 small">

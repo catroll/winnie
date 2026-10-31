@@ -13,6 +13,7 @@ import 'admin-lte/dist/css/adminlte.min.css';
 // only the script is imported here.
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import './styles.css';
+import './i18n';
 
 import { App } from './App';
 

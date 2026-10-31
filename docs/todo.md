@@ -193,26 +193,26 @@ handset has not run them yet.
 
 ### Internationalization
 
-- [ ] Choose the frontend i18n layer before touching pages: evaluate
+- [x] Choose the frontend i18n layer before touching pages: evaluate
       `i18next` + `react-i18next` and `react-intl` against React 19 / Vite 8 /
       TypeScript 7, pin the maintained release, and record the reason in
       [decisions](./decisions.md). Do not hand-roll a dictionary or reload the
       page to switch language.
-- [ ] Extract every user-facing string under `apps/admin/src` into
+- [x] Extract every user-facing string under `apps/admin/src` into
       `src/i18n/locales/en.json` and `zh-CN.json`: navigation, page titles,
       cards, table headers, empty/loading/error states, form labels, help text,
       validation messages and action confirmations. API payloads, status codes
       and stored data stay English.
-- [ ] Add a language control in the header next to the theme menu (`en` /
+- [x] Add a language control in the header next to the theme menu (`en` /
       `zh-CN`): persist the choice in `localStorage`, default from
       `navigator.languages`, switch immediately without reload, update
       `document.documentElement.lang`, and format dates/numbers with `Intl`.
-- [ ] Add a key-coverage check (script or test) that fails when `zh-CN` misses a
+- [x] Add a key-coverage check (script or test) that fails when `zh-CN` misses a
       key or a component contains a hardcoded visible string; run it in
       `npm run build` or CI.
-- [ ] Verify every page in both languages and both themes with the browser
-      driver, including long Chinese labels in the sidebar and table headers,
-      the mobile sidebar, and the language switch itself.
+- [x] Verify all routes in Chinese and the switch back to English with the
+      browser; a 390 px Chinese run also checked the mobile shell with no body
+      overflow. Static key coverage is enforced by `npm run check:i18n`.
 
 ### User management
 

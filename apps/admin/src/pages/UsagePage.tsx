@@ -9,6 +9,7 @@ import type {
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 
@@ -41,7 +42,7 @@ function describe(error: unknown): string {
 }
 
 function capabilityLabel(key: string): string {
-  return CAPABILITY_LABELS[key] ?? key;
+  return tr(CAPABILITY_LABELS[key] ?? key);
 }
 
 function formatNumber(value: number): string {
@@ -98,9 +99,9 @@ function pricedRequests(totals: UsageTotals): number {
 
 function statusBadge(status: string) {
   return STATUS_LABELS[status] === 'Failed' ? (
-    <span className="badge text-bg-danger">Failed</span>
+    <span className="badge text-bg-danger">{tr('Failed')}</span>
   ) : (
-    <span className="badge text-bg-success">OK</span>
+    <span className="badge text-bg-success">{tr('OK')}</span>
   );
 }
 
@@ -145,18 +146,18 @@ function RecordDetailRow({ record, columns }: { record: UsageRecord; columns: nu
       <td colSpan={columns}>
         <div className="small d-flex flex-wrap gap-4">
           <div>
-            <span className="text-secondary">Cost: </span>
+            <span className="text-secondary">{tr('Cost:')} </span>
             {record.cost_source} — {record.cost_reason}
           </div>
           {record.error ? (
             <div className="text-danger text-break">
-              <span className="text-secondary">Error: </span>
+              <span className="text-secondary">{tr('Error:')} </span>
               {record.error}
             </div>
           ) : null}
           {Object.keys(record.detail ?? {}).length > 0 ? (
             <div>
-              <span className="text-secondary">Detail: </span>
+              <span className="text-secondary">{tr('Detail:')} </span>
               <code>{JSON.stringify(record.detail)}</code>
             </div>
           ) : null}
@@ -249,7 +250,7 @@ export function UsagePage() {
       <div className="app-content">
         <div className="container-fluid">
           <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-            <div className="btn-group" role="group" aria-label="Usage period">
+            <div className="btn-group" role="group" aria-label={tr('Usage period')}>
               {PERIODS.map((period) => (
                 <button
                   type="button"
@@ -260,7 +261,7 @@ export function UsagePage() {
                   aria-pressed={days === period.days}
                   onClick={() => choosePeriod(period.days)}
                 >
-                  {period.label}
+                  {tr(period.label)}
                 </button>
               ))}
             </div>
@@ -279,7 +280,7 @@ export function UsagePage() {
               }}
             >
               <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-              Refresh
+              {tr('Refresh')}
             </button>
           </div>
 
@@ -290,14 +291,20 @@ export function UsagePage() {
               <ErrorBlock error={overview.error} onRetry={overview.reload} />
               {usageDisabled ? (
                 <div className="alert alert-secondary" role="note">
-                  Usage recording is off. Set <code>usage.enabled: true</code> in
-                  <code> apps/api/config.yaml</code> and restart the API; calls made
-                  while it is off cannot be recovered.
+                  {tr('Usage recording is off. Set')}{' '}
+                  <code>usage.enabled: true</code>{' '}
+                  {tr('in')}
+                  <code> apps/api/config.yaml</code>{' '}
+                  {tr(
+                    'and restart the API; calls made while it is off cannot be recovered.',
+                  )}
                 </div>
               ) : (
                 <div className="alert alert-secondary" role="note">
-                  The console reads usage from the Winnie API. Check that the API is
-                  running and that <code>usage.enabled</code> is true in
+                  {tr(
+                    'The console reads usage from the Winnie API. Check that the API is running and that',
+                  )}{' '}
+                  <code>usage.enabled</code> {tr('is true in')}{' '}
                   <code> apps/api/config.yaml</code>.
                 </div>
               )}
@@ -310,21 +317,24 @@ export function UsagePage() {
                 <div className="col-6 col-xl-3">
                   <Metric
                     value={formatNumber(totals.requests)}
-                    label="Model calls"
+                    label={tr('Model calls')}
                     icon="bi-activity"
                     tone="text-bg-primary"
-                    footer={`${formatNumber(totals.errors)} failed`}
+                    footer={tr('{{count}} failed', {
+                      count: formatNumber(totals.errors),
+                    })}
                   />
                 </div>
                 <div className="col-6 col-xl-3">
                   <Metric
                     value={formatCompact(totals.total_tokens)}
-                    label="Tokens"
+                    label={tr('Tokens')}
                     icon="bi-123"
                     tone="text-bg-info"
-                    footer={`in ${formatCompact(totals.input_tokens)} · out ${formatCompact(
-                      totals.output_tokens,
-                    )}`}
+                    footer={tr('in {{input}} · out {{output}}', {
+                      input: formatCompact(totals.input_tokens),
+                      output: formatCompact(totals.output_tokens),
+                    })}
                   />
                 </div>
                 <div className="col-6 col-xl-3">
@@ -334,16 +344,22 @@ export function UsagePage() {
                         ? '—'
                         : formatCost(totals.cost_micros, data.currency)
                     }
-                    label="Estimated cost"
+                    label={tr('Estimated cost')}
                     icon="bi-coin"
                     tone="text-bg-success"
                     footer={[
-                      `${formatNumber(pricedRequests(totals))} priced`,
+                      tr('{{count}} priced', {
+                        count: formatNumber(pricedRequests(totals)),
+                      }),
                       totals.unpriced_requests
-                        ? `${formatNumber(totals.unpriced_requests)} unpriced`
+                        ? tr('{{count}} unpriced', {
+                            count: formatNumber(totals.unpriced_requests),
+                          })
                         : '',
                       totals.unreported_requests
-                        ? `${formatNumber(totals.unreported_requests)} no usage`
+                        ? tr('{{count}} no usage', {
+                            count: formatNumber(totals.unreported_requests),
+                          })
                         : '',
                     ]
                       .filter(Boolean)
@@ -353,22 +369,25 @@ export function UsagePage() {
                 <div className="col-6 col-xl-3">
                   <Metric
                     value={formatCompact(totals.cached_input_tokens)}
-                    label="Cached input"
+                    label={tr('Cached input')}
                     icon="bi-database-check"
                     tone="text-bg-warning"
-                    footer={`reasoning ${formatCompact(
-                      totals.reasoning_tokens,
-                    )} · cache writes ${formatCompact(totals.cache_write_tokens)}`}
+                    footer={tr('reasoning {{reasoning}} · cache writes {{writes}}', {
+                      reasoning: formatCompact(totals.reasoning_tokens),
+                      writes: formatCompact(totals.cache_write_tokens),
+                    })}
                   />
                 </div>
               </div>
 
               <div className="card mb-3">
                 <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                  <h3 className="card-title mb-0">Provider balances</h3>
+                  <h3 className="card-title mb-0">{tr('Provider balances')}</h3>
                   {balances ? (
                     <span className="small text-secondary">
-                      checked {formatDateTime(balances.balances[0]?.fetched_at ?? null)}
+                      {tr('checked {{date}}', {
+                        date: formatDateTime(balances.balances[0]?.fetched_at ?? null),
+                      })}
                     </span>
                   ) : null}
                   <button
@@ -377,7 +396,7 @@ export function UsagePage() {
                     onClick={() => void refreshBalances()}
                     disabled={balanceBusy}
                   >
-                    {balanceBusy ? 'Checking…' : 'Refresh balances'}
+                    {balanceBusy ? tr('Checking…') : tr('Refresh balances')}
                   </button>
                 </div>
                 {balanceError ? (
@@ -389,7 +408,7 @@ export function UsagePage() {
                 ) : balances === null ? (
                   <div className="card-body text-center text-secondary py-4" role="status">
                     <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
-                    Checking provider balances…
+                    {tr('Checking provider balances…')}
                   </div>
                 ) : balances.balances.length === 0 ? (
                   <div className="card-body">
@@ -401,13 +420,13 @@ export function UsagePage() {
                       <table className="table table-sm align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Provider</th>
-                            <th scope="col">Kind</th>
+                            <th scope="col">{tr('Provider')}</th>
+                            <th scope="col">{tr('Kind')}</th>
                             <th scope="col" className="text-end">
-                              Balance
+                              {tr('Balance')}
                             </th>
-                            <th scope="col">Breakdown</th>
-                            <th scope="col">Checked</th>
+                            <th scope="col">{tr('Breakdown')}</th>
+                            <th scope="col">{tr('Checked')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -437,7 +456,9 @@ export function UsagePage() {
                                     </span>
                                   )
                                 ) : (
-                                  <span className="badge text-bg-light border">not exposed</span>
+                                  <span className="badge text-bg-light border">
+                                    {tr('not exposed')}
+                                  </span>
                                 )}
                               </td>
                               <td className="small">
@@ -463,7 +484,7 @@ export function UsagePage() {
                                 {formatDateTime(balance.fetched_at)}
                                 {balance.cached ? (
                                   <span className="badge text-bg-light border ms-2">
-                                    cached
+                                    {tr('cached')}
                                   </span>
                                 ) : null}
                               </td>
@@ -475,9 +496,9 @@ export function UsagePage() {
                   </div>
                 )}
                 <div className="card-footer small text-secondary">
-                  Balances come from the server-side keys of internal integrations. A
-                  gateway route forwards the client's own key, so proxied traffic does
-                  not appear here.
+                  {tr(
+                    "Balances come from the server-side keys of internal integrations. A gateway route forwards the client's own key, so proxied traffic does not appear here.",
+                  )}
                 </div>
               </div>
 
@@ -485,9 +506,9 @@ export function UsagePage() {
                 <div className="col-xl-7">
                   <div className="card h-100">
                     <div className="card-header">
-                      <h3 className="card-title mb-0">Usage by day</h3>
+                      <h3 className="card-title mb-0">{tr('Usage by day')}</h3>
                       <span className="small text-secondary ms-2">
-                        UTC days · tokens and estimated cost
+                        {tr('UTC days · tokens and estimated cost')}
                       </span>
                     </div>
                     <div className="card-body p-0">
@@ -495,24 +516,24 @@ export function UsagePage() {
                         <table className="table table-sm table-striped align-middle mb-0">
                           <thead>
                             <tr>
-                              <th scope="col">Day</th>
+                              <th scope="col">{tr('Day')}</th>
                               <th scope="col" className="text-end">
-                                Calls
+                                {tr('Calls')}
                               </th>
                               <th scope="col" className="text-end">
-                                In
+                                {tr('In')}
                               </th>
                               <th scope="col" className="text-end">
-                                Out
+                                {tr('Out')}
                               </th>
                               <th scope="col" className="text-end">
-                                Cached
+                                {tr('Cached')}
                               </th>
                               <th scope="col" className="text-end">
-                                Total
+                                {tr('Total')}
                               </th>
                               <th scope="col" className="text-end">
-                                Cost
+                                {tr('Cost')}
                               </th>
                             </tr>
                           </thead>
@@ -544,7 +565,7 @@ export function UsagePage() {
                 <div className="col-xl-5">
                   <div className="card h-100">
                     <div className="card-header">
-                      <h3 className="card-title mb-0">By feature</h3>
+                      <h3 className="card-title mb-0">{tr('By feature')}</h3>
                     </div>
                     <div className="card-body p-0">
                       {data.by_capability.length === 0 ? (
@@ -554,15 +575,15 @@ export function UsagePage() {
                           <table className="table table-sm align-middle mb-0">
                             <thead>
                               <tr>
-                                <th scope="col">Feature</th>
+                                <th scope="col">{tr('Feature')}</th>
                                 <th scope="col" className="text-end">
-                                  Calls
+                                  {tr('Calls')}
                                 </th>
                                 <th scope="col" className="text-end">
-                                  Tokens
+                                  {tr('Tokens')}
                                 </th>
                                 <th scope="col" className="text-end">
-                                  Cost
+                                  {tr('Cost')}
                                 </th>
                               </tr>
                             </thead>
@@ -573,7 +594,7 @@ export function UsagePage() {
                                     {capabilityLabel(row.capability)}
                                     {row.errors > 0 ? (
                                       <span className="badge text-bg-danger ms-2">
-                                        {row.errors} failed
+                                        {tr('{{count}} failed', { count: row.errors })}
                                       </span>
                                     ) : null}
                                   </td>
@@ -595,7 +616,7 @@ export function UsagePage() {
 
               <div className="card mb-3">
                 <div className="card-header">
-                  <h3 className="card-title mb-0">By model</h3>
+                  <h3 className="card-title mb-0">{tr('By model')}</h3>
                 </div>
                 <div className="card-body p-0">
                   {data.by_model.length === 0 ? (
@@ -605,25 +626,25 @@ export function UsagePage() {
                       <table className="table table-sm table-striped align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Provider</th>
-                            <th scope="col">Model</th>
+                            <th scope="col">{tr('Provider')}</th>
+                            <th scope="col">{tr('Model')}</th>
                             <th scope="col" className="text-end">
-                              Calls
+                              {tr('Calls')}
                             </th>
                             <th scope="col" className="text-end">
-                              In
+                              {tr('In')}
                             </th>
                             <th scope="col" className="text-end">
-                              Out
+                              {tr('Out')}
                             </th>
                             <th scope="col" className="text-end">
-                              Cached
+                              {tr('Cached')}
                             </th>
                             <th scope="col" className="text-end">
-                              Total
+                              {tr('Total')}
                             </th>
                             <th scope="col" className="text-end">
-                              Cost
+                              {tr('Cost')}
                             </th>
                           </tr>
                         </thead>
@@ -655,17 +676,17 @@ export function UsagePage() {
 
               <div className="card mb-3">
                 <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                  <h3 className="card-title mb-0">Recent calls</h3>
+                  <h3 className="card-title mb-0">{tr('Recent calls')}</h3>
                   <div className="ms-auto d-flex flex-wrap gap-2">
                     <select
                       className="form-select form-select-sm w-auto"
-                      aria-label="Filter by feature"
+                      aria-label={tr('Filter by feature')}
                       value={capability}
                       onChange={(event) =>
                         changeFilter(() => setCapability(event.target.value))
                       }
                     >
-                      <option value="">All features</option>
+                      <option value="">{tr('All features')}</option>
                       {capabilityOptions.map((key) => (
                         <option key={key} value={key}>
                           {capabilityLabel(key)}
@@ -674,22 +695,22 @@ export function UsagePage() {
                     </select>
                     <select
                       className="form-select form-select-sm w-auto"
-                      aria-label="Filter by status"
+                      aria-label={tr('Filter by status')}
                       value={status}
                       onChange={(event) =>
                         changeFilter(() => setStatus(event.target.value))
                       }
                     >
-                      <option value="">All statuses</option>
-                      <option value="ok">OK</option>
-                      <option value="error">Failed</option>
+                      <option value="">{tr('All statuses')}</option>
+                      <option value="ok">{tr('OK')}</option>
+                      <option value="error">{tr('Failed')}</option>
                     </select>
                   </div>
                 </div>
                 {records.status === 'loading' ? (
                   <div className="card-body text-center text-secondary py-4" role="status">
                     <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
-                    Loading calls…
+                    {tr('Loading calls…')}
                   </div>
                 ) : records.status === 'error' ? (
                   <div className="card-body">
@@ -712,29 +733,29 @@ export function UsagePage() {
                         <table className="table table-sm align-middle mb-0">
                           <thead>
                             <tr>
-                              <th scope="col">Time</th>
-                              <th scope="col">Feature</th>
-                              <th scope="col">Provider / model</th>
+                              <th scope="col">{tr('Time')}</th>
+                              <th scope="col">{tr('Feature')}</th>
+                              <th scope="col">{tr('Provider / model')}</th>
                               <th scope="col" className="text-end">
-                                In
+                                {tr('In')}
                               </th>
                               <th scope="col" className="text-end">
-                                Out
+                                {tr('Out')}
                               </th>
                               <th scope="col" className="text-end">
-                                Cached
+                                {tr('Cached')}
                               </th>
                               <th scope="col" className="text-end">
-                                Total
+                                {tr('Total')}
                               </th>
                               <th scope="col" className="text-end">
-                                Latency
+                                {tr('Latency')}
                               </th>
                               <th scope="col" className="text-end">
-                                Cost
+                                {tr('Cost')}
                               </th>
-                              <th scope="col">Status</th>
-                              <th scope="col">Details</th>
+                              <th scope="col">{tr('Status')}</th>
+                              <th scope="col">{tr('Details')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -788,7 +809,9 @@ export function UsagePage() {
                                         )
                                       }
                                     >
-                                      {expanded === record.id ? 'hide' : 'view'}
+                                      {expanded === record.id
+                                        ? tr('hide')
+                                        : tr('view')}
                                     </button>
                                   ) : (
                                     <span className="text-secondary">—</span>
@@ -806,9 +829,11 @@ export function UsagePage() {
                     </div>
                     <div className="card-footer d-flex flex-wrap align-items-center gap-2">
                       <span className="small text-secondary">
-                        {formatNumber(page.offset + 1)}–
-                        {formatNumber(page.offset + page.items.length)} of{' '}
-                        {formatNumber(page.total)}
+                        {tr('{{first}}–{{last}} of {{total}}', {
+                          first: formatNumber(page.offset + 1),
+                          last: formatNumber(page.offset + page.items.length),
+                          total: formatNumber(page.total),
+                        })}
                       </span>
                       <div className="ms-auto btn-group btn-group-sm">
                         <button
@@ -817,7 +842,7 @@ export function UsagePage() {
                           disabled={page.offset === 0}
                           onClick={() => setOffset(Math.max(page.offset - PAGE_SIZE, 0))}
                         >
-                          Previous
+                          {tr('Previous')}
                         </button>
                         <button
                           type="button"
@@ -825,7 +850,7 @@ export function UsagePage() {
                           disabled={page.offset + page.items.length >= page.total}
                           onClick={() => setOffset(page.offset + PAGE_SIZE)}
                         >
-                          Next
+                          {tr('Next')}
                         </button>
                       </div>
                     </div>
@@ -835,19 +860,26 @@ export function UsagePage() {
 
               <div className="card">
                 <div className="card-header">
-                  <h3 className="card-title mb-0">Prices</h3>
+                  <h3 className="card-title mb-0">{tr('Prices')}</h3>
                   <span className="small text-secondary ms-2">
-                    {data.currency} per 1M tokens · read from <code>usage.prices</code>
+                    {tr('{{currency}} per 1M tokens · read from', {
+                      currency: data.currency,
+                    })}{' '}
+                    <code>usage.prices</code>
                   </span>
                 </div>
                 <div className="card-body">
                   {data.prices.length === 0 ? (
                     <div className="alert alert-warning mb-0" role="note">
                       <p className="mb-2">
-                        No prices are configured, so calls are counted but no cost is
-                        estimated. Add model prices to <code>usage.prices</code> in
-                        <code> apps/api/config.yaml</code>; prices are applied when the
-                        page is read, so history is re-priced too.
+                        {tr(
+                          'No prices are configured, so calls are counted but no cost is estimated. Add model prices to',
+                        )}{' '}
+                        <code>usage.prices</code> {tr('in')}
+                        <code> apps/api/config.yaml</code>
+                        {tr(
+                          '; prices are applied when the page is read, so history is re-priced too.',
+                        )}
                       </p>
                       <pre className="small mb-0">{`usage:
   prices:
@@ -861,18 +893,18 @@ export function UsagePage() {
                       <table className="table table-sm table-striped align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Model match</th>
+                            <th scope="col">{tr('Model match')}</th>
                             <th scope="col" className="text-end">
-                              Input
+                              {tr('Input')}
                             </th>
                             <th scope="col" className="text-end">
-                              Output
+                              {tr('Output')}
                             </th>
                             <th scope="col" className="text-end">
-                              Cached input
+                              {tr('Cached input')}
                             </th>
                             <th scope="col" className="text-end">
-                              Cache write
+                              {tr('Cache write')}
                             </th>
                           </tr>
                         </thead>
@@ -898,10 +930,13 @@ export function UsagePage() {
                   )}
                 </div>
                 <div className="card-footer small text-secondary">
-                  Cost prefers a provider-reported value (for example OpenRouter's
-                  <code> usage.cost</code>) and otherwise applies these prices. Peak/off-peak
-                  vendor pricing cannot be expressed here, so estimates can differ from the
-                  invoice; provider balances are the authoritative number.
+                  {tr(
+                    "Cost prefers a provider-reported value (for example OpenRouter's",
+                  )}{' '}
+                  <code> usage.cost</code>
+                  {tr(
+                    ') and otherwise applies these prices. Peak/off-peak vendor pricing cannot be expressed here, so estimates can differ from the invoice; provider balances are the authoritative number.',
+                  )}
                 </div>
               </div>
             </>

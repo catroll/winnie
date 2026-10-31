@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
+import { tr } from '../i18n';
 import { LoadingScreen } from '../components/LoadingScreen';
 
 /** Routes that require a valid session. */
@@ -9,7 +10,7 @@ export function RequireAuth() {
   const location = useLocation();
 
   if (checking) {
-    return <LoadingScreen label="Checking your session…" />;
+    return <LoadingScreen label={tr('Checking your session…')} />;
   }
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location }} />;
@@ -25,10 +26,11 @@ export function PublicOnly() {
     ?.from;
 
   if (checking) {
-    return <LoadingScreen label="Checking your session…" />;
+    return <LoadingScreen label={tr('Checking your session…')} />;
   }
   if (user) {
     return <Navigate to={from?.pathname ?? '/'} replace />;
   }
   return <Outlet />;
 }
+

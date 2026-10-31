@@ -9,6 +9,7 @@ import type {
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 
@@ -121,7 +122,10 @@ export function IndexPage() {
     }
     const invalid = draft.roots.find((root) => !root.name.trim() || !root.path.trim());
     if (invalid) {
-      setMessage({ kind: 'danger', text: 'Every root needs a name and an absolute path.' });
+      setMessage({
+        kind: 'danger',
+        text: tr('Every root needs a name and an absolute path.'),
+      });
       return;
     }
     setBusy('save');
@@ -131,7 +135,9 @@ export function IndexPage() {
       setDraft(structuredClone(saved.config));
       setMessage({
         kind: 'success',
-        text: 'Saved. The daemon reloaded the configuration; run a build to apply new roots.',
+        text: tr(
+          'Saved. The daemon reloaded the configuration; run a build to apply new roots.',
+        ),
       });
       result.reload();
     } catch (error) {
@@ -150,8 +156,19 @@ export function IndexPage() {
       setMessage({
         kind: 'success',
         text: dryRun
-          ? `Dry run: ${build.added} new, ${build.sealed} sealed, nothing written.`
-          : `Build: ${build.added} added, ${build.changed} changed, ${build.deleted} removed, ${build.chunks} chunks.`,
+          ? tr('Dry run: {{added}} new, {{sealed}} sealed, nothing written.', {
+              added: build.added,
+              sealed: build.sealed,
+            })
+          : tr(
+              'Build: {{added}} added, {{changed}} changed, {{deleted}} removed, {{chunks}} chunks.',
+              {
+                added: build.added,
+                changed: build.changed,
+                deleted: build.deleted,
+                chunks: build.chunks,
+              },
+            ),
       });
       result.reload();
     } catch (error) {
@@ -166,7 +183,10 @@ export function IndexPage() {
     setMessage(null);
     try {
       const response = await api.indexSkill('install');
-      setMessage({ kind: 'success', text: `Skill written to ${response.path}` });
+      setMessage({
+        kind: 'success',
+        text: tr('Skill written to {{path}}', { path: response.path }),
+      });
       result.reload();
     } catch (error) {
       setMessage({ kind: 'danger', text: describe(error) });
@@ -218,8 +238,10 @@ export function IndexPage() {
             <>
               <ErrorBlock error={result.error} onRetry={result.reload} />
               <div className="alert alert-secondary" role="note">
-                The console reaches the index through the Winnie API. If the daemon is not
-                running, start it with <code>systemctl --user start winnie-index</code> or
+                {tr(
+                  'The console reaches the index through the Winnie API. If the daemon is not running, start it with',
+                )}{' '}
+                <code>systemctl --user start winnie-index</code> {tr('or')}
                 <code> make index-serve</code>.
               </div>
             </>
@@ -232,7 +254,7 @@ export function IndexPage() {
                   <div className="small-box text-bg-primary">
                     <div className="inner">
                       <h3>{status.documents.indexed ?? 0}</h3>
-                      <p>Indexed documents</p>
+                      <p>{tr('Indexed documents')}</p>
                     </div>
                     <i className="small-box-icon bi bi-file-earmark-text" aria-hidden="true" />
                   </div>
@@ -241,7 +263,7 @@ export function IndexPage() {
                   <div className="small-box text-bg-success">
                     <div className="inner">
                       <h3>{status.chunks}</h3>
-                      <p>Chunks</p>
+                      <p>{tr('Chunks')}</p>
                     </div>
                     <i className="small-box-icon bi bi-collection" aria-hidden="true" />
                   </div>
@@ -250,7 +272,7 @@ export function IndexPage() {
                   <div className="small-box text-bg-warning">
                     <div className="inner">
                       <h3>{status.documents.sealed ?? 0}</h3>
-                      <p>Sealed files</p>
+                      <p>{tr('Sealed files')}</p>
                     </div>
                     <i className="small-box-icon bi bi-file-earmark-x" aria-hidden="true" />
                   </div>
@@ -259,7 +281,7 @@ export function IndexPage() {
                   <div className="small-box text-bg-info">
                     <div className="inner">
                       <h3>{formatBytes(status.db_bytes)}</h3>
-                      <p>Catalog size</p>
+                      <p>{tr('Catalog size')}</p>
                     </div>
                     <i className="small-box-icon bi bi-hdd" aria-hidden="true" />
                   </div>
@@ -270,16 +292,16 @@ export function IndexPage() {
                 <div className="col-12">
                   <div className="card">
                     <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                      <h3 className="card-title mb-0">Search test</h3>
+                      <h3 className="card-title mb-0">{tr('Search test')}</h3>
                       <span className="ms-auto small text-secondary">
-                        Every matching chunk, not the collapsed retrieval view
+                        {tr('Every matching chunk, not the collapsed retrieval view')}
                       </span>
                     </div>
                     <div className="card-body">
                       <form className="row g-2 align-items-end" onSubmit={(event) => void runSearch(event)}>
                         <div className="col-12 col-lg-5">
                           <label className="form-label" htmlFor="search-query">
-                            Query
+                            {tr('Query')}
                           </label>
                           <input
                             id="search-query"
@@ -291,7 +313,7 @@ export function IndexPage() {
                         </div>
                         <div className="col-6 col-lg-2">
                           <label className="form-label" htmlFor="search-root">
-                            Root
+                            {tr('Root')}
                           </label>
                           <select
                             id="search-root"
@@ -299,7 +321,7 @@ export function IndexPage() {
                             value={rootFilter}
                             onChange={(event) => setRootFilter(event.target.value)}
                           >
-                            <option value="">All roots</option>
+                            <option value="">{tr('All roots')}</option>
                             {draft.roots.map((root) => (
                               <option key={root.name} value={root.name}>
                                 {root.name}
@@ -309,7 +331,7 @@ export function IndexPage() {
                         </div>
                         <div className="col-6 col-lg-2">
                           <label className="form-label" htmlFor="search-since">
-                            Modified since
+                            {tr('Modified since')}
                           </label>
                           <input
                             id="search-since"
@@ -321,7 +343,7 @@ export function IndexPage() {
                         </div>
                         <div className="col-6 col-lg-1">
                           <label className="form-label" htmlFor="search-limit">
-                            Limit
+                            {tr('Limit')}
                           </label>
                           <input
                             id="search-limit"
@@ -337,7 +359,7 @@ export function IndexPage() {
                         </div>
                         <div className="col-6 col-lg-2">
                           <button type="submit" className="btn btn-primary w-100" disabled={searching}>
-                            {searching ? 'Searching…' : 'Search'}
+                            {searching ? tr('Searching…') : tr('Search')}
                           </button>
                         </div>
                       </form>
@@ -352,13 +374,22 @@ export function IndexPage() {
                         <div className="mt-3">
                           <div className="d-flex flex-wrap align-items-center gap-2 small">
                             <span className="badge text-bg-primary">
-                              {searchResult.returned} chunks in {searchResult.files.length} files
+                              {tr('{{chunks}} chunks in {{files}} files', {
+                                chunks: searchResult.returned,
+                                files: searchResult.files.length,
+                              })}
                             </span>
                             <span className="text-secondary">
-                              {searchResult.candidates} candidates · {searchResult.elapsed_ms} ms ·{' '}
-                              {searchResult.dropped} dropped
+                              {tr(
+                                '{{candidates}} candidates · {{elapsed}} ms · {{dropped}} dropped',
+                                {
+                                  candidates: searchResult.candidates,
+                                  elapsed: searchResult.elapsed_ms,
+                                  dropped: searchResult.dropped,
+                                },
+                              )}
                             </span>
-                            <span className="text-secondary">expression</span>
+                            <span className="text-secondary">{tr('expression')}</span>
                             <code>{searchResult.expression ?? '—'}</code>
                             {searchResult.terms.map((term) => (
                               <span className="badge text-bg-light border" key={term}>
@@ -374,7 +405,7 @@ export function IndexPage() {
                           ) : null}
 
                           {searchResult.hits.length === 0 ? (
-                            <p className="text-secondary mt-2 mb-0">No chunk matched.</p>
+                            <p className="text-secondary mt-2 mb-0">{tr('No chunk matched.')}</p>
                           ) : (
                             <div className="mt-2">
                               {searchResult.files.map((file) => {
@@ -390,23 +421,36 @@ export function IndexPage() {
                                       <span className="badge text-bg-secondary">{file.root}</span>
                                       <code className="text-break">{file.path}</code>
                                       <span className="ms-auto small text-secondary">
-                                        {file.chunks} chunk{file.chunks === 1 ? '' : 's'} · best{' '}
-                                        {file.best_score.toFixed(2)} · lower is better
+                                        {file.chunks === 1
+                                          ? tr(
+                                              '{{chunks}} chunk · best {{score}} · lower is better',
+                                              {
+                                                chunks: file.chunks,
+                                                score: file.best_score.toFixed(2),
+                                              },
+                                            )
+                                          : tr(
+                                              '{{chunks}} chunks · best {{score}} · lower is better',
+                                              {
+                                                chunks: file.chunks,
+                                                score: file.best_score.toFixed(2),
+                                              },
+                                            )}
                                       </span>
                                     </div>
                                     <div className="table-responsive">
                                       <table className="table table-sm mb-0">
                                         <thead>
                                           <tr>
-                                            <th scope="col">Lines</th>
-                                            <th scope="col">Heading</th>
+                                            <th scope="col">{tr('Lines')}</th>
+                                            <th scope="col">{tr('Heading')}</th>
                                             <th scope="col" className="text-end">
-                                              Score
+                                              {tr('Score')}
                                             </th>
                                             <th scope="col" className="text-end">
-                                              Tokens
+                                              {tr('Tokens')}
                                             </th>
-                                            <th scope="col">Chunk</th>
+                                            <th scope="col">{tr('Chunk')}</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -448,7 +492,7 @@ export function IndexPage() {
                 <div className="col-lg-8">
                   <div className="card">
                     <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                      <h3 className="card-title mb-0">Roots</h3>
+                      <h3 className="card-title mb-0">{tr('Roots')}</h3>
                       <div className="ms-auto d-flex gap-2">
                         <button
                           type="button"
@@ -457,7 +501,7 @@ export function IndexPage() {
                           disabled={disabled}
                         >
                           <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-                          Add root
+                          {tr('Add root')}
                         </button>
                         <button
                           type="button"
@@ -465,7 +509,7 @@ export function IndexPage() {
                           onClick={() => void save()}
                           disabled={disabled}
                         >
-                          {busy === 'save' ? 'Saving…' : 'Save configuration'}
+                          {busy === 'save' ? tr('Saving…') : tr('Save configuration')}
                         </button>
                       </div>
                     </div>
@@ -480,14 +524,14 @@ export function IndexPage() {
                             <thead>
                               <tr>
                                 <th scope="col" style={{ width: '150px' }}>
-                                  Name
+                                  {tr('Name')}
                                 </th>
-                                <th scope="col">Path</th>
+                                <th scope="col">{tr('Path')}</th>
                                 <th scope="col" className="text-center">
-                                  Watch
+                                  {tr('Watch')}
                                 </th>
                                 <th scope="col" className="text-end">
-                                  Actions
+                                  {tr('Actions')}
                                 </th>
                               </tr>
                             </thead>
@@ -499,7 +543,9 @@ export function IndexPage() {
                                       <input
                                         className="form-control form-control-sm"
                                         value={root.name}
-                                        aria-label={`Root ${index + 1} name`}
+                                        aria-label={tr('Root {{number}} name', {
+                                          number: index + 1,
+                                        })}
                                         onChange={(event) =>
                                           updateRoot(index, { name: event.target.value })
                                         }
@@ -509,7 +555,9 @@ export function IndexPage() {
                                       <input
                                         className="form-control form-control-sm"
                                         value={root.path}
-                                        aria-label={`Root ${index + 1} path`}
+                                        aria-label={tr('Root {{number}} path', {
+                                          number: index + 1,
+                                        })}
                                         placeholder="/home/you/notes"
                                         onChange={(event) =>
                                           updateRoot(index, { path: event.target.value })
@@ -522,7 +570,9 @@ export function IndexPage() {
                                           className="form-check-input"
                                           type="checkbox"
                                           checked={Boolean(root.watch)}
-                                          aria-label={`Root ${index + 1} watch`}
+                                          aria-label={tr('Root {{number}} watch', {
+                                            number: index + 1,
+                                          })}
                                           onChange={(event) =>
                                             updateRoot(index, { watch: event.target.checked })
                                           }
@@ -535,7 +585,9 @@ export function IndexPage() {
                                         className="btn btn-sm btn-outline-danger"
                                         onClick={() => removeRoot(index)}
                                         disabled={disabled}
-                                        aria-label={`Remove root ${root.name || index + 1}`}
+                                        aria-label={tr('Remove root {{root}}', {
+                                          root: root.name || index + 1,
+                                        })}
                                       >
                                         <i className="bi bi-trash" aria-hidden="true" />
                                       </button>
@@ -545,15 +597,17 @@ export function IndexPage() {
                                     <td colSpan={4} className="py-1">
                                       <details>
                                         <summary className="small text-secondary">
-                                          Include / exclude globs
+                                          {tr('Include / exclude globs')}
                                         </summary>
                                         <div className="row g-2 mt-1">
                                           <div className="col-md-6">
                                             <input
                                               className="form-control form-control-sm"
                                               value={(root.include ?? []).join(', ')}
-                                              aria-label={`Root ${index + 1} include globs`}
-                                              placeholder="include, comma separated"
+                                              aria-label={tr('Root {{number}} include globs', {
+                                                number: index + 1,
+                                              })}
+                                              placeholder={tr('include, comma separated')}
                                               onChange={(event) =>
                                                 updateRoot(index, {
                                                   include: splitList(event.target.value),
@@ -565,8 +619,10 @@ export function IndexPage() {
                                             <input
                                               className="form-control form-control-sm"
                                               value={(root.exclude ?? []).join(', ')}
-                                              aria-label={`Root ${index + 1} exclude globs`}
-                                              placeholder="exclude, comma separated"
+                                              aria-label={tr('Root {{number}} exclude globs', {
+                                                number: index + 1,
+                                              })}
+                                              placeholder={tr('exclude, comma separated')}
                                               onChange={(event) =>
                                                 updateRoot(index, {
                                                   exclude: splitList(event.target.value),
@@ -586,9 +642,10 @@ export function IndexPage() {
                       )}
                     </div>
                     <div className="card-footer text-secondary small">
-                      Saving rewrites the YAML file and reloads the daemon. Removing a root also
-                      removes its documents from the index; the files on disk are untouched.
-                      Format support in this version is <code>txt</code> and <code>md</code>.
+                      {tr(
+                        'Saving rewrites the YAML file and reloads the daemon. Removing a root also removes its documents from the index; the files on disk are untouched. Format support in this version is',
+                      )}{' '}
+                      <code>txt</code> {tr('and')} <code>md</code>.
                     </div>
                   </div>
                 </div>
@@ -596,12 +653,12 @@ export function IndexPage() {
                 <div className="col-lg-4">
                   <div className="card mb-3">
                     <div className="card-header">
-                      <h3 className="card-title">Sweep and limits</h3>
+                      <h3 className="card-title">{tr('Sweep and limits')}</h3>
                     </div>
                     <div className="card-body">
                       <div className="mb-3">
                         <label className="form-label" htmlFor="scan-interval">
-                          Sweep interval (seconds)
+                          {tr('Sweep interval (seconds)')}
                         </label>
                         <input
                           id="scan-interval"
@@ -619,7 +676,7 @@ export function IndexPage() {
                       </div>
                       <div className="mb-3">
                         <label className="form-label" htmlFor="max-file">
-                          Max file size (MB)
+                          {tr('Max file size (MB)')}
                         </label>
                         <input
                           id="max-file"
@@ -638,7 +695,7 @@ export function IndexPage() {
                       <div className="row">
                         <div className="col-6 mb-3">
                           <label className="form-label" htmlFor="result-limit">
-                            Results
+                            {tr('Results')}
                           </label>
                           <input
                             id="result-limit"
@@ -656,7 +713,7 @@ export function IndexPage() {
                         </div>
                         <div className="col-6 mb-3">
                           <label className="form-label" htmlFor="per-doc">
-                            Chunks per document
+                            {tr('Chunks per document')}
                           </label>
                           <input
                             id="per-doc"
@@ -678,7 +735,7 @@ export function IndexPage() {
 
                   <div className="card mb-3">
                     <div className="card-header">
-                      <h3 className="card-title">Maintenance</h3>
+                      <h3 className="card-title">{tr('Maintenance')}</h3>
                     </div>
                     <div className="card-body d-grid gap-2">
                       <button
@@ -687,7 +744,7 @@ export function IndexPage() {
                         onClick={() => void runBuild(true)}
                         disabled={disabled}
                       >
-                        {busy === 'dry' ? 'Checking…' : 'Dry run'}
+                        {busy === 'dry' ? tr('Checking…') : tr('Dry run')}
                       </button>
                       <button
                         type="button"
@@ -695,7 +752,7 @@ export function IndexPage() {
                         onClick={() => void runBuild(false)}
                         disabled={disabled}
                       >
-                        {busy === 'build' ? 'Building…' : 'Build now'}
+                        {busy === 'build' ? tr('Building…') : tr('Build now')}
                       </button>
                       <button
                         type="button"
@@ -703,22 +760,28 @@ export function IndexPage() {
                         onClick={() => void installSkill()}
                         disabled={disabled}
                       >
-                        {busy === 'skill' ? 'Writing…' : 'Install Agent Skill'}
+                        {busy === 'skill' ? tr('Writing…') : tr('Install Agent Skill')}
                       </button>
                     </div>
                     <div className="card-footer small text-secondary">
-                      Last sweep: {formatDateTime(status.last_sweep_at)}
+                      {tr('Last sweep: {{date}}', {
+                        date: formatDateTime(status.last_sweep_at),
+                      })}
                       {status.skill.installed ? (
-                        <span className="badge text-bg-success ms-2">skill installed</span>
+                        <span className="badge text-bg-success ms-2">
+                          {tr('skill installed')}
+                        </span>
                       ) : (
-                        <span className="badge text-bg-warning ms-2">skill missing</span>
+                        <span className="badge text-bg-warning ms-2">
+                          {tr('skill missing')}
+                        </span>
                       )}
                     </div>
                   </div>
 
                   <div className="card">
                     <div className="card-header">
-                      <h3 className="card-title">Endpoints</h3>
+                      <h3 className="card-title">{tr('Endpoints')}</h3>
                     </div>
                     <div className="card-body small">
                       <div className="mb-2">
@@ -730,11 +793,11 @@ export function IndexPage() {
                         <code className="text-break">{status.endpoints.http}</code>
                       </div>
                       <div className="mb-2">
-                        <span className="text-secondary d-block">Catalog</span>
+                        <span className="text-secondary d-block">{tr('Catalog')}</span>
                         <code className="text-break">{status.db_path}</code>
                       </div>
                       <div>
-                        <span className="text-secondary d-block">Config</span>
+                        <span className="text-secondary d-block">{tr('Config')}</span>
                         <code className="text-break">{configPath}</code>
                       </div>
                     </div>
@@ -745,20 +808,20 @@ export function IndexPage() {
               {status.roots.length > 0 ? (
                 <div className="card mt-3">
                   <div className="card-header">
-                    <h3 className="card-title">Indexed roots</h3>
+                    <h3 className="card-title">{tr('Indexed roots')}</h3>
                   </div>
                   <div className="card-body p-0">
                     <div className="table-responsive">
                       <table className="table table-striped align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Root</th>
-                            <th scope="col">Path</th>
+                            <th scope="col">{tr('Root')}</th>
+                            <th scope="col">{tr('Path')}</th>
                             <th scope="col" className="text-end">
-                              Documents
+                              {tr('Documents')}
                             </th>
                             <th scope="col" className="text-end">
-                              Chunks
+                              {tr('Chunks')}
                             </th>
                           </tr>
                         </thead>
@@ -781,7 +844,7 @@ export function IndexPage() {
               {lastBuild || status.last_build ? (
                 <div className="card mt-3">
                   <div className="card-header">
-                    <h3 className="card-title">Last build</h3>
+                    <h3 className="card-title">{tr('Last build')}</h3>
                   </div>
                   <div className="card-body">
                     {(() => {
@@ -792,10 +855,19 @@ export function IndexPage() {
                       return (
                         <>
                           <p className="mb-2">
-                            {build.dry_run ? 'Dry run' : 'Build'} — {build.added} added,{' '}
-                            {build.changed} changed, {build.unchanged} unchanged,{' '}
-                            {build.deleted} removed, {build.failed} failed, {build.sealed} sealed,{' '}
-                            {build.chunks} chunks.
+                            {build.dry_run ? tr('Dry run') : tr('Build')} —{' '}
+                            {tr(
+                              '{{added}} added, {{changed}} changed, {{unchanged}} unchanged, {{deleted}} removed, {{failed}} failed, {{sealed}} sealed, {{chunks}} chunks.',
+                              {
+                                added: build.added,
+                                changed: build.changed,
+                                unchanged: build.unchanged,
+                                deleted: build.deleted,
+                                failed: build.failed,
+                                sealed: build.sealed,
+                                chunks: build.chunks,
+                              },
+                            )}
                           </p>
                           {build.errors && build.errors.length > 0 ? (
                             <ul className="mb-0 small text-danger">
@@ -814,15 +886,15 @@ export function IndexPage() {
               {status.failures.length > 0 ? (
                 <div className="card mt-3">
                   <div className="card-header">
-                    <h3 className="card-title">Failures</h3>
+                    <h3 className="card-title">{tr('Failures')}</h3>
                   </div>
                   <div className="card-body p-0">
                     <div className="table-responsive">
                       <table className="table align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Path</th>
-                            <th scope="col">Error</th>
+                            <th scope="col">{tr('Path')}</th>
+                            <th scope="col">{tr('Error')}</th>
                           </tr>
                         </thead>
                         <tbody>

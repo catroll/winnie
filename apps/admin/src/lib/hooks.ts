@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { tr } from '../i18n';
 
 export type AsyncState<T> =
   | { status: 'loading'; data: null; error: null }
@@ -58,7 +61,8 @@ export function useApi<T>(
 
 /** Keep the document title in sync with the active page. */
 export function useTitle(title: string): void {
+  const { i18n } = useTranslation();
   useEffect(() => {
-    document.title = `${title} · Winnie Admin`;
-  }, [title]);
+    document.title = `${tr(title)} · Winnie Admin`;
+  }, [title, i18n.resolvedLanguage]);
 }

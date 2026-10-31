@@ -10,6 +10,7 @@ import type {
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
+import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 import { conversationChannel } from '../lib/status';
@@ -54,7 +55,7 @@ function Message({ message }: { message: AssistantMessage }) {
       <details className="border rounded bg-body-tertiary p-2 mb-3">
         <summary className="small text-secondary">
           <i className="bi bi-tools me-1" aria-hidden="true" />
-          {message.name || 'tool'} · {formatDateTime(message.at)}
+          {message.name || tr('tool')} · {formatDateTime(message.at)}
         </summary>
         <pre
           className="small mt-2 mb-0 text-wrap"
@@ -71,7 +72,7 @@ function Message({ message }: { message: AssistantMessage }) {
     <div className={`direct-chat-msg${outgoing ? ' end' : ''}`}>
       <div className="direct-chat-infos clearfix">
         <span className={`direct-chat-name ${outgoing ? 'float-end' : 'float-start'}`}>
-          {outgoing ? 'You' : 'Winnie'}
+          {outgoing ? tr('You') : 'Winnie'}
         </span>
         <span className={`direct-chat-timestamp ${outgoing ? 'float-start' : 'float-end'}`}>
           {formatDateTime(message.at)}
@@ -92,7 +93,7 @@ function Thinking() {
       <Avatar assistant />
       <div className="direct-chat-text text-secondary" role="status">
         <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
-        Thinking…
+        {tr('Thinking…')}
       </div>
     </div>
   );
@@ -255,27 +256,27 @@ export function ChatPage() {
             <div className="col-12 col-lg-4 col-xl-3 order-2 order-lg-1">
               <div className="card mb-3">
                 <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                  <h3 className="card-title mb-0">Conversations</h3>
+                  <h3 className="card-title mb-0">{tr('Conversations')}</h3>
                   <div className="ms-auto d-flex gap-2">
                     <button
                       type="button"
                       className="btn btn-sm btn-outline-secondary"
                       onClick={history.reload}
-                      aria-label="Refresh conversations"
-                      title="Refresh conversations"
+                      aria-label={tr('Refresh conversations')}
+                      title={tr('Refresh conversations')}
                     >
                       <i className="bi bi-arrow-clockwise" aria-hidden="true" />
                     </button>
                     <Link to="/chat" className="btn btn-sm btn-primary">
                       <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-                      New chat
+                      {tr('New chat')}
                     </Link>
                   </div>
                 </div>
 
                 <div className="card-body border-bottom">
                   <label className="form-label small text-secondary" htmlFor="chat-channel">
-                    Channel
+                    {tr('Channel')}
                   </label>
                   <select
                     id="chat-channel"
@@ -288,13 +289,14 @@ export function ChatPage() {
                   >
                     {CHANNELS.map((option) => (
                       <option key={option.value || 'all'} value={option.value}>
-                        {option.label}
+                        {tr(option.label)}
                       </option>
                     ))}
                   </select>
                   <p className="small text-secondary mb-0 mt-2">
-                    Every entry point in one history: console, phone page, API and
-                    scheduled task runs.
+                    {tr(
+                      'Every entry point in one history: console, phone page, API and scheduled task runs.',
+                    )}
                   </p>
                 </div>
 
@@ -306,8 +308,10 @@ export function ChatPage() {
                   <div className="p-3">
                     <ErrorBlock error={history.error} onRetry={history.reload} />
                     <div className="alert alert-secondary mt-2 mb-0 small" role="note">
-                      Conversations come from the assistant service. They are available
-                      when <code>assistant.enabled</code> is true in
+                      {tr(
+                        'Conversations come from the assistant service. They are available when',
+                      )}{' '}
+                      <code>assistant.enabled</code> {tr('is true in')}{' '}
                       <code> apps/api/config.yaml</code>.
                     </div>
                   </div>
@@ -342,11 +346,13 @@ export function ChatPage() {
                             </span>
                           </div>
                           <div className="small text-secondary text-truncate">
-                            {item.preview || 'No preview'}
+                            {item.preview || tr('No preview')}
                           </div>
                           <div className="small text-secondary mt-1">
-                            {formatDateTime(item.created_at)} · {item.message_count}{' '}
-                            message{item.message_count === 1 ? '' : 's'}
+                            {formatDateTime(item.created_at)} ·{' '}
+                            {item.message_count === 1
+                              ? tr('{{count}} message', { count: item.message_count })
+                              : tr('{{count}} messages', { count: item.message_count })}
                           </div>
                         </Link>
                       );
@@ -356,7 +362,7 @@ export function ChatPage() {
 
                 <div className="card-footer d-flex flex-wrap align-items-center gap-2 small text-secondary">
                   <span>
-                    {items.length} of {total}
+                    {tr('{{loaded}} of {{total}}', { loaded: items.length, total })}
                   </span>
                   {canLoadMore ? (
                     <button
@@ -368,19 +374,19 @@ export function ChatPage() {
                         )
                       }
                     >
-                      Load more
+                      {tr('Load more')}
                     </button>
                   ) : null}
                   <span className={canLoadMore ? '' : 'ms-auto'}>
                     {status.status === 'loading' ? (
-                      'Loading status…'
+                      tr('Loading status…')
                     ) : status.status === 'success' && status.data ? (
                       <>
-                        Model <code>{status.data.model}</code> ·{' '}
-                        {status.data.conversations} stored
+                        {tr('Model')} <code>{status.data.model}</code> ·{' '}
+                        {tr('{{count}} stored', { count: status.data.conversations })}
                       </>
                     ) : (
-                      'Assistant status unavailable'
+                      tr('Assistant status unavailable')
                     )}
                   </span>
                 </div>
@@ -394,7 +400,7 @@ export function ChatPage() {
                     className="card-title mb-0 text-truncate"
                     style={{ maxWidth: '32rem' }}
                   >
-                    {activeConversation?.title ?? 'New conversation'}
+                    {activeConversation?.title ?? tr('New conversation')}
                   </h3>
                   {channelMeta ? (
                     <>
@@ -402,7 +408,7 @@ export function ChatPage() {
                         {channelMeta.label}
                       </span>
                       {activeConversation?.source === 'task' ? (
-                        <span className="badge text-bg-warning">Task run</span>
+                        <span className="badge text-bg-warning">{tr('Task run')}</span>
                       ) : null}
                       <span className="small text-secondary">
                         {formatDateTime(activeConversation?.created_at ?? null)}
@@ -411,11 +417,15 @@ export function ChatPage() {
                   ) : null}
                   <div className="ms-auto small text-secondary">
                     {activeConversation
-                      ? `${activeConversation.messages.length} message${
-                          activeConversation.messages.length === 1 ? '' : 's'
-                        }`
+                      ? activeConversation.messages.length === 1
+                        ? tr('{{count}} message', {
+                            count: activeConversation.messages.length,
+                          })
+                        : tr('{{count}} messages', {
+                            count: activeConversation.messages.length,
+                          })
                       : status.status === 'success' && status.data
-                        ? `Model ${status.data.model}`
+                        ? tr('Model {{model}}', { model: status.data.model })
                         : ''}
                   </div>
                 </div>
@@ -438,8 +448,8 @@ export function ChatPage() {
                           }
                         />
                         <p className="small text-secondary">
-                          <Link to="/chat">Start a new chat</Link> if this record no
-                          longer exists.
+                          <Link to="/chat">{tr('Start a new chat')}</Link>{' '}
+                          {tr('if this record no longer exists.')}
                         </p>
                       </>
                     ) : !activeConversation && conversationLoading ? (
@@ -449,17 +459,17 @@ export function ChatPage() {
                           aria-hidden="true"
                         />
                         <p className="mt-3 mb-0 text-secondary">
-                          Loading conversation…
+                          {tr('Loading conversation…')}
                         </p>
                       </div>
                     ) : !activeConversation && !conversationId ? (
                       <div className="text-center text-secondary py-5">
                         <i className="bi bi-chat-dots fs-1 d-block mb-2" aria-hidden="true" />
-                        <h2 className="h5 text-body">Start a conversation</h2>
+                        <h2 className="h5 text-body">{tr('Start a conversation')}</h2>
                         <p className="mb-0">
-                          Winnie answers from local files, web search and the document
-                          index. Its history also holds conversations from the phone
-                          page, API clients and scheduled tasks.
+                          {tr(
+                            'Winnie answers from local files, web search and the document index. Its history also holds conversations from the phone page, API clients and scheduled tasks.',
+                          )}
                         </p>
                       </div>
                     ) : activeConversation && activeConversation.messages.length === 0 ? (
@@ -497,21 +507,23 @@ export function ChatPage() {
                 {readOnly ? (
                   <div className="card-footer d-flex flex-wrap align-items-center gap-2">
                     <span className="small text-secondary flex-grow-1">
-                      This conversation is a scheduled task run. It is kept as a record
-                      and cannot be continued.
+                      {tr(
+                        'This conversation is a scheduled task run. It is kept as a record and cannot be continued.',
+                      )}
                     </span>
                     <Link to="/chat" className="btn btn-sm btn-primary">
-                      Start a new chat
+                      {tr('Start a new chat')}
                     </Link>
                   </div>
                 ) : conversationError ? (
                   <div className="card-footer d-flex flex-wrap align-items-center gap-2">
                     <span className="small text-secondary flex-grow-1">
-                      This conversation could not be loaded. Start a new chat to
-                      continue.
+                      {tr(
+                        'This conversation could not be loaded. Start a new chat to continue.',
+                      )}
                     </span>
                     <Link to="/chat" className="btn btn-sm btn-primary">
-                      Start a new chat
+                      {tr('Start a new chat')}
                     </Link>
                   </div>
                 ) : (
@@ -523,7 +535,7 @@ export function ChatPage() {
                     }}
                   >
                     <label className="visually-hidden" htmlFor="chat-message">
-                      Message Winnie
+                      {tr('Message Winnie')}
                     </label>
                     <div className="d-flex align-items-end gap-2">
                       <textarea
@@ -532,7 +544,7 @@ export function ChatPage() {
                         className="form-control"
                         rows={1}
                         value={draft}
-                        placeholder="Message Winnie…"
+                        placeholder={tr('Message Winnie…')}
                         onChange={(event) => setDraft(event.target.value)}
                         onKeyDown={(event) => {
                           if (
@@ -561,14 +573,14 @@ export function ChatPage() {
                           <i className="bi bi-send-fill" aria-hidden="true" />
                         )}
                         <span className="ms-2 d-none d-sm-inline">
-                          {sending ? 'Sending' : 'Send'}
+                          {sending ? tr('Sending') : tr('Send')}
                         </span>
                       </button>
                     </div>
                     <div className="small text-secondary mt-1">
                       {loadingConversation
-                        ? 'Loading the conversation…'
-                        : 'Enter sends · Shift+Enter starts a new line'}
+                        ? tr('Loading the conversation…')
+                        : tr('Enter sends · Shift+Enter starts a new line')}
                     </div>
                   </form>
                 )}
