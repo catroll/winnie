@@ -1,4 +1,4 @@
-"""Winnie API entry point and composition root."""
+"""Winnie API host: compose framework and capability packages."""
 
 from __future__ import annotations
 
@@ -11,11 +11,13 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import text
 
+from winnie_core.auth.capability import capability as auth_capability
+from winnie_core.capability import WinnieFramework
+from winnie_core.jobs.queue import ArqJobQueue
+from winnie_gateway.capability import capability as gateway_capability
+from winnie_meetings.capability import capability as meetings_capability
+
 from winnie_api import __version__
-from winnie_api.auth.router import router as auth_router
-from winnie_api.gateway.router import router as gateway_router
-from winnie_api.jobs.queue import ArqJobQueue
-from winnie_api.meetings.router import router as meetings_router
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.settings import Settings, load_settings
 
@@ -27,22 +29,18 @@ def create_app(
     settings: Settings | None = None,
     http: httpx.AsyncClient | None = None,
 ) -> FastAPI:
-    """Build the application.
-
-    Settings and the shared HTTP client can be injected, which keeps tests and
-    alternate deployments free of process-wide globals. When omitted, settings
-    are loaded from config.yaml.
-    """
+    """Build the application from independently registered capabilities."""
     resolved = settings or load_settings()
     owns_http = http is None
     runtime: AppRuntime | None = build_runtime(resolved)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.settings = resolved
-        app.state.routes_table = resolved.route_table()
+        app.state.gateway = resolved.gateway_config()
+        app.state.routes_table = app.state.gateway.route_table()
         app.state.log_root = resolved.resolve_log_root()
         app.state.recorders = {}
+        app.state.default_user_id = resolved.meetings.default_user_id
         app.state.http = http or httpx.AsyncClient(
             timeout=httpx.Timeout(300.0, connect=30.0)
         )
@@ -61,12 +59,13 @@ def create_app(
                 await app.state.http.aclose()
 
     app = FastAPI(title="Winnie", version=__version__, lifespan=lifespan)
-    app.state.settings = resolved
-    app.include_router(gateway_router)
+    framework = WinnieFramework(app)
+    framework.register(gateway_capability())
     if resolved.auth.enabled:
-        app.include_router(auth_router, prefix="/api/v1")
+        framework.register(auth_capability())
     if resolved.meetings.enabled:
-        app.include_router(meetings_router, prefix="/api/v1")
+        framework.register(meetings_capability())
+    app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

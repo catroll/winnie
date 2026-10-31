@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from winnie_api.integrations.asr.base import ASRResult, ASRSegment
-from winnie_api.integrations.types import AudioRef, Usage
-from winnie_api.meetings.language import detect_language
+from winnie_meetings.integrations.asr.base import ASRResult, ASRSegment
+from winnie_core.types import AudioRef, Usage
+from winnie_meetings.language import detect_language
 from winnie_api.runtime import build_runtime
 from winnie_api.settings import Settings
 

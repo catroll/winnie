@@ -79,6 +79,11 @@ enough to start without re-reading the design.
 
 ## P1 — production data and jobs
 
+- [x] Split the monolithic backend into `winnie-core`, `winnie-gateway`,
+      `winnie-meetings` and `winnie-knowledge` packages; `apps/api` is now the
+      thin host that registers capabilities. Boundary tests forbid capability
+      imports of the host or of sibling implementations.
+
 - [x] Add Alembic migrations for the initial schema; `alembic check` is clean
       and the test suite verifies upgrade, downgrade and startup without
       `auto_create_tables`.
@@ -94,7 +99,7 @@ enough to start without re-reading the design.
       URLs) while keeping local disk as the default.
 - [x] Define audio retention: `audio_retention_days` purges only audio for
       terminal meetings, the meeting API already purges on delete, and the arq
-      cron plus `python -m winnie_api.meetings.cleanup_audio` cover deployments
+      cron plus `python -m winnie_api.cli.cleanup_audio` cover deployments
       without a worker.
 - [x] Add a session cleanup job for expired `auth_sessions`; the arq worker
       schedules it daily and a standalone CLI is available for cron.
@@ -106,7 +111,7 @@ enough to start without re-reading the design.
       `429` with `Retry-After`.
 - [x] Add password change; the current password is required and every session
       is revoked.
-- [x] Add password reset from the host: `python -m winnie_api.auth.reset_password`
+- [x] Add password reset from the host: `python -m winnie_api.cli.reset_password`
       prompts or generates a password and revokes every session.
 - [ ] Add email-based password reset if multi-user deployment needs it.
 - [ ] Add account management/admin endpoints only when multi-user deployment

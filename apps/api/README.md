@@ -4,12 +4,12 @@ FastAPI backend for Winnie. It ships the transparent LLM gateway, local
 accounts, and the file-first meeting-notes backend; knowledge APIs are added
 incrementally.
 
-- Application entry and composition root: `winnie_api.main:create_app`
-- Gateway feature: `src/winnie_api/gateway/`
-- Auth feature: `src/winnie_api/auth/`
-- Meetings feature: `src/winnie_api/meetings/`
-- Shared runtime and database: `src/winnie_api/runtime.py`, `shared/db.py`
-- Settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
+- Host and composition root: `src/winnie_api/main.py`
+- Framework package: `packages/winnie-core` (auth, DB, storage, jobs, LLM)
+- Gateway package: `packages/winnie-gateway`
+- Meetings package: `packages/winnie-meetings`
+- Knowledge sink package: `packages/winnie-knowledge`
+- Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Tests: `tests/`, using a fake upstream instead of real vendor keys
 
 ## Run
@@ -55,14 +55,14 @@ equivalent to having database access. `--generate` prints a random password
 once; without it the command prompts twice.
 
 ```bash
-uv run python -m winnie_api.auth.reset_password --generate alice
+uv run python -m winnie_api.cli.reset_password --generate alice
 ```
 
 Expired sessions are rejected when used. Delete them periodically with the arq
 worker (daily at 03:17 UTC) or, without a worker, a cron entry:
 
 ```bash
-uv run python -m winnie_api.auth.cleanup
+uv run python -m winnie_api.cli.cleanup_sessions
 ```
 
 ## Database migrations
@@ -135,7 +135,7 @@ keeping the transcript and minutes. Run it from cron when no arq worker is
 deployed:
 
 ```bash
-uv run python -m winnie_api.meetings.cleanup_audio
+uv run python -m winnie_api.cli.cleanup_audio
 ```
 
 The arq worker schedules the same purge daily at 03:47 UTC.

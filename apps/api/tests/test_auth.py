@@ -7,8 +7,8 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from winnie_api.auth.errors import UserNotFound
-from winnie_api.auth.service import AuthService
+from winnie_core.auth.errors import UserNotFound
+from winnie_core.auth.service import AuthService
 from winnie_api.main import create_app
 from winnie_api.runtime import build_runtime
 from winnie_api.settings import Settings
@@ -257,7 +257,7 @@ async def test_cleanup_deletes_only_expired_sessions(
     engine = create_async_engine(auth_settings.resolve_database_url())
     service = AuthService(
         session_factory=async_sessionmaker(engine, expire_on_commit=False),
-        settings=auth_settings,
+        config=auth_settings.auth,
     )
     try:
         deleted = await service.cleanup_expired_sessions()

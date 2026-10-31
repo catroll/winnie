@@ -1514,6 +1514,10 @@ dependencies = [
     { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "winnie-core" },
+    { name = "winnie-gateway" },
+    { name = "winnie-knowledge" },
+    { name = "winnie-meetings" },
 ]
 
 [package.dev-dependencies]
@@ -1536,10 +1540,86 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.0" },
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
+    { name = "winnie-gateway", editable = "../../packages/winnie-gateway" },
+    { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
+    { name = "winnie-meetings", editable = "../../packages/winnie-meetings" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.1" },
+]
+
+[[package]]
+name = "winnie-core"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-core" }
+dependencies = [
+    { name = "argon2-cffi" },
+    { name = "arq" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "argon2-cffi", specifier = ">=25.1.0" },
+    { name = "arq", specifier = ">=0.28.0" },
+    { name = "fastapi", specifier = ">=0.141.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
+]
+
+[[package]]
+name = "winnie-gateway"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-gateway" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "winnie-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.141.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
+]
+
+[[package]]
+name = "winnie-knowledge"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-knowledge" }
+
+[[package]]
+name = "winnie-meetings"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-meetings" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "winnie-core" },
+    { name = "winnie-knowledge" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.141.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "python-multipart", specifier = ">=0.0.32" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
+    { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
 ]

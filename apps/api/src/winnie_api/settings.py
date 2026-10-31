@@ -1,25 +1,20 @@
-"""Load application settings from YAML."""
+"""Host settings: compose framework and capability configuration."""
 
 from __future__ import annotations
 
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from winnie_api.gateway.routes import Route
+from winnie_core.config import AuthConfig, JobsConfig, LLMConfig
+from winnie_gateway.config import GatewayConfig, RouteConfig
+from winnie_meetings.config import MeetingsConfig
 
 _API_ROOT = Path(__file__).resolve().parents[2]
-
-
-class RouteConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    protocol: Literal["openai", "anthropic"]
-    base_url: str
 
 
 class DatabaseConfig(BaseModel):
@@ -28,74 +23,6 @@ class DatabaseConfig(BaseModel):
     url: str = "sqlite+aiosqlite:///../../data/winnie.db"
     echo: bool = False
     auto_create_tables: bool = True
-
-
-class JobsConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    backend: Literal["inline", "arq"] = "inline"
-    redis_url: str = ""
-
-
-class AuthConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool = False
-    allow_registration: bool = False
-    session_ttl_days: int = Field(default=30, ge=1, le=365)
-    login_max_attempts: int = Field(default=5, ge=1, le=100)
-    login_window_seconds: int = Field(default=300, ge=10, le=86400)
-    login_lockout_seconds: int = Field(default=900, ge=10, le=604800)
-
-
-class VolcengineASRConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    base_url: str = "https://openspeech.bytedance.com"
-    resource_id: str = "volc.seedasr.auc"
-    model_name: str = "bigmodel"
-    max_inline_mb: int = Field(default=100, ge=1, le=500)
-    poll_interval_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
-    poll_timeout_seconds: float = Field(default=300.0, ge=1.0, le=3600.0)
-
-
-class LLMConfig(BaseModel):
-    """Internal OpenAI-compatible model access for translation and minutes.
-
-    This is deliberately separate from the gateway routes: internal jobs call
-    the provider directly instead of looping back through the proxy.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    base_url: str = ""
-    api_key_env: str = "WINNIE_LLM_API_KEY"
-    model: str = "fake"
-    timeout_seconds: float = Field(default=120.0, ge=1.0, le=600.0)
-    max_output_tokens: int = Field(default=4096, ge=1, le=32768)
-    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    max_retries: int = Field(default=2, ge=0, le=5)
-    retry_backoff_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
-    translation_batch_chars: int = Field(default=6000, ge=500, le=50000)
-    summary_chunk_chars: int = Field(default=24000, ge=2000, le=100000)
-
-
-class MeetingsConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool = False
-    default_user_id: str = "local"
-    local_language: str = "zh"
-    storage: Literal["local"] = "local"
-    local_root: str = "../../data/meetings"
-    notes_root: str = "../../data/kb/meetings"
-    max_upload_mb: int = 500
-    audio_retention_days: int = Field(default=0, ge=0, le=3650)
-    asr_provider: str = "fake"
-    translator: str = "fake"
-    summarizer: str = "fake"
-    prompt_version: str = "v1"
-    volcengine: VolcengineASRConfig = Field(default_factory=VolcengineASRConfig)
 
 
 class Settings(BaseModel):
@@ -111,11 +38,13 @@ class Settings(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
 
-    def route_table(self) -> dict[str, Route]:
-        return {
-            name: Route(name=name, protocol=cfg.protocol, base_url=cfg.base_url)
-            for name, cfg in self.routes.items()
-        }
+    def gateway_config(self) -> GatewayConfig:
+        return GatewayConfig(
+            routes=self.routes,
+            log_root=self.resolve_log_root(),
+            anthropic_version=self.anthropic_version,
+            proxy_api_key=self.proxy_api_key,
+        )
 
     def resolve_log_root(self) -> Path:
         return _resolve_path(self.log_root)

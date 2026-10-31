@@ -7,12 +7,14 @@ import re
 import httpx
 import pytest
 
-from winnie_api.integrations.factory import build_summarizer, build_translator
-from winnie_api.integrations.llm.openai_compatible import OpenAICompatibleLLM
-from winnie_api.integrations.summarize.base import TranscriptLine, TranscriptView
-from winnie_api.integrations.summarize.llm import LLMSummarizer
-from winnie_api.integrations.translate.llm import LLMTranslator
-from winnie_api.settings import LLMConfig, MeetingsConfig, Settings
+from winnie_meetings.integrations.factory import build_summarizer, build_translator
+from winnie_core.llm.openai_compatible import OpenAICompatibleLLM
+from winnie_meetings.integrations.summarize.base import TranscriptLine, TranscriptView
+from winnie_meetings.integrations.summarize.llm import LLMSummarizer
+from winnie_meetings.integrations.translate.llm import LLMTranslator
+from winnie_api.settings import Settings
+from winnie_core.config import LLMConfig
+from winnie_meetings.config import MeetingsConfig
 
 
 def _llm(
@@ -229,12 +231,12 @@ def test_factory_selects_llm_adapters_and_requires_key(monkeypatch) -> None:
         ),
     )
     monkeypatch.setenv("WINNIE_TEST_LLM_KEY", "secret")
-    assert isinstance(build_translator(settings), LLMTranslator)
-    assert isinstance(build_summarizer(settings), LLMSummarizer)
+    assert isinstance(build_translator(settings.meetings, settings.llm), LLMTranslator)
+    assert isinstance(build_summarizer(settings.meetings, settings.llm), LLMSummarizer)
 
     monkeypatch.delenv("WINNIE_TEST_LLM_KEY")
     with pytest.raises(RuntimeError, match="WINNIE_TEST_LLM_KEY"):
-        build_translator(settings)
+        build_translator(settings.meetings, settings.llm)
 
 
 async def test_pipeline_uses_llm_adapters(meeting_settings, monkeypatch) -> None:
@@ -291,7 +293,7 @@ async def test_pipeline_uses_llm_adapters(meeting_settings, monkeypatch) -> None
         )
 
     monkeypatch.setattr(
-        "winnie_api.integrations.factory.build_llm", fake_build_llm
+        "winnie_meetings.integrations.factory.build_llm", fake_build_llm
     )
 
     gateway_http = httpx.AsyncClient(

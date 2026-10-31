@@ -9,14 +9,10 @@ import pytest
 import pytest_asyncio
 
 from winnie_api.main import create_app
-from winnie_api.settings import (
-    AuthConfig,
-    DatabaseConfig,
-    JobsConfig,
-    MeetingsConfig,
-    RouteConfig,
-    Settings,
-)
+from winnie_api.settings import DatabaseConfig, Settings
+from winnie_core.config import AuthConfig, JobsConfig
+from winnie_gateway.config import RouteConfig
+from winnie_meetings.config import MeetingsConfig
 
 
 class FakeUpstream:

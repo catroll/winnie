@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from winnie_api.jobs.queue import ArqJobQueue
+from winnie_core.jobs.queue import ArqJobQueue
 
 
 async def test_arq_queue_enqueues_and_closes_the_pool(monkeypatch) -> None:

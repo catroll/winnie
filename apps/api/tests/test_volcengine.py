@@ -7,8 +7,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from winnie_api.integrations.asr.volcengine import VolcengineASRProvider
-from winnie_api.integrations.types import AudioRef
+from winnie_meetings.integrations.asr.volcengine import VolcengineASRProvider
+from winnie_core.types import AudioRef
 
 
 async def test_volcengine_submits_polls_and_parses(tmp_path: Path) -> None:

@@ -59,74 +59,60 @@ pipeline. Until then, `apps/api` is the only backend.
 
 ## 3. Repository layout
 
-This assumes the Step 0 structure from the code-structure review: `main.py` is a
-composition root and the gateway is a feature module. If Step 0 has not been
-done, add the new packages flat and move them in the same pass.
-
-Target layout; some entries are planned and not built yet:
+`apps/api` is a thin host. The framework and capabilities are separate
+packages, so a capability cannot import the host or another capability's
+implementation.
 
 ```text
 apps/
-├── api/                              # Python backend — one deployable
+├── api/                              # Python host — one deployable
 │   ├── src/winnie_api/
-│   │   ├── main.py                   # create_app(): composition root
-│   │   ├── runtime.py                # shared engine/session + services
-│   │   ├── settings.py               # YAML + env, extra="forbid"
-│   │   ├── auth/                     # accounts and bearer sessions
-│   │   ├── shared/
-│   │   │   ├── db.py                 # async engine / session factory
-│   │   │   ├── storage.py            # Storage interface + local/OSS
-│   │   │   ├── logging.py            # structured logs, request/job IDs
-│   │   │   └── llm.py                # internal model client (no HTTP loopback)
-│   │   ├── gateway/                  # existing transparent proxy — untouched
-│   │   ├── knowledge/                # documents, Git store, index
-│   │   │   └── meeting_note.py       # minutes -> Markdown -> Git commit
-│   │   ├── meetings/                 # NEW bounded context
-│   │   │   ├── models.py             # SQLAlchemy models
-│   │   │   ├── schemas.py            # API request/response models
-│   │   │   ├── repository.py         # DB queries
-│   │   │   ├── service.py            # use cases + state machine
-│   │   │   ├── router.py             # /api/v1/meetings...
-│   │   │   ├── pipeline.py           # planned: LangGraph post-processing
-│   │   │   └── prompts/              # planned: versioned prompts
-│   │   ├── integrations/             # external providers
-│   │   │   ├── asr/{base,volcengine,aliyun,whisper}.py
-│   │   │   ├── translate/{base,llm,cloud}.py
-│   │   │   └── llm/{base,openai_compatible}.py
-│   │   └── jobs/
-│   │       ├── queue.py              # arq enqueue helpers
-│   │       ├── tasks.py              # transcribe / translate / summarize
-│   │       └── worker.py             # arq WorkerSettings entry
-│   ├── migrations/                  # Alembic migrations
-│   └── tests/
-│       ├── fakes/                    # FakeASR, FakeTranslator, FakeLLM
-│       └── meetings/
-├── android/                          # NEW Kotlin app
-│   └── app/src/main/java/<pkg>/
-│       ├── ui/                       # Compose screens
-│       ├── data/                     # API client, Room cache, upload queue
-│       ├── audio/                    # AudioRecord + foreground service
-│       └── realtime/                 # WebSocket client (phase 2)
-└── web/                              # later
+│   │   ├── main.py                   # create_app(): registers capabilities
+│   │   ├── runtime.py                # DB + auth + meeting service lifecycle
+│   │   ├── settings.py               # YAML composition, path resolution
+│   │   ├── jobs/
+│   │   │   ├── tasks.py              # arq job functions
+│   │   │   └── worker.py             # WorkerSettings entry point
+│   │   └── cli/                      # host-only cleanup/reset commands
+│   ├── migrations/                   # Alembic, imports both model packages
+│   └── tests/                        # host-level HTTP and integration tests
+├── android/                        # Kotlin client (separate workstream)
+└── packages/
+    ├── winnie-core/                  # framework
+    │   └── src/winnie_core/
+    │       ├── capability.py         # Capability + WinnieFramework
+    │       ├── config.py             # AuthConfig, JobsConfig, LLMConfig
+    │       ├── db.py, storage.py, types.py
+    │       ├── auth/                 # models, service, router, CLI-free helpers
+    │       ├── jobs/queue.py         # InlineJobQueue, ArqJobQueue
+    │       └── llm/                  # internal OpenAI-compatible client
+    ├── winnie-gateway/               # transparent LLM gateway capability
+    ├── winnie-meetings/              # ASR/translation/minutes capability
+    └── winnie-knowledge/             # Markdown note sink + neutral DTOs
 ```
 
 Dependency rules:
 
-```
-meetings/ ──► integrations/ ──► shared/
-    │
-    └──► knowledge/ (only at the end of the pipeline)
-auth/ ──► shared/
-runtime ──► auth/ + meetings/ + shared/
-gateway/ ──► shared/          # gateway must not import meetings or auth
-jobs/ ──► meetings/
+```text
+winnie-core       -> third-party packages only
+winnie-knowledge  -> stdlib only
+winnie-gateway    -> winnie-core (Capability)
+winnie-meetings   -> winnie-core + winnie-knowledge
+apps/api          -> all packages (composition root)
+apps/android      -> HTTP API only
 ```
 
-- `gateway/` stays transparent. No ASR, translation or RAG logic goes into
-  `/{route}/v1/...`.
-- `meetings/` must be testable without FastAPI, network or a database.
-- `integrations/` hides vendor SDKs behind protocols.
-- `knowledge/` is a sink, not a dependency of transcription.
+- No capability imports `winnie_api`; only the host imports capabilities.
+- `winnie-meetings` exposes a `MeetingService`; it does not know FastAPI's
+  process lifecycle or host settings.
+- `winnie-knowledge` accepts `MeetingNote` / `NoteContent` DTOs, so it does not
+  import meeting ORM models.
+- `winnie-core` owns cross-cutting auth, DB, storage, queue and LLM primitives;
+  it does not know about meetings or gateway routes.
+- CLI commands live in `apps/api/src/winnie_api/cli/` because they compose the
+  host runtime across capabilities.
+- `apps/api` mounts capabilities through `WinnieFramework.register()`; adding a
+  capability does not require editing a central route table.
 
 ## 4. Domain model
 
@@ -354,7 +340,7 @@ returns `429` with `Retry-After` for `auth.login_lockout_seconds`. A successful
 login clears the counter. The key is the username, not the client IP, so this
 also protects a deployment behind a proxy; it does mean an attacker can
 temporarily lock a known account. With no email service, a lost password is
-reset from the host with `python -m winnie_api.auth.reset_password`; this
+reset from the host with `python -m winnie_api.cli.reset_password`; this
 requires database access and revokes every session.
 Meeting ownership uses the authenticated `user.id`, while `auth.enabled: false`
 keeps the local single-user fallback. Android stores the token encrypted with
@@ -618,7 +604,7 @@ meetings to the current `main.py` would make the god module worse.
   transcripts and minutes outlive it. Delete meeting already purges audio,
   segments, minutes, usage and the note immediately.
 - **Sessions**: expired bearer sessions are rejected on use and removed by the
-  arq daily cron or `python -m winnie_api.auth.cleanup` when no worker runs.
+  arq daily cron or `python -m winnie_api.cli.cleanup_sessions` when no worker runs.
 - **Idempotency**: unique job rows, conditional state transitions, and a
   per-stage dedupe key. A retried ASR call must not append a second copy of
   every segment.
@@ -700,7 +686,7 @@ Implemented:
 - `/healthz` liveness and `/readyz` readiness (database, plus Redis when arq is
   selected).
 - Expired-session cleanup through an arq daily cron and
-  `python -m winnie_api.auth.cleanup` for deployments without a worker.
+  `python -m winnie_api.cli.cleanup_sessions` for deployments without a worker.
 - Tests using a fake upstream, temporary SQLite databases, account isolation, a
   mocked Volcengine endpoint and mocked LLM responses.
 

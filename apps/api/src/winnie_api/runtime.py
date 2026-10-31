@@ -1,9 +1,4 @@
-"""Application runtime shared by auth and meetings.
-
-Both contexts use the same database engine and session factory. The runtime is
-only created when at least one of them is enabled, so the gateway can still run
-without a database.
-"""
+"""Host composition for capabilities that need a database."""
 
 from __future__ import annotations
 
@@ -12,13 +7,13 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from winnie_api.auth import models as _auth_models  # noqa: F401  (metadata)
-from winnie_api.auth.service import AuthService
-from winnie_api.auth.wiring import build_auth_service
-from winnie_api.meetings import models as _meeting_models  # noqa: F401
-from winnie_api.meetings.service import MeetingService
-from winnie_api.meetings.wiring import build_meeting_service
-from winnie_api.shared.db import create_all, create_engine, create_session_factory
+from winnie_core.auth.models import AuthSession, LoginThrottle, User  # noqa: F401
+from winnie_core.auth.service import AuthService
+from winnie_core.db import create_all, create_engine, create_session_factory
+from winnie_meetings.factory import build_meeting_service
+from winnie_meetings.models import Meeting  # noqa: F401  (metadata)
+from winnie_meetings.service import MeetingService
+
 from winnie_api.settings import Settings
 
 
@@ -59,12 +54,22 @@ def build_runtime(settings: Settings) -> AppRuntime | None:
     )
     session_factory = create_session_factory(engine)
     auth_service = (
-        build_auth_service(settings, session_factory)
+        AuthService(
+            session_factory=session_factory,
+            config=settings.auth,
+        )
         if settings.auth.enabled
         else None
     )
     meeting_service = (
-        build_meeting_service(settings, session_factory)
+        build_meeting_service(
+            config=settings.meetings,
+            llm=settings.llm,
+            jobs=settings.jobs,
+            session_factory=session_factory,
+            meetings_root=settings.resolve_meetings_root(),
+            notes_root=settings.resolve_notes_root(),
+        )
         if settings.meetings.enabled
         else None
     )

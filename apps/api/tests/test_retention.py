@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from winnie_api.meetings.models import Meeting, utcnow
+from winnie_meetings.models import Meeting, utcnow
 from winnie_api.runtime import build_runtime
 from winnie_api.settings import Settings
 

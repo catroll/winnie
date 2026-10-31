@@ -206,8 +206,8 @@ async def test_meetings_are_absent_when_disabled(settings: Settings) -> None:
 
 def test_meeting_note_path_is_stable(tmp_path: Path) -> None:
     # Keeps the note writer's filename contract visible: date + meeting id.
-    from winnie_api.knowledge.meeting_note import MeetingNoteWriter
-    from winnie_api.meetings.models import Meeting, utcnow
+    from winnie_knowledge.note import MeetingNoteWriter
+    from winnie_meetings.models import Meeting, utcnow
 
     meeting = Meeting(
         title="x",

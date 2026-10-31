@@ -5,7 +5,8 @@ from pathlib import Path
 import httpx
 
 from winnie_api.main import create_app
-from winnie_api.settings import AuthConfig, DatabaseConfig, JobsConfig, Settings
+from winnie_api.settings import DatabaseConfig, Settings
+from winnie_core.config import AuthConfig, JobsConfig
 
 
 async def test_readyz_fails_when_database_is_unavailable(

@@ -17,9 +17,9 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-from winnie_api.auth import models as _auth_models  # noqa: F401
-from winnie_api.meetings import models as _meeting_models  # noqa: F401
-from winnie_api.shared.db import Base
+from winnie_core.auth import models as _auth_models  # noqa: F401
+from winnie_core.db import Base
+from winnie_meetings import models as _meeting_models  # noqa: F401
 from winnie_api.settings import load_settings
 
 config = context.config
