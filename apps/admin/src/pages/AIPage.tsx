@@ -5,8 +5,11 @@ import type {
   AIFeature,
   AIIntegration,
   AIIntegrationInput,
+  AIModel,
   AIProviderConfig,
   AIProviderKind,
+  AIVendor,
+  AIVendorInput,
   ModelRuntime,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
@@ -20,6 +23,9 @@ type OptionValue = string | number;
 interface FormState {
   name: string;
   label: string;
+  vendor: string;
+  new_vendor: string;
+  new_vendor_label: string;
   kind: AIProviderKind;
   base_url: string;
   api_key_env: string;
@@ -53,6 +59,9 @@ const VOLCENGINE_DEFAULTS: Record<string, OptionValue> = {
 const BLANK_FORM: FormState = {
   name: '',
   label: '',
+  vendor: '',
+  new_vendor: '',
+  new_vendor_label: '',
   kind: 'openai',
   base_url: '',
   api_key_env: '',
@@ -73,6 +82,9 @@ function formFromIntegration(integration: AIIntegration): FormState {
   return {
     name: integration.name,
     label: integration.label,
+    vendor: integration.vendor,
+    new_vendor: '',
+    new_vendor_label: '',
     kind: integration.kind,
     base_url: integration.base_url,
     api_key_env: integration.api_key_env,
@@ -117,7 +129,7 @@ function formForKind(kind: AIProviderKind, current: FormState): FormState {
   };
 }
 
-function toInput(form: FormState): AIIntegrationInput {
+function toInput(form: FormState, vendor: string): AIIntegrationInput {
   const options = form.kind === 'volcengine_asr' ? { ...form.options } : {};
   // Volcengine ASR keeps the vendor's model name in options; mirror it into
   // default_model so the provider table and the seed show the same value.
@@ -128,6 +140,7 @@ function toInput(form: FormState): AIIntegrationInput {
   return {
     name: form.name.trim(),
     label: form.label.trim(),
+    vendor,
     kind: form.kind,
     base_url: form.base_url.trim(),
     api_key_env: form.api_key_env.trim(),
@@ -175,6 +188,8 @@ export function AIPage() {
   const [message, setMessage] = useState<Message>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [modelsEditor, setModelsEditor] = useState<AIVendor | null>(null);
+  const [modelsError, setModelsError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AIIntegration | null>(null);
   const [bindings, setBindings] = useState<Record<string, BindingState>>({});
   const [runtimeDraft, setRuntimeDraft] = useState<ModelRuntime | null>(null);
@@ -255,14 +270,35 @@ export function AIPage() {
     setBusy('save');
     setMessage(null);
     try {
+      let vendor = editor.draft.vendor;
+      if (editor.mode === 'create' && vendor === '__new__') {
+        const id = editor.draft.new_vendor.trim();
+        if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) {
+          throw new Error(
+            'Supplier id must be lowercase letters, digits and dashes, up to 63 characters.',
+          );
+        }
+        await api.createAIVendor({
+          id,
+          label: editor.draft.new_vendor_label.trim() || id,
+          models: [],
+        });
+        vendor = id;
+      }
+      if (!vendor) {
+        throw new Error('Choose a supplier, or create a new one.');
+      }
       if (editor.mode === 'create') {
-        await api.createAIIntegration(toInput(editor.draft));
+        await api.createAIIntegration(toInput(editor.draft, vendor));
         setMessage({
           kind: 'success',
           text: `Created ${editor.draft.name}. It is available to the bound features immediately.`,
         });
       } else {
-        await api.updateAIIntegration(editor.id, toInput(editor.draft));
+        await api.updateAIIntegration(
+          editor.id,
+          toInput(editor.draft, vendor),
+        );
         setMessage({
           kind: 'success',
           text: `Updated ${editor.draft.name}.`,
@@ -324,13 +360,14 @@ export function AIPage() {
         integration_id: binding.integration_id || null,
         model: binding.model.trim(),
       });
+      const selected = data?.integrations.find(
+        (item) => item.id === binding.integration_id,
+      );
       setMessage({
         kind: 'success',
         text: `${feature.label} now uses ${
-          binding.integration_id
-            ? data?.integrations.find(
-                (item) => item.id === binding.integration_id,
-              )?.name ?? 'the selected provider'
+          selected
+            ? `${selected.vendor_label} / ${selected.role_label}`
             : 'no provider (choose one before using it)'
         }.`,
       });
@@ -363,6 +400,25 @@ export function AIPage() {
     }
   };
 
+  const saveVendor = async (vendor: AIVendor, input: AIVendorInput) => {
+    setBusy(`vendor:${vendor.id}`);
+    setMessage(null);
+    try {
+      const response = await api.updateAIVendor(vendor.id, input);
+      setMessage({
+        kind: 'success',
+        text: `Saved ${response.vendor.label} models.`,
+      });
+      setModelsError('');
+      setModelsEditor(null);
+      result.reload();
+    } catch (error) {
+      setModelsError(describe(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const integrations: AIIntegration[] = (data?.integrations ?? []).map(
     (integration) => ({
       ...integration,
@@ -370,6 +426,11 @@ export function AIPage() {
     }),
   );
   const features = data?.features ?? [];
+  const vendors = data?.vendors ?? [];
+  const vendorGroups = vendors.map((vendor) => ({
+    vendor,
+    endpoints: integrations.filter((item) => item.vendor === vendor.id),
+  }));
   const configured = features.filter((feature) => feature.source === 'admin').length;
   const gatewayRoutes = integrations.filter(
     (integration) => integration.gateway_paths.length > 0,
@@ -380,7 +441,7 @@ export function AIPage() {
 
   return (
     <>
-      <PageHeader title="AI providers" />
+      <PageHeader title="AI suppliers" />
       <div className="app-content">
         <div className="container-fluid">
           {message ? (
@@ -390,7 +451,7 @@ export function AIPage() {
           ) : null}
 
           {result.status === 'loading' ? (
-            <LoadingBlock label="Loading AI providers…" />
+            <LoadingBlock label="Loading AI suppliers…" />
           ) : result.status === 'error' ? (
             <>
               <ErrorBlock error={result.error} onRetry={result.reload} />
@@ -405,23 +466,25 @@ export function AIPage() {
             <>
               <div className="alert alert-info" role="note">
                 <i className="bi bi-cpu-fill me-2" aria-hidden="true" />
-                Providers, feature bindings and model runtime are stored in{' '}
-                <code>{data.path}</code>. Changes take effect on the next model call
-                without restarting the API. This registry is the only model choice:{' '}
-                <code>config.yaml</code> has no <code>llm</code> block. API keys are{' '}
-                <strong>not</strong> stored here: each provider names an environment
-                variable that the API process reads.
+                Suppliers group endpoints and models; feature bindings and model
+                runtime are stored in <code>{data.path}</code>. Changes take effect
+                on the next model call without restarting the API. This registry is
+                the only model choice: <code>config.yaml</code> has no{' '}
+                <code>llm</code> block. API keys are <strong>not</strong> stored
+                here: each endpoint names an environment variable that the API
+                process reads.
               </div>
 
               <div className="row g-3 mb-3">
                 <div className="col-6 col-lg-3">
                   <div className="small-box text-bg-primary">
                     <div className="inner">
-                      <h3>{integrations.length}</h3>
-                      <p>Providers</p>
+                      <h3>{vendorGroups.length}</h3>
+                      <p>Suppliers</p>
                     </div>
                     <i className="small-box-icon bi bi-hdd-network" aria-hidden="true" />
                     <span className="small-box-footer">
+                      {integrations.length} endpoints ·{' '}
                       {integrations.filter((item) => item.enabled).length} enabled
                     </span>
                   </div>
@@ -484,7 +547,7 @@ export function AIPage() {
 
               <div className="card mb-3">
                 <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                  <h3 className="card-title mb-0">Providers</h3>
+                  <h3 className="card-title mb-0">Suppliers and endpoints</h3>
                   <div className="ms-auto d-flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -502,22 +565,22 @@ export function AIPage() {
                       disabled={disabled}
                     >
                       <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-                      Add provider
+                      Add endpoint
                     </button>
                   </div>
                 </div>
                 <div className="card-body p-0">
                   {integrations.length === 0 ? (
                     <div className="p-3">
-                      <EmptyState message="No providers yet. Add one, then bind it to a feature below." />
+                      <EmptyState message="No suppliers yet. Add one, its endpoints and models, then bind a feature below." />
                     </div>
                   ) : (
                     <div className="table-responsive">
                       <table className="table table-striped align-middle mb-0">
                         <thead>
                           <tr>
-                            <th scope="col">Provider</th>
                             <th scope="col">Endpoint</th>
+                            <th scope="col">Base URL</th>
                             <th scope="col">API key</th>
                             <th scope="col">Used by</th>
                             <th scope="col">Gateway</th>
@@ -527,162 +590,226 @@ export function AIPage() {
                             </th>
                           </tr>
                         </thead>
-                        <tbody>
-                          {integrations.map((integration) => (
-                            <tr key={integration.id}>
-                              <td style={{ minWidth: '12rem' }}>
-                                <div className="fw-semibold">
-                                  {integration.label || integration.name}
-                                </div>
-                                <div className="small text-secondary">
-                                  <code>{integration.name}</code>
-                                </div>
-                                <span className="badge text-bg-light border mt-1">
-                                  {integration.kind_label}
-                                </span>
-                              </td>
-                              <td style={{ minWidth: '14rem' }}>
-                                {integration.base_url ? (
-                                  <div className="text-break">
-                                    <code>{integration.base_url}</code>
-                                  </div>
-                                ) : (
-                                  <span className="text-secondary">—</span>
-                                )}
-                                <div className="small text-secondary">
-                                  Model:{' '}
-                                  {integration.kind === 'volcengine_asr'
-                                    ? String(
-                                        integration.options.model_name ||
-                                          integration.default_model ||
-                                          '—',
-                                      )
-                                    : integration.default_model || '—'}
-                                </div>
-                                {integration.kind === 'volcengine_asr' ? (
-                                  <div className="small text-secondary">
-                                    Resource:{' '}
-                                    <code>
-                                      {String(
-                                        integration.options.resource_id ?? '—',
-                                      )}
+                        {vendorGroups.map(({ vendor, endpoints }) => (
+                            <tbody key={vendor.id}>
+                              <tr className="table-light">
+                                <td colSpan={7} className="py-3">
+                                  <div className="d-flex flex-wrap align-items-center gap-2">
+                                    <i
+                                      className="bi bi-buildings text-primary"
+                                      aria-hidden="true"
+                                    />
+                                    <strong>{vendor.label}</strong>
+                                    <code className="small text-secondary">
+                                      {vendor.id}
                                     </code>
-                                  </div>
-                                ) : null}
-                              </td>
-                              <td style={{ minWidth: '10rem' }}>
-                                {integration.api_key_env ? (
-                                  <>
-                                    <code>{integration.api_key_env}</code>
-                                    <div className="mt-1">
-                                      {integration.api_key_present ? (
-                                        <span className="badge text-bg-success">
-                                          set in environment
-                                        </span>
-                                      ) : (
-                                        <span className="badge text-bg-warning">
-                                          missing from environment
-                                        </span>
-                                      )}
-                                    </div>
-                                  </>
-                                ) : integration.kind === 'volcengine_asr' ? (
-                                  <span className="text-secondary">
-                                    uses VOLCENGINE_ASR_API_KEY
-                                  </span>
-                                ) : integration.kind === 'fake' ? (
-                                  <span className="text-secondary">not needed</span>
-                                ) : integration.gateway === false ? (
-                                  <span className="badge text-bg-warning">
-                                    no key configured
-                                  </span>
-                                ) : (
-                                  <span className="text-secondary">
-                                    not needed for a gateway route
-                                  </span>
-                                )}
-                              </td>
-                              <td style={{ minWidth: '10rem' }}>
-                                {integration.used_by.length === 0 ? (
-                                  <span className="text-secondary">—</span>
-                                ) : (
-                                  integration.used_by.map((feature) => (
-                                    <span
-                                      className="badge text-bg-info me-1 mb-1"
-                                      key={feature}
-                                    >
-                                      <FeatureLabel
-                                        feature={feature}
-                                        features={features}
-                                      />
+                                    <span className="badge text-bg-secondary">
+                                      {endpoints.length}{' '}
+                                      {endpoints.length === 1
+                                        ? 'endpoint'
+                                        : 'endpoints'}
                                     </span>
-                                  ))
-                                )}
-                              </td>
-                              <td style={{ minWidth: '12rem' }}>
-                                {integration.gateway_paths.length > 0 ? (
-                                  integration.gateway_paths.map((path) => (
-                                    <code className="d-block small" key={path}>
-                                      {path}
-                                    </code>
-                                  ))
-                                ) : integration.gateway === false &&
-                                  (integration.kind === 'openai' ||
-                                    integration.kind === 'anthropic') ? (
-                                  <span className="badge text-bg-secondary">
-                                    internal only
-                                  </span>
-                                ) : (
-                                  <span className="text-secondary">
-                                    not a gateway route
-                                  </span>
-                                )}
-                              </td>
-                              <td>
-                                {integration.enabled ? (
-                                  <span className="badge text-bg-success">
-                                    Enabled
-                                  </span>
-                                ) : (
-                                  <span className="badge text-bg-secondary">
-                                    Disabled
-                                  </span>
-                                )}
-                              </td>
-                              <td className="text-end text-nowrap">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-outline-secondary me-1"
-                                  onClick={() => openEdit(integration)}
-                                  disabled={disabled}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-outline-danger"
-                                  onClick={() => {
-                                    setMessage(null);
-                                    setDeleteTarget(integration);
-                                  }}
-                                  disabled={disabled}
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
+                                    {vendor.models.length === 0 ? (
+                                      <span className="small text-secondary">
+                                        No models yet
+                                      </span>
+                                    ) : (
+                                      vendor.models.slice(0, 4).map((model) => (
+                                        <span
+                                          className="badge text-bg-light border"
+                                          key={model.id}
+                                        >
+                                          {model.id}
+                                        </span>
+                                      ))
+                                    )}
+                                    {vendor.models.length > 4 ? (
+                                      <span className="small text-secondary">
+                                        +{vendor.models.length - 4}
+                                      </span>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-secondary ms-auto"
+                                      onClick={() => {
+                                        setMessage(null);
+                                        setModelsError('');
+                                        setModelsEditor(vendor);
+                                      }}
+                                      disabled={disabled}
+                                    >
+                                      <i
+                                        className="bi bi-sliders me-1"
+                                        aria-hidden="true"
+                                      />
+                                      Models
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                              {endpoints.map((integration) => (
+                                <tr key={integration.id}>
+                                  <td style={{ minWidth: '11rem' }}>
+                                    <div className="fw-semibold">
+                                      {integration.role_label}
+                                    </div>
+                                    <div className="small text-secondary">
+                                      {integration.label &&
+                                      !integration.label
+                                        .toLowerCase()
+                                        .includes(vendor.label.toLowerCase())
+                                        ? `${integration.label} · `
+                                        : ''}
+                                      <code>{integration.name}</code>
+                                    </div>
+                                    <span className="badge text-bg-light border mt-1">
+                                      {integration.kind_label}
+                                    </span>
+                                  </td>
+                                  <td style={{ minWidth: '11rem' }}>
+                                    {integration.base_url ? (
+                                      <div className="text-break">
+                                        <code>{integration.base_url}</code>
+                                      </div>
+                                    ) : (
+                                      <span className="text-secondary">—</span>
+                                    )}
+                                    <div className="small text-secondary">
+                                      Model:{' '}
+                                      {integration.kind === 'volcengine_asr'
+                                        ? String(
+                                            integration.options.model_name ||
+                                              integration.default_model ||
+                                              '—',
+                                          )
+                                        : integration.default_model || '—'}
+                                    </div>
+                                    {integration.kind === 'volcengine_asr' ? (
+                                      <div className="small text-secondary">
+                                        Resource:{' '}
+                                        <code>
+                                          {String(
+                                            integration.options.resource_id ?? '—',
+                                          )}
+                                        </code>
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  <td style={{ minWidth: '8rem' }}>
+                                    {integration.api_key_env ? (
+                                      <>
+                                        <code>{integration.api_key_env}</code>
+                                        <div className="mt-1">
+                                          {integration.api_key_present ? (
+                                            <span className="badge text-bg-success">
+                                              set in environment
+                                            </span>
+                                          ) : (
+                                            <span className="badge text-bg-warning">
+                                              missing from environment
+                                            </span>
+                                          )}
+                                        </div>
+                                      </>
+                                    ) : integration.kind === 'fake' ? (
+                                      <span className="text-secondary">
+                                        not needed
+                                      </span>
+                                    ) : integration.gateway === false ? (
+                                      <span className="badge text-bg-warning">
+                                        no key configured
+                                      </span>
+                                    ) : (
+                                      <span className="text-secondary">
+                                        not needed for a gateway route
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td style={{ minWidth: '8rem' }}>
+                                    {integration.used_by.length === 0 ? (
+                                      <span className="text-secondary">—</span>
+                                    ) : (
+                                      integration.used_by.map((feature) => (
+                                        <span
+                                          className="badge text-bg-info me-1 mb-1"
+                                          key={feature}
+                                        >
+                                          <FeatureLabel
+                                            feature={feature}
+                                            features={features}
+                                          />
+                                        </span>
+                                      ))
+                                    )}
+                                  </td>
+                                  <td style={{ minWidth: '9rem' }}>
+                                    {integration.gateway_paths.length > 0 ? (
+                                      integration.gateway_paths.map((path) => (
+                                        <code className="d-block small" key={path}>
+                                          {path}
+                                        </code>
+                                      ))
+                                    ) : integration.gateway === false &&
+                                      (integration.kind === 'openai' ||
+                                        integration.kind === 'anthropic') ? (
+                                      <span className="badge text-bg-secondary">
+                                        internal only
+                                      </span>
+                                    ) : (
+                                      <span className="text-secondary">
+                                        not a gateway route
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {integration.enabled ? (
+                                      <span className="badge text-bg-success">
+                                        Enabled
+                                      </span>
+                                    ) : (
+                                      <span className="badge text-bg-secondary">
+                                        Disabled
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="text-end text-nowrap">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-secondary me-1"
+                                      onClick={() => openEdit(integration)}
+                                      disabled={disabled}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-danger"
+                                      onClick={() => {
+                                        setMessage(null);
+                                        setDeleteTarget(integration);
+                                      }}
+                                      disabled={disabled}
+                                    >
+                                      Delete
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
                           ))}
-                        </tbody>
                       </table>
                     </div>
                   )}
                 </div>
                 <div className="card-footer small text-secondary">
-                  Providers with <strong>Expose as gateway route</strong> enabled
-                  become routes at <code>/{'{name}'}/v1/…</code>. Winnie forwards
-                  the client's own vendor key on those paths; the environment
-                  variable here is only for internal jobs and the assistant. An
-                  internal-only provider has no public proxy path.
+                  A supplier groups the endpoints that speak its protocols and the
+                  models it offers; the same supplier can have a gateway route, an
+                  internal endpoint, or both. Only endpoints with{' '}
+                  <strong>Gateway route</strong> enabled become{' '}
+                  <code>/{'{name}'}/v1/…</code>. Winnie forwards the client's own
+                  vendor key there; the environment variable is for internal jobs
+                  and the assistant. An internal-only endpoint has no public proxy
+                  path.
                 </div>
               </div>
 
@@ -719,6 +846,21 @@ export function AIPage() {
                               feature.kinds.includes(item.kind) &&
                               (item.kind !== 'openai' || item.api_key_env),
                           );
+                          const compatibleVendors = vendors
+                            .map((vendor) => ({
+                              vendor,
+                              endpoints: compatible.filter(
+                                (item) => item.vendor === vendor.id,
+                              ),
+                            }))
+                            .filter((group) => group.endpoints.length > 0);
+                          const selectedVendor = vendors.find(
+                            (vendor) => vendor.id === selected?.vendor,
+                          );
+                          const models = selectedVendor?.models ?? [];
+                          const modelInCatalog = models.some(
+                            (model) => model.id === binding.model,
+                          );
                           const dirty =
                             binding.integration_id !==
                               (feature.integration_id ?? '') ||
@@ -752,15 +894,20 @@ export function AIPage() {
                                   disabled={disabled || rowBusy}
                                 >
                                   <option value="">Not configured</option>
-                                  {compatible.map((integration) => (
-                                    <option
-                                      key={integration.id}
-                                      value={integration.id}
-                                      disabled={!integration.enabled}
-                                    >
-                                      {integration.label || integration.name}
-                                      {integration.enabled ? '' : ' (disabled)'}
-                                    </option>
+                                  {compatibleVendors.map(({ vendor, endpoints }) => (
+                                    <optgroup label={vendor.label} key={vendor.id}>
+                                      {endpoints.map((integration) => (
+                                        <option
+                                          key={integration.id}
+                                          value={integration.id}
+                                          disabled={!integration.enabled}
+                                        >
+                                          {integration.role_label} —{' '}
+                                          {integration.name}
+                                          {integration.enabled ? '' : ' (disabled)'}
+                                        </option>
+                                      ))}
+                                    </optgroup>
                                   ))}
                                 </select>
                                 {feature.source === 'none' ? (
@@ -776,18 +923,10 @@ export function AIPage() {
                                 >
                                   Model for {feature.label}
                                 </label>
-                                <input
+                                <select
                                   id={`model-${feature.key}`}
-                                  className="form-control form-control-sm"
+                                  className="form-select form-select-sm"
                                   value={binding.model}
-                                  placeholder={
-                                    selected?.kind === 'fake'
-                                      ? 'Not used by the fake provider'
-                                      : selected?.default_model ||
-                                        (feature.requires_model
-                                          ? 'Required'
-                                          : 'Not used')
-                                  }
                                   onChange={(event) =>
                                     setBindings((current) => ({
                                       ...current,
@@ -804,15 +943,40 @@ export function AIPage() {
                                     disabled ||
                                     rowBusy ||
                                     !feature.requires_model ||
-                                    selected?.kind === 'fake'
+                                    selected?.kind === 'fake' ||
+                                    models.length === 0
                                   }
-                                />
+                                >
+                                  <option value="">
+                                    Endpoint default
+                                    {selected?.default_model
+                                      ? ` (${selected.default_model})`
+                                      : ''}
+                                  </option>
+                                  {models.map((model) => (
+                                    <option key={model.id} value={model.id}>
+                                      {model.label || model.id}
+                                      {model.context_window
+                                        ? ` · ${model.context_window.toLocaleString()} ctx`
+                                        : ''}
+                                    </option>
+                                  ))}
+                                  {binding.model && !modelInCatalog ? (
+                                    <option value={binding.model}>
+                                      {binding.model} (not in supplier catalog)
+                                    </option>
+                                  ) : null}
+                                </select>
                                 <div className="form-text">
                                   {selected?.kind === 'fake'
                                     ? 'The fake provider ignores the model.'
-                                    : feature.requires_model
-                                      ? 'Empty uses the provider default.'
-                                      : 'This feature does not use a model.'}
+                                    : !feature.requires_model
+                                      ? 'This feature does not use a model.'
+                                      : !selected
+                                        ? 'Choose a provider first.'
+                                        : models.length === 0
+                                          ? 'Add models for this supplier under Models first.'
+                                          : 'Models come from the supplier catalog.'}
                                 </div>
                               </td>
                               <td>
@@ -884,6 +1048,7 @@ export function AIPage() {
       {editor ? (
         <IntegrationEditor
           editor={editor}
+          vendors={vendors}
           busy={busy === 'save'}
           onChange={updateDraft}
           onOption={updateOption}
@@ -896,6 +1061,19 @@ export function AIPage() {
           }
           onCancel={() => setEditor(null)}
           onSubmit={saveIntegration}
+        />
+      ) : null}
+
+      {modelsEditor ? (
+        <ModelsEditor
+          vendor={modelsEditor}
+          error={modelsError}
+          busy={busy === `vendor:${modelsEditor.id}`}
+          onSave={saveVendor}
+          onCancel={() => {
+            setModelsError('');
+            setModelsEditor(null);
+          }}
         />
       ) : null}
 
@@ -1021,8 +1199,265 @@ function RuntimeCard({
 }
 
 
+function ModelsEditor({
+  vendor,
+  error,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  vendor: AIVendor;
+  error: string;
+  busy: boolean;
+  onSave: (vendor: AIVendor, input: AIVendorInput) => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState(vendor.label);
+  const [models, setModels] = useState<AIModel[]>(
+    vendor.models.map((model) => ({ ...model })),
+  );
+
+  const update = (index: number, patch: Partial<AIModel>) => {
+    setModels((current) =>
+      current.map((model, position) =>
+        position === index ? { ...model, ...patch } : model,
+      ),
+    );
+  };
+
+  const add = () => {
+    setModels((current) => [
+      ...current,
+      {
+        id: '',
+        label: '',
+        context_window: null,
+        max_output_tokens: null,
+        notes: '',
+      },
+    ]);
+  };
+
+  const remove = (index: number) => {
+    setModels((current) => current.filter((_, position) => position !== index));
+  };
+
+  const number = (value: string): number | null => {
+    const trimmed = value.trim();
+    return trimmed ? Number(trimmed) : null;
+  };
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onSave(vendor, {
+      id: vendor.id,
+      label: label.trim() || vendor.id,
+      models: models.map((model) => ({
+        ...model,
+        id: model.id.trim(),
+        label: model.label.trim(),
+        notes: model.notes.trim(),
+      })),
+    });
+  };
+
+  return (
+    <>
+      <div
+        className="modal fade show d-block"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-models-title"
+      >
+        <div className="modal-dialog modal-xl modal-dialog-scrollable">
+          <form className="modal-content" onSubmit={submit}>
+            <div className="modal-header">
+              <h5 className="modal-title" id="ai-models-title">
+                Models for {vendor.label}
+              </h5>
+              <button
+                type="button"
+                className="btn-close"
+                aria-label="Close"
+                onClick={onCancel}
+                disabled={busy}
+              />
+            </div>
+            <div className="modal-body">
+              {error ? (
+                <div className="alert alert-danger" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              <div className="row g-3 mb-3">
+                <div className="col-md-6">
+                  <label className="form-label" htmlFor="vendor-label">
+                    Supplier label
+                  </label>
+                  <input
+                    id="vendor-label"
+                    className="form-control"
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label">Supplier id</label>
+                  <input
+                    className="form-control font-monospace"
+                    value={vendor.id}
+                    disabled
+                  />
+                </div>
+              </div>
+              <p className="small text-secondary">
+                Model ids are sent to the endpoint. A feature binding may use the
+                endpoint default or one of these entries; removing a model that is
+                still used is rejected.
+              </p>
+              <div className="table-responsive">
+                <table className="table align-middle">
+                  <thead>
+                    <tr>
+                      <th scope="col">Model id</th>
+                      <th scope="col">Label</th>
+                      <th scope="col">Context</th>
+                      <th scope="col">Max output</th>
+                      <th scope="col">Notes</th>
+                      <th scope="col" className="text-end">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {models.map((model, index) => (
+                      <tr key={index}>
+                        <td style={{ minWidth: '12rem' }}>
+                          <input
+                            className="form-control form-control-sm font-monospace"
+                            value={model.id}
+                            onChange={(event) =>
+                              update(index, { id: event.target.value })
+                            }
+                            placeholder="deepseek-chat"
+                            required
+                            disabled={busy}
+                          />
+                        </td>
+                        <td style={{ minWidth: '10rem' }}>
+                          <input
+                            className="form-control form-control-sm"
+                            value={model.label}
+                            onChange={(event) =>
+                              update(index, { label: event.target.value })
+                            }
+                            placeholder={model.id || 'DeepSeek Chat'}
+                            disabled={busy}
+                          />
+                        </td>
+                        <td style={{ minWidth: '7rem' }}>
+                          <input
+                            className="form-control form-control-sm"
+                            type="number"
+                            min={1}
+                            value={model.context_window ?? ''}
+                            onChange={(event) =>
+                              update(index, {
+                                context_window: number(event.target.value),
+                              })
+                            }
+                            disabled={busy}
+                          />
+                        </td>
+                        <td style={{ minWidth: '7rem' }}>
+                          <input
+                            className="form-control form-control-sm"
+                            type="number"
+                            min={1}
+                            value={model.max_output_tokens ?? ''}
+                            onChange={(event) =>
+                              update(index, {
+                                max_output_tokens: number(event.target.value),
+                              })
+                            }
+                            disabled={busy}
+                          />
+                        </td>
+                        <td style={{ minWidth: '12rem' }}>
+                          <input
+                            className="form-control form-control-sm"
+                            value={model.notes}
+                            onChange={(event) =>
+                              update(index, { notes: event.target.value })
+                            }
+                            placeholder="Optional"
+                            disabled={busy}
+                          />
+                        </td>
+                        <td className="text-end">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => remove(index)}
+                            disabled={busy}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {models.length === 0 ? (
+                <EmptyState message="No models for this supplier yet." />
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary"
+                onClick={add}
+                disabled={busy}
+              >
+                <i className="bi bi-plus-lg me-1" aria-hidden="true" />
+                Add model
+              </button>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={onCancel}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-1"
+                      aria-hidden="true"
+                    />
+                    Saving…
+                  </>
+                ) : (
+                  'Save models'
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+
 interface EditorProps {
   editor: Editor;
+  vendors: AIVendor[];
   busy: boolean;
   onChange: (patch: Partial<FormState>) => void;
   onOption: (key: string, value: string) => void;
@@ -1033,6 +1468,7 @@ interface EditorProps {
 
 function IntegrationEditor({
   editor,
+  vendors,
   busy,
   onChange,
   onOption,
@@ -1044,6 +1480,7 @@ function IntegrationEditor({
   const isFake = draft.kind === 'fake';
   const isVolcengine = draft.kind === 'volcengine_asr';
   const isGatewayKind = draft.kind === 'openai' || draft.kind === 'anthropic';
+  const selectedVendor = vendors.find((vendor) => vendor.id === draft.vendor);
 
   return (
     <>
@@ -1057,7 +1494,7 @@ function IntegrationEditor({
           <form className="modal-content" onSubmit={onSubmit}>
             <div className="modal-header">
               <h5 className="modal-title" id="ai-editor-title">
-                {editor.mode === 'create' ? 'Add provider' : `Edit ${draft.name}`}
+                {editor.mode === 'create' ? 'Add endpoint' : `Edit ${draft.name}`}
               </h5>
               <button
                 type="button"
@@ -1070,8 +1507,84 @@ function IntegrationEditor({
             <div className="modal-body">
               <div className="row g-3">
                 <div className="col-md-6">
+                  <label className="form-label" htmlFor="ai-vendor">
+                    Supplier
+                  </label>
+                  {editor.mode === 'create' ? (
+                    <select
+                      id="ai-vendor"
+                      className="form-select"
+                      value={draft.vendor}
+                      onChange={(event) =>
+                        onChange({ vendor: event.target.value })
+                      }
+                      disabled={busy}
+                      required
+                    >
+                      <option value="">Choose a supplier</option>
+                      {vendors.map((vendor) => (
+                        <option value={vendor.id} key={vendor.id}>
+                          {vendor.label}
+                        </option>
+                      ))}
+                      <option value="__new__">New supplier…</option>
+                    </select>
+                  ) : (
+                    <input
+                      id="ai-vendor"
+                      className="form-control"
+                      value={selectedVendor?.label ?? draft.vendor}
+                      disabled
+                    />
+                  )}
+                  <div className="form-text">
+                    {editor.mode === 'create'
+                      ? 'A supplier can own several protocol/role endpoints and a model catalog.'
+                      : 'The supplier is fixed for an existing endpoint.'}
+                  </div>
+                </div>
+                {editor.mode === 'create' && draft.vendor === '__new__' ? (
+                  <>
+                    <div className="col-md-3">
+                      <label className="form-label" htmlFor="ai-new-vendor">
+                        Supplier id
+                      </label>
+                      <input
+                        id="ai-new-vendor"
+                        className="form-control font-monospace"
+                        value={draft.new_vendor}
+                        onChange={(event) =>
+                          onChange({ new_vendor: event.target.value })
+                        }
+                        pattern="[a-z0-9][a-z0-9-]{0,62}"
+                        placeholder="deepseek"
+                        required
+                        disabled={busy}
+                      />
+                    </div>
+                    <div className="col-md-3">
+                      <label
+                        className="form-label"
+                        htmlFor="ai-new-vendor-label"
+                      >
+                        Supplier label
+                      </label>
+                      <input
+                        id="ai-new-vendor-label"
+                        className="form-control"
+                        value={draft.new_vendor_label}
+                        onChange={(event) =>
+                          onChange({ new_vendor_label: event.target.value })
+                        }
+                        placeholder="DeepSeek"
+                        disabled={busy}
+                      />
+                    </div>
+                  </>
+                ) : null}
+                <div className="col-md-6">
                   <label className="form-label" htmlFor="ai-name">
-                    Name
+                    Endpoint name
                   </label>
                   <input
                     id="ai-name"
@@ -1390,7 +1903,7 @@ function IntegrationEditor({
                     Saving…
                   </>
                 ) : editor.mode === 'create' ? (
-                  'Add provider'
+                  'Add endpoint'
                 ) : (
                   'Save changes'
                 )}

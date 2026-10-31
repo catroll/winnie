@@ -2,6 +2,8 @@ import type {
   AIIntegration,
   AIIntegrationInput,
   AIProviderConfig,
+  AIVendor,
+  AIVendorInput,
   AssistantChatResponse,
   AssistantConversation,
   AssistantConversationList,
@@ -208,6 +210,20 @@ export const api = {
 
   aiConfig(): Promise<AIProviderConfig> {
     return request<AIProviderConfig>('/api/v1/ai/config');
+  },
+
+  createAIVendor(input: AIVendorInput): Promise<{ vendor: AIVendor }> {
+    return request('/api/v1/ai/vendors', { method: 'POST', body: input });
+  },
+
+  updateAIVendor(
+    vendorId: string,
+    input: AIVendorInput,
+  ): Promise<{ vendor: AIVendor }> {
+    return request(`/api/v1/ai/vendors/${encodeURIComponent(vendorId)}`, {
+      method: 'PUT',
+      body: input,
+    });
   },
 
   createAIIntegration(

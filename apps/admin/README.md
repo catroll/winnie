@@ -78,12 +78,21 @@ skill cannot be disabled.
 
 ## AI providers
 
-`/ai` owns the vendor registry and is the **only** model choice: `config.yaml`
+`/ai` owns the supplier registry and is the **only** model choice: `config.yaml`
 has no `llm` block, `assistant.model`, `meetings.translator` or
 `meetings.summarizer`. On first start the API writes `data/ai.yaml` from the
 gateway routes and the ASR defaults; model features start on `fake` until a real
-provider is added and bound. Each feature selects one integration and an
-optional model:
+supplier endpoint is added and bound.
+
+The page groups records by **supplier** (DeepSeek, OpenAI, Qwen, Anthropic,
+Volcengine, fake). A supplier owns:
+
+- **endpoints** — protocol plus role (gateway route or internal provider);
+- **models** — the catalog shown in the feature model select and edited with
+  the **Models** button in the supplier header.
+
+Each feature selects one internal endpoint and optionally one of that supplier's
+models:
 
 | Feature | What it drives |
 |---|---|
@@ -92,21 +101,21 @@ optional model:
 | Meeting translation | Non-local transcript segments |
 | Meeting minutes | Structured summary, decisions and action items |
 
-An OpenAI/Anthropic integration has a separate **Gateway route** switch. With it
-on, the provider is reachable at `/{name}/v1/...` and the client supplies the
-vendor key; with it off, the provider is internal-only and is called by the
+An OpenAI/Anthropic endpoint has a separate **Gateway route** switch. With it
+on, the endpoint is reachable at `/{name}/v1/...` and the client supplies the
+vendor key; with it off, the endpoint is internal-only and is called by the
 assistant or meetings with `api_key_env`. Seeded routes have no server-side key.
-A keyless OpenAI-compatible provider cannot serve an internal feature, so it is
+A keyless OpenAI-compatible endpoint cannot serve an internal feature, so it is
 not listed in those feature dropdowns.
 
 The **Model runtime** card edits the shared timeout, token cap, temperature,
-retry and chunk limits. They apply to the next call. A provider change takes
-effect on the next model call; no API restart is needed. Deleting a provider
-unbinds its features; there is no `config.yaml` fallback, so choose a
+retry and chunk limits. They apply to the next call. A supplier/model/endpoint
+change takes effect on the next model call; no API restart is needed. Deleting an
+endpoint unbinds its features; there is no `config.yaml` fallback, so choose a
 replacement before using them again. The page never receives or stores a vendor
 key: `api_key_env` is the *name* of an environment variable, and the table shows
 whether it is currently set. The full model, first-start behaviour (including
-the `version: 1` migration) and the HTTP API are in
+the `version: 1` → `2` → `3` migration) and the HTTP API are in
 [docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## Quick start

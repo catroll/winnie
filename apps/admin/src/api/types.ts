@@ -325,10 +325,36 @@ export interface AssistantChatResponse {
 
 export type AIProviderKind = 'openai' | 'anthropic' | 'volcengine_asr' | 'fake';
 
+export interface AIModel {
+  id: string;
+  label: string;
+  context_window: number | null;
+  max_output_tokens: number | null;
+  notes: string;
+}
+
+export interface AIVendor {
+  id: string;
+  label: string;
+  models: AIModel[];
+  integration_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIVendorInput {
+  id: string;
+  label: string;
+  models: AIModel[];
+}
+
 export interface AIIntegration {
   id: string;
   name: string;
   label: string;
+  vendor: string;
+  vendor_label: string;
+  role_label: string;
   kind: AIProviderKind;
   kind_label: string;
   base_url: string;
@@ -348,6 +374,7 @@ export interface AIIntegration {
 export interface AIIntegrationInput {
   name: string;
   label: string;
+  vendor: string;
   kind: AIProviderKind;
   base_url: string;
   api_key_env: string;
@@ -367,6 +394,8 @@ export interface AIFeature {
   model: string;
   source: 'admin' | 'none';
   integration_name: string;
+  vendor: string;
+  vendor_label: string;
 }
 
 export interface ModelRuntime {
@@ -391,6 +420,7 @@ export interface AIKind {
 export interface AIProviderConfig {
   path: string;
   runtime: ModelRuntime;
+  vendors: AIVendor[];
   integrations: AIIntegration[];
   features: AIFeature[];
   kinds: AIKind[];
