@@ -1,81 +1,66 @@
-# AI suppliers, endpoints, models and feature bindings
+# AI suppliers, models and feature bindings
 
 The registry is the **only** place that selects a model. `config.yaml` no longer
 has an `llm` block, `assistant.model`, `meetings.translator` or
-`meetings.summarizer`; those choices live here and are edited in the console.
+`meetings.summarizer`.
+
+The unit a feature binds to is a **model**. A model belongs to a **supplier**;
+the supplier is resolved from the model and provides the API endpoint, key and
+model list. A feature never selects a supplier or an endpoint.
 
 - Console page: **AI suppliers** (`/ai` in the admin app)
 - API prefix: `/api/v1/ai`
 - State file: `data/ai.yaml` by default (gitignored)
-- No vendor keys are stored: an endpoint names an environment variable
+- No vendor keys are stored: the supplier API names an environment variable
 
 ## Concepts
 
 A **supplier** is the vendor (`deepseek`, `openai`, `qwen`, `anthropic`,
-`volcengine`, `fake`) and owns two lists:
+`volcengine`, `fake`) and owns:
 
-- **endpoints** — the wire protocol plus its role (gateway route or internal
-  provider);
-- **models** — the model ids the supplier offers, with display metadata.
+- one **API endpoint** for internal calls: base URL, key variable and protocol;
+- a **model catalog**;
+- zero or more **gateway routes** — public `/{name}/v1/...` proxy paths that
+  forward the client's own vendor key.
 
-One supplier can have several endpoints because protocol and exposure are
-independent:
+The API endpoint and the gateway routes are different roles, but they are not
+separate suppliers and they are not feature targets. The console shows one
+supplier header with its icon, API status, models and gateway-route count; the
+server-side endpoint is edited with **API**, not with a provider dropdown in a
+feature binding. There is no "Internal (OpenAI-compatible)" row.
 
-| Endpoint kind | Purpose | Can be a gateway route |
-|---|---|---|
-| `openai` | Any `/chat/completions` endpoint; assistant, translation, minutes | yes |
-| `anthropic` | Anthropic Messages endpoint | yes |
-| `volcengine_asr` | Doubao recording-file and streaming ASR | no |
-| `fake` | Deterministic offline providers for tests and demos | no |
-
-For example, DeepSeek is one supplier with up to three endpoints: an
-OpenAI-compatible gateway route, an Anthropic-compatible gateway route, and an
-internal OpenAI-compatible endpoint with a server-side key. The console groups
-them under **DeepSeek**; the endpoint rows are role labels, not separate
-suppliers.
-
-Whether an endpoint is a public proxy path is the `gateway` field, not the
-kind. An OpenAI-compatible endpoint can be:
-
-- a gateway route (`gateway: true`, no server-side key; the client forwards its
-  own key);
-- an internal provider (`gateway: false`, `api_key_env` set; the assistant and
-  meetings call it directly);
-- both, if the owner explicitly wants that.
-
-`volcengine_asr` and `fake` are always internal.
-
-A **model** belongs to the supplier, not to one endpoint:
+A **model** belongs to the supplier:
 
 | Field | Meaning |
 |---|---|
 | `id` | The exact model id sent on the request (`deepseek-chat`) |
 | `label` | Console label; defaults to the id |
-| `context_window` | Optional context size shown in the binding select |
-| `max_output_tokens` | Optional per-model output cap shown in the console |
+| `owned_by` | Owner reported by the supplier `/models` API |
+| `created` | Creation timestamp reported by the supplier, when present |
+| `context_window` | Optional context size shown in the model selector |
+| `max_output_tokens` | Optional per-model output cap |
 | `notes` | Optional free text |
 
-The endpoint's `default_model` is used when a feature binding leaves the model
-empty. A binding may choose any model from the supplier catalog; an unknown id
-is rejected with `model ... is not in the <supplier> catalog`. The runtime
-limits below are shared and separate from per-model metadata.
+**Sync models** calls the supplier's OpenAI-compatible
+`GET {base_url}/v1/models` with the supplier key, reads `data[].id` (plus
+`owned_by` and `created`), and writes the catalog. A model that is still used by
+a binding or an endpoint default is kept if the supplier temporarily omits it.
+**Models** is the manual fallback for ASR, the fake and custom endpoints.
 
-A **feature binding** selects an internal endpoint and optionally one of its
-supplier's models:
+A **feature binding** selects a supplier and a model:
 
-| Feature | Uses | Model |
-|---|---|---|
-| `assistant.chat` | Assistant replies, tool calls and memory distillation | yes |
-| `meetings.transcribe` | File ASR and live captions | no |
-| `meetings.translate` | Segment translation | yes |
-| `meetings.summarize` | Structured minutes | yes |
+| Feature | Uses |
+|---|---|
+| `assistant.chat` | Assistant replies, tool calls and memory distillation |
+| `meetings.transcribe` | File ASR and live captions |
+| `meetings.translate` | Segment translation |
+| `meetings.summarize` | Structured minutes |
+| `news.extract` / `news.write` / `news.review` | News extraction, drafting and review |
 
-An unbound feature has **no provider** and fails with a clear
-`feature ... has no provider` error; there is no YAML fallback. Deleting an
-endpoint unbinds the features that referenced it, so choose a replacement
-before using them again. A fresh registry binds every model feature to `fake`
-and ASR to its configured default, so the app is usable before a real provider
-is added.
+An unbound feature has **no model** and fails with a clear error; there is no
+YAML fallback. A fresh registry binds every feature to the `fake` model. Deleting
+the supplier API or removing a model that a binding uses is rejected or unbinds
+the feature with a message; choose a replacement model first.
 
 ## Model runtime
 
@@ -92,8 +77,8 @@ not in `config.yaml`:
 | `translation_batch_chars` | `6000` | Translation batch size |
 | `summary_chunk_chars` | `24000` | Transcript chunk size for minutes |
 
-They apply to the assistant, translation and minutes. The model and endpoint
-come from the binding; the runtime only supplies limits. Edit them in the
+They apply to the assistant, translation, minutes and news. The model comes from
+the feature binding; the supplier supplies the endpoint. Edit the limits in the
 **Model runtime** card or with `PUT /api/v1/ai/runtime`; a change applies on the
 next call.
 
@@ -102,21 +87,20 @@ next call.
 On the first start with `ai.enabled: true`, Winnie writes `data/ai.yaml` from the
 remaining YAML inputs:
 
-- every entry under `routes` becomes an `openai` or `anthropic` endpoint with
-  `gateway: true` and `api_key_env: ""` (gateway paths forward the client key);
-  endpoints are grouped under their supplier (`deepseek-openai` →
-  **DeepSeek**);
+- every entry under `routes` becomes an `openai` or `anthropic` **gateway
+  route** with `api_key_env: ""`; routes are grouped under their supplier
+  (`deepseek-openai` → **DeepSeek**);
 - `meetings.volcengine` supplies the endpoint/options for a `volcengine-asr`
-  endpoint; `meetings.asr_provider` selects the initial ASR binding
-  (`volcengine` or `fake`); its model name is added to the Volcengine catalog;
-- a `fake` endpoint is always added;
-- `assistant.chat`, `meetings.translate` and `meetings.summarize` start bound to
-  `fake`; the owner adds a supplier endpoint and models, then rebinds them.
+  supplier API; `meetings.asr_provider` selects the initial ASR model
+  (`bigmodel` or `fake`); its model name is added to the Volcengine catalog;
+- a `fake` supplier is always added;
+- every feature starts on the `fake` model; the owner adds a supplier API,
+  syncs its models and binds the feature to a real model.
 
 There is no `llm` block to import and no `internal-llm` generated on a fresh
 start. An existing registry that already has an `internal-llm` (from the v1
-migration) keeps it as a normal internal endpoint under its supplier; it can be
-edited, rebound or deleted like any other endpoint.
+migration) keeps it as the DeepSeek supplier API; it can be edited or removed
+like any other supplier API.
 
 `ai.enabled` defaults to `false` in a programmatic `Settings()` so tests and
 embedders never read or write the file. The shipped `apps/api/config.yaml`
@@ -129,7 +113,7 @@ ai:
   path: ../../data/ai.yaml
 ```
 
-### v1 → v2 → v3 migration
+### v1 → v2 → v3 → v4 migration
 
 A `version: 1` registry is migrated on first read. v1 reused a gateway route as
 the internal LLM, so its server-side key sat on a public path. The migration:
@@ -137,49 +121,53 @@ the internal LLM, so its server-side key sat on a public path. The migration:
 - adds `gateway: false` to non-gateway kinds and `gateway: true` to the old
   combined route;
 - finds an OpenAI integration that has an `api_key_env` and is referenced by a
-  binding (the old combined record), creates a separate `internal-llm` from its
-  endpoint/key/model, clears the route key/model and repoints the bindings;
+  binding, creates a separate `internal-llm` from its endpoint/key/model, clears
+  the route key/model and repoints the bindings;
 - replaces only auto-generated labels and writes `version: 2`.
 
-A `version: 2` registry is grouped in place on the next read: each integration
-gets a supplier id inferred from its name and base URL, a supplier record is
-created if needed, and every endpoint default / bound model is added to that
-supplier's model catalog. Gateway routes and internal endpoints keep their ids
-and names, so bindings and public paths do not change. The file becomes
-`version: 3`.
+A `version: 2` registry is grouped in place: each integration gets a supplier id
+inferred from its name and base URL, a supplier record is created if needed, and
+every endpoint default / bound model is added to the supplier catalog. The file
+becomes `version: 3`.
+
+A `version: 3` registry is converted to model-first bindings: every
+`integration_id` binding becomes `vendor` + `model` (`model` falls back to the
+endpoint default; the fake endpoint uses `fake`). The integration id is cleared,
+so the console cannot bind a feature to an endpoint again. Features added by a
+later version (for example the news features) are bound to `fake`/`fake`. The
+file becomes `version: 4`.
 
 ## API keys
 
 The registry never stores a key. `api_key_env` is the *name* of an environment
 variable, for example `DEEPSEEK_API_KEY`; the API process reads the value when it
-builds a provider. The console shows **set in environment** or **missing from
-environment** for each endpoint but never renders the value.
+calls the supplier. The console shows the variable and whether it is set, but
+never renders the value.
 
 A value pasted into the `api_key_env` field is rejected by validation. Set the
 key in the process environment (directly or through `apps/api/.env`) and restart
 the API or worker: a running process keeps the environment it was started with.
 
 Gateway paths still forward the client's own vendor key. The environment
-variable matters for internal jobs and the assistant, which call the provider
-directly. An OpenAI-compatible endpoint with an empty `api_key_env` is
-gateway-only and cannot be bound to an internal feature; the console filters it
-out of those dropdowns.
+variable matters for internal jobs and the assistant, which call the supplier
+directly. A gateway-only record is never a feature target; the internal API
+button/config is separate.
 
-New endpoints get a conventional suggestion from their name
+New supplier APIs get a conventional suggestion from their name
 (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `DASHSCOPE_API_KEY`,
 `ANTHROPIC_API_KEY`, `VOLCENGINE_ASR_API_KEY`); the field remains editable.
 
 ## Changes take effect without a restart
 
 The capability packages are built once, but their provider ports are thin
-wrappers that resolve the current binding and runtime on every call. Adding an
-endpoint, adding a model or switching a binding affects the next assistant
-turn, the next meeting pipeline stage and the next live-caption connection.
+wrappers that resolve the current binding and runtime on every call. Switching a
+model, syncing the catalog or editing the supplier API affects the next
+assistant turn, the next meeting pipeline stage and the next live-caption
+connection.
 
 The gateway route table is refreshed in the API process on every CRUD request.
-An OpenAI or Anthropic endpoint with `gateway: true` makes
-`/{name}/v1/...` reachable immediately; turning the switch off, disabling or
-deleting it removes the path. Internal-only endpoints never appear there. The
+An OpenAI or Anthropic gateway route makes `/{name}/v1/...` reachable
+immediately; turning it off, disabling or deleting it removes the path. The
 separate arq worker reads the file by modification time, so it also sees the
 change without a restart.
 
@@ -189,30 +177,23 @@ All endpoints require the same bearer session as the rest of the console.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/ai/config` | Suppliers, endpoints, models, bindings, runtime, kind metadata |
-| `POST` | `/api/v1/ai/vendors` | Create a supplier and its model catalog |
+| `GET` | `/api/v1/ai/config` | Suppliers, models, endpoints, bindings, runtime |
+| `POST` | `/api/v1/ai/vendors` | Create a supplier |
 | `PUT` | `/api/v1/ai/vendors/{id}` | Update a supplier label/models |
-| `POST` | `/api/v1/ai/integrations` | Create an endpoint under a supplier |
-| `PUT` | `/api/v1/ai/integrations/{id}` | Update an endpoint |
-| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and unbind its features |
-| `PUT` | `/api/v1/ai/features/{feature}` | Bind a feature (`integration_id: null` unbinds) |
+| `POST` | `/api/v1/ai/vendors/{id}/models/sync` | Fetch the model list from the supplier |
+| `POST` | `/api/v1/ai/integrations` | Create the supplier API or a gateway route |
+| `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
+| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it; unbind features if the supplier API is gone |
+| `PUT` | `/api/v1/ai/features/{feature}` | Bind `{vendor, model}`; empty vendor unbinds |
 | `PUT` | `/api/v1/ai/runtime` | Update the shared model limits |
 
-Create a supplier with two models, then an internal endpoint under it:
+Create a supplier, sync its models, then bind a feature to a model:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/ai/vendors \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{
-    "id": "deepseek",
-    "label": "DeepSeek",
-    "models": [
-      {"id": "deepseek-chat", "label": "DeepSeek Chat",
-       "context_window": 128000, "max_output_tokens": 8192},
-      {"id": "deepseek-reasoner", "label": "DeepSeek Reasoner"}
-    ]
-  }'
+  -d '{"id":"deepseek","label":"DeepSeek","models":[]}'
 
 curl -s -X POST http://127.0.0.1:8000/api/v1/ai/integrations \
   -H "Authorization: Bearer $TOKEN" \
@@ -224,43 +205,21 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/ai/integrations \
     "kind": "openai",
     "base_url": "https://api.deepseek.com/v1",
     "api_key_env": "DEEPSEEK_API_KEY",
-    "default_model": "deepseek-chat",
-    "enabled": true,
     "gateway": false
   }'
-```
 
-The gateway routes for the same supplier are separate endpoint records with
-`"gateway": true`; the console groups all of them under one supplier.
+curl -s -X POST http://127.0.0.1:8000/api/v1/ai/vendors/deepseek/models/sync \
+  -H "Authorization: Bearer $TOKEN"
 
-Point the assistant at the endpoint; `model` must be in the supplier catalog:
-
-```bash
 curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features/assistant.chat \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"integration_id":"<id>","model":"deepseek-reasoner"}'
+  -d '{"vendor":"deepseek","model":"deepseek-chat"}'
 ```
 
-Unbind it (the feature will report that it has no provider):
-
-```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features/assistant.chat \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"integration_id":null,"model":""}'
-```
-
-Tune the shared limits:
-
-```bash
-curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/runtime \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"timeout_seconds":90,"max_output_tokens":2048,"temperature":0.3,
-       "max_retries":2,"retry_backoff_seconds":1,
-       "translation_batch_chars":6000,"summary_chunk_chars":24000}'
-```
+Gateway routes are separate endpoint records with `"gateway": true`; they are
+not part of a feature binding. The console renders them as route rows under the
+supplier.
 
 ## Operational notes
 
@@ -269,8 +228,8 @@ curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/runtime \
   loudly with the path and the validation error instead of silently falling
   back. Use the console for normal changes.
 - The file is written atomically (temporary file plus rename) with mode `0600`.
-- The file is `version: 3`. A `version: 1` or `version: 2` file is migrated in
-  place on the next read; back it up first if it contains manual edits.
+- The file is `version: 4`. A `version: 1`, `2` or `3` file is migrated in place
+  on the next read; back it up first if it contains manual edits.
 - Multiple API processes share the file. The process that handled the console
   write refreshes its gateway table immediately; another process only re-reads
   bindings/runtime on the next resolution and does not rebuild its gateway
@@ -280,3 +239,7 @@ curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/runtime \
 - `volcengine_asr` options are validated by the capability's own
   `VolcengineASRConfig`, so ranges and defaults do not drift between the console
   and the adapter.
+- Supplier marks are adapted from the WLB newapi `vendor-icons.js` catalog
+  (`DeepSeek`, `OpenAI`, Alibaba/Qwen, Anthropic, ByteDance/Volcengine, with a
+  monogram fallback). They are static inline SVG, so the admin needs no icon
+  dependency.

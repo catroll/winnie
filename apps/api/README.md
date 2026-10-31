@@ -158,11 +158,11 @@ The arq worker schedules the same purge daily at 03:47 UTC.
 
 ## AI providers
 
-The host owns a small AI registry at `/api/v1/ai`. It groups **suppliers**
-(DeepSeek, OpenAI, Qwen, Anthropic, Volcengine, fake), their **endpoints**
-(OpenAI-compatible, Anthropic, Volcengine ASR, fake) and the **models** each
-supplier offers, then records which endpoint and model each AI-using feature
-calls:
+The host owns a small AI registry at `/api/v1/ai`. A **supplier** (DeepSeek,
+OpenAI, Qwen, Anthropic, Volcengine, fake) owns one internal API, a **model
+catalog** and any public gateway routes. Every AI-using feature binds to a
+**model**; the supplier is resolved from that model. Features never select an
+endpoint:
 
 | Feature | Used by |
 |---|---|
@@ -176,21 +176,20 @@ calls:
 There is no `llm` block, `assistant.model`, `meetings.translator` or
 `meetings.summarizer`: the registry is the only model choice. Routes seed as
 `gateway: true` endpoints with an empty `api_key_env` and are grouped under their
-supplier (`deepseek-openai` → DeepSeek); the three model features start bound to
-`fake`, and ASR follows the legacy `asr_provider` value. After that file exists
-the console is authoritative. An unbound feature has no provider and fails with a
+supplier (`deepseek-openai` → DeepSeek); every feature starts on the `fake`
+model, and ASR follows the legacy `asr_provider` value. After that file exists
+the console is authoritative. An unbound feature has no model and fails with a
 named error; there is no YAML fallback. `ai.enabled: false` (the programmatic
 `Settings()` default) leaves model features on fake and ASR on its YAML default.
 
-`gateway` controls exposure, not the kind: an OpenAI-compatible endpoint can be a
-public `/{name}/v1/...` route, an internal-only provider, or both. A gateway-only
-endpoint has no `api_key_env`; binding it to an internal feature is rejected. A
+`gateway` controls exposure, not the kind: an OpenAI-compatible record can be a
+public `/{name}/v1/...` route, the supplier's internal API, or both. A
+gateway-only record cannot serve a feature; only the internal API can. A
 `version: 1` file is migrated in place: the old combined route is split into a
-gateway endpoint and an internal endpoint, and the bindings are repointed. A
-`version: 2` file is then grouped under suppliers and its endpoint defaults and
-bound models are added to each supplier's model catalog; the result is
-`version: 3`. Removing a model that an endpoint default or binding still uses is
-rejected.
+gateway route and an internal API, and bindings are repointed. A `version: 2`
+file is grouped under suppliers and its models are collected. A `version: 3`
+file is converted to `{vendor, model}` bindings; the result is `version: 4`.
+Removing a model that a binding or endpoint default still uses is rejected.
 
 Shared model limits (timeout, token cap, temperature, retries, chunk sizes) live
 in the registry's `runtime` section and are edited from the console. They apply
@@ -207,13 +206,14 @@ Endpoints (bearer session required):
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/ai/config` | Suppliers, endpoints, models, bindings, runtime, kind metadata |
-| `POST` | `/api/v1/ai/vendors` | Create a supplier and its model catalog |
+| `GET` | `/api/v1/ai/config` | Suppliers, models, endpoints, bindings, runtime, kind metadata |
+| `POST` | `/api/v1/ai/vendors` | Create a supplier |
 | `PUT` | `/api/v1/ai/vendors/{id}` | Update a supplier label/models |
-| `POST` | `/api/v1/ai/integrations` | Create an endpoint under a supplier |
+| `POST` | `/api/v1/ai/vendors/{id}/models/sync` | Fetch the supplier's `/models` list |
+| `POST` | `/api/v1/ai/integrations` | Create the supplier API or a gateway route |
 | `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
-| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and unbind its features |
-| `PUT` | `/api/v1/ai/features/{feature}` | Bind a feature (`integration_id: null` unbinds) |
+| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and unbind features if the supplier API is gone |
+| `PUT` | `/api/v1/ai/features/{feature}` | Bind `{vendor, model}`; empty vendor unbinds |
 | `PUT` | `/api/v1/ai/runtime` | Update the shared model limits |
 
 ```bash
@@ -229,16 +229,24 @@ curl -s -X POST http://[::1]:8000/api/v1/ai/integrations \
   -H 'Content-Type: application/json' \
   -d '{"name":"deepseek-internal","label":"DeepSeek API","vendor":"deepseek",
        "kind":"openai","base_url":"https://api.deepseek.com",
-       "api_key_env":"DEEPSEEK_API_KEY","default_model":"deepseek-chat",
-       "gateway":false}'
+       "api_key_env":"DEEPSEEK_API_KEY","gateway":false}'
+
+curl -s -X POST http://[::1]:8000/api/v1/ai/vendors/deepseek/models/sync \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -s -X PUT http://[::1]:8000/api/v1/ai/features/assistant.chat \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"vendor":"deepseek","model":"deepseek-chat"}'
 ```
 
 Set `"gateway": true` to expose an OpenAI/Anthropic endpoint at
 `/{name}/v1/...`; the client supplies its own vendor key on those paths. An
 internal-only endpoint uses `api_key_env` for the assistant and meetings. The
-registry stores the variable name, never the key. A feature binding may choose
-the endpoint default or any model in its supplier catalog; an unknown model is
-rejected. A change applies on the next model call, and the arq worker re-reads
+registry stores the variable name, never the key. A feature binding names a
+model from the supplier catalog; an unknown model is rejected. The supplier's
+internal API is the only thing used for a model call; gateway routes are
+separate. A change applies on the next model call, and the arq worker re-reads
 the file by modification time.
 The console page is documented in
 [docs/ai-providers.md](../../docs/ai-providers.md).

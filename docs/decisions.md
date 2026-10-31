@@ -370,6 +370,20 @@ named error. Re-reading the YAML on every resolve was rejected because it makes
 "the console changed something" indistinguishable from "an operator edited a
 file".
 
+**Features bind to models, not to endpoints.** The first supplier iteration
+still made a feature choose an endpoint *and* a model, so the console showed
+"Internal (OpenAI-compatible)" and gateway/internal records next to a feature.
+That is the wrong seam: the user's choice is the model; the endpoint is an
+implementation detail resolved from the model's supplier. Version 4 bindings are
+`vendor` + `model`; the server finds the supplier's internal API (never a
+gateway route), and the console has one **Model** select grouped by supplier.
+The v3 `integration_id` value is kept only for reading/migrating old files and is
+cleared after migration. This also lets the model catalog be supplier-wide and
+refreshed with one **Sync models** call, instead of repeating model ids on
+endpoints. The trade-off is that a supplier can have only one internal API for a
+given protocol; that is intentional, because multiple credentials for the same
+supplier would be a second account, not a second model.
+
 **Keys stay in the environment.** An endpoint stores `api_key_env`, the name
 of a variable, and the console shows whether it is set. Pasting a key into that
 field fails validation. The alternative — encrypting keys in the registry — was
@@ -401,7 +415,8 @@ limits (timeouts, retries, token caps, chunk sizes) move with the choice into
 still recovers an existing `internal-llm` from the file, because that record is
 the only evidence of the old `llm` configuration; it is then a normal endpoint.
 v2 files are grouped under suppliers and their endpoint defaults/bound models
-become the supplier model catalog; the schema is version 3.
+become the supplier model catalog; v3 files are converted to `{vendor, model}`
+bindings; the schema is version 4.
 
 **Gateway exposure is separate from server-side credentials.** A vendor endpoint
 can be a public proxy route (`gateway: true`), an internal provider

@@ -167,9 +167,10 @@ status are in [plan.md](./plan.md).
       cannot serve an internal feature. A `version: 1` file is migrated in place
       and keeps its old `internal-llm` record as a normal integration.
 - [x] Group protocol endpoints under their supplier in the console (DeepSeek →
-      one supplier with OpenAI/Anthropic/internal endpoints). Models live in a
-      per-supplier catalog shown in the feature model select and edited with
-      **Models**; a model not in the catalog is rejected.
+      one supplier). Features bind to a **model**, not an endpoint; the supplier
+      API is resolved from the model. Models are synced from the supplier
+      `/models` API or edited with **Models**, and supplier marks use the WLB
+      vendor-icons set.
 - [ ] Add an Anthropic Messages adapter for internal features if there is a real
       need to bind the assistant/translation/minutes to an Anthropic endpoint.
       DeepSeek's OpenAI-compatible endpoint already covers them today, so this is

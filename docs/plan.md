@@ -256,8 +256,10 @@ Working:
   Anthropic, Volcengine, fake), their endpoints (OpenAI-compatible, Anthropic,
   Volcengine ASR, fake) and their model catalogs. The console groups endpoints
   under one supplier, so DeepSeek's gateway/internal records do not read as
-  three suppliers. Each feature selects an internal endpoint and a model from
-  that supplier's catalog. This registry is the only model choice;
+  three suppliers. Each feature selects a **model**; the supplier and its
+  internal API are resolved from that model. The supplier model list is fetched
+  with **Sync models** from its `/models` API, and vendor marks come from the
+  WLB newicon catalog. This registry is the only model choice;
   `config.yaml` has no `llm`, `assistant.model`, `meetings.translator` or
   `meetings.summarizer`. A fresh registry binds the model features to `fake`;
   the owner adds a real supplier/endpoint and rebinds them. Each
@@ -300,12 +302,12 @@ Verified:
   `web_search` block, light and dark mode, and a 390 px viewport with no
   horizontal overflow.
 - The AI suppliers page was checked in Firefox against a disposable API and
-  registry: a fresh seed bound the model features to `fake`; DeepSeek's
-  endpoints were grouped under one supplier; a model was added through the
-  supplier **Models** editor; an endpoint was created, bound and deleted so the
-  feature became unbound (no YAML fallback); the Model runtime card saved new
-  limits; the Volcengine defaults, light and dark mode were captured at
-  1440×1200.
+  registry: a fresh seed bound every feature to the `fake` model; DeepSeek's
+  gateway routes were grouped under one supplier; the feature table exposed a
+  single model selector (no provider column); model sync/editor, supplier
+  icons, API create and the unbound state were exercised; the Model runtime
+  card saved new limits; the Volcengine defaults, light and dark mode were
+  captured at 1440×1200.
 - A `version: 1` registry (combined route + internal LLM) was loaded and checked:
   the migration split it into `deepseek-openai` + `internal-llm`, cleared the
   route key/model, repointed the bindings and wrote `version: 2`.
@@ -489,7 +491,7 @@ Open:
 | Chat engine and skills | `winnie-chat` and API tests | Registry persistence and duplicate rejection; enabled-only schemas and prompt; disabled-tool rejection; scheduled filtering; skills list/toggle/persistence |
 | Admin skills page | TypeScript/Vite build + Firefox production preview | Page typechecks and builds; six skills listed with instructions; unavailable index and always-on core; web toggle persisted; light/dark/mobile |
 | Admin AI suppliers page | Firefox against a disposable API and `ai.yaml` | Fresh seed bound model features to `fake`; DeepSeek endpoints were grouped under one supplier; added a model through **Models**; created `ui-llm`, rebound `assistant.chat` (`source=admin`), deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
-| AI registry migration | `pytest` against hand-written v1/v2 files | v1 split into gateway + `internal-llm`; v2 grouped under suppliers and collected endpoint/bound models; both rewritten `version: 3` |
+| AI registry migration | `pytest` against hand-written v1/v2/v3 files | v1 split into gateway + internal API; v2 grouped under suppliers and collected models; v3 converted bindings to `{vendor, model}`; rewritten `version: 4` |
 | News pipeline | `pytest packages/winnie-news/tests` | 81 passed; six stages, fake model, file store, retry and duplicate-attach paths |
 | News run end to end | Throwaway API + two real RSS feeds + fake model | 60 materials → 10 cleaned → 10 events → 10 drafts, all reviews passed |
 | Admin news page | Firefox against the same disposable API | Sign-in, run table, stage badges, draft list, review and Markdown rendered; no console errors |
