@@ -19,6 +19,7 @@ not store vendor API keys.
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
+| **LLM usage** | Recorded model calls with token classes, latency, status and cost; breakdowns by day, feature and model; provider balances with a refresh; the configured price table |
 | **AI providers** | Add, edit and delete vendor integrations (OpenAI-compatible, Anthropic, Volcengine ASR, deterministic fake); choose the provider and model for the assistant, transcription, translation and minutes; see each provider's gateway paths and whether its environment key is set |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
@@ -139,6 +140,24 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
   *name* of an environment variable per provider and only reports whether the
   API process can see it. Gateway routes show the configured upstreams.
 
+## LLM usage page
+
+`/usage` reads `/api/v1/usage/*` and renders one report per selected period
+(24 hours, 7, 30 or 90 days). It has no write path: prices and the ledger root
+come from `apps/api/config.yaml`, and provider balances are read from the
+vendors named by the AI integrations.
+
+- **Provider balances** are cached for five minutes by default. **Refresh
+  balances** forces a query; a failing provider becomes an error on its row.
+- **Cost** prefers a provider-reported value and otherwise applies the local
+  price table. A call with no usable price is shown as unpriced, with the
+  reason in its detail row; a call whose provider returned no usage is shown as
+  having no usage, not as costing zero.
+- Opening a call's detail renders an extra full-width row, so the table's
+  columns never resize.
+- Gateway traffic is recorded but its balance belongs to the client's key; the
+  card says so.
+
 ## Scope
 
 Deliberately not part of this app yet:
@@ -159,7 +178,11 @@ Deliberately not part of this app yet:
   environment; the console can only choose which variable a provider names.
 - Browsing the raw gateway request logs (they stay on disk under `data/logs/`).
   The assistant history is a different record: the conversation Markdown the
-  assistant wrote, not a proxy request log.
+  assistant wrote, not a proxy request log. **LLM usage** is a third record:
+  token counts and cost, without prompts or responses.
+- Editing prices in the browser. They live in `usage.prices` in
+  `apps/api/config.yaml`, because a price is deployment billing data and the
+  ledger re-prices history from that table.
 - Knowledge-base management, which is still planned.
 
 ## Stack

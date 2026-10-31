@@ -414,6 +414,10 @@ class Summarizer(Protocol):
   stream does not, so a realtime meeting is currently billed twice for ASR but
   only the file pass is recorded. Streaming usage is a follow-up. Provider
   prices live in config so the estimate can be recomputed.
+- **LLM usage view**: translation and minutes calls also append to the console's
+  usage ledger, which reports token classes, latency and cost per call and by
+  feature (see [usage](./usage.md)). ASR stays in `usage_records` and is not on
+  that page yet, so the two views answer different questions.
 
 ## 8. Integration with the existing backend
 

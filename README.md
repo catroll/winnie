@@ -11,11 +11,12 @@ infrastructure below it exists to serve the assistant.
 | **Assistant** | Chat, web search, scheduled tasks and long-term memory built from local files | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
-| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, AI providers and gateway routes | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, AI providers, LLM usage and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
+| **LLM usage** | Per-call tokens and latency, cost estimates and provider balances in the console | **Implemented** |
 
 The model gateway is one requirement of the project, not its definition. It
 landed first because every later capability needs a vendor-neutral, observable
@@ -51,6 +52,8 @@ The model gateway is fully implemented. It supports:
 - Client-supplied vendor API keys — Winnie never stores them
 - Streaming (SSE) passthrough
 - Paired `ask`/`answer` logs on local disk, per route
+- A usage ledger shared with internal model calls, priced per model, plus
+  provider balances where the vendor exposes them
 
 The meeting-notes backend is functional but **not production-ready**. Meeting
 CRUD, audio upload, a file-first processing pipeline, transcript/minutes/export
@@ -173,6 +176,7 @@ including the ASR evaluation and provider verification, are in
 - [DESIGN.md](./DESIGN.md) — goals, layers, knowledge model, architecture and roadmap
 - [EVAL.md](./EVAL.md) — living feasibility assessment
 - [docs/openai-proxy.md](./docs/openai-proxy.md) — gateway contract, configuration and examples
+- [docs/usage.md](./docs/usage.md) — what the usage ledger records, pricing, provider balances and limits
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan

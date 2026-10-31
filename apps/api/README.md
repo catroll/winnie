@@ -204,6 +204,52 @@ disabling or deleting it removes the route. A provider change applies on the
 next model call, and the arq worker re-reads the file by modification time.
 The console page is documented in [docs/ai-providers.md](../../docs/ai-providers.md).
 
+## LLM usage
+
+Every internal model call and every call through the gateway appends one JSON
+line to a local ledger. The console's **LLM usage** page reads it for token
+classes, latency, estimated cost and provider balances. The ledger is switched
+by `usage.enabled`; prices are configuration, not stored per call, so a
+corrected price also corrects history.
+
+```yaml
+usage:
+  enabled: true
+  # Relative to apps/api/, like every other root.
+  root: ../../data/usage
+  currency: USD
+  # Per 1M tokens. Keys match provider/model, then model, then "*".
+  prices:
+    deepseek-flash:
+      input: 0.30
+      output: 1.20
+      cached_input: 0.006
+  balance_ttl_seconds: 300
+  balance_timeout_seconds: 8
+```
+
+No prices ship with the repository: vendor prices change, and peak/off-peak
+rates cannot be expressed in one row. An unlisted model is counted as unpriced
+instead of estimated at zero. A provider-reported cost (`usage.cost`, for
+example on OpenRouter) takes precedence.
+
+Balances are queried only for integrations whose `api_key_env` is set, and only
+when the vendor exposes an endpoint: DeepSeek, OpenRouter, Kimi/Moonshot and
+SiliconFlow. Gateway clients pass their own key, so proxied traffic is recorded
+but not covered by a server-side balance.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/usage/overview?days=7` | Totals and by-day, by-capability and by-model breakdowns |
+| `GET` | `/api/v1/usage/records?days=7` | Recent calls with per-call cost; filters and pagination |
+| `GET` | `/api/v1/usage/balances` | Cached provider balances |
+| `POST` | `/api/v1/usage/balances/refresh` | Force a fresh query |
+
+The ledger is append-only and has no automatic retention. Meeting ASR usage
+stays in the meeting database's `usage_records` table and is not part of this
+page yet. Details, token normalization and limits are in
+[docs/usage.md](../../docs/usage.md).
+
 ## Meeting API
 
 The meeting backend is mounted under `/api/v1/meetings` when

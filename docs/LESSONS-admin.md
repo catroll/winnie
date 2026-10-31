@@ -122,3 +122,54 @@ another table: scope by the control's id, not by visible text.
 **Check.** Before clicking, assert the control exists in the scoped row and
 throw a named error when it does not. A missing button and a disabled button
 produce the same "nothing happened" symptom, so report which one it was.
+
+## AdminLTE remembers the colour mode between WebDriver sessions
+
+**Signal.** A screenshot script that captured "light mode" produced a dark page,
+and the same script's "dark mode" click changed nothing. The switcher still
+worked when clicked by hand in a fresh profile.
+
+**Cause.** AdminLTE persists the chosen colour mode (and the sidebar state) in
+`localStorage`. The Firefox profile used for the check outlives the WebDriver
+session, so the previous run's last theme was restored on load. Clicking
+`[data-bs-theme-value=dark]` when the page was already dark is a no-op, so the
+check could not tell the two states apart.
+
+**Fix.** Set the mode explicitly at the start of every run and assert the
+result instead of assuming the default:
+
+```javascript
+document.querySelector('[data-bs-theme-value=light]').click();
+document.documentElement.getAttribute('data-bs-theme');       // "light"
+getComputedStyle(document.body).backgroundColor;              // rgb(248, 249, 250)
+```
+
+Then switch to dark, wait ~0.5 s for the transition, and assert
+`data-bs-theme="dark"` plus `rgb(43, 48, 53)` before the screenshot. A profile
+under `.cache/ff/` is the right place for the session; clear it only when a
+truly fresh state is the thing under test.
+
+## A `<details>` panel inside a table cell resizes the whole table
+
+**Signal.** The "Recent calls" columns looked roomy until one row's details were
+opened; then the Feature and Provider columns wrapped (`Assistant chat`,
+`deepseek-flash` split over two lines) and the table stayed squeezed while the
+panel was open.
+
+**Cause.** Auto table layout sizes a column to its widest cell. The opened
+`<details>` contained a block with `minWidth: 16rem` plus a long JSON `<code>`,
+so the Details column grew and every other column lost width. Closing it
+restored the layout, which made it look like a transient rendering glitch.
+
+**Fix.** Keep the trigger in the cell, render the content as a sibling
+full-width row, and verify the column widths are identical before and after:
+
+```javascript
+// before opening
+Array.from(table.querySelectorAll('thead th')).map(h => Math.round(h.getBoundingClientRect().width));
+// after opening: same numbers
+```
+
+The trigger is a `<button aria-expanded>` rather than `<summary>`, and the panel
+is `<tr class="table-light"><td colSpan={11}>`. Do not "fix" this by giving the
+panel a fixed width; any width still competes with the other columns.

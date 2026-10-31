@@ -173,7 +173,11 @@ status are in [plan.md](./plan.md).
 
 ## P3 — operational polish
 
-- [ ] Per-meeting and per-month cost view built from `usage_records`.
+- [x] Per-month LLM cost view in the console (`/usage`), built from the new
+      usage ledger; it prefers provider-reported costs and estimates from
+      `usage.prices`.
+- [ ] Per-meeting ASR cost view from `usage_records`; ASR is not part of the LLM
+      ledger, and streaming ASR still writes no row.
 - [ ] Structured logs for `meeting_id`, `job_id`, stage and provider latency.
 - [x] Health/readiness checks: `/healthz` is liveness and `/readyz` probes the
       database plus Redis when the arq backend is configured.

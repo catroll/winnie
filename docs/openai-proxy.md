@@ -46,6 +46,10 @@ routes:
 `data/logs/{route}/`，成对 `ask` / `answer`。  
 ask 头部含 `client_url`（客户请求本代理的地址）与 `upstream_url`（真实上游调用地址）。
 
+Each call also appends one line to the usage ledger under `data/usage/` (token
+classes, latency, estimated cost); it keeps counts, not prompts. See
+[usage.md](./usage.md) for the fields, pricing and limits.
+
 ## 启动
 
 ```bash

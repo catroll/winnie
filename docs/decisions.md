@@ -388,3 +388,66 @@ fails loudly.
 usable offline and keeps the existing deterministic demos selectable from the
 console. A `fake` integration deliberately has no URL, key or model, and the
 binding form disables the model field for it.
+
+## LLM usage ledger and provider balances (2026-11-01)
+
+**One JSONL ledger shared by internal jobs and the gateway.** A call through
+`/{route}/v1/...` and a call made by the assistant or a meeting job differ in
+who holds the key, not in what should be counted. Recording both in one place is
+what makes the console's total meaningful. The alternative — reusing the
+gateway's ask/answer files — was rejected because those files hold full prompts
+and responses and are unsuitable to scan for aggregates. The ledger keeps only
+counts, identifiers and latency.
+
+**Append-only month files, not a database table.** `data/usage/usage-YYYY-MM.jsonl`
+is human-readable, survives a database being disabled, and needs no migration
+for a high-volume event stream whose only reader is a personal console. A table
+would buy indexed queries, but at one person's call volume the page scans at
+most twelve files, and SQLite would have made gateway-only deployments (no auth,
+no meetings, therefore no database) unable to record. The cost is explicit: a
+year-long range is capped, and pruning is manual. Writes are one `O_APPEND`
+`write(2)` per line, so concurrent requests cannot interleave a record.
+
+**Prices are configuration, not ledger data.** An event stores the tokens the
+provider reported; `usage.prices` is applied when the page is read. That means a
+corrected price also corrects history, and the ledger never has to be rewritten.
+Putting prices on the AI integration was rejected for this slice: the registry
+describes routing and credentials, while a price is deployment billing data that
+differs by contract and changes with vendor pages. It also cannot express the
+peak/off-peak rates DeepSeek now bills, so a price row is an estimate by
+definition. No prices ship with the repository; an unlisted model is counted as
+unpriced instead of being estimated at zero, which would look like free usage.
+
+**Missing token classes are `null`, not zero.** OpenAI's prompt count includes
+cache hits, Anthropic's input count excludes them, and a streamed OpenAI
+response has no usage at all unless the client asked for it. The ledger stores a
+normalized, uncached input count so one price row applies, and it keeps
+`unpriced` (tokens known, no price) separate from `unreported` (no tokens). A
+stream without a usage chunk therefore cannot silently become a free call.
+
+**A provider-reported cost wins over the local estimate.** OpenRouter returns
+the actual cost with the response; trusting it is strictly better than
+recomputing from a table. The table is the fallback for vendors that do not
+report cost. Provider-reported costs are assumed to use the configured
+`usage.currency` (USD by default); a deployment that bills in another currency
+must keep the table consistent with it, which is documented rather than guessed
+at.
+
+**Provider balances are chosen by host, not by a new registry field.** The
+endpoint is a property of the vendor (DeepSeek `/user/balance`, OpenRouter
+`/api/v1/credits`, Moonshot `/v1/users/me/balance`, SiliconFlow `/v1/user/info`),
+and adding a vendor is one adapter plus one host entry. A new `balance_kind`
+field would have added a second thing to configure for every integration and
+would still not cover unknown hosts. An integration whose host has no adapter is
+shown as **not exposed** with a neutral explanation.
+
+**Balances use server-side keys only.** The gateway forwards the client's own
+vendor key and stores none, so a proxied call consumes the client's account and
+its balance is invisible here. The card states that limit instead of implying
+the number covers every request. The ledger still records proxied calls because
+usage comes from the response, not from the key.
+
+**Recording is best-effort.** A failed append is logged and swallowed; a
+telemetry disk error must never turn a successful model call into an error. The
+same rule covers the balance query: one provider's failure becomes an error on
+its row, not a failed page.

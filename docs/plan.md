@@ -79,9 +79,10 @@ Success for the current phase:
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: assistant chat and conversation history, meetings, transcripts/minutes, scheduled tasks, AI providers, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: assistant chat and conversation history, meetings, transcripts/minutes, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
+| Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
 
 ## 4. Milestones
@@ -373,7 +374,7 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **134 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **168 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -390,6 +391,8 @@ Open:
 | Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
 | Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Seeded providers and bindings rendered; created `ui-llm` through the modal; gateway paths and missing-key badge appeared; rebound `assistant.chat` and the API reported `source=admin`; deleted it and the binding returned to `source=config`; light/dark captured |
+| Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |
+| Admin LLM usage page | Firefox against the same disposal API | Period switch, metrics, balances (not-exposed and missing-key states), by-day/by-feature/by-model tables, feature filter (8 gateway calls), detail row without column resize, price table, light/dark and 500 px width with no page overflow |
 
 Not yet verified:
 
@@ -406,6 +409,7 @@ Not yet verified:
 | No foreground service / reconnect | Backgrounding or locking the phone stops recording and captions | Foreground service with a persistent notification; reconnect with bounded retry |
 | Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Bind those features to an OpenAI-compatible provider on the AI providers page (the `llm` config still supplies the timeouts); run a real bilingual meeting |
 | No long bilingual fixture | Provider quality, timestamps and cost are unmeasured | Add a local-only 10–30 minute fixture and an evaluation harness |
+| Cost estimates need a hand-maintained price table | A stale or missing price shows as unpriced; peak/off-peak vendor rates are not modelled | Prefer provider-reported costs, keep the table small, review it when a vendor changes prices |
 | Knowledge base is only a note sink | Minutes cannot yet be browsed, corrected or retrieved | M5: Git write, index, browse/edit/search |
 | Admin console has no automated tests | Its flows are only checked manually | Add a Vitest/Playwright suite when the console grows beyond these pages |
 | SQLite + inline jobs in the current checkout | Not a production topology | PostgreSQL, arq worker, reverse proxy, backups |
@@ -422,8 +426,8 @@ Ordered by dependency and risk, not by novelty:
    - Add a foreground service so recording and the stream survive backgrounding.
    - Add reconnect with bounded retry; fail over to the file pass on a dropped
      stream.
-   - Write streaming usage records or explicitly document the double-cost
-     tradeoff in the UI.
+   - Write streaming ASR usage records, or extend the LLM usage page with ASR
+     audio seconds, or explicitly document the double-cost tradeoff in the UI.
    - Exit criteria: a 10-minute meeting recorded on the phone with live
      captions, screen locked for part of it, ending in a `ready` transcript.
 
@@ -451,7 +455,7 @@ Ordered by dependency and risk, not by novelty:
 
 5. **M7 production readiness.**
    - TLS, PostgreSQL, Redis/arq, reverse proxy, backups and restore rehearsal,
-     deployment guide, structured logs and cost view.
+     deployment guide and structured logs.
    - Exit criteria: a clean deployment can be backed up and restored, and meets
      the security bar for real accounts.
 
@@ -487,6 +491,8 @@ files, not the environment file.
 - [Meeting-notes design](./meetings.md) — domain model, API, provider
   interfaces, delivery phases.
 - [Backlog](./todo.md) — concrete, prioritized follow-ups.
+- [Usage ledger](./usage.md) — what is recorded, token normalization, prices,
+  provider balances and limits.
 - [Decisions](./decisions.md) — provider, storage, Android and live-caption
   rationale.
 - [Android client](../apps/android/README.md) — build, run, tests and
