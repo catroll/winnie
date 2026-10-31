@@ -1,0 +1,155 @@
+{
+  "defaults": {
+    "timeout": 20,
+    "retries": 3,
+    "max_items": 0,
+    "workers": 5,
+    "headers": {}
+  },
+  "feeds": [
+    {
+      "id": "chinanews-scroll",
+      "name": "中新网即时新闻",
+      "url": "https://www.chinanews.com.cn/rss/scroll-news.xml",
+      "section": "即时新闻",
+      "tags": ["中文", "中新网"]
+    },
+    {
+      "id": "chinanews-importnews",
+      "name": "中新网要闻导读",
+      "url": "https://www.chinanews.com.cn/rss/importnews.xml",
+      "section": "要闻导读",
+      "tags": ["中文", "中新网"]
+    },
+    {
+      "id": "chinanews-china",
+      "name": "中新网时政新闻",
+      "url": "https://www.chinanews.com.cn/rss/china.xml",
+      "section": "时政新闻",
+      "tags": ["中文", "中新网"]
+    },
+    {
+      "id": "chinanews-world",
+      "name": "中新网国际新闻",
+      "url": "https://www.chinanews.com.cn/rss/world.xml",
+      "section": "国际新闻",
+      "tags": ["中文", "中新网"]
+    },
+    {
+      "id": "chinanews-society",
+      "name": "中新网社会新闻",
+      "url": "https://www.chinanews.com.cn/rss/society.xml",
+      "section": "社会新闻",
+      "tags": ["中文", "中新网"]
+    },
+    {
+      "id": "chinanews-finance",
+      "name": "中新网财经新闻",
+      "url": "https://www.chinanews.com.cn/rss/finance.xml",
+      "section": "财经新闻",
+      "tags": ["中文", "中新网"]
+    },
+    {
+      "id": "bbc-world",
+      "name": "BBC News World",
+      "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+      "section": "国际新闻",
+      "tags": ["英文", "BBC"]
+    },
+    {
+      "id": "nyt-world",
+      "name": "The New York Times World",
+      "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+      "section": "国际新闻",
+      "tags": ["英文", "纽约时报"]
+    },
+    {
+      "id": "washingtonpost-world",
+      "name": "The Washington Post World",
+      "url": "https://feeds.washingtonpost.com/rss/world",
+      "section": "国际新闻",
+      "tags": ["英文", "华盛顿邮报"]
+    },
+    {
+      "id": "bbc-chinese",
+      "name": "BBC 中文",
+      "url": "https://feeds.bbci.co.uk/zhongwen/trad/rss.xml",
+      "section": "中文新闻",
+      "tags": ["中文", "BBC"]
+    },
+    {
+      "id": "feedx-nytimes",
+      "name": "FeedX · 纽约时报",
+      "url": "https://feedx.net/rss/nytimes.xml",
+      "section": "国际新闻",
+      "tags": ["中文", "FeedX", "纽约时报"]
+    },
+    {
+      "id": "feedx-bbc",
+      "name": "FeedX · BBC",
+      "url": "https://feedx.net/rss/bbc.xml",
+      "section": "国际新闻",
+      "tags": ["中文", "FeedX", "BBC"]
+    },
+    {
+      "id": "feedx-zaobao",
+      "name": "FeedX · 联合早报",
+      "url": "https://feedx.net/rss/zaobaotoday.xml",
+      "section": "综合新闻",
+      "tags": ["中文", "FeedX", "联合早报"]
+    },
+    {
+      "id": "feedx-thepaper",
+      "name": "FeedX · 澎湃新闻",
+      "url": "https://feedx.net/rss/thepaper.xml",
+      "section": "综合新闻",
+      "tags": ["中文", "FeedX", "澎湃新闻"]
+    },
+    {
+      "id": "feedx-cna",
+      "name": "FeedX · 中央社",
+      "url": "https://feedx.net/rss/cna.xml",
+      "section": "国际新闻",
+      "tags": ["中文", "FeedX", "中央社"]
+    },
+    {
+      "id": "feedx-dw",
+      "name": "FeedX · 德国之声",
+      "url": "https://feedx.net/rss/dw.xml",
+      "section": "国际新闻",
+      "tags": ["中文", "FeedX", "德国之声"]
+    }
+  ],
+  "google_news": {
+    "enabled": true,
+    "url_template": "https://news.google.com/rss/search?q={query}",
+    "hl": "zh-CN",
+    "gl": "CN",
+    "ceid": "CN:zh-Hans",
+    "section": "科技",
+    "max_items": 50,
+    "tags": ["中文", "Google News"],
+    "keywords": [
+      {
+        "name": "人工智能",
+        "query": "AI OR \"artificial intelligence\""
+      },
+      {
+        "name": "大模型",
+        "query": "大模型 OR LLM OR \"large language model\""
+      },
+      {
+        "name": "芯片半导体",
+        "query": "芯片 OR 半导体 OR semiconductor"
+      },
+      {
+        "name": "OpenAI",
+        "query": "OpenAI"
+      },
+      {
+        "name": "英伟达",
+        "query": "英伟达 OR NVIDIA"
+      }
+    ]
+  }
+}

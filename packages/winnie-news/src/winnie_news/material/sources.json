@@ -1,0 +1,54 @@
+{
+  "cache": {
+    "dir": ".cache/material",
+    "max_age": 3600
+  },
+  "sources": [
+    {
+      "type": "tencent",
+      "name": "腾讯新闻热点榜",
+      "id": "tencent",
+      "enabled": true,
+      "limit": 20,
+      "timeout": 30
+    },
+    {
+      "type": "tophub-daily",
+      "name": "每日早晚报",
+      "id": "tophub-daily",
+      "enabled": true,
+      "timeout": 20,
+      "retries": 3
+    },
+    {
+      "type": "tophub-node-items",
+      "name": "知乎热榜",
+      "id": "zhihu",
+      "enabled": true,
+      "nodeid": 6,
+      "max_pages": 20,
+      "delay": 0.5,
+      "timeout": 20
+    },
+    {
+      "type": "tophub-node-items",
+      "name": "微博热搜",
+      "id": "weibo",
+      "enabled": false,
+      "nodeid": 1,
+      "max_pages": 10,
+      "delay": 0.5,
+      "timeout": 20
+    },
+    {
+      "type": "tophub-node-page",
+      "name": "知乎热榜当前榜单",
+      "id": "zhihu-page",
+      "enabled": false,
+      "url": "https://tophub.today/n/mproPpoq6O",
+      "limit": 50,
+      "timeout": 20,
+      "retries": 3
+    }
+  ]
+}
