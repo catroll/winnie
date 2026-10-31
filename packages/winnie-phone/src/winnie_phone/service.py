@@ -806,6 +806,7 @@ class PhoneService:
                     "ends_at": aware_utc(row.ends_at),
                     "all_day": row.all_day,
                     "timezone": row.timezone,
+                    "recurrence": row.recurrence,
                     "organizer": row.organizer,
                     "attendees": list(row.attendees or []),
                     "status": row.status,

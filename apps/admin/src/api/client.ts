@@ -21,6 +21,18 @@ import type {
   Meeting,
   MeetingList,
   NewsDraftDetail,
+  PhoneApp,
+  PhoneCalendarEvent,
+  PhoneCall,
+  PhoneCommand,
+  PhoneContact,
+  PhoneDevice,
+  PhoneLocation,
+  PhoneMessage,
+  PhoneNotification,
+  PhoneRangeQuery,
+  PhoneSearchResponse,
+  PhoneSummary,
   NewsEventList,
   NewsRun,
   NewsRunDrafts,
@@ -165,6 +177,18 @@ function parseFilename(header: string | null, fallback: string): string {
   }
   const bare = /filename=([^;]+)/i.exec(header);
   return bare?.[1]?.trim() || fallback;
+}
+
+function queryString(
+  params: Record<string, string | number | boolean | undefined | null>,
+): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue;
+    search.set(key, String(value));
+  }
+  const encoded = search.toString();
+  return encoded ? `?${encoded}` : '';
 }
 
 export const api = {
@@ -571,5 +595,140 @@ export const api = {
         `meeting.${format === 'markdown' ? 'md' : 'txt'}`,
       ),
     };
+  },
+
+  // -- phone data ------------------------------------------------------
+
+  phoneSummary(): Promise<PhoneSummary> {
+    return request<PhoneSummary>('/api/v1/phone/summary');
+  },
+
+  phoneDevices(): Promise<PhoneDevice[]> {
+    return request<PhoneDevice[]>('/api/v1/phone/devices');
+  },
+
+  phoneCalendar(
+    params: PhoneRangeQuery & { q?: string } = {},
+  ): Promise<PhoneCalendarEvent[]> {
+    return request(
+      `/api/v1/phone/calendar${queryString({
+        since: params.since,
+        until: params.until,
+        q: params.q,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneCalls(
+    params: PhoneRangeQuery & { direction?: string; q?: string } = {},
+  ): Promise<PhoneCall[]> {
+    return request(
+      `/api/v1/phone/calls${queryString({
+        since: params.since,
+        until: params.until,
+        direction: params.direction,
+        q: params.q,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneMessages(
+    params: PhoneRangeQuery & {
+      address?: string;
+      q?: string;
+      unreadOnly?: boolean;
+    } = {},
+  ): Promise<PhoneMessage[]> {
+    return request(
+      `/api/v1/phone/messages${queryString({
+        since: params.since,
+        until: params.until,
+        address: params.address,
+        q: params.q,
+        unread_only: params.unreadOnly ? 'true' : undefined,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneContacts(
+    params: PhoneRangeQuery & { q?: string } = {},
+  ): Promise<PhoneContact[]> {
+    return request(
+      `/api/v1/phone/contacts${queryString({
+        q: params.q,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneNotifications(
+    params: PhoneRangeQuery & { app?: string; q?: string } = {},
+  ): Promise<PhoneNotification[]> {
+    return request(
+      `/api/v1/phone/notifications${queryString({
+        since: params.since,
+        until: params.until,
+        app: params.app,
+        q: params.q,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneLocations(params: PhoneRangeQuery = {}): Promise<PhoneLocation[]> {
+    return request(
+      `/api/v1/phone/locations${queryString({
+        since: params.since,
+        until: params.until,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneApps(
+    params: PhoneRangeQuery & { q?: string } = {},
+  ): Promise<PhoneApp[]> {
+    return request(
+      `/api/v1/phone/apps${queryString({
+        q: params.q,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneCommands(status = '', limit = 100): Promise<PhoneCommand[]> {
+    return request(`/api/v1/phone/commands${queryString({ status, limit })}`);
+  },
+
+  phoneSearch(query: string, limit = 30): Promise<PhoneSearchResponse> {
+    return request(`/api/v1/phone/search${queryString({ q: query, limit })}`);
+  },
+
+  wipePhoneDevice(deviceId: string): Promise<{ removed: number }> {
+    return request(`/api/v1/phone/devices/${deviceId}/data`, {
+      method: 'DELETE',
+    });
+  },
+
+  revokePhoneDevice(deviceId: string): Promise<void> {
+    return request<void>(`/api/v1/phone/devices/${deviceId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  restorePhoneDevice(deviceId: string): Promise<PhoneDevice> {
+    return request<PhoneDevice>(`/api/v1/phone/devices/${deviceId}/restore`, {
+      method: 'POST',
+    });
   },
 };

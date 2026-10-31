@@ -330,6 +330,7 @@ class CalendarRead(BaseModel):
     ends_at: datetime | None
     all_day: bool
     timezone: str
+    recurrence: str = ""
     organizer: str
     attendees: list[str]
     status: str

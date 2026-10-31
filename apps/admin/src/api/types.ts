@@ -709,3 +709,181 @@ export interface NewsSourceList {
   updated_at: string;
   sources: NewsSourceState[];
 }
+
+
+/* Phone data: what the Android client uploaded, served by /api/v1/phone. */
+
+export interface PhoneSyncState {
+  kind: string;
+  cursor: string;
+  last_sync_at: string | null;
+  full_sync_at: string | null;
+  last_error: string;
+  accepted_total: number;
+}
+
+export interface PhoneDevice {
+  id: string;
+  device_key: string;
+  name: string;
+  platform: string;
+  manufacturer: string;
+  model: string;
+  os_version: string;
+  app_version: string;
+  timezone: string;
+  scopes: string[];
+  info: Record<string, unknown>;
+  revoked: boolean;
+  last_seen_at: string | null;
+  last_sync_at: string | null;
+  created_at: string;
+  states: PhoneSyncState[];
+}
+
+export interface PhoneKindCount {
+  kind: string;
+  count: number;
+}
+
+export interface PhoneDeviceStatus {
+  device: PhoneDevice;
+  counts: PhoneKindCount[];
+}
+
+export interface PhoneSummary {
+  devices: PhoneDeviceStatus[];
+  counts: PhoneKindCount[];
+  last_sync_at: string | null;
+  stale_minutes: number | null;
+  pending_commands: number;
+}
+
+export interface PhoneRangeQuery {
+  deviceId?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+}
+
+export interface PhoneCalendarEvent {
+  id: string;
+  device_id: string;
+  device_name: string;
+  calendar_name: string;
+  title: string;
+  description: string;
+  location: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  all_day: boolean;
+  timezone: string;
+  recurrence: string;
+  organizer: string;
+  attendees: string[];
+  status: string;
+}
+
+export interface PhoneCall {
+  id: string;
+  device_id: string;
+  device_name: string;
+  number: string;
+  cached_name: string;
+  direction: string;
+  started_at: string | null;
+  duration_seconds: number;
+  is_new: boolean;
+}
+
+export interface PhoneMessage {
+  id: string;
+  device_id: string;
+  device_name: string;
+  address: string;
+  direction: string;
+  body: string;
+  subject: string;
+  received_at: string | null;
+  is_read: boolean;
+  kind: string;
+}
+
+export interface PhoneContact {
+  id: string;
+  device_id: string;
+  device_name: string;
+  display_name: string;
+  numbers: string[];
+  emails: string[];
+  organization: string;
+  starred: boolean;
+}
+
+export interface PhoneNotification {
+  id: string;
+  device_id: string;
+  device_name: string;
+  package_name: string;
+  app_label: string;
+  title: string;
+  text: string;
+  category: string;
+  posted_at: string | null;
+  is_ongoing: boolean;
+}
+
+export interface PhoneLocation {
+  id: string;
+  device_id: string;
+  device_name: string;
+  latitude: number;
+  longitude: number;
+  accuracy_m: number | null;
+  provider: string;
+  captured_at: string | null;
+}
+
+export interface PhoneApp {
+  id: string;
+  device_id: string;
+  device_name: string;
+  package_name: string;
+  label: string;
+  version_name: string;
+  is_system: boolean;
+  is_enabled: boolean;
+  installed_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PhoneCommand {
+  id: string;
+  device_id: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  summary: string;
+  status: string;
+  result: string;
+  error: string;
+  expires_at: string | null;
+  approved_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface PhoneSearchHit {
+  kind: string;
+  at: string | null;
+  title: string;
+  text: string;
+  device_id: string;
+  device_name: string;
+  record_id: string;
+}
+
+export interface PhoneSearchResponse {
+  query: string;
+  hits: PhoneSearchHit[];
+  device_names: Record<string, string>;
+}

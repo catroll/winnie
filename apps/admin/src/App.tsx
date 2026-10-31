@@ -12,6 +12,7 @@ import { LoginPage } from './pages/LoginPage';
 import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { NewsPage } from './pages/NewsPage';
+import { PhonePage } from './pages/PhonePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RoutesPage } from './pages/RoutesPage';
 import { SkillsPage } from './pages/SkillsPage';
@@ -32,6 +33,7 @@ export function App() {
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/chat/:conversationId" element={<ChatPage />} />
             <Route path="/news" element={<NewsPage />} />
+            <Route path="/phone" element={<PhonePage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/tasks" element={<TasksPage />} />
