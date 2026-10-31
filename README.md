@@ -160,7 +160,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/openai-proxy.md](./docs/openai-proxy.md) — gateway contract, configuration and examples
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
-- [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, schema and phased plan
+- [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan
 - [apps/api/README.md](./apps/api/README.md) — backend layout, running and tests
 - [apps/android/README.md](./apps/android/README.md) — Android MVP: build, run and limitations
 - [apps/admin/README.md](./apps/admin/README.md) — management console: pages, serving and security
