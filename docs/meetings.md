@@ -402,12 +402,13 @@ class Summarizer(Protocol):
   Qwen). The `openai_compatible` adapter requests one JSON object, validates
   the shape and filters highlights that reference missing segments. Prompts
   live in code for now; versioned prompt files remain a later refactor.
-- **Config** selects the implementation per capability, e.g.
-  `meetings.asr_provider: volcengine` and
-  `meetings.translator: openai_compatible`. Credentials come from environment
-  variables (`VOLCENGINE_ASR_API_KEY`, `WINNIE_LLM_API_KEY`), never from YAML
-  committed to Git. The Doubao key is a single new-console API key sent as
-  `X-Api-Key`; the old APP ID + Access Token pair is not supported.
+- **Config** selects the implementation per capability. With `ai.enabled: true`
+  (the shipped default) the values below seed `data/ai.yaml` on first start and
+  the AI providers page owns the live binding afterwards; with `ai.enabled:
+  false` they are read directly. Credentials come from environment variables
+  (`VOLCENGINE_ASR_API_KEY`, and the variable named by each integration), never
+  from YAML committed to Git. The Doubao key is a single new-console API key
+  sent as `X-Api-Key`; the old APP ID + Access Token pair is not supported.
 - **Cost**: every file ASR, translation and summarization call writes a
   `usage_records` row (audio seconds, tokens, characters). The live-caption
   stream does not, so a realtime meeting is currently billed twice for ASR but
@@ -486,7 +487,10 @@ jobs:
   redis_url: ""
 ```
 
-Secrets (`VOLCENGINE_ASR_API_KEY` and the key named by `llm.api_key_env`) come
+With the shipped `ai.enabled: true`, the `meetings` and `llm` values above are
+first-start seeds for `data/ai.yaml`; afterwards the AI providers page selects
+the live implementation. Set `ai.enabled: false` to keep this YAML authoritative.
+Secrets (`VOLCENGINE_ASR_API_KEY` and the key named by each integration) come
 from the environment. Unknown YAML keys are rejected at startup. Production
 should use PostgreSQL and run `uv run alembic upgrade head` with the same
 `WINNIE_CONFIG` before setting `database.auto_create_tables: false`. A database

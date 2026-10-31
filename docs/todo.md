@@ -147,6 +147,30 @@ status are in [plan.md](./plan.md).
 - [ ] Speaker diarization and per-speaker labels in transcript/minutes.
 - [ ] Cross-meeting semantic search over knowledge notes (not raw transcripts).
 
+## P2 — AI provider administration
+
+- [x] Admin CRUD for integrations and feature bindings, with gateway routes
+      derived from the registry. Changing a provider or binding applies on the
+      next model call; the arq worker re-reads the file by mtime.
+- [x] Seed the registry from `config.yaml` on first start, validate kind/model
+      compatibility when a binding is saved, and fall back to the YAML value for
+      unbound features. Covered by `apps/api/tests/test_ai_admin.py` and a
+      Firefox run of create → bind → delete.
+- [ ] Add a **Check** action per integration that performs one cheap call
+      (`GET /models`, or a one-token chat) and reports the provider's HTTP
+      response. "Key set" in the environment is not proof that the key works or
+      that the model exists; the missing-key path is tested, the wrong-key path
+      is not.
+- [ ] Decide how the gateway route table should behave with more than one API
+      process. Today only the process that handled the admin write refreshes its
+      table; a TTL reload or a shared revision would remove the single-worker
+      constraint. Keep this out of the provider-selection path until a
+      multi-worker deployment is real.
+- [ ] If entering keys in the browser becomes a requirement, design an encrypted
+      secret store and a master-key lifecycle first. The current deliberate
+      choice is environment-only, documented in `docs/decisions.md`; do not add
+      a plaintext column as a shortcut.
+
 ## P3 — operational polish
 
 - [ ] Per-meeting and per-month cost view built from `usage_records`.

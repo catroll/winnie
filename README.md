@@ -11,7 +11,7 @@ infrastructure below it exists to serve the assistant.
 | **Assistant** | Chat, web search, scheduled tasks and long-term memory built from local files | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
-| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks and gateway routes | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, AI providers and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
@@ -26,8 +26,9 @@ Milestone status, completion evidence and the next development plan are in
 
 ## Why Winnie
 
-- **No vendor lock-in.** Models are routes in a configuration file. Switching
-  providers does not force a change to your data or to how you work.
+- **No vendor lock-in.** AI vendors are integrations and each feature selects
+  one in the console. Switching the assistant, translation, minutes or ASR does
+  not change your data or how you work.
 - **Documents are the source of truth.** Long-term knowledge lives as Markdown
   in Git, so every change has an author, a timestamp, a diff and a rollback. The
   vector index is derived and rebuildable, never authoritative.
@@ -70,8 +71,9 @@ conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
 those files and recalled through the local index service, and scheduled tasks
 the assistant creates and cancels when asked in conversation. Every conversation
 records its channel, so the console history also covers the phone page, direct
-API clients and unattended task runs. Its default `assistant.model` is `fake` until
-`WINNIE_LLM_API_KEY` is set. Design, decisions and operating notes are in
+API clients and unattended task runs. The default provider is the deterministic
+fake until an OpenAI-compatible integration and its environment key are chosen
+on the AI providers page. Design, decisions and operating notes are in
 [docs/assistant.md](./docs/assistant.md); the index is in
 [docs/knowledge-index.md](./docs/knowledge-index.md).
 
@@ -79,9 +81,12 @@ The AdminLTE management console in `apps/admin` operates the same data in a
 browser: sign in, dashboard, assistant chat with the full cross-channel
 conversation history, meeting list and detail, transcript and minutes,
 Markdown/TXT export, regenerate and delete, assistant scheduled tasks and their
-run history, gateway route inspection, and account/password management. It is
-read-and-operate only — recording and upload stay in the Android client, and
-scheduled tasks are created and cancelled through the assistant chat.
+run history, AI provider CRUD with per-feature provider selection, gateway route
+inspection, and account/password management. It is read-and-operate for
+recordings — upload stays in the Android client, and scheduled tasks are created
+and cancelled through the assistant chat. AI vendors and their feature bindings
+are the exception: they are owned by the console. See
+[docs/ai-providers.md](./docs/ai-providers.md).
 
 ### Quick start
 
@@ -121,9 +126,11 @@ Accounts and meeting notes are mounted under `/api/v1` when enabled in
 `apps/api/config.yaml`. The first account can register, then login to receive a
 bearer token. To transcribe with Doubao, export
 `VOLCENGINE_ASR_API_KEY` (the API key from the current Volcengine console)
-before starting the API. To use a real model for translation and minutes, set
-`meetings.translator` and `meetings.summarizer` to `openai_compatible` and
-export `WINNIE_LLM_API_KEY`. The integration design and endpoint list are in
+before starting the API. To use a real model for the assistant, translation or
+minutes, add an OpenAI-compatible provider on the AI providers page, export the
+environment variable it names, and restart the API. Provider selection and
+first-start behaviour are in [docs/ai-providers.md](./docs/ai-providers.md); the
+meeting integration design and endpoint list are in
 [docs/meetings.md](./docs/meetings.md).
 
 ## Roadmap

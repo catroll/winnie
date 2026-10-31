@@ -449,10 +449,12 @@ assistant:
 top-level `index` block for the console proxy; they are deliberately separate so
 hiding the console page does not break the assistant's recall.
 
-Secrets stay in the environment: `WINNIE_LLM_API_KEY` for the model and, if the
-daemon sets one, `WINNIE_INDEX_TOKEN` for the index. A missing model key leaves
-the rest of the API up and returns `503` naming the variable, rather than
-silently answering from the fake model.
+Secrets stay in the environment: the variable named by the bound integration
+(seeded from `llm.api_key_env`, default `WINNIE_LLM_API_KEY`) for the model and,
+if the daemon sets one, `WINNIE_INDEX_TOKEN` for the index. A missing model key
+leaves the rest of the API up; a chat turn returns `502` naming the variable,
+rather than silently answering from the fake model. The provider and model are
+selected on the AI providers page; see [ai-providers.md](./ai-providers.md).
 
 ## 10. Security and privacy
 

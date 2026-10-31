@@ -328,3 +328,63 @@ already readable; the stored file remains the faithful view.
 avatars and float direction. Its `.direct-chat-messages` is fixed at `250px`
 because that is the height of AdminLTE's own demo, so one additive rule sets a
 usable `clamp()` height; no other chat CSS or component layer was added.
+
+## Admin-managed AI providers (2026-11-01)
+
+**One registry, one binding per feature.** The console owns a list of
+integrations (vendor endpoints) and a map from feature to integration. A
+feature is the stable unit (`assistant.chat`, `meetings.transcribe`,
+`meetings.translate`, `meetings.summarize`); the integration is the replaceable
+unit. The alternative — a provider name inside each feature's YAML block — would
+have duplicated endpoint and key settings four times and made "switch the
+assistant to DeepSeek" a multi-key edit. It would also have left the gateway
+route table as a second, unrelated list of the same vendors.
+
+**The state is a YAML file, not a database table.** `data/ai.yaml` is
+human-readable, easy to back up, and works when the database is disabled
+(a gateway-only or assistant-only deployment). The index daemon already owns
+its configuration the same way. The database would have bought multi-writer
+concurrency and transactional history, neither of which a single-user console
+needs, and would have made AI provider resolution impossible without `auth` or
+`meetings` enabled. Writes are atomic (temporary file plus `os.replace`) and the
+file is mode `0600`.
+
+**`config.yaml` seeds once; it is not a second live source.** On first start the
+registry is generated from `routes`, `llm`, `meetings` and `assistant`, so an
+upgrade keeps the exact behaviour it had. After the file exists the console is
+authoritative. A binding with no integration deliberately falls back to
+`config.yaml`, which gives an escape hatch without silently overriding an
+explicit admin choice. Re-reading the YAML on every resolve was rejected
+because it makes "the console changed something" indistinguishable from "an
+operator edited a file".
+
+**Keys stay in the environment.** An integration stores `api_key_env`, the name
+of a variable, and the console shows whether it is set. Pasting a key into that
+field fails validation. The alternative — encrypting keys in the registry — was
+rejected for this slice: it needs a master-key lifecycle, a new dependency, a
+rotation procedure and a re-encryption migration, for a single-user instance
+whose deployment already passes secrets through the environment. Keeping the
+existing rule ("secrets come from the process environment") also means a key
+can never be returned by an API response or appear in a browser. The cost is
+explicit: rotating a key needs an API restart.
+
+**Resolution is per call, not per process.** The assistant, meeting service and
+worker are built once, but their provider ports are thin wrappers that resolve
+the current binding on every operation. Restarting the API to apply a console
+change would have made the page a configuration editor for the next boot rather
+than a control surface. Gateway routes are refreshed on every CRUD mutation in
+the API process; a second API worker would see a new route on its next restart,
+which is why a single API process remains the simple deployment and is stated
+in the operations doc.
+
+**Kind and model are validated at the binding, not at the provider call.** An
+ASR integration cannot serve `assistant.chat`, and an OpenAI-compatible
+integration with no model cannot serve a model feature. Catching that while the
+binding is saved gives the user an immediate, named error instead of a failed
+meeting pipeline later. The same validation runs on load, so a hand-edited file
+fails loudly.
+
+**The fake provider is a first-class integration.** It makes the registry
+usable offline and keeps the existing deterministic demos selectable from the
+console. A `fake` integration deliberately has no URL, key or model, and the
+binding form disables the model field for it.

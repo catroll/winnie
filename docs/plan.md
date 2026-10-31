@@ -79,7 +79,7 @@ Success for the current phase:
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: assistant chat and conversation history, meetings, transcripts/minutes, scheduled tasks, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: assistant chat and conversation history, meetings, transcripts/minutes, scheduled tasks, AI providers, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
@@ -239,18 +239,24 @@ Working:
 - Run history: every recorded execution, newest first, filterable by task and
   paged 25 at a time, with start time, duration, result, conversation id and both
   execution and delivery errors.
-- Gateway routes: protocol, upstream, API base and proxy paths from the running
-  configuration.
+- AI providers: add, edit and delete integrations (OpenAI-compatible, Anthropic,
+  Volcengine ASR and the deterministic fake), and choose the provider and model
+  for each AI-using feature. Changing a binding takes effect on the next model
+  call; adding an OpenAI/Anthropic provider adds its gateway route immediately.
+  API keys are environment-variable names shown with a set/missing indicator,
+  never key values.
+- Gateway routes: protocol, upstream, API base and proxy paths from the AI
+  provider registry (or from `config.yaml` when the registry is disabled).
 - Account: profile, session expiry and password change. A password change
   revokes every session and returns to login with a notice.
 - AdminLTE's own colour-mode control (light/dark/auto) and responsive sidebar.
 
 Boundary:
 
-- Read-and-operate only: recording and audio upload stay in the Android client,
-  task creation/cancellation stays in the assistant chat, and account creation
-  and route edits stay with the API and `config.yaml`. The console chat writes
-  through the assistant API, not into the files directly.
+- Read-and-operate for recordings and tasks: recording and audio upload stay in
+  the Android client, and task creation/cancellation stays in the assistant
+  chat. The console owns the AI provider registry and feature bindings, and
+  writes through the API rather than editing files directly.
 - Same-origin by default (Vite proxy in development, reverse proxy in
   production); the API has no CORS middleware.
 - The bearer token is kept in `sessionStorage`, or `localStorage` with
@@ -270,6 +276,12 @@ Verified:
   filter, a task-run record with no composer, a transcript with a collapsed
   `web_search` block, light and dark mode, and a 390 px viewport with no
   horizontal overflow.
+- The AI providers page was checked in Firefox against a disposable API and
+  registry: the seeded providers and bindings rendered, a provider was created
+  through the modal, its gateway paths and missing-key indicator appeared, the
+  assistant was rebound to it and the API reported the new integration, then the
+  provider was deleted and the binding fell back to `config.yaml`. Light and
+  dark mode were captured at 1440×1200.
 
 Open:
 
@@ -277,10 +289,13 @@ Open:
   database copy.
 - Production serving (reverse proxy plus SPA fallback) is documented in
   `apps/admin/README.md`, but no deployment configuration is checked in.
-- The knowledge-base UI remains planned; this console only covers the assistant
-  chat, meetings, scheduled tasks, routes and the account.
+- The knowledge-base UI remains planned; this console now covers the assistant
+  chat, meetings, scheduled tasks, AI providers, routes and the account.
 - Chat replies are non-streaming; the page shows a thinking indicator and
   re-reads the file after the reply. SSE is the next additive step.
+- Provider credentials stay in the process environment; rotating a key still
+  requires an API restart. Entering secrets in the browser was rejected for this
+  slice (see [decisions](./decisions.md)).
 
 ### 5.7 Knowledge base — Partial
 
@@ -374,6 +389,7 @@ Open:
 | Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
 | Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
+| Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Seeded providers and bindings rendered; created `ui-llm` through the modal; gateway paths and missing-key badge appeared; rebound `assistant.chat` and the API reported `source=admin`; deleted it and the binding returned to `source=config`; light/dark captured |
 
 Not yet verified:
 
@@ -388,7 +404,7 @@ Not yet verified:
 | Two ASR calls per realtime meeting | Double provider cost; streaming usage is invisible | Add streaming usage records; alternatively make the file pass configurable |
 | Cleartext HTTP/WS on a public IPv6 domain | Tokens, audio and transcripts cross the network unencrypted | Terminate TLS before real use; narrow the Android network-security config to that domain |
 | No foreground service / reconnect | Backgrounding or locking the phone stops recording and captions | Foreground service with a persistent notification; reconnect with bounded retry |
-| Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Enable `openai_compatible` with `WINNIE_LLM_API_KEY`; run a real bilingual meeting |
+| Current translation/minutes are `fake` | The demo minutes are deterministic placeholders | Bind those features to an OpenAI-compatible provider on the AI providers page (the `llm` config still supplies the timeouts); run a real bilingual meeting |
 | No long bilingual fixture | Provider quality, timestamps and cost are unmeasured | Add a local-only 10–30 minute fixture and an evaluation harness |
 | Knowledge base is only a note sink | Minutes cannot yet be browsed, corrected or retrieved | M5: Git write, index, browse/edit/search |
 | Admin console has no automated tests | Its flows are only checked manually | Add a Vitest/Playwright suite when the console grows beyond these pages |

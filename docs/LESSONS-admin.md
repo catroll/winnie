@@ -102,3 +102,23 @@ singular `context`, so one variable works for all three.
 reading `getComputedStyle` of a `vh`-sized element (the chat pane was `620px` at
 1440×1000 and `523px` at 390×844). A failed `setViewport` would leave the
 default 800×600 and the screenshot would still look plausible.
+
+## A feature label also appears in the provider's "used by" badges
+
+**Signal.** The browser test found a row containing `Assistant chat`, then
+failed with `Save button is not clickable`. The page was correct; the row was
+the `fake` provider, whose **Used by** column lists the same feature labels.
+
+**Cause.** A page-level query
+(`[...document.querySelectorAll('tbody tr')].find(row =>
+row.innerText.includes('Assistant chat'))`) is ambiguous once a table elsewhere
+shows the same text. The provider table's row has Edit/Delete, not Save.
+
+**Fix.** Anchor to the control and walk up:
+`document.querySelector('[id="binding-assistant.chat"]').closest('tr')`, then
+search only that row. The same rule applies to any table that repeats a label in
+another table: scope by the control's id, not by visible text.
+
+**Check.** Before clicking, assert the control exists in the scoped row and
+throw a named error when it does not. A missing button and a disabled button
+produce the same "nothing happened" symptom, so report which one it was.

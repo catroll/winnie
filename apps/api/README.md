@@ -11,6 +11,8 @@ incrementally.
 - Assistant package: `packages/winnie-assistant` (chat, tools, memory, tasks)
 - Knowledge sink package: `packages/winnie-knowledge`
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
+- Admin-managed AI registry: `data/ai.yaml` (gitignored), served by
+  `src/winnie_api/ai/` and edited through the console
 - Tests: `tests/`, using a fake upstream instead of real vendor keys
 
 ## Run
@@ -149,11 +151,71 @@ uv run python -m winnie_api.cli.cleanup_audio
 The arq worker schedules the same purge daily at 03:47 UTC.
 `DELETE /api/v1/meetings/{id}` still deletes audio and derived data immediately.
 
+## AI providers
+
+The host owns a small AI registry at `/api/v1/ai`. It lists the vendor
+integrations (OpenAI-compatible, Anthropic, Volcengine ASR and the deterministic
+fake) and which integration each AI-using feature calls:
+
+| Feature | Used by |
+|---|---|
+| `assistant.chat` | Assistant replies, tool calls and memory distillation |
+| `meetings.transcribe` | File ASR and live captions |
+| `meetings.translate` | Transcript translation |
+| `meetings.summarize` | Structured minutes |
+
+`config.yaml` seeds the registry on first start from `routes`, `llm`,
+`meetings.asr_provider`, `meetings.translator`, `meetings.summarizer` and
+`assistant.model`, then writes `data/ai.yaml`. After that file exists the console
+is authoritative; a binding with no integration still falls back to the YAML
+value. `ai.enabled: false` (the programmatic `Settings()` default) disables both
+the file and the endpoints, and the capability factories build providers from
+the YAML configuration as before.
+
+```yaml
+ai:
+  enabled: true
+  # Relative to apps/api/, like every other root.
+  path: ../../data/ai.yaml
+```
+
+Endpoints (bearer session required):
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/ai/config` | Integrations, feature bindings, config fallback, kind metadata |
+| `POST` | `/api/v1/ai/integrations` | Create an integration |
+| `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
+| `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it and reset its bindings |
+| `PUT` | `/api/v1/ai/features/{feature}` | Bind a feature (`integration_id: null` inherits YAML) |
+
+```bash
+curl -s -X POST http://[::1]:8000/api/v1/ai/integrations \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"deepseek","kind":"openai","base_url":"https://api.deepseek.com",
+       "api_key_env":"DEEPSEEK_API_KEY","default_model":"deepseek-chat"}'
+```
+
+The registry stores `api_key_env` (the variable name), never the key. The API
+reads the value when it builds the provider. Adding an OpenAI or Anthropic
+integration also exposes its gateway route at `/{name}/v1/...` immediately;
+disabling or deleting it removes the route. A provider change applies on the
+next model call, and the arq worker re-reads the file by modification time.
+The console page is documented in [docs/ai-providers.md](../../docs/ai-providers.md).
+
 ## Meeting API
 
 The meeting backend is mounted under `/api/v1/meetings` when
 `meetings.enabled: true`. It uses local SQLite and local disk by default, so it
-runs without cloud storage. With `meetings.asr_provider: volcengine`, set:
+runs without cloud storage. With the default `ai.enabled: true`, the first start
+copies `meetings.asr_provider`, `meetings.translator` and
+`meetings.summarizer` into the AI registry. Change them before that first start
+(or after deleting `data/ai.yaml`); afterwards choose providers on the AI
+providers page, or set a binding to inherit from `config.yaml`.
+
+For Doubao ASR, export the key named by the integration (default
+`VOLCENGINE_ASR_API_KEY`):
 
 ```bash
 export VOLCENGINE_ASR_API_KEY=...
@@ -162,15 +224,16 @@ export VOLCENGINE_ASR_API_KEY=...
 This is the API key from the current Volcengine console, sent as `X-Api-Key`.
 The legacy APP ID + Access Token pair is no longer accepted.
 
-To try the full pipeline without cloud credentials, set
-`meetings.asr_provider: fake` and keep `meetings.translator` /
-`meetings.summarizer` as `fake` in `config.local.yaml`. The fake
+To try the full pipeline without cloud credentials, bind transcription,
+translation and minutes to the `fake` integration. The fake
 ASR/translation/summarization providers are deterministic and are for local
 demos and tests only.
 
-For real translation and structured minutes, set both providers to
-`openai_compatible`, configure the `llm` block in `config.yaml`, and export the
-key named by `llm.api_key_env` (default `WINNIE_LLM_API_KEY`):
+For real translation and structured minutes, add an OpenAI-compatible
+integration with a base URL, an `api_key_env` and a model, export that variable,
+and bind both `meetings.translate` and `meetings.summarize` to it. The `llm`
+block still supplies timeouts, retries and chunk sizes, and its values seed the
+initial internal integration:
 
 ```yaml
 meetings:
@@ -261,18 +324,19 @@ The files survive a restart and can be edited by hand.
 # Login first when accounts are enabled; skip the header otherwise.
 TOKEN=$(curl -s -X POST http://[::1]:8000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"alice","password":"..."}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+  -d '{"username":"alice","password":"..."}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
 
 curl -s -X POST http://[::1]:8000/api/v1/assistant/chat \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"message":"上海今天要带伞吗？"}'
 ```
 
-Open `http://[::1]:8000/api/v1/assistant/ui` for the chat page. The model is
-`assistant.model`; leave it empty to reuse `llm.model`, which needs
-`WINNIE_LLM_API_KEY`. The default `fake` answers deterministically, so the
-routes work before a key exists. Web search uses Bing RSS by default and needs
-no key.
+Open `http://[::1]:8000/api/v1/assistant/ui` for the chat page. The model comes
+from the `assistant.chat` binding; its initial value is seeded from
+`assistant.model` (empty reuses `llm.model`), and the default `fake` answers
+deterministically so the routes work before a key exists. Change the provider or
+model on the AI providers page. Web search uses Bing RSS by default and needs no
+key.
 
 Local recall goes through `winnie-index` (`make index-serve`, listening on
 `127.0.0.1:8790`). With the daemon down, chat still works and the local-document
