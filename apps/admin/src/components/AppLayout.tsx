@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 const NAVIGATION = [
   { to: '/', label: 'Dashboard', icon: 'bi-speedometer2', end: true },
   { to: '/meetings', label: 'Meetings', icon: 'bi-camera-video', end: false },
+  { to: '/index', label: 'Document index', icon: 'bi-journal-text', end: false },
   { to: '/gateway', label: 'Gateway routes', icon: 'bi-signpost-split', end: false },
   { to: '/account', label: 'Account', icon: 'bi-person-gear', end: false },
 ];

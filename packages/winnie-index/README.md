@@ -56,6 +56,20 @@ directories exist.
   over `index.max_file_mb` is recorded as `sealed` with a reason, never indexed
   as mojibake.
 
+## Admin API
+
+The daemon exposes management endpoints for the Winnie console. They are
+loopback-only and reject a browser request whose `Origin` is not loopback, so a
+random page cannot rewrite the configuration.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /admin/status` | Coverage, roots, failures, endpoints, skill state |
+| `GET /admin/config` | Editable configuration (not `data_dir` or `serve`) |
+| `PUT /admin/config` | Validate, write the YAML, reload in place; removes retired roots |
+| `POST /admin/build` | `{"dry_run": true}` to preview, false to index |
+| `POST /admin/skill` | `{"action": "install"|"check"}` |
+
 ## Service
 
 `deploy/winnie-index.service` is a `systemctl --user` unit template. Adjust the

@@ -116,3 +116,71 @@ export interface Minutes {
   prompt_version: string;
   created_at: string;
 }
+
+/** Local document index, as exposed through the Winnie API proxy. */
+
+export interface IndexRoot {
+  name: string;
+  path: string;
+  include: string[];
+  exclude: string[];
+  watch?: boolean;
+  tier?: string;
+}
+
+export interface IndexEditableConfig {
+  roots: IndexRoot[];
+  formats: { prose: string[] };
+  scan: { interval_seconds: number; watch: boolean; debounce_ms: number };
+  index: {
+    max_file_mb: number;
+    max_chunks_per_doc: number;
+    chunk_tokens: number;
+    overlap_tokens: number;
+  };
+  retrieval: { limit: number; bm25_k: number; max_per_doc: number };
+  skill: { enabled: boolean; target: string };
+}
+
+export interface IndexConfigResponse {
+  path: string;
+  config: IndexEditableConfig;
+}
+
+export interface IndexRootStatus {
+  name: string;
+  path: string;
+  documents: number;
+  chunks: number;
+}
+
+export interface IndexBuildResult {
+  roots: number;
+  seen: number;
+  added: number;
+  changed: number;
+  unchanged: number;
+  renamed: number;
+  deleted: number;
+  failed: number;
+  sealed: number;
+  chunks: number;
+  bytes_read: number;
+  at?: string;
+  dry_run?: boolean;
+  errors?: string[];
+}
+
+export interface IndexStatus {
+  documents: Record<string, number>;
+  chunks: number;
+  roots: IndexRootStatus[];
+  last_sweep_at: string | null;
+  failures: { path: string; error: string }[];
+  db_bytes: number;
+  db_path: string;
+  config_path: string;
+  endpoints: { mcp: string; http: string };
+  skill: { target: string; installed: boolean };
+  last_build: IndexBuildResult | null;
+}

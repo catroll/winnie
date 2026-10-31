@@ -26,6 +26,16 @@ class DatabaseConfig(BaseModel):
     auto_create_tables: bool = True
 
 
+class IndexConfig(BaseModel):
+    """Where the local document index daemon listens, if it is running."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    base_url: str = "http://127.0.0.1:8787"
+    timeout_seconds: float = 60.0
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -39,6 +49,7 @@ class Settings(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
     assistant: AssistantConfig = Field(default_factory=AssistantConfig)
+    index: IndexConfig = Field(default_factory=IndexConfig)
 
     def gateway_config(self) -> GatewayConfig:
         return GatewayConfig(

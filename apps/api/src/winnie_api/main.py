@@ -14,12 +14,13 @@ from sqlalchemy import text
 from winnie_assistant.capability import capability as assistant_capability
 from winnie_assistant.factory import build_assistant_service
 from winnie_core.auth.capability import capability as auth_capability
-from winnie_core.capability import WinnieFramework
+from winnie_core.capability import Capability, WinnieFramework
 from winnie_core.jobs.queue import ArqJobQueue
 from winnie_gateway.capability import capability as gateway_capability
 from winnie_meetings.capability import capability as meetings_capability
 
 from winnie_api import __version__
+from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.settings import Settings, load_settings
 
@@ -43,6 +44,8 @@ def create_app(
         app.state.log_root = resolved.resolve_log_root()
         app.state.recorders = {}
         app.state.default_user_id = resolved.meetings.default_user_id
+        app.state.index_base_url = resolved.index.base_url if resolved.index.enabled else ""
+        app.state.index_timeout = resolved.index.timeout_seconds
         app.state.http = http or httpx.AsyncClient(
             timeout=httpx.Timeout(300.0, connect=30.0)
         )
@@ -90,6 +93,10 @@ def create_app(
         framework.register(meetings_capability())
     if resolved.assistant.enabled:
         framework.register(assistant_capability())
+    # The document index is not a capability: it is a separate daemon, and this
+    # router only proxies to it, so the host owns the mount.
+    if resolved.index.enabled:
+        app.include_router(index_router, prefix="/api/v1")
     app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")

@@ -155,22 +155,39 @@ def load_config(
         file_layer = _load_yaml(default) if default.is_file() else {}
         source = default if default.is_file() else None
 
-    _reject_unknown("", file_layer)
-    for section in ("formats", "scan", "index", "retrieval", "serve", "skill"):
-        if section in file_layer:
-            _reject_unknown(section, file_layer[section])
-    for index, item in enumerate(file_layer.get("roots") or []):
-        if not isinstance(item, dict):
-            raise ConfigError(f"roots[{index}] must be a mapping")
-        unknown = sorted(set(item) - _ROOT_ALLOWED)
-        if unknown:
-            raise ConfigError(f"unknown key(s) in roots[{index}]: {', '.join(unknown)}")
+    validate_layer(file_layer)
 
     merged = _merge(DEFAULTS, file_layer)
     merged = _merge(merged, _env_layer(environ))
     if overrides:
         merged = _merge(merged, overrides)
 
+    return _from_merged(merged, source=source)
+
+
+def validate_layer(layer: dict[str, Any]) -> None:
+    """Reject unknown keys at every level of a raw config mapping."""
+    _reject_unknown("", layer)
+    for section in ("formats", "scan", "index", "retrieval", "serve", "skill"):
+        if section in layer:
+            _reject_unknown(section, layer[section])
+    for index, item in enumerate(layer.get("roots") or []):
+        if not isinstance(item, dict):
+            raise ConfigError(f"roots[{index}] must be a mapping")
+        unknown = sorted(set(item) - _ROOT_ALLOWED)
+        if unknown:
+            raise ConfigError(f"unknown key(s) in roots[{index}]: {', '.join(unknown)}")
+
+
+def config_from_mapping(
+    layer: dict[str, Any], *, source: Path | None = None
+) -> Config:
+    """Validate a full config mapping, the same way a file would be validated."""
+    validate_layer(layer)
+    return _from_merged(_merge(DEFAULTS, layer), source=source)
+
+
+def _from_merged(merged: dict[str, Any], *, source: Path | None) -> Config:
     roots: list[Root] = []
     seen: set[str] = set()
     for index, item in enumerate(merged.get("roots") or []):
@@ -211,8 +228,15 @@ def load_config(
     retrieval = merged["retrieval"]
     skill = merged["skill"]
 
-    if int(scan["interval_seconds"]) < 5:
-        raise ConfigError("scan.interval_seconds must be at least 5")
+    interval = int(scan["interval_seconds"])
+    if not 5 <= interval <= 86400:
+        raise ConfigError("scan.interval_seconds must be between 5 and 86400")
+    if not 1 <= int(index["max_file_mb"]) <= 512:
+        raise ConfigError("index.max_file_mb must be between 1 and 512")
+    if not 1 <= int(retrieval["limit"]) <= 50:
+        raise ConfigError("retrieval.limit must be between 1 and 50")
+    if not 1 <= int(retrieval["max_per_doc"]) <= 10:
+        raise ConfigError("retrieval.max_per_doc must be between 1 and 10")
 
     return Config(
         data_dir=Path(str(merged["data_dir"])).expanduser(),

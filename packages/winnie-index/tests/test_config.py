@@ -72,3 +72,15 @@ def test_http_must_be_host_and_port(tmp_path: Path):
     path = _write(tmp_path / "c.yaml", {"serve": {"http": "nonsense"}})
     with pytest.raises(ConfigError, match="host:port"):
         load_config(path, environ={})
+
+
+def test_scan_interval_has_bounds(tmp_path: Path):
+    path = _write(tmp_path / "c.yaml", {"scan": {"interval_seconds": 86401}})
+    with pytest.raises(ConfigError, match="interval_seconds"):
+        load_config(path, environ={})
+
+
+def test_retrieval_limit_has_bounds(tmp_path: Path):
+    path = _write(tmp_path / "c.yaml", {"retrieval": {"limit": 500}})
+    with pytest.raises(ConfigError, match="retrieval.limit"):
+        load_config(path, environ={})

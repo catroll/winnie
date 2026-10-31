@@ -1,5 +1,9 @@
 import type {
   Health,
+  IndexConfigResponse,
+  IndexEditableConfig,
+  IndexBuildResult,
+  IndexStatus,
   Meeting,
   MeetingList,
   Minutes,
@@ -35,7 +39,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
   signal?: AbortSignal;
   /** Do not attach the bearer token; used by the login request. */
@@ -150,6 +154,31 @@ export const api = {
 
   routes(): Promise<RouteList> {
     return request<RouteList>('/routes');
+  },
+
+  indexStatus(): Promise<IndexStatus> {
+    return request<IndexStatus>('/api/v1/index/status');
+  },
+
+  indexConfig(): Promise<IndexConfigResponse> {
+    return request<IndexConfigResponse>('/api/v1/index/config');
+  },
+
+  saveIndexConfig(
+    config: IndexEditableConfig,
+  ): Promise<{ config: IndexEditableConfig; roots: string[] }> {
+    return request('/api/v1/index/config', { method: 'PUT', body: { config } });
+  },
+
+  buildIndex(dryRun: boolean): Promise<{ build: IndexBuildResult }> {
+    return request('/api/v1/index/build', {
+      method: 'POST',
+      body: { dry_run: dryRun },
+    });
+  },
+
+  indexSkill(action: 'install' | 'check'): Promise<{ ok: boolean; path: string }> {
+    return request('/api/v1/index/skill', { method: 'POST', body: { action } });
   },
 
   login(username: string, password: string): Promise<TokenResponse> {

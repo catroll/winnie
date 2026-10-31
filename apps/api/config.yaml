@@ -146,3 +146,13 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+
+# Local document index (packages/winnie-index). The console reaches it through
+# this API so the browser keeps one origin and one session; set enabled: false
+# to hide the console page and the /api/v1/index/* routes.
+index:
+  enabled: true
+  # Where the index daemon listens. It binds loopback only.
+  base_url: http://127.0.0.1:8787
+  # A build on a large tree can take minutes; a search should not.
+  timeout_seconds: 60

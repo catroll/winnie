@@ -15,6 +15,7 @@ not a recording client and it does not store vendor API keys.
 | **Dashboard** | Meeting count, configured routes, API version and readiness, plus the five most recent meetings |
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
+| **Document index** | Status of the local text index, editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every route from `apps/api/config.yaml`, with protocol, upstream, API base and proxy paths |
 | **Account** | Profile, session expiry and password change |
 

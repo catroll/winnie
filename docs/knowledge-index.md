@@ -440,6 +440,43 @@ contract: plain text, bounded, `path:line` citations, empty when nothing matches
 Memory and documents remain separate tools — memory is what the assistant was
 told, the index is where the source is.
 
+### 8.5 Admin console
+
+The console is the fourth surface and the only one that writes. It reaches the
+index through the Winnie API rather than directly, so the browser keeps one
+origin and one authenticated session:
+
+```
+browser ──/api/v1/index/*──► Winnie API ──proxy──► index daemon /admin/*
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /admin/status` | Coverage, roots, failures, endpoints, skill state |
+| `GET /admin/config` | Editable configuration with roots normalised |
+| `PUT /admin/config` | Validate, write the YAML, reload in place |
+| `POST /admin/build` | `dry_run` preview or a real sweep, under a build lock |
+| `POST /admin/skill` | Install or check the Agent Skill |
+
+Rules that make writing safe:
+
+- **The file stays the source of truth.** The daemon validates the merged YAML,
+  writes it atomically (`0600`, temp file + rename), then reloads the same way a
+  restart would. A rejected save touches neither the file nor the running config.
+- **Only editable keys.** Roots, formats, scan, index, retrieval and skill can be
+  changed; `data_dir` and `serve.http` cannot, because moving the catalog or the
+  listen address from a web form is a foot-gun. A payload that changes either is
+  rejected before the write.
+- **Removing a root retires its documents.** The rows and chunks go; the files on
+  disk are untouched, so re-adding the root rebuilds them.
+- **Bounds are enforced server-side,** not just in the form: sweep interval
+  5–86400 s, file cap 1–512 MB, results 1–50, chunks per document 1–10.
+- **A page on another origin cannot drive it.** `/admin/*` rejects a browser
+  request whose `Origin` is not loopback, on top of the loopback bind.
+- **Saving rewrites the file and drops comments.** The file carries a header
+  saying so; a hand-edited file stays valid, it just loses its comments on the
+  next save.
+
 ## 9. Operations
 
 | Concern | Decision |
@@ -635,13 +672,16 @@ HTTP), the HTTP API, the Skill installer and a `systemctl --user` unit template.
 
 | Check | Result |
 |---|---|
-| Test suite | 66 passed (config, decode, tokenizer, chunker, scan/search, MCP, HTTP, skill) |
+| Test suite | 77 passed (config, decode, tokenizer, chunker, scan/search, MCP, HTTP, admin, skill) |
+| API suite | 118 passed, including the proxy tests |
 | Smoke corpus | 62 files / 448 KB over three roots → 497 chunks in 0.18 s |
 | Search | `部署`, `决定`, `知识库` and `MCP server` return the expected paths and headings |
 | HTTP | `/healthz`, `/search`, `/doc`, `/status` and `/mcp` answered on 127.0.0.1 |
 | MCP | `initialize`, `tools/list` and `tools/call` answered over HTTP; stdio reads the same dispatcher |
 | Skill | Rendered from the live config, so the port and the rules cannot drift |
 | `get` freshness | An out-of-band edit is re-read and re-chunked before the text is returned |
+| Admin API | Save rewrites the YAML, reloads without a restart, and retires removed roots |
+| Console | Firefox against a live API and daemon: the page renders roots and counts, a dry run reports its counts, saving reloads the daemon |
 
 Commands, from the repository root:
 
@@ -674,3 +714,10 @@ Deviations from the design above, each deliberate:
 What remains: dense retrieval and RRF (P2), inotify acceleration, the reranker,
 the 40-query evaluation fixture, and the DSH/Cursor registration check that the
 stdio shim and HTTP transport both negotiate correctly with real clients.
+
+Verification note: the console was driven in Firefox against a live API and a
+live daemon on 2026-11-01 — the page rendered 61 documents and the three roots,
+the dry-run button reported its counts, and a save rewrote the YAML and reloaded
+the daemon. That run is also how the missing bounds were found: the sweep
+interval accepted `300600` from a number field, so the server now enforces
+5–86400 s and the form carries the same limit.

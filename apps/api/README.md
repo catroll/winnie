@@ -230,6 +230,24 @@ uv run python scripts/smoke_test.py --only openai
 uv run python scripts/smoke_test.py --only anthropic
 ```
 
+## Document index proxy
+
+The local text index runs as its own daemon (`packages/winnie-index`). The API
+proxies its management endpoints under `/api/v1/index/*` so the console keeps one
+origin and one session:
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/index/status` | Coverage, roots, failures, last sweep |
+| `GET /api/v1/index/config` | Editable configuration |
+| `PUT /api/v1/index/config` | Validate and save; the daemon reloads without a restart |
+| `POST /api/v1/index/build` | Dry run or real sweep |
+| `POST /api/v1/index/skill` | Install or check the Agent Skill |
+
+Configure it under `index:` in `config.yaml` (`enabled`, `base_url`,
+`timeout_seconds`). A daemon that is down answers `503` with the address it
+tried, which is the single most useful error here.
+
 ## Assistant
 
 The assistant capability is enabled by `assistant.enabled` in `config.yaml` and

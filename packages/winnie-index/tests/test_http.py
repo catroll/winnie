@@ -116,3 +116,95 @@ def test_skill_install_and_drift(config: Config, tmp_path: Path):
     path.write_text("changed", encoding="utf-8")
     ok, _ = skill.check(config, target)
     assert not ok
+
+
+def _put(url: str, payload: dict, headers: dict | None = None) -> dict:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", **(headers or {})},
+        method="PUT",
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return json.loads(response.read())
+
+
+def test_admin_status_reports_coverage_and_endpoints(server: str):
+    payload = _get(server + "/admin/status")
+    assert payload["chunks"] > 0
+    assert payload["endpoints"]["mcp"].endswith("/mcp")
+    assert payload["skill"]["target"]
+
+
+def test_admin_config_is_editable_subset(server: str):
+    payload = _get(server + "/admin/config")
+    assert set(payload["config"]) <= {"roots", "formats", "scan", "index", "retrieval", "skill"}
+    assert payload["config"]["roots"]
+
+
+def test_admin_config_rejects_unknown_keys(server: str):
+    payload = _get(server + "/admin/config")
+    payload["config"]["bogus"] = 1
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _put(server + "/admin/config", {"config": payload["config"]})
+    assert exc.value.code == 400
+
+
+def test_admin_config_save_writes_and_reloads(server: str, config: Config):
+    payload = _get(server + "/admin/config")
+    editable = payload["config"]
+    editable["roots"] = editable["roots"] + [
+        {"name": "extra", "path": str(config.roots[0].path), "include": [], "exclude": []}
+    ]
+    saved = _put(server + "/admin/config", {"config": editable})
+    assert "extra" in saved["roots"]
+    reloaded = _get(server + "/admin/config")
+    names = [root["name"] for root in reloaded["config"]["roots"]]
+    assert "extra" in names
+    assert config.source is not None and "extra" in config.source.read_text(encoding="utf-8")
+
+
+def test_admin_build_dry_run_reports_without_writing(server: str):
+    response = _post(server + "/admin/build", {"dry_run": True})
+    assert response["build"]["dry_run"] is True
+    assert response["build"]["added"] >= 0
+
+
+def test_admin_skill_install(server: str, config: Config):
+    response = _post(server + "/admin/skill", {"action": "install"})
+    assert response["ok"] is True
+    assert Path(response["path"]).is_file()
+
+
+def test_admin_rejects_foreign_origin(server: str):
+    request = urllib.request.Request(
+        server + "/admin/config",
+        data=json.dumps({"config": {}}).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Origin": "https://evil.example"},
+        method="PUT",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(request, timeout=10)
+    assert exc.value.code == 403
+
+
+def test_removing_a_root_retires_its_documents(server: str, config_path: Path):
+    before = _get(server + "/admin/status")
+    assert len(before["roots"]) == 2
+    payload = _get(server + "/admin/config")
+    editable = payload["config"]
+    editable["roots"] = [editable["roots"][0]]
+    _put(server + "/admin/config", {"config": editable})
+    after = _get(server + "/admin/status")
+    assert len(after["roots"]) == 1
+
+
+def test_rejected_save_leaves_the_file_untouched(server: str, config: Config):
+    assert config.source is not None
+    before = config.source.read_text(encoding="utf-8")
+    payload = _get(server + "/admin/config")
+    payload["config"]["scan"]["interval_seconds"] = 1
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _put(server + "/admin/config", {"config": payload["config"]})
+    assert exc.value.code == 400
+    assert config.source.read_text(encoding="utf-8") == before

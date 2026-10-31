@@ -5,6 +5,7 @@ import { PublicOnly, RequireAuth } from './auth/guards';
 import { AppLayout } from './components/AppLayout';
 import { AccountPage } from './pages/AccountPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { IndexPage } from './pages/IndexPage';
 import { LoginPage } from './pages/LoginPage';
 import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { MeetingsPage } from './pages/MeetingsPage';
@@ -25,6 +26,7 @@ export function App() {
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/gateway" element={<RoutesPage />} />
+            <Route path="/index" element={<IndexPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
