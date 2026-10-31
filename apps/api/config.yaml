@@ -217,6 +217,21 @@ assistant:
     env: {}
     require_confirmation: true
     pending_ttl_seconds: 300
+  # Every local action that is not on the whitelist gets one LLM review before
+  # it can run. The review uses assistant.model; a review error or malformed
+  # answer denies the action. Whitelisted operations are read-only file tools
+  # and a small set of read-only commands whose paths stay in the workspace.
+  local:
+    review:
+      enabled: true
+      timeout_seconds: 20
+      max_action_chars: 4000
+    whitelist:
+      operations: ["list_files", "read_file"]
+      commands: ["pwd", "ls", "cat", "head", "tail", "wc"]
+      # status/rev-parse/ls-files do not run a repository diff/textconv helper.
+      # Add diff, log or show only for repositories you trust.
+      git_subcommands: ["status", "rev-parse", "ls-files"]
 
 # Local document index (packages/winnie-index). The console reaches it through
 # this API so the browser keeps one origin and one session; set enabled: false

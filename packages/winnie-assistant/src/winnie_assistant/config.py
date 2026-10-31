@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from winnie_local.config import LocalConfig
+
 
 class SearchConfig(BaseModel):
     """Web search provider settings."""
@@ -127,3 +129,4 @@ class AssistantConfig(BaseModel):
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     exec: ExecConfig = Field(default_factory=ExecConfig)
+    local: LocalConfig = Field(default_factory=LocalConfig)

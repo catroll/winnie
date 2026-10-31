@@ -49,10 +49,12 @@ the recorded tool calls appear. A task-run record is read-only; the API rejects 
 chat turn on it with `409`, and the composer is replaced with a notice.
 
 When the assistant's local tools are enabled, a `run_command` or an overwrite
-appears in the transcript as a `PENDING` tool block. Nothing has run at that
-point: the user has to reply with an explicit confirmation, and the assistant
-then calls `confirm_action` on the next turn. The command output, the file write
-and any errors appear in the same trace.
+appears in the transcript as a `PENDING` tool block. A non-whitelisted action is
+first sent to the LLM reviewer; a denial appears as `REVIEW DENIED` and nothing
+runs. An allowed action still changes nothing until the user replies with an
+explicit confirmation, after which the assistant calls `confirm_action` on the
+next turn. The command output, the file write and any errors appear in the same
+trace.
 
 The chat is available when `assistant.enabled` is true in
 `apps/api/config.yaml`; otherwise the history request explains why it cannot

@@ -522,3 +522,52 @@ been a silent privacy expansion. `~/Documents/Mine` plus `~/Projects` cover the
 owner's notes and code; a deployment with files elsewhere changes
 `workspace.root`/`extra_roots`, not code. The command tool can reach the rest of
 the machine after confirmation, which is the deliberate escape hatch.
+
+
+## Local execution moved to winnie-local, with an LLM review and a whitelist (2026-11-01)
+
+**A package owns the whole path, not a tool handler.** The first local-tool
+slice put `Workspace`, `CommandRunner`, `PendingActions` and the side-effect
+policy inside the assistant's `tools.py` path. That made the assistant both the
+proposer and the executor, and every future tool would have had to remember the
+plan/review/confirm/audit sequence. `packages/winnie-local` now owns planning,
+path confinement, the whitelist, the LLM review, the pending confirmation and
+the audit; `winnie-assistant` only builds a small `LocalAction` and calls
+`LocalExecutor`. The architecture test allows `winnie-local` from the assistant
+because it is a shared execution layer like `winnie-core`, not a capability.
+
+**Every non-whitelisted action gets one LLM review before it can become a
+pending confirmation.** The reviewer is a separate model call with a dedicated
+security prompt; it sees the current user message and the action summary/preview
+or argv/cwd, not the whole conversation. The prompt treats both as untrusted
+data. The answer must be JSON with `allow`, `risk` and `reason`; a timeout,
+provider error or malformed answer is a denial. The decision goes to
+`.state/review.jsonl` without file contents or command output. The reviewer
+reuses `assistant.model` by default rather than adding a second model
+configuration; a separate reviewer model is a named follow-up.
+
+**Why not let the assistant's own reasoning be the review?** It is the party
+proposing the action, and a prompt injection that changes the proposal would
+also change its self-assessment. A separate call with a narrow prompt is not a
+proof of safety, but it is an independent check and it fails closed. The human
+confirmation remains after it; the review is not a replacement for the person.
+
+**The default whitelist is deliberately read-only.** `list_files`, `read_file`,
+`pwd`, `ls`, `cat`, `head`, `tail`, `wc`, and git `status`/`rev-parse`/
+`ls-files` skip the review. The policy still checks their path arguments against
+the workspace and refuses protected/credential paths. `git diff`/`log`/`show`
+are reviewed because a repository can configure textconv or external-diff
+helpers that execute. Adding a write command or a shell to the whitelist is
+allowed by configuration, but it removes the review for that command and is the
+owner's explicit risk.
+
+**The review is a data flow.** The current user message and a bounded, redacted
+action preview are sent to the model provider. The package cannot promise local
+confidentiality for that preview; the docs say so. A deployment that needs it
+must use a local reviewer model.
+
+**The human gate stays.** A review allow does not execute: existing-file writes
+and commands still return `PENDING` and need an explicit confirmation in a later
+turn. A review denial returns `REVIEW DENIED` and creates no pending action.
+Scheduled task runs still get neither file nor command tools, because there is
+no human turn to confirm them.

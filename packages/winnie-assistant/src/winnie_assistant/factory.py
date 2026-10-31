@@ -17,10 +17,13 @@ from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
 from winnie_assistant.fake import FakeChatModel
 from winnie_assistant.index_client import IndexClient
-from winnie_assistant.local import (
+from winnie_local import (
     AuditLog,
     CommandRunner,
+    LLMReviewer,
+    LocalExecutor,
     PendingActions,
+    Whitelist,
     Workspace,
 )
 from winnie_assistant.memory import MemoryStore
@@ -65,6 +68,9 @@ def build_assistant_service(
 
     workspace = _build_workspace(config, root)
     commands = _build_commands(config, workspace, root)
+    local = _build_local(
+        config, root, workspace, commands, resolved_model, resolved_name
+    )
 
     store = ConversationStore(root / "conversations")
     memory = (
@@ -116,9 +122,7 @@ def build_assistant_service(
         http=http,
         tasks_enabled=config.tasks.enabled,
         max_output_chars=config.max_tool_output_chars,
-        workspace=workspace,
-        commands=commands,
-        pending=PendingActions(ttl_seconds=config.exec.pending_ttl_seconds),
+        local=local,
     )
     agent = AssistantAgent(
         store=store,
@@ -211,6 +215,52 @@ def _build_commands(
         extra_env=config.exec.env,
         require_confirmation=config.exec.require_confirmation,
         audit=AuditLog(root / ".state" / "exec.jsonl"),
+    )
+
+
+def _build_local(
+    config: AssistantConfig,
+    root: Path,
+    workspace: Workspace | None,
+    commands: CommandRunner | None,
+    model: ChatModel,
+    model_name: str,
+) -> LocalExecutor | None:
+    if workspace is None and commands is None:
+        return None
+    reviewer = None
+    if config.local.review.enabled:
+
+        async def complete(system: str, user: str) -> str:
+            result = await model.chat(
+                [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                tools=None,
+            )
+            return result.text
+
+        reviewer = LLMReviewer(
+            complete=complete,
+            model=model_name,
+            timeout_seconds=config.local.review.timeout_seconds,
+            max_action_chars=config.local.review.max_action_chars,
+        )
+    return LocalExecutor(
+        workspace=workspace,
+        commands=commands,
+        reviewer=reviewer,
+        review_enabled=config.local.review.enabled,
+        review_audit=AuditLog(root / ".state" / "review.jsonl"),
+        whitelist=Whitelist(
+            operations=config.local.whitelist.operations,
+            commands=config.local.whitelist.commands,
+            git_subcommands=config.local.whitelist.git_subcommands,
+        ),
+        pending=PendingActions(ttl_seconds=config.exec.pending_ttl_seconds),
+        model_name=model_name,
+        max_review_detail_chars=config.local.review.max_action_chars,
     )
 
 

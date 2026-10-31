@@ -313,15 +313,30 @@ Bounds and failure behaviour:
 - Every command and file write appends a JSONL audit line under `.state/`;
   overwrites and appends copy the old file to `.state/backups/` first.
 
-The local tools are a deliberate, opt-in expansion. `workspace` confines file
-paths to the configured roots and refuses the assistant's own storage plus
-common credential directories; `.env`, private keys and `.git` paths are refused
-even inside the root. Commands are **not** an OS sandbox: they run as the API
-user, with a minimal environment that excludes `WINNIE_*` and vendor keys, a
-timeout, an output cap and an audit line. The confirmation gate is the human
-control; `exec.allow` is a guardrail, not a boundary. Search results, fetched
-pages, file contents and command output are framed as untrusted data, because
-prompt injection is the obvious attack on a tool-using assistant.
+The local tools are a deliberate, opt-in expansion. The execution itself lives
+in [`packages/winnie-local`](../packages/winnie-local/README.md); the assistant
+only builds an action and calls `LocalExecutor`, so no tool can quietly skip
+planning, review, confirmation or audit.
+
+`workspace` confines file paths to the configured roots and refuses the
+assistant's own storage plus common credential directories; `.env`, private keys
+and `.git` paths are refused even inside the root. Commands are **not** an OS
+sandbox: they run as the API user, with a minimal environment that excludes
+`WINNIE_*` and vendor keys, a timeout, an output cap and an audit line.
+`exec.allow` is a guardrail, not a boundary.
+
+Every action that is not on the whitelist is reviewed once by `assistant.model`
+before it can become a pending confirmation. The review sees the current user
+message and the action (path, mode, preview/diff or argv/cwd), with common
+secret patterns redacted, and must return
+`{"allow": bool, "risk": "low|medium|high", "reason": "..."}`. A timeout,
+provider error or malformed answer denies. The decision is appended to
+`.state/review.jsonl`; the raw content is not. Whitelisted read-only operations
+skip the review; they are configured under `assistant.local.whitelist`.
+
+Search results, fetched pages, file contents and command output are framed as
+untrusted data, because prompt injection is the obvious attack on a tool-using
+assistant.
 
 ### Why not LangGraph yet
 
@@ -470,6 +485,15 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+  local:
+    review:
+      enabled: true
+      timeout_seconds: 20
+      max_action_chars: 4000
+    whitelist:
+      operations: ["list_files", "read_file"]
+      commands: ["pwd", "ls", "cat", "head", "tail", "wc"]
+      git_subcommands: ["status", "rev-parse", "ls-files"]
   workspace:
     enabled: true
     root: "~/Documents/Mine"
@@ -495,6 +519,14 @@ refuse the assistant's own storage and credential paths. Commands run as the API
 user, with a minimal environment (no `WINNIE_*` or vendor keys), a timeout and an
 output cap; `allow: []` means any executable, and a non-empty list is a guardrail,
 not a sandbox. `exec.pending_ttl_seconds` bounds how long a confirmation can wait.
+
+`local.review` is the second gate: non-whitelisted actions are denied unless
+`assistant.model` returns an explicit JSON allow. `local.whitelist` is the
+explicit bypass for read-only operations. The default git whitelist is
+`status`, `rev-parse` and `ls-files`; `diff`, `log` and `show` can run
+repository-configured textconv/external-diff helpers, so they are reviewed by
+default. Adding a write command or a shell here removes its review; the human
+confirmation (if enabled) still applies.
 
 `assistant.index` is the capability's view of the daemon. The host also has a
 top-level `index` block for the console proxy; they are deliberately separate so
@@ -534,6 +566,21 @@ selected on the AI providers page; see [ai-providers.md](./ai-providers.md).
   conversation and to the turn that created it. It runs only when the next user
   message is an explicit, short confirmation; a new non-confirmation message
   discards it, and it expires after `pending_ttl_seconds`.
+- **Every non-whitelisted action gets an LLM review.** The review is a separate
+  model call with a dedicated security prompt, not the assistant's own
+  judgement. It sees the current user message and the action, with common
+  secret patterns redacted. Timeouts, provider errors and malformed JSON deny.
+  The decision and reason go to `.state/review.jsonl`; file contents and command
+  output do not.
+- **The whitelist is explicit and read-only by default.** `list_files`,
+  `read_file`, `pwd`, `ls`, `cat`, `head`, `tail`, `wc`, and the git
+  `status`/`rev-parse`/`ls-files` subcommands skip the review. The policy still
+  checks their path arguments against the workspace and refuses credential
+  paths. Adding a write command or a shell to `local.whitelist.commands` makes
+  it auto-approved; that is the owner's explicit risk.
+- **Review data leaves the process.** The review sends the user's current
+  message and a bounded, redacted action summary/preview to the model provider.
+  Do not use a remote review model for files that must never leave the machine.
 - **Audit and backups.** `files.jsonl` and `exec.jsonl` under `.state/` record
   the path/argv, exit code, duration and hashes, not file contents or command
   output. Overwrites and appends copy the old file to `.state/backups/` first.
@@ -556,7 +603,7 @@ selected on the AI providers page; see [ai-providers.md](./ai-providers.md).
 | A2 | Agent loop, web tools, index-backed recall | A real model answers with a web result and cites a local path | Done |
 | A3 | Conversation-managed tasks | A task is created by chat, persisted, run and cancelled | Done |
 | A4 | Chat page, docs, verification | Phone-sized page sends and renders; suite passes | Done |
-| A5 | Local file tools and confirmed commands | List/read/write under the workspace; a command runs only after a later confirmation; audit and protected paths | Done |
+| A5 | Local file tools, LLM review and confirmed commands | List/read/write under the workspace; non-whitelisted actions pass an LLM review and a later confirmation; audit, review and protected paths | Done |
 
 Follow-ups after this slice, in order:
 
@@ -600,6 +647,7 @@ and the real storage root:
 | Restart | task, next run, conversations and profile entries survived |
 | Console chat | Firefox against a disposable API and assistant root: login, new chat, four-channel history, channel filter, task record read-only, tool trace, light/dark and mobile with no horizontal overflow |
 | Local tools | Disposable service with a scripted model: `read_file`/`write_file` worked; a command stayed pending until the next "确认" turn; the file and command audit lines were written |
+| Local review | Scripted reviewer in the test suite | Whitelisted reads skipped the reviewer; a non-whitelisted write/command was allowed or denied by the reviewer; a denied action changed nothing; malformed JSON, timeout and review errors denied |
 
 The local-tools check used a scripted model rather than a vendor model: the
 confirmation gate is in the tool layer, so the provider does not change the
@@ -615,7 +663,14 @@ result.
 - How should a task be edited later: cancel and recreate (today), or an
   `update_task` tool with the same confirmation step?
 - Should commands run in an OS sandbox (bubblewrap, firejail or a container)?
-  Today they run as the API user with a confirmation gate and an audit log.
+  Today they run as the API user with an LLM review, a confirmation gate and an
+  audit log.
+- Should the reviewer be a separate, smaller model from `assistant.model`?
+  Today it reuses the assistant model; a separate model would separate the
+  proposer and the reviewer.
+- Which read-only commands belong on the default whitelist? The current batch is
+  deliberately narrow; `git diff`/`log`/`show` are reviewed because a
+  repository can configure helpers that execute.
 - Should the default workspace add `~/Downloads` or `~/Desktop`? Today it is
   `~/Documents/Mine` plus `~/Projects`; the config is the boundary.
 - Should scheduled task runs ever get file or command tools? Today they do not,

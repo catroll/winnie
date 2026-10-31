@@ -13,11 +13,15 @@ import pytest
 from winnie_assistant.agent import AssistantAgent, build_system_prompt
 from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
-from winnie_assistant.local import (
+from winnie_local import (
     AuditLog,
     CommandRunner,
+    LLMReviewer,
+    LocalExecutor,
     LocalToolError,
     PendingActions,
+    ReviewDecision,
+    Whitelist,
     Workspace,
     is_confirmation,
 )
@@ -54,21 +58,76 @@ def _runner(tmp_path: Path, *, allow: list[str] | None = None) -> CommandRunner:
     )
 
 
+class _AllowReviewer:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.last_prompt = ""
+
+    async def __call__(self, system: str, user: str) -> str:
+        self.calls += 1
+        self.last_prompt = user
+        return '{"allow": true, "risk": "low", "reason": "test action"}'
+
+
+def _local(
+    tmp_path: Path,
+    *,
+    workspace: Workspace | None = None,
+    commands: CommandRunner | None = None,
+    reviewer: _AllowReviewer | None = None,
+    review_enabled: bool = True,
+    whitelist: Whitelist | None = None,
+) -> LocalExecutor:
+    allow = reviewer or _AllowReviewer()
+    return LocalExecutor(
+        workspace=workspace,
+        commands=commands,
+        reviewer=LLMReviewer(
+            complete=allow,
+            model="test-reviewer",
+            timeout_seconds=5.0,
+            max_action_chars=4_000,
+        ),
+        review_enabled=review_enabled,
+        review_audit=AuditLog(tmp_path / "state" / "review.jsonl"),
+        whitelist=whitelist
+        or Whitelist(
+            operations=["list_files", "read_file"],
+            commands=["pwd", "ls", "cat", "head", "tail", "wc"],
+            git_subcommands=["status", "rev-parse", "ls-files"],
+        ),
+        pending=PendingActions(ttl_seconds=300),
+        model_name="test",
+        max_review_detail_chars=4_000,
+    )
+
+
 def _toolbox(
     tmp_path: Path,
     *,
     workspace: Workspace | None = None,
     commands: CommandRunner | None = None,
+    reviewer: _AllowReviewer | None = None,
+    review_enabled: bool = True,
+    whitelist: Whitelist | None = None,
 ) -> ToolBox:
+    local = None
+    if workspace is not None or commands is not None:
+        local = _local(
+            tmp_path,
+            workspace=workspace,
+            commands=commands,
+            reviewer=reviewer,
+            review_enabled=review_enabled,
+            whitelist=whitelist,
+        )
     return ToolBox(
         search=FakeSearchProvider(),
         index=None,
         memory=None,
         scheduler=None,
         http=httpx.AsyncClient(),
-        workspace=workspace,
-        commands=commands,
-        pending=PendingActions(ttl_seconds=300),
+        local=local,
     )
 
 

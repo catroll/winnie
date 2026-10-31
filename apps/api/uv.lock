@@ -1518,6 +1518,7 @@ dependencies = [
     { name = "winnie-core" },
     { name = "winnie-gateway" },
     { name = "winnie-knowledge" },
+    { name = "winnie-local" },
     { name = "winnie-meetings" },
 ]
 
@@ -1545,6 +1546,7 @@ requires-dist = [
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-gateway", editable = "../../packages/winnie-gateway" },
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
+    { name = "winnie-local", editable = "../../packages/winnie-local" },
     { name = "winnie-meetings", editable = "../../packages/winnie-meetings" },
 ]
 
@@ -1564,6 +1566,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "winnie-core" },
+    { name = "winnie-local" },
 ]
 
 [package.metadata]
@@ -1573,6 +1576,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
+    { name = "winnie-local", editable = "../../packages/winnie-local" },
 ]
 
 [[package]]
@@ -1621,6 +1625,17 @@ requires-dist = [
 name = "winnie-knowledge"
 version = "0.1.0"
 source = { editable = "../../packages/winnie-knowledge" }
+
+[[package]]
+name = "winnie-local"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-local" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.13.0" }]
 
 [[package]]
 name = "winnie-meetings"

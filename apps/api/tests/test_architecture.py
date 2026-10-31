@@ -13,7 +13,10 @@ ALLOWED = {
     "winnie-gateway": {"winnie_core", "winnie_gateway"},
     "winnie-knowledge": {"winnie_knowledge"},
     "winnie-meetings": {"winnie_core", "winnie_knowledge", "winnie_meetings"},
-    "winnie-assistant": {"winnie_core", "winnie_assistant"},
+    # winnie-local is a shared execution layer (like winnie-core), not a
+    # capability. It may be used by the assistant; it imports no capability.
+    "winnie-local": {"winnie_local"},
+    "winnie-assistant": {"winnie_core", "winnie_assistant", "winnie_local"},
 }
 
 

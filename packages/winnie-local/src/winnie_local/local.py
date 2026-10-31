@@ -96,10 +96,10 @@ def _expand(value: str) -> Path:
     return Path(value).expanduser().resolve(strict=False)
 
 
-def _resolve_under_roots(raw: str, roots: list[Path], default_root: Path) -> Path:
+def _resolve_under_roots(raw: str, roots: list[Path], base: Path) -> Path:
     path = Path(raw or ".").expanduser()
     if not path.is_absolute():
-        path = default_root / path
+        path = base / path
     try:
         resolved = path.resolve(strict=False)
     except (OSError, RuntimeError) as exc:
@@ -318,8 +318,10 @@ class Workspace:
 
     # -- paths -----------------------------------------------------------
 
-    def resolve(self, raw: str, *, write: bool) -> Path:
-        resolved = _resolve_under_roots(raw, self.roots, self.root)
+    def resolve(
+        self, raw: str, *, write: bool, base: Path | None = None
+    ) -> Path:
+        resolved = _resolve_under_roots(raw, self.roots, base or self.root)
         if self._protected(resolved):
             raise LocalToolError(f"that path is protected: {resolved}")
         if any(part in SECRET_NAMES for part in resolved.parts) or (
@@ -707,6 +709,20 @@ class CommandRunner:
             "TERM": "dumb",
             "TMPDIR": tempfile.gettempdir(),
             "PYTHONUNBUFFERED": "1",
+            # Keep git from executing a pager, fsmonitor, external diff or a
+            # terminal prompt through repository/system configuration.
+            "GIT_PAGER": "cat",
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_EXTERNAL_DIFF": "",
+            "GIT_CONFIG_COUNT": "3",
+            "GIT_CONFIG_KEY_0": "core.fsmonitor",
+            "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.pager",
+            "GIT_CONFIG_VALUE_1": "cat",
+            "GIT_CONFIG_KEY_2": "diff.external",
+            "GIT_CONFIG_VALUE_2": "",
         }
         for key in ("LC_ALL", "USER", "LOGNAME", "SHELL", "XDG_RUNTIME_DIR"):
             value = os.environ.get(key)

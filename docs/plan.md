@@ -338,12 +338,15 @@ Working:
 - `POST /api/v1/assistant/chat` runs a bounded tool loop; the page at
   `/api/v1/assistant/ui` is phone-sized and needs no build step, and the console
   at `/chat` is the desktop surface.
-- Local tools are opt-in: `list_files`, `read_file`, `write_file`,
-  `run_command` and `confirm_action`. File paths are confined to
-  `assistant.workspace.root` and protected paths; overwrites carry the sha256
-  they read, are backed up and require a later explicit confirmation. Commands
-  run as the API user after the same confirmation and are audited under
-  `.state/`; they are not sandboxed. Scheduled task runs get neither group.
+- Local tools are opt-in and live in `packages/winnie-local`:
+  `list_files`, `read_file`, `write_file`, `run_command` and `confirm_action`.
+  File paths are confined to `assistant.workspace.root` and protected paths;
+  overwrites carry the sha256 they read, are backed up and require a later
+  explicit confirmation. Every non-whitelisted action gets one LLM review
+  (`assistant.model`, fail-closed) before it can become pending; whitelisted
+  read-only operations skip it. Commands run as the API user after review and
+  confirmation and are audited under `.state/`; they are not sandboxed.
+  Scheduled task runs get neither group.
 - Each conversation records where it started (`channel`: `admin`, `web`, `api`
   or `task`); the console filters the history by channel and opens task runs
   read-only.
@@ -375,7 +378,10 @@ Verified:
 - A disposable service with a scripted model exercised the local tools:
   `read_file`/`write_file` worked, a command stayed pending until the next
   "确认" turn, and both audit files were written.
-- `180 passed` in the backend suite.
+- The `winnie-local` suite covers the whitelist policy (paths, git options,
+  path-qualified executables), reviewer JSON/timeout/error handling, redaction,
+  whitelisted bypass, review allow/deny, and the fail-closed disabled path.
+- `191 passed` in the backend suite.
 
 Open:
 
@@ -386,6 +392,8 @@ Open:
 - A task cannot be edited or paused yet; cancel and recreate is the current path.
 - Commands are not sandboxed: they run as the API user. A bubblewrap/firejail or
   container sandbox is the next hardening step.
+- The LLM reviewer reuses `assistant.model`; a separate reviewer model is a
+  follow-up.
 - Scheduled task runs deliberately have no file or command tools; there is no
   human turn to confirm them.
 
@@ -393,7 +401,7 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **180 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **191 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -410,6 +418,7 @@ Open:
 | Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
 | Local assistant tools | Disposable service with a scripted model | `read_file`/`write_file`; command pending until the next "确认" turn; file and command audit lines |
+| Local LLM review | `winnie-local` test suite | Whitelisted reads skipped the reviewer; non-whitelisted write/command allowed or denied; malformed JSON, timeout and provider errors denied; denied actions changed nothing |
 | Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Seeded `deepseek-openai` had no server key and `internal-llm` was internal-only; `assistant.chat` pointed at it; created `ui-llm` through the modal, rebound `assistant.chat` and the API reported `source=admin`, deleted it and the binding returned to `source=config`; light/dark captured |
 | AI registry v1 migration | `pytest` against a hand-written v1 file | Split into `deepseek-openai` + `internal-llm`, cleared the route key/model, repointed `assistant.chat`, rewrote `version: 2` |
 | Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |

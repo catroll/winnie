@@ -74,8 +74,9 @@ conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
 those files and recalled through the local index service, and scheduled tasks
 the assistant creates and cancels when asked in conversation. It can also list,
 read and write files under a configured workspace and run local commands after
-an explicit confirmation; the file and command tools are audited, and the
-command runner is **not** a sandbox. Every conversation
+an LLM review and an explicit confirmation; the file and command tools are
+audited, whitelisted read-only operations skip the review, and the command
+runner is **not** a sandbox. Every conversation
 records its channel, so the console history also covers the phone page, direct
 API clients and unattended task runs. The default provider is the deterministic
 fake until an OpenAI-compatible integration and its environment key are chosen

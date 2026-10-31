@@ -22,11 +22,13 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from winnie_assistant.index_client import IndexClient, IndexUnavailable
-from winnie_assistant.local import (
-    CommandRunner,
+from winnie_local import (
+    ListFiles,
+    LocalExecutor,
     LocalToolError,
-    PendingActions,
-    Workspace,
+    ReadFile,
+    RunCommand,
+    WriteFile,
 )
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.scheduler import AssistantScheduler, TaskDefinitionError
@@ -414,9 +416,7 @@ class ToolBox:
         tasks_enabled: bool = True,
         max_output_chars: int = 4000,
         fetch_timeout_seconds: float = 20.0,
-        workspace: Workspace | None = None,
-        commands: CommandRunner | None = None,
-        pending: PendingActions | None = None,
+        local: LocalExecutor | None = None,
     ) -> None:
         self.search = search
         self.index = index
@@ -426,13 +426,11 @@ class ToolBox:
         self.tasks_enabled = tasks_enabled
         self.max_output_chars = max_output_chars
         self.fetch_timeout_seconds = fetch_timeout_seconds
-        self.workspace = workspace
-        self.commands = commands
-        self.pending = pending or PendingActions()
+        self.local = local
 
     @property
     def has_local_tools(self) -> bool:
-        return self.workspace is not None or self.commands is not None
+        return self.local is not None
 
     def schemas(
         self, *, task_management: bool = True, local_tools: bool = True
@@ -441,25 +439,27 @@ class ToolBox:
             task_management=task_management,
             local_tools=local_tools and self.has_local_tools,
         )
-        if self.workspace is None:
-            selected = [
-                schema
-                for schema in selected
-                if schema["function"]["name"] not in LOCAL_FILE_TOOLS
-            ]
-        if self.commands is None:
-            selected = [
-                schema
-                for schema in selected
-                if schema["function"]["name"] not in LOCAL_COMMAND_TOOLS
-            ]
+        if self.local is not None:
+            if not self.local.has_files:
+                selected = [
+                    schema
+                    for schema in selected
+                    if schema["function"]["name"] not in LOCAL_FILE_TOOLS
+                ]
+            if not self.local.has_commands:
+                selected = [
+                    schema
+                    for schema in selected
+                    if schema["function"]["name"] not in LOCAL_COMMAND_TOOLS
+                ]
         return selected
 
     def begin_turn(self, conversation_id: str, user_message: str) -> None:
-        self.pending.begin_turn(conversation_id, user_message)
+        if self.local is not None:
+            self.local.begin_turn(conversation_id, user_message)
 
     def pending_summary(self, conversation_id: str) -> str:
-        return self.pending.summary(conversation_id)
+        return self.local.pending_summary(conversation_id) if self.local else ""
 
     async def execute(
         self,
@@ -480,8 +480,8 @@ class ToolBox:
                     raise ToolError(
                         "local file and command tools are unavailable in a task run"
                     )
-                if not self.pending.has_turn(conversation_id):
-                    self.pending.begin_turn(conversation_id, "")
+                if self.local is None:
+                    raise ToolError("local file and command tools are disabled")
             if name == "web_search":
                 output = await self._web_search(arguments)
             elif name == "fetch_page":
@@ -499,9 +499,9 @@ class ToolBox:
             elif name == "cancel_task":
                 output = await self._cancel_task(arguments)
             elif name == "list_files":
-                output = await self._list_files(arguments)
+                output = await self._list_files(arguments, conversation_id)
             elif name == "read_file":
-                output = await self._read_file(arguments)
+                output = await self._read_file(arguments, conversation_id)
             elif name == "write_file":
                 output = await self._write_file(arguments, conversation_id)
             elif name == "run_command":
@@ -631,25 +631,23 @@ class ToolBox:
 
     # -- local files and commands ---------------------------------------
 
-    def _workspace(self) -> Workspace:
-        if self.workspace is None:
-            raise ToolError(
-                "local file tools are disabled (assistant.workspace.enabled)"
-            )
-        return self.workspace
+    def _local(self) -> LocalExecutor:
+        if self.local is None:
+            raise ToolError("local file and command tools are disabled")
+        return self.local
 
-    def _commands(self) -> CommandRunner:
-        if self.commands is None:
-            raise ToolError(
-                "local command execution is disabled (assistant.exec.enabled)"
-            )
-        return self.commands
+    async def _list_files(
+        self, arguments: dict[str, Any], conversation_id: str
+    ) -> str:
+        outcome = await self._local().execute(
+            ListFiles(path=str(arguments.get("path") or ".")),
+            conversation_id=conversation_id,
+        )
+        return outcome.text
 
-    async def _list_files(self, arguments: dict[str, Any]) -> str:
-        raw_path = str(arguments.get("path") or ".")
-        return await asyncio.to_thread(self._workspace().list, raw_path)
-
-    async def _read_file(self, arguments: dict[str, Any]) -> str:
+    async def _read_file(
+        self, arguments: dict[str, Any], conversation_id: str
+    ) -> str:
         raw_path = str(arguments.get("path") or "").strip()
         if not raw_path:
             raise ToolError("read_file requires a path")
@@ -657,17 +655,15 @@ class ToolBox:
         max_lines = _as_int(
             arguments.get("max_lines"), default=400, minimum=1, maximum=2000
         )
-        return await asyncio.to_thread(
-            self._workspace().read,
-            raw_path,
-            start_line=start,
-            max_lines=max_lines,
+        outcome = await self._local().execute(
+            ReadFile(path=raw_path, start_line=start, max_lines=max_lines),
+            conversation_id=conversation_id,
         )
+        return outcome.text
 
     async def _write_file(
         self, arguments: dict[str, Any], conversation_id: str
     ) -> str:
-        workspace = self._workspace()
         raw_path = str(arguments.get("path") or "").strip()
         if not raw_path:
             raise ToolError("write_file requires a path")
@@ -676,41 +672,28 @@ class ToolBox:
             raise ToolError("write_file requires string content")
         mode = str(arguments.get("mode") or "create").strip().lower()
         expected = str(arguments.get("expected_sha256") or "").strip()
-        plan = await asyncio.to_thread(
-            workspace.plan_write,
-            raw_path,
-            content,
-            mode=mode,
-            expected_sha256=expected,
+        outcome = await self._local().execute(
+            WriteFile(
+                path=raw_path,
+                content=content,
+                mode=mode,
+                expected_sha256=expected,
+            ),
+            conversation_id=conversation_id,
         )
-        if plan.requires_confirmation:
-            action = self.pending.put(
-                conversation_id,
-                kind="write_file",
-                summary=plan.summary,
-                execute=lambda: asyncio.to_thread(
-                    workspace.write, plan, conversation_id
-                ),
-            )
-            return self._pending_message(action)
-        return await asyncio.to_thread(workspace.write, plan, conversation_id)
+        return outcome.text
 
     async def _run_command(
         self, arguments: dict[str, Any], conversation_id: str
     ) -> str:
-        commands = self._commands()
-        plan = commands.plan(
-            arguments.get("argv"), str(arguments.get("cwd") or "")
+        outcome = await self._local().execute(
+            RunCommand(
+                argv=arguments.get("argv"),
+                cwd=str(arguments.get("cwd") or ""),
+            ),
+            conversation_id=conversation_id,
         )
-        if commands.require_confirmation:
-            action = self.pending.put(
-                conversation_id,
-                kind="run_command",
-                summary=plan.summary,
-                execute=lambda: commands.run(plan, conversation_id),
-            )
-            return self._pending_message(action)
-        return await commands.run(plan, conversation_id)
+        return outcome.text
 
     async def _confirm_action(
         self, arguments: dict[str, Any], conversation_id: str
@@ -718,17 +701,7 @@ class ToolBox:
         pending_id = str(arguments.get("pending_id") or "").strip()
         if not pending_id:
             raise ToolError("confirm_action requires pending_id")
-        action = self.pending.take(conversation_id, pending_id)
-        return await action.execute()
-
-    def _pending_message(self, action) -> str:
-        return (
-            f"PENDING {action.token}: nothing has been changed or run.\n"
-            f"{action.summary}\n"
-            "Explain exactly what will happen, ask the user to reply with an "
-            "explicit confirmation, and call confirm_action with "
-            f'pending_id="{action.token}" on the next turn.'
-        )
+        return await self._local().confirm(conversation_id, pending_id)
 
     # -- memory ----------------------------------------------------------
 
