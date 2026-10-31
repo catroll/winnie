@@ -40,6 +40,20 @@ class IndexConfig(BaseModel):
     timeout_seconds: float = 60.0
 
 
+class ScheduleConfig(BaseModel):
+    """The owner's weekly schedule tree (WLB ``work/``).
+
+    Disabled by default: the tree is outside this repository, and a test or an
+    embedder should never read one by accident. ``root`` may be absolute or
+    start with ``~``, which is the normal case for this checkout.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    root: str = "~/Projects/Mine/WLB"
+
+
 class AIConfig(BaseModel):
     """The admin-managed AI registry and feature bindings.
 
@@ -70,6 +84,7 @@ class Settings(BaseModel):
     phone: PhoneConfig = Field(default_factory=PhoneConfig)
     push: PushConfig = Field(default_factory=PushConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)
+    schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     usage: UsageConfig = Field(default_factory=UsageConfig)
 
@@ -107,6 +122,9 @@ class Settings(BaseModel):
 
     def resolve_usage_root(self) -> Path:
         return _resolve_path(self.usage.root)
+
+    def resolve_schedule_root(self) -> Path:
+        return _resolve_path(self.schedule.root)
 
     def resolve_database_url(self) -> str:
         """Make relative SQLite paths absolute; leave server URLs untouched."""

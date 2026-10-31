@@ -1174,3 +1174,32 @@ cooldown.
 **USD per troy ounce.** The source is a USD spot quote. A CNY-per-gram view
 needs an FX rate and a unit conversion; showing an approximate number without
 saying which rate was used would be worse than showing the source currency.
+
+## Schedule in the console (2026-11-01)
+
+**The console edits the Markdown files, and nothing shadows them.** A table of
+events with a sync job back to `work/` was rejected: the owner edits those files
+by hand and in git, so a mirror would be a second source of truth for the same
+list, and every conflict would need a rule. `winnie-schedule` stays the only
+writer; the API service adds the configured root, a lock and a payload.
+
+**Every mutation answers with the refreshed week.** The alternative is a
+separate `GET` after each write. Returning the week removes that round trip and,
+more importantly, removes the temptation to compute the new event id on the
+client: ids are positional (`202610-05-11#10/05#2`) and shift whenever an insert
+or a delete happens above them in the same day.
+
+**Events are addressed by `(week, id)` in the body or query string.** An id
+contains `#` and `/`; percent-encoding it into a path segment works but reads
+badly in logs and in a curl command, and the week has to be named anyway to pick
+the file. `PATCH /schedule/events` and `DELETE /schedule/events?week=…&id=…` take
+that pair instead.
+
+**Administrator-only, unlike meetings.** The tree is not rows in the Winnie
+database, it is a directory the service process can rewrite outside the
+repository. An auth-disabled deployment still acts as a local administrator, so
+the page works there; with accounts enabled, only an admin sees it.
+
+**The page does not create week files.** Same boundary as the CLI: the skeleton
+and the routine items belong to WLB `tools/weekly.py`. A week that does not exist
+yet answers 404 with the path and the reason, which is what the page shows.

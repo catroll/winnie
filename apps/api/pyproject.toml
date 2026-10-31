@@ -26,6 +26,7 @@ dependencies = [
     "winnie-local",
     "winnie-news",
     "winnie-phone",
+    "winnie-schedule",
     "winnie-push",
     "winnie-llm",
 ]
@@ -40,6 +41,7 @@ winnie-chat = { path = "../../packages/winnie-chat", editable = true }
 winnie-local = { path = "../../packages/winnie-local", editable = true }
 winnie-news = { path = "../../packages/winnie-news", editable = true }
 winnie-phone = { path = "../../packages/winnie-phone", editable = true }
+winnie-schedule = { path = "../../packages/winnie-schedule", editable = true }
 winnie-push = { path = "../../packages/winnie-push", editable = true }
 winnie-llm = { path = "../../packages/winnie-llm", editable = true }
 

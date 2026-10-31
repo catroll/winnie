@@ -1525,6 +1525,7 @@ dependencies = [
     { name = "winnie-news" },
     { name = "winnie-phone" },
     { name = "winnie-push" },
+    { name = "winnie-schedule" },
 ]
 
 [package.dev-dependencies]
@@ -1558,6 +1559,7 @@ requires-dist = [
     { name = "winnie-news", editable = "../../packages/winnie-news" },
     { name = "winnie-phone", editable = "../../packages/winnie-phone" },
     { name = "winnie-push", editable = "../../packages/winnie-push" },
+    { name = "winnie-schedule", editable = "../../packages/winnie-schedule" },
 ]
 
 [package.metadata.requires-dev]
@@ -1792,3 +1794,13 @@ dev = [
     { name = "pytest", specifier = ">=9.2.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.1" },
 ]
+
+[[package]]
+name = "winnie-schedule"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-schedule" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.2.0" }]

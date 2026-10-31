@@ -38,6 +38,8 @@ from winnie_api.push.notify import PushNotifierAdapter
 from winnie_api.ai.router import router as ai_router
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
+from winnie_api.schedule.router import router as schedule_router
+from winnie_api.schedule.service import ScheduleService, ScheduleUnavailable
 from winnie_api.settings import Settings, load_settings
 from winnie_api.usage.balances import BalanceService
 from winnie_api.usage.router import router as usage_router
@@ -137,6 +139,8 @@ def create_app(
         app.state.assistant_error = ""
         app.state.news_service = None
         app.state.news_error = ""
+        app.state.schedule_service = None
+        app.state.schedule_error = ""
         if runtime is not None:
             await runtime.startup()
             app.state.auth_service = runtime.auth_service
@@ -146,6 +150,16 @@ def create_app(
         else:
             app.state.phone_service = None
             app.state.push_service = None
+        # The schedule is a directory of Markdown files, not a database table:
+        # it starts independently of the runtime so a console with the database
+        # down can still report what failed.
+        if resolved.schedule.enabled:
+            try:
+                app.state.schedule_service = ScheduleService(resolved.resolve_schedule_root())
+            except ScheduleUnavailable as exc:
+                app.state.schedule_error = str(exc)
+                logger.warning("schedule unavailable: %s", exc)
+
         news = None
         if resolved.news.enabled:
             try:
@@ -243,6 +257,10 @@ def create_app(
     # Recording telemetry is a host concern: it spans the gateway and every
     # capability's internal model calls, so it is not owned by one capability.
     app.include_router(usage_router, prefix="/api/v1")
+    # The schedule is a host concern: it owns a filesystem tree outside the
+    # repository rather than a capability's service object.
+    if resolved.schedule.enabled:
+        app.include_router(schedule_router, prefix="/api/v1")
     app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")

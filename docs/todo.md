@@ -385,3 +385,8 @@ reads and edits it. Two follow-ups are deliberately open:
       appends, but a nested list or a fenced block still has to be edited by
       hand. A line-range selector would close that, at the cost of a second way
       to address an event.
+
+- [ ] Create a week from the console. The page can edit any existing week but
+      answers 404 for one that does not exist yet, because the skeleton is the
+      WLB generator's job. If that generator is retired, this endpoint and the
+      CLI would both need it.

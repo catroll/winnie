@@ -86,6 +86,7 @@ Success for the current phase:
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
 | Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
+| Schedule | Read and edit the owner's weekly Markdown schedule: days, events, times, tags, week-level items | `winnie-schedule` + `apps/api/schedule` + console Schedule page | Done |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
 
 ## 4. Milestones

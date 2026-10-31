@@ -312,6 +312,14 @@ news:
   # Older runs are pruned after a successful run.
   keep_runs: 50
 
+# The owner's weekly schedule (packages/winnie-schedule). One file per week in
+# a Markdown tree outside this repository; the console reads and edits it in
+# place. Set enabled: false to hide the console page and the /api/v1/schedule/*
+# routes. `root` is the WLB checkout, absolute or starting with ~.
+schedule:
+  enabled: true
+  root: ~/Projects/Mine/WLB
+
 # Local document index (packages/winnie-index). The console reaches it through
 # this API so the browser keeps one origin and one session; set enabled: false
 # to hide the console page and the /api/v1/index/* routes.
