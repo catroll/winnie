@@ -24,6 +24,7 @@ interface FormState {
   api_key_env: string;
   default_model: string;
   enabled: boolean;
+  gateway: boolean;
   options: Record<string, unknown>;
 }
 
@@ -56,6 +57,7 @@ const BLANK_FORM: FormState = {
   api_key_env: '',
   default_model: '',
   enabled: true,
+  gateway: true,
   options: {},
 };
 
@@ -75,6 +77,7 @@ function formFromIntegration(integration: AIIntegration): FormState {
     api_key_env: integration.api_key_env,
     default_model: integration.default_model,
     enabled: integration.enabled,
+    gateway: integration.gateway,
     options: { ...integration.options },
   };
 }
@@ -87,6 +90,7 @@ function formForKind(kind: AIProviderKind, current: FormState): FormState {
       base_url: current.base_url || 'https://openspeech.bytedance.com',
       api_key_env: current.api_key_env || 'VOLCENGINE_ASR_API_KEY',
       default_model: current.default_model || 'bigmodel',
+      gateway: false,
       options: { ...VOLCENGINE_DEFAULTS, ...current.options },
     };
   }
@@ -97,10 +101,19 @@ function formForKind(kind: AIProviderKind, current: FormState): FormState {
       base_url: '',
       api_key_env: '',
       default_model: '',
+      gateway: false,
       options: {},
     };
   }
-  return { ...current, kind, options: {} };
+  return {
+    ...current,
+    kind,
+    gateway:
+      current.kind === 'openai' || current.kind === 'anthropic'
+        ? current.gateway
+        : true,
+    options: {},
+  };
 }
 
 function toInput(form: FormState): AIIntegrationInput {
@@ -119,8 +132,30 @@ function toInput(form: FormState): AIIntegrationInput {
     api_key_env: form.api_key_env.trim(),
     default_model: defaultModel,
     enabled: form.enabled,
+    gateway: form.gateway,
     options,
   };
+}
+
+/** A conventional key variable for a vendor name; empty for an unknown one. */
+function suggestedKeyEnv(name: string): string {
+  const value = name.toLowerCase();
+  if (value.includes('deepseek')) {
+    return 'DEEPSEEK_API_KEY';
+  }
+  if (value.includes('qwen') || value.includes('dashscope')) {
+    return 'DASHSCOPE_API_KEY';
+  }
+  if (value.includes('openai')) {
+    return 'OPENAI_API_KEY';
+  }
+  if (value.includes('anthropic')) {
+    return 'ANTHROPIC_API_KEY';
+  }
+  if (value.includes('volcengine') || value.includes('doubao')) {
+    return 'VOLCENGINE_ASR_API_KEY';
+  }
+  return '';
 }
 
 function FeatureLabel({
@@ -174,9 +209,18 @@ export function AIPage() {
   };
 
   const updateDraft = (patch: Partial<FormState>) => {
-    setEditor((current) =>
-      current ? { ...current, draft: { ...current.draft, ...patch } } : current,
-    );
+    setEditor((current) => {
+      if (!current) {
+        return current;
+      }
+      const draft = { ...current.draft, ...patch };
+      // Suggest a conventional variable from the vendor name, but never
+      // overwrite a value the user already entered.
+      if (patch.name !== undefined && !draft.api_key_env.trim()) {
+        draft.api_key_env = suggestedKeyEnv(patch.name);
+      }
+      return { ...current, draft };
+    });
   };
 
   const updateOption = (key: string, value: string) => {
@@ -295,7 +339,12 @@ export function AIPage() {
     }
   };
 
-  const integrations = data?.integrations ?? [];
+  const integrations: AIIntegration[] = (data?.integrations ?? []).map(
+    (integration) => ({
+      ...integration,
+      gateway: integration.gateway !== false,
+    }),
+  );
   const features = data?.features ?? [];
   const configured = features.filter((feature) => feature.source === 'admin').length;
   const gatewayRoutes = integrations.filter(
@@ -511,8 +560,20 @@ export function AIPage() {
                                       )}
                                     </div>
                                   </>
-                                ) : (
+                                ) : integration.kind === 'volcengine_asr' ? (
+                                  <span className="text-secondary">
+                                    uses VOLCENGINE_ASR_API_KEY
+                                  </span>
+                                ) : integration.kind === 'fake' ? (
                                   <span className="text-secondary">not needed</span>
+                                ) : integration.gateway === false ? (
+                                  <span className="badge text-bg-warning">
+                                    no key configured
+                                  </span>
+                                ) : (
+                                  <span className="text-secondary">
+                                    not needed for a gateway route
+                                  </span>
                                 )}
                               </td>
                               <td style={{ minWidth: '10rem' }}>
@@ -533,16 +594,22 @@ export function AIPage() {
                                 )}
                               </td>
                               <td style={{ minWidth: '12rem' }}>
-                                {integration.gateway_paths.length === 0 ? (
-                                  <span className="text-secondary">
-                                    not a gateway route
-                                  </span>
-                                ) : (
+                                {integration.gateway_paths.length > 0 ? (
                                   integration.gateway_paths.map((path) => (
                                     <code className="d-block small" key={path}>
                                       {path}
                                     </code>
                                   ))
+                                ) : integration.gateway === false &&
+                                  (integration.kind === 'openai' ||
+                                    integration.kind === 'anthropic') ? (
+                                  <span className="badge text-bg-secondary">
+                                    internal only
+                                  </span>
+                                ) : (
+                                  <span className="text-secondary">
+                                    not a gateway route
+                                  </span>
                                 )}
                               </td>
                               <td>
@@ -585,10 +652,11 @@ export function AIPage() {
                   )}
                 </div>
                 <div className="card-footer small text-secondary">
-                  OpenAI and Anthropic providers become gateway routes at{' '}
-                  <code>/{'{name}'}/v1/…</code>. Winnie still forwards the client's
-                  own vendor key for those paths; the environment variable here is
-                  only for internal jobs and the assistant.
+                  Providers with <strong>Expose as gateway route</strong> enabled
+                  become routes at <code>/{'{name}'}/v1/…</code>. Winnie forwards
+                  the client's own vendor key on those paths; the environment
+                  variable here is only for internal jobs and the assistant. An
+                  internal-only provider has no public proxy path.
                 </div>
               </div>
 
@@ -620,8 +688,10 @@ export function AIPage() {
                           const selected = integrations.find(
                             (item) => item.id === binding.integration_id,
                           );
-                          const compatible = integrations.filter((item) =>
-                            feature.kinds.includes(item.kind),
+                          const compatible = integrations.filter(
+                            (item) =>
+                              feature.kinds.includes(item.kind) &&
+                              (item.kind !== 'openai' || item.api_key_env),
                           );
                           const dirty =
                             binding.integration_id !==
@@ -821,6 +891,7 @@ function IntegrationEditor({
   const draft = editor.draft;
   const isFake = draft.kind === 'fake';
   const isVolcengine = draft.kind === 'volcengine_asr';
+  const isGatewayKind = draft.kind === 'openai' || draft.kind === 'anthropic';
 
   return (
     <>
@@ -860,8 +931,9 @@ function IntegrationEditor({
                     disabled={busy || editor.mode === 'edit'}
                   />
                   <div className="form-text">
-                    Lowercase slug. It is the gateway path prefix, so it cannot
-                    change after creation.
+                    Lowercase slug. It becomes the gateway path prefix when the
+                    provider is exposed as a route; it cannot change after
+                    creation.
                   </div>
                 </div>
                 <div className="col-md-6">
@@ -897,7 +969,7 @@ function IntegrationEditor({
                     <option value="fake">Deterministic fake</option>
                   </select>
                 </div>
-                <div className="col-md-6 d-flex align-items-end">
+                <div className="col-md-6 d-flex align-items-end gap-4">
                   <div className="form-check form-switch mb-2">
                     <input
                       id="ai-enabled"
@@ -913,6 +985,23 @@ function IntegrationEditor({
                       Enabled
                     </label>
                   </div>
+                  {isGatewayKind ? (
+                    <div className="form-check form-switch mb-2">
+                      <input
+                        id="ai-gateway"
+                        className="form-check-input"
+                        type="checkbox"
+                        checked={draft.gateway}
+                        onChange={(event) =>
+                          onChange({ gateway: event.target.checked })
+                        }
+                        disabled={busy}
+                      />
+                      <label className="form-check-label" htmlFor="ai-gateway">
+                        Gateway route
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
 
                 {!isFake ? (
@@ -957,7 +1046,7 @@ function IntegrationEditor({
                       <div className="form-text">
                         {isVolcengine
                           ? 'The API process reads this variable for recording-file and streaming ASR.'
-                          : 'The name, not the key. Leave empty for gateway-only routes.'}
+                          : 'The name, not the key. Required for internal features; a gateway-only provider can leave it empty.'}
                       </div>
                     </div>
                     {!isVolcengine ? (

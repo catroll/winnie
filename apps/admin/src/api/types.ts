@@ -336,6 +336,8 @@ export interface AIIntegration {
   api_key_present: boolean;
   default_model: string;
   enabled: boolean;
+  /** Whether an OpenAI/Anthropic provider is exposed as a gateway route. */
+  gateway: boolean;
   options: Record<string, unknown>;
   used_by: string[];
   gateway_paths: string[];
@@ -351,6 +353,7 @@ export interface AIIntegrationInput {
   api_key_env: string;
   default_model: string;
   enabled: boolean;
+  gateway: boolean;
   options: Record<string, unknown>;
 }
 
