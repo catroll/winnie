@@ -800,6 +800,16 @@ renderer plus a sanitizer, because the text is model output derived from
 untrusted articles. Showing the source costs readability and closes an XSS
 class; a sanitised renderer is a follow-up with its own tests.
 
+**Superseded (2026-11-01): the console renders the draft, without a sanitizer.**
+`marked` is used only as a parser: its tokens are turned into React elements, so
+there is no HTML string to sanitize and no `dangerouslySetInnerHTML` to get
+wrong. Raw HTML blocks render as visible text, images are dropped (a remote
+pixel would leak the reader's address), and `javascript:`/`data:` link targets
+become plain text. The remaining cost is that unusual Markdown (references,
+footnotes, embedded HTML) renders as text rather than richly; for a news draft
+that is acceptable, and the alternative — an HTML string through DOMPurify —
+adds a second dependency and a configuration whose failure mode is XSS.
+
 ## Weekly schedule tool (2026-11-01)
 
 **Line splicing, not re-serialisation.** `packages/winnie-schedule` edits

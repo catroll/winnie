@@ -266,15 +266,18 @@ reporting a draft as published and require the run id and event id.
 
 The console page `/news` shows the four counters, the run list, one run's stage
 badges and drafts, and the selected draft with its review. It polls while a run
-is running. The draft is shown as Markdown source, not rendered HTML: rendering
-would need a Markdown renderer plus a sanitizer, and the text is model output
-over untrusted articles.
+is running. The draft is rendered as Markdown, safely: `marked` parses it and
+the tokens become React elements, so nothing is inserted as HTML. Raw HTML in a
+draft is shown as text, images are not loaded (a remote pixel would report the
+reader's IP), and link targets are limited to http(s), mailto and relative URLs.
+Headings are shifted down two levels because the page owns `h1` and the card
+title `h2`.
 
 ## Known limits
 
-- A run executes in the API process. A long batch blocks nothing else, but a
-  restart loses it (the run record then stays `running`); the `arq` backend does
-  not yet move news into the worker.
+- A run executes in the API process. A restart loses an in-flight batch; startup
+  then marks its record `failed` rather than leaving it `running`, but the work
+  is gone. The `arq` backend does not yet move news into the worker.
 - Draft quality depends on `news.write`; the fake provider produces a
   deterministic, repetitive draft for demos only.
 - The shipped RSS list enables only the six `chinanews.com.cn` feeds. The BBC,
@@ -290,10 +293,11 @@ over untrusted articles.
   under `data/news`; sending it anywhere is a later capability.
 - Regeneration covers one draft, not one stage: re-cleaning or re-aggregating a
   batch would have to reconcile the shared event store and is not exposed.
-- The console renders the draft as text. A safe Markdown renderer is a follow-up.
+- The console renders the Markdown subset a draft uses (headings, paragraphs,
+  emphasis, links, lists, blockquotes, code, tables). Raw HTML and images are
+  intentionally shown as text rather than rendered.
 
 ## Follow-ups
 
-Tracked in [todo.md](./todo.md): a worker-backed run, Markdown rendering with
-sanitisation, a real-model quality comparison over the same batch, and a
-publication hand-off.
+Tracked in [todo.md](./todo.md): a worker-backed run, a real-model quality
+comparison over the same batch, and a publication hand-off.

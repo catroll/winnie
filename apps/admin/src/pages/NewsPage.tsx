@@ -9,6 +9,7 @@ import type {
   NewsStatus,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
+import { Markdown } from '../components/Markdown';
 import { PageHeader } from '../components/PageHeader';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
@@ -545,9 +546,7 @@ export function NewsPage() {
                         ) : null}
                       </div>
                     ) : null}
-                    <pre className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>
-                      {markdown}
-                    </pre>
+                    <Markdown source={markdown} />
                   </div>
                 </div>
               ) : null}
