@@ -889,3 +889,109 @@ feature list, not every setting. Changing the city is a `config.yaml` change,
 which keeps the first version to one location and avoids a settings UI that
 would have to be designed, validated and migrated before the feature has a
 second user.
+
+## Phone data sync (2026-11-01)
+
+**A capability package, not host code.** `packages/winnie-phone` owns the
+schema, merge rules, queries and command queue. The host owns composition and
+authentication, exactly as it does for meetings and news; the package does not
+import the host or another capability. The assistant declares a
+`PhoneGateway` protocol and the host adapts the service to it, so the assistant
+still does not import `winnie-phone`.
+
+**Four typed tables plus one signal table.** Calendar, calls, messages and
+contacts are joined on and filtered by time, so each gets a real table with
+indexes and a unique `(device_id, external_id)` constraint. Notifications,
+location fixes and installed apps are read as "what happened recently" rather
+than joined, so they share `phone_signals` with `kind`, `label`, `body` and a
+JSON payload. That keeps a new ambient kind a client change instead of a
+migration. A single generic table for all seven kinds was rejected because the
+assistant's structured filters (direction, call duration, event window) would
+become JSON predicates that SQLite cannot index.
+
+**One kind per request, upsert, soft delete.** A batch covers one kind and at
+most 200 items, so a large history is paged and a malformed item fails with a
+kind-specific error. The key is `(device, external_id)`, which makes a retried
+batch idempotent. Deletes are soft because a later full snapshot would
+otherwise resurrect a record the phone removed. This is the same reasoning that
+makes the assistant's conversations append-only: the server should converge on
+what the phone says, not race it.
+
+**Full snapshots with an optional window.** Calendar, contacts, apps and device
+info can arrive as `mode=full`, meaning "this is everything" and anything
+missing is deleted. A 12-month calendar sync must not delete older history, so
+the request may carry `since`/`until`; the deletion diff is then limited to rows
+whose start falls inside the window. Contacts and apps have no natural time, so
+their full snapshots cover the whole kind. Messages and calls reject `full`
+mode: a complete SMS history would not fit one request, and a paged "full"
+snapshot would delete the pages it has not sent yet. Their deletions must be
+reported explicitly, which is why the client currently leaves SMS deletions
+unpropagated rather than guessing.
+
+**Writes are deferred commands, not server-side writes.** The server cannot
+reach the phone, and inventing a push channel (FCM, a persistent WebSocket)
+would add a Google dependency and a service that must be reachable for a
+personal assistant to change a calendar. Instead a write is a row the phone
+claims on its next sync. The chat-level confirmation is the safety property:
+a proposal is inert until the owner says yes, expires unconfirmed, and the
+assistant is instructed never to claim it ran. The cost is latency — a write
+waits for the next sync, up to the 30-minute interval. A lightweight command
+poll is the recorded follow-up.
+
+**The owner is resolved once, explicitly.** A device belongs to the account
+that registered it, while the assistant is a single-owner service. With
+accounts enabled, the adapter uses `phone.owner_user`, or the only active
+account; with more than one account and no explicit owner it refuses and says
+so. Silently picking one account's phone for every conversation would be the
+wrong failure mode for SMS.
+
+**Android: WorkManager 2.12.0, one periodic worker plus debounced one-shots.**
+WorkManager 2.12.0 is the current stable release (2026-09-23). The separate
+`work-runtime-ktx` artifact was merged into `work-runtime` in 2.10, so the
+build depends on `androidx.work:work-runtime` and `CoroutineWorker` comes from
+it; using the old KTX artifact would add a compatibility shim for no benefit.
+Content observers on the SMS, call-log, calendar and contacts providers request
+a one-shot sync with a three-second debounce, which makes new data visible
+almost immediately while the app process is alive. They are not the safety net:
+a process that Android kills stops observing, so the periodic worker is what
+guarantees eventual upload. A foreground service was rejected because syncing
+is not user-visible work and would need a persistent notification.
+
+**Notifications go through a bounded file queue.** The listener callback must
+not block on the network, and the service can be killed at any time, so
+captured notifications are appended to a JSON-lines file in private storage and
+uploaded later. The file keeps at most 2,000 entries. A crash between upload
+and ack re-sends a few records; the server deduplicates by external id, which is
+cheaper than an ack protocol with a second file.
+
+**SMS and call-log permissions mean sideloading.** `READ_SMS`, `SEND_SMS` and
+`READ_CALL_LOG` are grantable by the OS but restricted by Google Play for apps
+that are not the default SMS handler or a declared core-function exception.
+This is a personal, self-hosted client, so the build targets sideloading and the
+consent screen says so. Becoming the default SMS app to satisfy Play would take
+over the owner's messaging UI — an unacceptable trade for a feature that reads
+their messages for an assistant.
+
+**Excluded data is a decision, not an oversight.** MMS parts and media, call
+recordings, clipboard, health data and per-app usage statistics are not
+collected. Each is either a much larger privacy surface with little assistant
+value or requires an access mode that is disproportionate here. Notifications
+do contain one-time codes; that is why their default retention is 14 days while
+SMS is kept for a year.
+
+**Retention is per kind and enforced on sync.** There is no separate retention
+job for a single-owner instance: every sync purges rows older than their
+window. Ambient kinds age out quickly (notifications 14 days, location 30),
+structured history is kept long (calendar and calls 730 days, SMS 365), and
+contacts/apps are snapshots whose windows only prune tombstones. `0` disables
+expiry for a kind. Wiping a device hard-deletes its records and sync states and
+the client resets its cursors; revocation is sticky until an explicit restore,
+so a phone cannot undo an administrative stop by re-registering.
+
+**The data is stored in clear text.** The database has the same protection as
+meeting transcripts: filesystem permissions. Encrypting only the phone tables
+would suggest a security property the rest of the store does not have, and
+field encryption would break the `LIKE` search the assistant depends on. The
+honest position is documented in `docs/phone.md`: encrypt the volume, use TLS,
+and choose a retention window you can live with. Device-level encryption or
+SQLCipher is a recorded follow-up, not a claim.

@@ -293,6 +293,8 @@ Skills are named bundles of tools, prompt instructions, permissions and policy.
 | `memory` | `remember` | `profile/*.md` |
 | `tasks` | `schedule_task`, `list_tasks`, `cancel_task` | `tasks/tasks.json`; chat only |
 | `local` | `list_files`, `read_file`, `write_file`, `run_command`, `confirm_action` | `winnie-local`, with review, whitelist, confirmation and audit; chat only |
+| `phone` | `phone_status`, `phone_search`, `phone_calendar`, `phone_calls`, `phone_messages`, `phone_notifications`, `phone_location`, `phone_apps` | `winnie-phone` queries over the copy the owner's phone uploaded |
+| `phone_write` | `phone_calendar_create`, `phone_calendar_update`, `phone_calendar_delete`, `phone_sms_send`, `phone_confirm`, `phone_cancel` | a `winnie-phone` command queue; the phone executes after a confirmation; chat only |
 
 Tools and their inputs:
 
@@ -312,6 +314,25 @@ Tools and their inputs:
 | local | `write_file` | `path`, `content`, `mode?`, `expected_sha256?` | write summary, or a `PENDING` id |
 | local | `run_command` | `argv`, `cwd?` | command output, or a `PENDING` id |
 | local | `confirm_action` | `pending_id` | executes the pending write/command after a later confirmation |
+| phone | `phone_status` | — | device, last sync, scopes, record counts, pending writes |
+| phone | `phone_search` | `query`, `kinds?`, `days?`, `limit?` | cross-kind hits merged by time |
+| phone | `phone_calendar` | `days_back?`, `days_ahead?`, `query?`, `limit?` | events with their ids and local times |
+| phone | `phone_calls` | `days?`, `direction?`, `query?`, `limit?` | call-log lines |
+| phone | `phone_messages` | `days?`, `address?`, `query?`, `unread_only?`, `limit?` | SMS lines with unread markers |
+| phone | `phone_notifications` | `days?`, `app?`, `query?`, `limit?` | notification lines |
+| phone | `phone_location` | `days?`, `limit?` | recent location fixes |
+| phone | `phone_apps` | `query?`, `limit?` | installed apps with versions |
+| phone_write | `phone_calendar_create` / `update` / `delete`, `phone_sms_send` | the write's fields | a `PENDING <id>` proposal, never a completed action |
+| phone_write | `phone_confirm`, `phone_cancel` | `command_id` | `APPROVED` / `CANCELLED` and the next-sync caveat |
+
+Phone answers are snapshots. The prompt carries a compact digest of the last
+sync time, the next 24 hours, unread SMS and today's missed calls, and every
+phone tool result names the device and the times in the owner's zone. A write
+is always two steps: the assistant proposes, reads the exact action back, and
+approves only after an explicit yes in the next message. An approved write is
+still pending until the phone syncs; the instructions forbid saying an SMS was
+sent or an event created. Design and limits are in
+[phone.md](./phone.md).
 
 ### Skill registry and admin
 

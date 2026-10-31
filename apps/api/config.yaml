@@ -304,3 +304,37 @@ index:
   base_url: http://127.0.0.1:8790
   # A build on a large tree can take minutes; a search should not.
   timeout_seconds: 60
+
+# Phone data sync from the Winnie Android client. The phone is the only writer
+# of its own data: calendar, call log, SMS, contacts, notifications, location
+# fixes and installed apps are uploaded in batches and merged by device and
+# external id. The assistant reads them through the phone skills; writes are
+# proposed in chat, confirmed by the owner and executed by the phone on its
+# next sync. This is personal data: enable it only on a machine you control
+# and see docs/phone.md for retention and security notes.
+phone:
+  enabled: true
+  # The account whose phone the assistant reads. Empty means the only active
+  # account, or the local user when accounts are disabled. Set it explicitly
+  # when the instance has more than one account.
+  owner_user: ""
+  # Returned to the client as a hint; Android's own minimum is 15 minutes.
+  sync_interval_minutes: 30
+  # One request carries at most this many items of one kind; the client pages
+  # larger histories. A "full" calendar/contact/app snapshot must fit one page.
+  max_batch_items: 200
+  # Long text is truncated before it is stored.
+  max_text_chars: 8000
+  # A proposed write expires if the owner never confirms it.
+  command_ttl_seconds: 900
+  max_commands_per_poll: 10
+  # 0 keeps everything. Contacts and apps are snapshots rather than history,
+  # so their windows only prune tombstones.
+  retention:
+    calendar_days: 730
+    call_days: 730
+    message_days: 365
+    contact_days: 0
+    notification_days: 14
+    location_days: 30
+    app_days: 0

@@ -47,6 +47,7 @@ fun HomeScreen(
     user: User,
     onOpenMeeting: (String) -> Unit,
     onRecord: () -> Unit,
+    onOpenPhoneData: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val viewModel: HomeViewModel = viewModel(
@@ -74,6 +75,7 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = onOpenPhoneData) { Text("Phone data") }
                     TextButton(onClick = viewModel::refresh) { Text("Refresh") }
                     TextButton(onClick = onSignOut) { Text("Sign out") }
                 },

@@ -23,6 +23,7 @@ import dev.winnie.app.ui.home.HomeScreen
 import dev.winnie.app.ui.login.LoginScreen
 import dev.winnie.app.ui.login.SessionViewModel
 import dev.winnie.app.ui.meeting.MeetingScreen
+import dev.winnie.app.ui.phone.PhoneDataScreen
 import dev.winnie.app.ui.record.RecordScreen
 
 @Composable
@@ -69,9 +70,11 @@ private fun SignedInFlow(
 ) {
     var openMeetingId by rememberSaveable { mutableStateOf<String?>(null) }
     var showRecorder by rememberSaveable { mutableStateOf(false) }
+    var showPhoneData by rememberSaveable { mutableStateOf(false) }
 
-    BackHandler(enabled = showRecorder || openMeetingId != null) {
+    BackHandler(enabled = showPhoneData || showRecorder || openMeetingId != null) {
         when {
+            showPhoneData -> showPhoneData = false
             showRecorder -> showRecorder = false
             else -> openMeetingId = null
         }
@@ -79,6 +82,11 @@ private fun SignedInFlow(
 
     val meetingId = openMeetingId
     when {
+        showPhoneData -> PhoneDataScreen(
+            container = container,
+            onBack = { showPhoneData = false },
+        )
+
         showRecorder -> RecordScreen(
             container = container,
             onClose = { showRecorder = false },
@@ -99,6 +107,7 @@ private fun SignedInFlow(
             user = session.user,
             onOpenMeeting = { openMeetingId = it },
             onRecord = { showRecorder = true },
+            onOpenPhoneData = { showPhoneData = true },
             onSignOut = onSignOut,
         )
     }

@@ -16,8 +16,11 @@ import json
 import logging
 import re
 import socket
+from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urljoin, urlsplit
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -32,6 +35,13 @@ from winnie_local import (
 )
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.news import NewsGateway
+from winnie_assistant.phone import PhoneGateway
+from winnie_assistant.phone_tools import (
+    PHONE_TOOL_SCHEMAS,
+    PHONE_TOOLS,
+    PhoneToolError,
+    PhoneToolMixin,
+)
 from winnie_assistant.scheduler import AssistantScheduler, TaskDefinitionError
 from winnie_assistant.search import SearchProvider
 from winnie_assistant.weather import WeatherError, WeatherService
@@ -490,6 +500,11 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
 ]
 
+# Phone tools are defined next to their formatting in ``phone_tools``; the skill
+# registry decides whether they are offered at all, so the list stays complete
+# here and the filter lives in one place.
+TOOL_SCHEMAS.extend(PHONE_TOOL_SCHEMAS)
+
 
 def tool_schemas(
     *, task_management: bool = True, local_tools: bool = True
@@ -516,7 +531,7 @@ def tool_schemas(
     return selected
 
 
-class ToolBox:
+class ToolBox(PhoneToolMixin):
     def __init__(
         self,
         *,
@@ -531,6 +546,9 @@ class ToolBox:
         local: LocalExecutor | None = None,
         news: NewsGateway | None = None,
         weather: WeatherService | None = None,
+        phone: PhoneGateway | None = None,
+        timezone: ZoneInfo | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.search = search
         self.index = index
@@ -543,6 +561,9 @@ class ToolBox:
         self.local = local
         self.news = news
         self.weather = weather
+        self.phone = phone
+        self.timezone = timezone or ZoneInfo("UTC")
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     @property
     def has_news_tools(self) -> bool:
@@ -636,9 +657,11 @@ class ToolBox:
                 output = await self._run_command(arguments, conversation_id)
             elif name == "confirm_action":
                 output = await self._confirm_action(arguments, conversation_id)
+            elif name in PHONE_TOOLS:
+                output = await self._phone_tool(name, arguments)
             else:
                 raise ToolError(f"unknown tool: {name}")
-        except (ToolError, LocalToolError) as exc:
+        except (ToolError, LocalToolError, PhoneToolError) as exc:
             return f"ERROR: {exc}"
         except Exception as exc:  # noqa: BLE001 - a tool must not break the turn
             logger.exception("assistant tool %s failed", name)

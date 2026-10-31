@@ -16,6 +16,8 @@ incrementally.
 - Knowledge sink package: `packages/winnie-knowledge`
 - News pipeline package: `packages/winnie-news` (mounted as `/api/v1/news`;
   design and operations in [docs/news.md](../../docs/news.md))
+- Phone data package: `packages/winnie-phone` (mounted as `/api/v1/phone`;
+  design, contract and privacy notes in [docs/phone.md](../../docs/phone.md))
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Supplier registry: `data/ai.yaml` (gitignored), owned by
   `packages/winnie-llm` and exposed by `src/winnie_api/ai/` for the console
@@ -440,7 +442,7 @@ the same search for debugging.
 The chat loop and the skill registry live in `packages/winnie-chat`; the
 assistant composes them with its store, memory, scheduler and the local executor.
 Skills are registered by the assistant (core, web, weather, documents, memory,
-tasks and local). The
+tasks, local, phone and phone_write). The
 console `/skills` page and `GET /api/v1/assistant/skills` show them, and
 `PUT /api/v1/assistant/skills/{name}` toggles one; the state is persisted in
 `<root>/skills/skills.json`.
@@ -448,3 +450,32 @@ console `/skills` page and `GET /api/v1/assistant/skills` show them, and
 Scheduled tasks are created by asking the assistant; there is no file to edit.
 The JSON at `<root>/tasks/tasks.json`, the schedule forms and the memory
 pipeline are documented in [docs/assistant.md](../../docs/assistant.md).
+
+
+## Phone data
+
+`/api/v1/phone` receives the batches the Android client uploads and serves them
+to the assistant and to any authenticated client. The phone is the only writer
+of its own data; the server merges by `(device, external_id)`, soft-deletes what
+a full snapshot omits, and applies per-kind retention on every sync.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/devices` | Register a device; upsert by `device_key` |
+| `GET` | `/devices`, `/devices/{id}` | Devices and per-kind sync state |
+| `POST` | `/devices/{id}/sync` | One kind per request, at most `max_batch_items` items |
+| `GET` | `/devices/{id}/ids?kind=&since=&until=` | Ids for a client-side snapshot diff |
+| `GET` | `/devices/{id}/commands` | Claim approved writes |
+| `POST` | `/devices/{id}/commands/{cid}/result` | Report a write result |
+| `DELETE` | `/devices/{id}` | Revoke; `POST /restore` undoes it |
+| `DELETE` | `/devices/{id}/data` | Delete every synced record for the device |
+| `GET` | `/summary`, `/calendar`, `/calls`, `/messages`, `/contacts`, `/notifications`, `/locations`, `/apps`, `/search` | Queries |
+| `POST` | `/commands`, `/commands/{id}/approve`, `/commands/{id}/cancel` | Propose and confirm a write |
+
+Everything requires the bearer session, and every device id is checked against
+the authenticated account. Writes are queued, not applied by the API: a
+proposed command becomes eligible for the phone only after
+`/commands/{id}/approve`, and `phone.command_ttl_seconds` expires it otherwise.
+See [docs/phone.md](../../docs/phone.md) for the batch contract, the write
+path, retention and the security limits (the database is not encrypted at
+rest).

@@ -21,6 +21,7 @@ from winnie_assistant.config import (
 from winnie_core.config import AuthConfig, JobsConfig
 from winnie_gateway.config import RouteConfig
 from winnie_meetings.config import MeetingsConfig
+from winnie_phone.config import PhoneConfig, PhoneRetentionConfig
 
 
 @pytest.fixture(autouse=True)
@@ -284,6 +285,42 @@ async def assistant_client(
         timeout=httpx.Timeout(5.0),
     )
     app = create_app(settings=assistant_settings, http=http)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as test_client:
+            yield test_client
+    await http.aclose()
+
+
+@pytest.fixture
+def phone_settings(tmp_path: Path) -> Settings:
+    """Phone sync with accounts off, so every request is the local user."""
+    return Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={},
+        phone=PhoneConfig(
+            enabled=True,
+            sync_interval_minutes=30,
+            max_batch_items=5,
+            max_text_chars=200,
+            retention=PhoneRetentionConfig(message_days=365),
+        ),
+        database=DatabaseConfig(
+            url=f"sqlite+aiosqlite:///{tmp_path / 'phone.db'}",
+            auto_create_tables=True,
+        ),
+        jobs=JobsConfig(backend="inline"),
+    )
+
+
+@pytest_asyncio.fixture
+async def phone_client(phone_settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500)),
+        timeout=httpx.Timeout(5.0),
+    )
+    app = create_app(settings=phone_settings, http=http)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"

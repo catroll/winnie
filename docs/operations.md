@@ -23,6 +23,13 @@ Notes:
   and the Winnie routes.
 - The **Android app is a client**, not a service. It connects to the API at
   build-time `WINNIE_PUBLIC_URL` or the address entered on the login screen.
+- **Phone data has no process of its own.** The Android client uploads batches,
+  the API stores them in the application database, and per-kind retention runs
+  during each sync; there is no phone worker to supervise. Deleting a device's
+  copies is an action on the phone screen or
+  `DELETE /api/v1/phone/devices/{id}/data`; revoking the device needs
+  `DELETE /api/v1/phone/devices/{id}` (see
+  [phone.md](./phone.md#8-privacy-and-security)).
 - The index daemon is loopback-only by design; the browser reaches it through
   the API, and `/admin/*` is not exposed to remote clients.
 - In production the admin console is built once (`make admin-build`) and served

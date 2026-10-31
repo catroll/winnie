@@ -9,11 +9,12 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from winnie_assistant.capability import capability as assistant_capability
 from winnie_assistant.factory import build_assistant_service
 from winnie_core.auth.capability import capability as auth_capability
+from winnie_core.auth.models import User
 from winnie_core.capability import Capability, WinnieFramework
 from winnie_core.jobs.queue import ArqJobQueue
 from winnie_core.usage.ledger import UsageLedger
@@ -21,6 +22,7 @@ from winnie_gateway.capability import capability as gateway_capability
 from winnie_meetings.capability import capability as meetings_capability
 from winnie_news.capability import capability as news_capability
 from winnie_news.service import NewsService
+from winnie_phone.capability import capability as phone_capability
 from winnie_llm import ApiKeys, ProviderRegistry
 
 from winnie_api import __version__
@@ -30,6 +32,7 @@ from winnie_api.ai.seed import seed_input
 from winnie_api.news.gateway import NewsGatewayAdapter
 from winnie_api.news.llm import DynamicNewsLLM
 from winnie_api.news.search import build_news_search
+from winnie_api.phone.gateway import PhoneGatewayAdapter
 from winnie_api.ai.router import router as ai_router
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
@@ -75,6 +78,28 @@ def create_app(
         http=http_client,
         usage=usage_ledger,
     )
+    async def resolve_phone_owner() -> str:
+        """Whose phone the assistant may read.
+
+        A device belongs to the account that registered it. The assistant is a
+        single-owner service, so it reads the configured owner, or the only
+        active account. A multi-account instance must name the owner.
+        """
+        configured = resolved.phone.owner_user.strip()
+        if configured:
+            return configured
+        if runtime is None or runtime.auth_service is None:
+            return resolved.meetings.default_user_id or "local"
+        async with runtime.session_factory() as session:
+            user_ids = list(
+                await session.scalars(
+                    select(User.id)
+                    .where(User.is_active.is_(True))
+                    .limit(2)
+                )
+            )
+        return str(user_ids[0]) if len(user_ids) == 1 else ""
+
     balance_service = (
         BalanceService(
             ai=ai_settings,
@@ -113,6 +138,9 @@ def create_app(
             await runtime.startup()
             app.state.auth_service = runtime.auth_service
             app.state.meeting_service = runtime.meeting_service
+            app.state.phone_service = runtime.phone_service
+        else:
+            app.state.phone_service = None
         news = None
         if resolved.news.enabled:
             try:
@@ -149,6 +177,14 @@ def create_app(
                     model=model,
                     model_name=getattr(model, "name", "") if model is not None else "",
                     news=NewsGatewayAdapter(news) if news is not None else None,
+                    phone=(
+                        PhoneGatewayAdapter(
+                            runtime.phone_service,
+                            resolve_owner=resolve_phone_owner,
+                        )
+                        if runtime is not None and runtime.phone_service is not None
+                        else None
+                    ),
                 )
                 await assistant.startup()
                 app.state.assistant_service = assistant
@@ -181,6 +217,8 @@ def create_app(
         framework.register(assistant_capability())
     if resolved.news.enabled:
         framework.register(news_capability())
+    if resolved.phone.enabled:
+        framework.register(phone_capability())
     # The document index is not a capability: it is a separate daemon, and this
     # router only proxies to it, so the host owns the mount.
     if resolved.index.enabled:

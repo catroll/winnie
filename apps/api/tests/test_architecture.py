@@ -33,6 +33,7 @@ ALLOWED = {
         "winnie_local",
     },
     "winnie-news": {"winnie_core", "winnie_llm", "winnie_news"},
+    "winnie-phone": {"winnie_core", "winnie_phone"},
 }
 
 

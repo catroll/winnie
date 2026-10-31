@@ -33,6 +33,15 @@ def build_system_prompt(turn: ChatTurn, skills: list[Skill]) -> str:
             turn.memory_digest or "(empty)",
         ]
     )
+    if turn.phone_digest:
+        lines.extend(
+            [
+                "",
+                "Phone data synced from the owner's phone (a snapshot; the sync",
+                "time is part of it):",
+                turn.phone_digest,
+            ]
+        )
     if turn.pending:
         lines.extend(
             [

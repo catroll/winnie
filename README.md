@@ -12,6 +12,7 @@ infrastructure below it exists to serve the assistant.
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **News production** | Six-stage pipeline from public sources to a sourced, reviewed draft, with console and assistant access | **Core implemented** |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
+| **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, news runs and drafts, AI providers, LLM usage and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
@@ -89,6 +90,18 @@ supplier API and bind the assistant to one of its models on the AI suppliers
 page. Design, decisions and operating notes are in
 [docs/assistant.md](./docs/assistant.md); the index is in
 [docs/knowledge-index.md](./docs/knowledge-index.md).
+
+The phone-data capability in `packages/winnie-phone` turns the phone into the
+assistant's sensor: the Android client uploads the scopes its owner enabled
+(calendar, call log, SMS, contacts, notifications, one location fix per sync,
+installed apps and device info), the server merges by device and record id, and
+the assistant reads it through the `phone` skill. Writes go the other way: the
+assistant proposes a calendar change or a text, the owner confirms it in chat,
+and the phone executes the queued command on its next sync and reports the
+result. Nothing is enabled by default, every scope has its own permission, and
+the server stores the data in clear text with per-kind retention. The client
+builds and its unit tests pass; a run on a physical phone is still pending.
+Design, contract, retention and limits are in [docs/phone.md](./docs/phone.md).
 
 The news pipeline in `packages/winnie-news` collects RSS, Tencent and tophub
 material, cleans and extracts it, groups reports of one event, searches for
@@ -180,7 +193,10 @@ and endpoint list are in [docs/meetings.md](./docs/meetings.md).
 4. **News production** — first slice done: material to reviewed draft, console
    page and assistant skill. A worker-backed run, per-draft regeneration,
    sanitised Markdown rendering and a real-model quality comparison remain.
-5. **Production readiness** — migrations, queue-backed background work,
+5. **Phone data** — first slice done: sync, query, assistant tools and the
+   confirmed write path. A device run, a console page, a command poll separate
+   from the data sync and SMS delivery receipts remain.
+6. **Production readiness** — migrations, queue-backed background work,
    retention and backups, deployment hardening.
 
 Details and design rationale are in [DESIGN.md](./DESIGN.md). Concrete follow-ups,
@@ -198,7 +214,8 @@ including the ASR evaluation and provider verification, are in
 | ASR | Volcengine Doubao (big-model recording file) |
 | Translation and minutes | OpenAI-compatible chat model via an internal LLM client |
 | Management UI | Vite + React + AdminLTE 4 |
-| Android client | Kotlin, Jetpack Compose, OkHttp, kotlinx.serialization |
+| Android client | Kotlin, Jetpack Compose, OkHttp, kotlinx.serialization, WorkManager |
+| Phone data | SQLAlchemy tables in `winnie-phone`, WorkManager sync, notification listener |
 | Knowledge source | Git-managed Markdown |
 | Vector index | Qdrant |
 | Async jobs | Redis + arq (inline queue for local development) |
@@ -215,6 +232,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/usage.md](./docs/usage.md) — what the usage ledger records, pricing, provider balances and limits
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
 - [docs/news.md](./docs/news.md) — news pipeline: stages, contracts, configuration and limits
+- [docs/phone.md](./docs/phone.md) — phone data: sync contract, write path, privacy and limits
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan
 - [docs/brand.md](./docs/brand.md) — the woodpecker mark: app icon and console icon geometry, palette and regeneration

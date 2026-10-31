@@ -15,12 +15,68 @@ minutes. It contains no AI logic: the FastAPI
   comes from the uploaded file
 - Meeting list with status, transcript with original + translation, minutes
 - Server address editable on the login screen and persisted
+- Phone data sync: calendar, call log, SMS, contacts, notifications, one
+  location fix per sync, installed apps and a device profile, each an explicit
+  opt-in; confirmed calendar and SMS writes from the assistant
 
 Not implemented yet: foreground-service recording (a backgrounded app can be
-killed, and that also stops the live-caption stream), offline cache,
+killed, and that also stops the live-caption stream), MMS and attachments,
+SMS delivery receipts, a command poll separate from the data sync, offline cache,
 export/share, speaker labels, certificate pinning, and automatic recovery from
 an expired session. The
 meeting language is fixed to `zh` (the server's local language) in this MVP.
+
+## Phone data
+
+Open **Phone data** from the home screen. Nothing is shared until the owner
+turns on a scope; each switch requests that scope's permission first.
+
+| Scope | Android permissions | Special access |
+|---|---|---|
+| Calendar | `READ_CALENDAR`, `WRITE_CALENDAR` | — |
+| Call log | `READ_CALL_LOG` | — |
+| SMS | `READ_SMS`, `SEND_SMS` | — |
+| Contacts | `READ_CONTACTS` | — |
+| Notifications | — | Notification access (system settings) |
+| Location | fine/coarse location | "Allow all the time" for background fixes |
+| Installed apps | `QUERY_ALL_PACKAGES` | — |
+| Device info | `GET_ACCOUNTS` for the account list | — |
+
+`READ_SMS`, `SEND_SMS` and `READ_CALL_LOG` are allowed by Android once granted,
+but **Google Play restricts them** for apps that are not the default SMS
+handler or a declared core-function exception. This client is for personal
+sideloading; that is a distribution decision, not a defect.
+
+How syncing behaves:
+
+- WorkManager runs a periodic sync every 30 minutes by default (Android's floor
+  is 15). The server's `interval_minutes` hint updates it after each sync.
+- Content observers on SMS, call log, calendar and contacts request a debounced
+  one-shot sync while the app process is alive; new notifications do the same.
+- A sync uploads the enabled scopes one kind at a time, in pages of 200. A
+  provider that fails (a revoked permission, a vendor calendar that rejects a
+  column) records an error and the other scopes still upload.
+- Notifications are captured by a `NotificationListenerService` into a bounded
+  private file (2,000 entries) and uploaded on the next sync. Ongoing
+  notifications and the app's own notifications are skipped.
+- Location records one fix per sync, reusing a last-known fix younger than five
+  minutes. Background fixes need "allow all the time"; without it the fix is
+  skipped and the rest of the sync continues.
+- The assistant's confirmed writes arrive as commands on the same sync:
+  calendar create/update/delete and SMS send. A calendar write needs a writable
+  calendar; an SMS send is submitted to the carrier (delivery is not
+  confirmed).
+- **Delete data on server** removes every synced record and resets the local
+  cursors, so a later sync uploads the selected scopes again. Turning a scope
+  off only stops future uploads.
+
+Known limits: SMS/MMS attachments are not read; SMS edits and deletions made in
+another app are not propagated; recurring calendar events sync as one event with
+its recurrence rule, not one row per occurrence; a sync interrupted by process
+death resumes from the last stored cursor.
+
+The server-side contract, retention windows and privacy position are in
+[docs/phone.md](../../docs/phone.md).
 
 ## Requirements
 
@@ -104,6 +160,12 @@ keeping one canonical pipeline.
 - `WinnieApiTest` — request/response handling against an in-process HTTP server
 - `WavFileWriterTest` — WAV header sizes and patching
 - `LoginScreenTest` — Compose UI smoke test under Robolectric, no emulator needed
+- `PhoneApiTest` — phone endpoint paths, bodies and responses against an
+  in-process HTTP server
+- `PhoneSourceMappingTest` — SMS, call-log and calendar cursor mapping
+- `PhonePrefsTest` — scope opt-in, cursors and the interval floor
+- `NotificationBufferTest` — the bounded notification queue's append/ack/trim
+- `PhoneDataScreenTest` — Robolectric render of the consent screen
 - `BackendFlowIntegrationTest` — skipped unless `WINNIE_ANDROID_BASE_URL` is set;
   runs register → create → upload → transcribe → transcript → minutes → delete
   against a real backend using the app's own HTTP client

@@ -69,6 +69,12 @@ class AssistantAgent:
         # One turn counter per user message. A pending local action can only
         # execute in a later turn, after an explicit confirmation.
         self.toolbox.begin_turn(conversation.id, text)
+        phone_digest = ""
+        if self.toolbox.phone is not None:
+            try:
+                phone_digest = await self.toolbox.phone_digest(self.clock())
+            except Exception:  # noqa: BLE001 - a digest must not fail a turn
+                logger.warning("phone digest failed", exc_info=True)
         history = [
             {"role": message.role, "content": message.text}
             for message in conversation.messages
@@ -81,6 +87,7 @@ class AssistantAgent:
             now=self.clock(),
             timezone=self.timezone.key,
             memory_digest=self.memory.digest() if self.memory is not None else "",
+            phone_digest=phone_digest,
             pending=self.toolbox.pending_summary(conversation.id),
             scheduled=source == "task",
             channel=channel,

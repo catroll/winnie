@@ -15,6 +15,17 @@ from winnie_core.usage.ledger import UsageSink
 from winnie_meetings.factory import build_meeting_service
 from winnie_meetings.models import Meeting  # noqa: F401  (metadata)
 from winnie_meetings.service import MeetingService
+from winnie_phone.models import (  # noqa: F401  (metadata)
+    PhoneCalendarEvent,
+    PhoneCall,
+    PhoneCommand,
+    PhoneContact,
+    PhoneDevice,
+    PhoneMessage,
+    PhoneSignal,
+    PhoneSyncState,
+)
+from winnie_phone.service import PhoneService
 
 from winnie_api.ai.providers import (
     DynamicASRProvider,
@@ -33,6 +44,7 @@ class AppRuntime:
     settings: Settings
     auth_service: AuthService | None
     meeting_service: MeetingService | None
+    phone_service: PhoneService | None
 
     async def startup(self) -> None:
         if self.settings.database.auto_create_tables:
@@ -60,7 +72,7 @@ def build_runtime(
     http: httpx.AsyncClient | None = None,
     usage: UsageSink | None = None,
 ) -> AppRuntime | None:
-    if not (settings.auth.enabled or settings.meetings.enabled):
+    if not (settings.auth.enabled or settings.meetings.enabled or settings.phone.enabled):
         return None
 
     engine = create_engine(
@@ -95,10 +107,16 @@ def build_runtime(
         if settings.meetings.enabled
         else None
     )
+    phone_service = (
+        PhoneService(settings.phone, session_factory=session_factory)
+        if settings.phone.enabled
+        else None
+    )
     return AppRuntime(
         engine=engine,
         session_factory=session_factory,
         settings=settings,
         auth_service=auth_service,
         meeting_service=meeting_service,
+        phone_service=phone_service,
     )

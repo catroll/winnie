@@ -16,6 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.io.File
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -148,6 +149,60 @@ class WinnieApi(
 
     suspend fun logout() {
         execute(request("/api/v1/auth/logout").post(EMPTY_BODY).build())
+    }
+
+    // -- phone data ------------------------------------------------------
+
+    suspend fun registerPhoneDevice(payload: PhoneDevicePayload): PhoneDevice =
+        postJson("/api/v1/phone/devices", json.encodeToString(payload))
+
+    suspend fun listPhoneDevices(): List<PhoneDevice> =
+        getJson("/api/v1/phone/devices")
+
+    suspend fun phoneDevice(deviceId: String): PhoneDevice =
+        getJson("/api/v1/phone/devices/$deviceId")
+
+    suspend fun syncPhone(deviceId: String, request: PhoneSyncRequest): PhoneSyncResult =
+        decode(
+            execute(
+                request("/api/v1/phone/devices/$deviceId/sync")
+                    .post(json.encodeToString(request).toRequestBody(JSON_MEDIA_TYPE))
+                    .build(),
+            ),
+        )
+
+    suspend fun phoneDeviceIds(
+        deviceId: String,
+        kind: String,
+        since: String? = null,
+        until: String? = null,
+    ): List<String> {
+        val query = buildString {
+            append("?kind=").append(URLEncoder.encode(kind, "UTF-8"))
+            if (since != null) append("&since=").append(URLEncoder.encode(since, "UTF-8"))
+            if (until != null) append("&until=").append(URLEncoder.encode(until, "UTF-8"))
+        }
+        return getJson<PhoneDeviceIds>(
+            "/api/v1/phone/devices/$deviceId/ids$query"
+        ).externalIds
+    }
+
+    suspend fun pendingPhoneCommands(deviceId: String): List<PhoneCommand> =
+        getJson("/api/v1/phone/devices/$deviceId/commands")
+
+    suspend fun reportPhoneCommand(
+        deviceId: String,
+        commandId: String,
+        result: PhoneCommandResult,
+    ): PhoneCommand = postJson(
+        "/api/v1/phone/devices/$deviceId/commands/$commandId/result",
+        json.encodeToString(result),
+    )
+
+    suspend fun phoneSummary(): PhoneSummary = getJson("/api/v1/phone/summary")
+
+    suspend fun wipePhoneDevice(deviceId: String) {
+        execute(request("/api/v1/phone/devices/$deviceId/data").delete().build())
     }
 
     private suspend inline fun <reified T> getJson(path: String): T =

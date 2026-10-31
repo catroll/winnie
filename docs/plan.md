@@ -79,6 +79,7 @@ Success for the current phase:
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | News | Six-stage pipeline from public sources to a sourced, reviewed draft | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
+| Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
 | Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
@@ -98,7 +99,13 @@ Success for the current phase:
 | M5 | Knowledge base | Markdown in Git is the source of truth; browse/edit/classify/version/search; notes are indexed and retrievable | Planned |
 | M6 | Assistant | A reachable assistant that chats, searches, runs conversation-managed tasks and remembers from local files through the index | **Core done** — chat, search, index-backed recall and chat-managed tasks work; streaming, vector retrieval and an out-of-process worker are open |
 | M8 | News production | A run over real sources groups reports into events, writes one sourced draft per event, reviews it and stops at a reviewed Markdown file; console and assistant operate it | **Core done** — end-to-end verified with the fake model; real-model quality, a worker-backed run and Markdown rendering are open |
+| M9 | Phone data | The phone syncs every enabled scope on a schedule; the assistant answers questions from it and a confirmed calendar/SMS write is executed by the phone | **Core done** — sync, query, tools and the command queue are implemented and tested; a physical-device run, a console page and SMS delivery receipts are open |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
+
+**M9** adds the phone as a data source: the Android client uploads the scopes
+its owner enables, `winnie-phone` merges them by device and record id, and the
+assistant reads them through two skills. Writes are commands the phone claims
+after the owner confirms them in chat.
 
 The current work is **M3/M4 hardening** plus the first slice of **M6**: the
 meeting capability is usable on the happy path, and the assistant now has a
@@ -473,6 +480,51 @@ Open:
 - Markdown is shown as source, not rendered; a sanitised renderer is a
   follow-up.
 - Publication is out of scope: the pipeline ends at a reviewed file.
+
+### 5.11 Phone data — Core done
+
+Working:
+
+- `winnie-phone` stores devices, per-kind sync state, calendar events, calls,
+  messages, contacts, ambient signals (notifications, location, apps) and
+  deferred commands in the application database.
+- A device registers once with a stable client key; batches are upserted by
+  `(device, external_id)` and deletions are soft. Full snapshots are supported
+  for calendar, contacts, apps and device info, with an optional time window
+  for calendar so a 12-month sync never deletes older history.
+- The Android client reads calendar, call log, SMS, contacts, notifications,
+  one location fix per sync, installed apps and a device profile. Each scope is
+  an explicit opt-in with its own permission; nothing syncs by default.
+- WorkManager runs the periodic sync (30 minutes by default, 15 minimum) and
+  debounced one-shot syncs follow content changes and new notifications.
+- The assistant has a read skill (`phone`) and a write skill (`phone_write`).
+  Writes are proposed, expire unconfirmed, and are executed by the phone on its
+  next sync with the result reported back. The prompt also carries a small
+  digest: last sync, next 24 hours, unread SMS, missed calls today.
+- A phone screen in the app shows consent, per-scope permission state, sync
+  status, server counts and a confirmed delete-on-server action.
+- Server-side retention is per kind and runs on every sync.
+
+Verified:
+
+- `apps/api/tests/test_phone.py` covers registration, every upload kind,
+  incremental and full sync semantics, the calendar window, text truncation,
+  search, retention, wipe, cross-account isolation, revocation, the command
+  lifecycle and expiry.
+- `apps/api/tests/test_phone_tools.py` covers tool formatting, proposals,
+  confirmation, the prompt digest and the scheduled-turn exclusion.
+- Android unit tests cover the wire contract, cursor mapping for SMS/calls/
+  calendar, preferences, the notification buffer and a Robolectric render of
+  the consent screen. The debug APK builds.
+
+Open:
+
+- No run on a physical phone: permission flows, vendor calendar providers,
+  notification access and background location are unverified on a handset.
+- No admin-console page for the synced data.
+- SMS edits/deletions on the phone are not propagated; recurring events sync as
+  one row with an RRULE rather than expanded instances.
+- MMS, attachments and delivery receipts are out of scope.
 
 ## 6. Verification snapshot
 

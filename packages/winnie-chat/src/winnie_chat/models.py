@@ -61,6 +61,7 @@ class ChatTurn:
     now: datetime
     timezone: str
     memory_digest: str = ""
+    phone_digest: str = ""
     pending: str = ""
     scheduled: bool = False
     channel: str = "api"

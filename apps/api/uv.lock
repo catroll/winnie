@@ -1523,6 +1523,7 @@ dependencies = [
     { name = "winnie-local" },
     { name = "winnie-meetings" },
     { name = "winnie-news" },
+    { name = "winnie-phone" },
 ]
 
 [package.dev-dependencies]
@@ -1554,6 +1555,7 @@ requires-dist = [
     { name = "winnie-local", editable = "../../packages/winnie-local" },
     { name = "winnie-meetings", editable = "../../packages/winnie-meetings" },
     { name = "winnie-news", editable = "../../packages/winnie-news" },
+    { name = "winnie-phone", editable = "../../packages/winnie-phone" },
 ]
 
 [package.metadata.requires-dev]
@@ -1735,6 +1737,29 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.13.0" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
     { name = "winnie-llm", editable = "../../packages/winnie-llm" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.1" },
+]
+
+[[package]]
+name = "winnie-phone"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-phone" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "winnie-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
 ]
 
 [package.metadata.requires-dev]
