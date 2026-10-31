@@ -168,6 +168,9 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+    # Push each scheduled task's result to the owner's phone when push is
+    # enabled. Turn this off for tasks that are only bookkeeping.
+    notify_results: true
   # Default weather feature: a daily forecast check that records an umbrella,
   # clothing or severe-weather notice only when the advice changed. The weather
   # skill in the admin console turns both the chat tool and this watcher off.
@@ -338,3 +341,21 @@ phone:
     notification_days: 14
     location_days: 30
     app_days: 0
+
+# Push notifications to the Android client. The server writes each event to the
+# database first and then hands it to the open WebSocket, so a phone that was
+# offline still receives the reminder when it reconnects. There is no vendor
+# push service: the app holds the socket open from a foreground service, and a
+# WorkManager pull is the fallback when the service is not running.
+push:
+  enabled: true
+  # Notifications older than this are deleted even if never delivered.
+  retention_days: 30
+  # A reconnecting client receives at most this many backlog events.
+  max_backlog: 200
+  # Server heartbeat on the WebSocket, so a dead NAT mapping is noticed.
+  heartbeat_seconds: 25
+  # One slow client must not grow an unbounded in-memory queue.
+  max_queue: 100
+  # How often the retention pass runs while the API is up.
+  prune_interval_seconds: 3600

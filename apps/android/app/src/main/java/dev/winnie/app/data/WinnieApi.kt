@@ -205,6 +205,58 @@ class WinnieApi(
         execute(request("/api/v1/phone/devices/$deviceId/data").delete().build())
     }
 
+    // -- push ------------------------------------------------------------
+
+    /**
+     * Opens the background notification stream. The bearer header is set on the
+     * handshake; the server replays events after [afterSeq] and then streams
+     * live ones. The foreground service owns reconnects.
+     */
+    fun openPushStream(
+        deviceId: String?,
+        afterSeq: Long,
+        listener: WebSocketListener,
+    ): WebSocket {
+        val query = buildString {
+            append("?after=").append(afterSeq.coerceAtLeast(0))
+            if (!deviceId.isNullOrBlank()) {
+                append("&device_id=").append(URLEncoder.encode(deviceId, "UTF-8"))
+            }
+        }
+        return streamingClient.newWebSocket(
+            Request.Builder()
+                .url(webSocketUrl("/api/v1/push/ws$query"))
+                .apply { if (token != null) header("Authorization", "Bearer $token") }
+                .build(),
+            listener,
+        )
+    }
+
+    suspend fun pushBacklog(
+        afterSeq: Long,
+        deviceId: String? = null,
+        limit: Int = 100,
+    ): PushList {
+        val query = buildString {
+            append("?after_seq=").append(afterSeq.coerceAtLeast(0))
+            append("&limit=").append(limit.coerceIn(1, 500))
+            if (!deviceId.isNullOrBlank()) {
+                append("&device_id=").append(URLEncoder.encode(deviceId, "UTF-8"))
+            }
+        }
+        return getJson("/api/v1/push/notifications$query")
+    }
+
+    suspend fun pushStatus(): PushStatus = getJson("/api/v1/push/status")
+
+    suspend fun sendTestPush(
+        title: String = "Test notification",
+        body: String = "If you can see this, the background connection works.",
+    ): PushEvent = postJson(
+        "/api/v1/push/test",
+        json.encodeToString(PushTestRequest(title, body)),
+    )
+
     private suspend inline fun <reified T> getJson(path: String): T =
         decode(execute(request(path).get().build()))
 

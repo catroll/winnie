@@ -17,7 +17,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -104,6 +104,23 @@ SEARCH_KINDS = (
 )
 
 
+class PhoneEvents(Protocol):
+    """What the host is told when a command changes state.
+
+    The phone package does not know about push or notifications; the host
+    implements this to wake the device and to tell the owner the outcome.
+    Implementations must not raise: a delivery failure is not an API failure.
+    """
+
+    async def command_approved(
+        self, user_id: str, device_id: uuid.UUID, command: dict
+    ) -> None: ...
+
+    async def command_completed(
+        self, user_id: str, device_id: uuid.UUID, command: dict
+    ) -> None: ...
+
+
 class PhoneError(RuntimeError):
     """A phone-data operation that cannot be completed for a reportable reason."""
 
@@ -151,11 +168,13 @@ class PhoneService:
         *,
         session_factory: async_sessionmaker[AsyncSession],
         clock: Callable[[], datetime] | None = None,
+        events: PhoneEvents | None = None,
     ) -> None:
         self.config = config
         self.session_factory = session_factory
         # Naive UTC everywhere; see models.as_utc.
         self.clock = clock or utcnow
+        self.events = events
 
     # -- plumbing --------------------------------------------------------
 
@@ -1293,7 +1312,10 @@ class PhoneService:
                 pass
             elif command.status in {"succeeded", "failed", "cancelled", "expired"}:
                 raise InvalidCommand(f"command is already {command.status}")
-            return self._command_view(command)
+            view = self._command_view(command)
+            device_id = command.device_id
+        await self._emit("approved", user_id, device_id, view)
+        return view
 
     async def cancel_command(self, user_id: str, command_id: uuid.UUID) -> dict:
         async with self._session() as session:
@@ -1381,7 +1403,23 @@ class PhoneService:
             logger.info(
                 "phone command %s %s", command.kind, status
             )
-            return self._command_view(command)
+            view = self._command_view(command)
+            device_id = command.device_id
+        await self._emit("completed", user_id, device_id, view)
+        return view
+
+    async def _emit(
+        self, event: str, user_id: str, device_id: uuid.UUID, command: dict
+    ) -> None:
+        if self.events is None:
+            return
+        try:
+            if event == "approved":
+                await self.events.command_approved(user_id, device_id, command)
+            else:
+                await self.events.command_completed(user_id, device_id, command)
+        except Exception:  # noqa: BLE001 - delivery must not fail the command
+            logger.warning("phone command event %s failed", event, exc_info=True)
 
     async def _require_command(
         self, session: AsyncSession, user_id: str, command_id: uuid.UUID

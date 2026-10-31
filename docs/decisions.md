@@ -1039,3 +1039,79 @@ path, a rename onto a tombstoned path, and a second sweep proving tombstones are
 not re-counted as deletions. The real catalog was repaired by the next sweep
 (row 2006 back to `indexed` with 2 chunks), and the sweep after that was a no-op:
 7423 unchanged, 0 added, 0 deleted.
+
+## Push: a self-hosted socket, not FCM (2026-11-01)
+
+**No vendor push service.** FCM would wake a sleeping phone with the least
+battery cost, but it needs Google Play Services on the device, a Firebase
+project and credentials on the server, and a copy of every notification inside
+Google's infrastructure. Many China-market ROMs ship without GMS or throttle it,
+and this client is sideloaded anyway. UnifiedPush/ntfy would avoid Google but
+adds a second app, account and trust boundary. A WebSocket from a foreground
+service keeps the channel between the owner's server and the owner's phone, and
+needs nothing installed beyond the app. The accepted costs are a persistent
+notification, some battery use, and no delivery while the process is
+force-stopped or the phone is in deep Doze.
+
+**The database row is the contract; the socket is an accelerator.** `publish`
+inserts and commits before it fans out, so a phone that was offline receives the
+reminder from the backlog on its next connect. The alternative — a fire-and-
+forget socket write — would lose notifications on every reconnect and would make
+"send" mean "sent if you were listening". The backlog is capped
+(`push.max_backlog`) and the client continues from the newest event when it is
+truncated.
+
+**The cursor is a monotonic integer, not a timestamp.** `seq` is an
+`INTEGER PRIMARY KEY AUTOINCREMENT`, the public id is a separate UUID, and a
+client reconnects with the last seq it displayed. Timestamps can collide and
+clock changes make ordering ambiguous; a sequence cannot. The client writes the
+cursor before showing the notification, so a crash either repeats nothing or
+repeats one event that the service ignores (`seq <= lastSeq`). Read state is not
+tracked on the server: delivery and "a person saw it" are different questions,
+and only the phone can answer the second.
+
+**`sync` is a control event, not a notification.** Approving a phone command
+publishes a device-targeted event that makes the phone run a data sync
+immediately. This removes the up-to-30-minute wait for a confirmed calendar
+change or SMS without a second command-polling endpoint. It carries no text, is
+never shown, and expires after five minutes; a stale wake-up is noise.
+
+**Foreground service type `specialUse`.** The standard types do not cover "a
+self-hosted notification socket". `dataSync` is capped at six hours a day on
+Android 15 and would silently stop delivering; `remoteMessaging` is for
+messaging continuity and does not describe an assistant's reminders. `specialUse`
+has no time cap, requires a manifest declaration and (for Play) a justification,
+and is honest about being an uncategorised case. This build is sideloaded, so
+the Play review question does not apply yet.
+
+**Two notification channels.** The service notification must be persistent, so
+it goes to a low-importance channel where it cannot make a sound. Reminders go to
+a separate high-importance channel. Merging them would either silence the
+reminders or let the service's own notification buzz. The user can tune or
+silence each independently, which is the Android-native way to express the
+choice.
+
+**The assistant can notify, but not on its own initiative.** `notify_user` is a
+tool with explicit instructions (notify for a requested reminder or a finished
+result, never for every reply) and scheduled task results push automatically.
+The alternative — silently pushing every tool or model output — would turn the
+phone into a log viewer. A scheduled task push is opt-out through
+`assistant.tasks.notify_results` because some tasks are bookkeeping.
+
+**One process, one hub.** The fan-out lives in process memory. A deployment with
+two uvicorn workers would deliver a publish only to the connections on the same
+worker. A Redis pub/sub layer is the recorded fix; it is deliberately not built
+yet, because the default deployment is a single process and adding Redis to the
+critical path for a personal reminder is a worse trade than documenting the
+constraint.
+
+**Notifications can leak on a lock screen.** The alert channel shows the title
+and body. The assistant instructions keep bodies short and free of credentials,
+the owner can set the channel to hide sensitive content, and the docs say not to
+ask for a notification containing a secret. A per-notification "include body"
+flag was rejected as a setting nobody will remember to use.
+
+**No delivery receipt.** The cursor proves the phone received an event, not that
+a person read it. Building a receipt would mean another round trip and a
+per-device read model for a single-user assistant; the value does not justify
+it. This is recorded as a limit rather than implied by the feature.

@@ -18,6 +18,8 @@ minutes. It contains no AI logic: the FastAPI
 - Phone data sync: calendar, call log, SMS, contacts, notifications, one
   location fix per sync, installed apps and a device profile, each an explicit
   opt-in; confirmed calendar and SMS writes from the assistant
+- Reminders from the server: a foreground service holds the push WebSocket,
+  posts alerts, and wakes the phone to run a confirmed command immediately
 
 Not implemented yet: foreground-service recording (a backgrounded app can be
 killed, and that also stops the live-caption stream), MMS and attachments,
@@ -77,6 +79,38 @@ death resumes from the last stored cursor.
 
 The server-side contract, retention windows and privacy position are in
 [docs/phone.md](../../docs/phone.md).
+
+## Push notifications
+
+Open **Alerts** from the home screen. The switch starts a foreground service
+that keeps one WebSocket to `/api/v1/push/ws` open, so an assistant reminder, a
+scheduled task's brief or a finished phone action arrives without the phone
+polling.
+
+- The service uses the `specialUse` foreground-service type: the standard types
+  do not describe a self-hosted notification socket, and `dataSync` is capped at
+  six hours a day on Android 15. A persistent low-importance notification is
+  shown while it runs, with a **Stop** action.
+- Reconnect uses exponential backoff (2 s to 60 s). `START_STICKY` restarts a
+  killed service, and a boot receiver restarts it after a reboot or an app update
+  when the owner had it enabled.
+- A frame with `kind: "sync"` is a control message: it runs the phone-data sync
+  immediately, which is how a confirmed calendar change or SMS takes effect in
+  seconds rather than at the next 30-minute sync.
+- Two notification channels: `winnie_background` for the service, `winnie_alerts`
+  for reminders, so one can be silenced without the other.
+- **Send test notification** publishes an event on the server. It proves the
+  whole path; if it does not arrive, the screen shows the connection state, the
+  last error and whether notifications are blocked.
+- Android 13+ needs `POST_NOTIFICATIONS`; the switch requests it. Battery
+  optimization is offered as an exemption because some vendors kill background
+  services regardless. Both are shown as explicit states on the screen.
+- Signing out stops the service. There is no delivery while the process is
+  force-stopped; the backlog replays on the next connect.
+
+There is no FCM or other vendor push service, which is why this needs a
+foreground service. The protocol, cursor, privacy and limits are in
+[docs/push.md](../../docs/push.md).
 
 ## Requirements
 
@@ -166,6 +200,11 @@ keeping one canonical pipeline.
 - `PhonePrefsTest` — scope opt-in, cursors and the interval floor
 - `NotificationBufferTest` — the bounded notification queue's append/ack/trim
 - `PhoneDataScreenTest` — Robolectric render of the consent screen
+- `PushModelsTest` — the WebSocket frame contract, including unknown fields
+- `PushRoutingTest` — a reminder becomes a notification, `sync` becomes a sync
+- `PushPrefsTest` — the delivery cursor and connection state
+- `PushApiTest` — the REST backlog, status and test endpoints
+- `PushSettingsScreenTest` — Robolectric render of the alerts screen
 - `BackendFlowIntegrationTest` — skipped unless `WINNIE_ANDROID_BASE_URL` is set;
   runs register → create → upload → transcribe → transcript → minutes → delete
   against a real backend using the app's own HTTP client

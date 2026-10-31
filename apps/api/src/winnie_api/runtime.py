@@ -26,6 +26,8 @@ from winnie_phone.models import (  # noqa: F401  (metadata)
     PhoneSyncState,
 )
 from winnie_phone.service import PhoneService
+from winnie_push.models import PushNotification  # noqa: F401  (metadata)
+from winnie_push.service import PushService
 
 from winnie_api.ai.providers import (
     DynamicASRProvider,
@@ -34,6 +36,7 @@ from winnie_api.ai.providers import (
     DynamicTranslator,
 )
 from winnie_llm import ProviderRegistry
+from winnie_api.push.events import PhoneEventsAdapter
 from winnie_api.settings import Settings
 
 
@@ -45,10 +48,13 @@ class AppRuntime:
     auth_service: AuthService | None
     meeting_service: MeetingService | None
     phone_service: PhoneService | None
+    push_service: PushService | None
 
     async def startup(self) -> None:
         if self.settings.database.auto_create_tables:
             await create_all(self.engine)
+        if self.push_service is not None:
+            await self.push_service.startup()
         if self.meeting_service is not None:
             await asyncio.to_thread(
                 self.settings.resolve_meetings_root().mkdir,
@@ -62,6 +68,8 @@ class AppRuntime:
             )
 
     async def shutdown(self) -> None:
+        if self.push_service is not None:
+            await self.push_service.shutdown()
         await self.engine.dispose()
 
 
@@ -72,7 +80,12 @@ def build_runtime(
     http: httpx.AsyncClient | None = None,
     usage: UsageSink | None = None,
 ) -> AppRuntime | None:
-    if not (settings.auth.enabled or settings.meetings.enabled or settings.phone.enabled):
+    if not (
+        settings.auth.enabled
+        or settings.meetings.enabled
+        or settings.phone.enabled
+        or settings.push.enabled
+    ):
         return None
 
     engine = create_engine(
@@ -107,8 +120,21 @@ def build_runtime(
         if settings.meetings.enabled
         else None
     )
+    push_service = (
+        PushService(settings.push, session_factory=session_factory)
+        if settings.push.enabled
+        else None
+    )
     phone_service = (
-        PhoneService(settings.phone, session_factory=session_factory)
+        PhoneService(
+            settings.phone,
+            session_factory=session_factory,
+            events=(
+                PhoneEventsAdapter(push_service)
+                if push_service is not None
+                else None
+            ),
+        )
         if settings.phone.enabled
         else None
     )
@@ -119,4 +145,5 @@ def build_runtime(
         auth_service=auth_service,
         meeting_service=meeting_service,
         phone_service=phone_service,
+        push_service=push_service,
     )

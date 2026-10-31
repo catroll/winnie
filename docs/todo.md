@@ -139,6 +139,31 @@ handset has not run them yet. These are the next concrete steps.
 - [ ] If the owner wants it, capture MMS subject and part metadata without the
       media itself.
 
+## P1 — push notifications
+
+The stream and the Android foreground service are implemented and tested; a
+handset has not run them yet.
+
+- [ ] Run the foreground service on a real phone through a full day: Doze,
+      a reboot, a process kill, a network switch between Wi-Fi and cellular, and
+      a vendor task killer. Record what actually survives; the boot receiver and
+      `START_STICKY` are guesses until then.
+- [ ] Add Redis pub/sub for the hub before running more than one API worker, or
+      pin the deployment to one worker in the operations guide.
+- [ ] Add notification actions (mark done, snooze) and a deep link into the
+      relevant conversation; tapping currently only opens the app.
+- [ ] Feed the weather watcher and meeting/news completion into the push
+      service. The weather watcher already has a webhook; a `Notifier` there
+      removes the need for an owner-run webhook receiver.
+- [ ] Per-device read/delivery state if a second phone is ever used; today the
+      cursor is per app installation.
+- [ ] Quiet hours and per-kind preferences beyond Android's channel controls.
+- [ ] Consider a short "priority" notification path for a reminder that arrives
+      while the phone is in Doze; without a system push service the only option
+      is an exact alarm, which needs its own justification.
+- [ ] An end-to-end test that runs the Android service against a real server on
+      an emulator once KVM is available.
+
 ## P2 — accounts and security
 
 - [x] Add login rate limiting: failures are counted per username, the account

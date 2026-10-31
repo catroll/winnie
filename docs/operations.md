@@ -23,6 +23,12 @@ Notes:
   and the Winnie routes.
 - The **Android app is a client**, not a service. It connects to the API at
   build-time `WINNIE_PUBLIC_URL` or the address entered on the login screen.
+- **Push has no process of its own.** It is a capability inside the API: a
+  durable table plus an in-process fan-out. One API worker is enough; more than
+  one needs Redis pub/sub, because a publish reaches only the connections on its
+  own worker (the backlog still delivers on reconnect). A reverse proxy must pass
+  the WebSocket upgrade for `/api/v1/push/ws` (and
+  `/api/v1/meetings/{id}/stream`).
 - **Phone data has no process of its own.** The Android client uploads batches,
   the API stores them in the application database, and per-kind retention runs
   during each sync; there is no phone worker to supervise. Deleting a device's

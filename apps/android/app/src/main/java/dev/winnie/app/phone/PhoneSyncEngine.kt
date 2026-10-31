@@ -181,6 +181,17 @@ class PhoneSyncEngine(
 
     // -- device ----------------------------------------------------------
 
+    /**
+     * Registers this phone if it has no device id yet, without syncing data.
+     * The push service needs an id to receive device-targeted control events.
+     */
+    suspend fun ensureRegisteredDevice(): dev.winnie.app.data.PhoneDevice? {
+        val api = apiProvider() ?: return null
+        return runCatching {
+            ensureDevice(api, prefs.enabledScopes())
+        }.getOrNull()
+    }
+
     private suspend fun ensureDevice(
         api: WinnieApi,
         scopes: Set<PhoneScope>,

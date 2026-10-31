@@ -23,6 +23,7 @@ from winnie_meetings.capability import capability as meetings_capability
 from winnie_news.capability import capability as news_capability
 from winnie_news.service import NewsService
 from winnie_phone.capability import capability as phone_capability
+from winnie_push.capability import capability as push_capability
 from winnie_llm import ApiKeys, ProviderRegistry
 
 from winnie_api import __version__
@@ -33,6 +34,7 @@ from winnie_api.news.gateway import NewsGatewayAdapter
 from winnie_api.news.llm import DynamicNewsLLM
 from winnie_api.news.search import build_news_search
 from winnie_api.phone.gateway import PhoneGatewayAdapter
+from winnie_api.push.notify import PushNotifierAdapter
 from winnie_api.ai.router import router as ai_router
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
@@ -78,8 +80,9 @@ def create_app(
         http=http_client,
         usage=usage_ledger,
     )
-    async def resolve_phone_owner() -> str:
-        """Whose phone the assistant may read.
+
+    async def resolve_owner() -> str:
+        """Whose phone and notifications the assistant may use.
 
         A device belongs to the account that registered it. The assistant is a
         single-owner service, so it reads the configured owner, or the only
@@ -139,8 +142,10 @@ def create_app(
             app.state.auth_service = runtime.auth_service
             app.state.meeting_service = runtime.meeting_service
             app.state.phone_service = runtime.phone_service
+            app.state.push_service = runtime.push_service
         else:
             app.state.phone_service = None
+            app.state.push_service = None
         news = None
         if resolved.news.enabled:
             try:
@@ -180,9 +185,17 @@ def create_app(
                     phone=(
                         PhoneGatewayAdapter(
                             runtime.phone_service,
-                            resolve_owner=resolve_phone_owner,
+                            resolve_owner=resolve_owner,
                         )
                         if runtime is not None and runtime.phone_service is not None
+                        else None
+                    ),
+                    notifier=(
+                        PushNotifierAdapter(
+                            runtime.push_service,
+                            resolve_owner=resolve_owner,
+                        )
+                        if runtime is not None and runtime.push_service is not None
                         else None
                     ),
                 )
@@ -219,6 +232,8 @@ def create_app(
         framework.register(news_capability())
     if resolved.phone.enabled:
         framework.register(phone_capability())
+    if resolved.push.enabled:
+        framework.register(push_capability())
     # The document index is not a capability: it is a separate daemon, and this
     # router only proxies to it, so the host owns the mount.
     if resolved.index.enabled:

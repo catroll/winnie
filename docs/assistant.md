@@ -295,6 +295,7 @@ Skills are named bundles of tools, prompt instructions, permissions and policy.
 | `local` | `list_files`, `read_file`, `write_file`, `run_command`, `confirm_action` | `winnie-local`, with review, whitelist, confirmation and audit; chat only |
 | `phone` | `phone_status`, `phone_search`, `phone_calendar`, `phone_calls`, `phone_messages`, `phone_notifications`, `phone_location`, `phone_apps` | `winnie-phone` queries over the copy the owner's phone uploaded |
 | `phone_write` | `phone_calendar_create`, `phone_calendar_update`, `phone_calendar_delete`, `phone_sms_send`, `phone_confirm`, `phone_cancel` | a `winnie-phone` command queue; the phone executes after a confirmation; chat only |
+| `notify` | `notify_user` | the push queue; a scheduled task result is pushed automatically |
 
 Tools and their inputs:
 
@@ -324,6 +325,13 @@ Tools and their inputs:
 | phone | `phone_apps` | `query?`, `limit?` | installed apps with versions |
 | phone_write | `phone_calendar_create` / `update` / `delete`, `phone_sms_send` | the write's fields | a `PENDING <id>` proposal, never a completed action |
 | phone_write | `phone_confirm`, `phone_cancel` | `command_id` | `APPROVED` / `CANCELLED` and the next-sync caveat |
+| notify | `notify_user` | `title`, `body?` | confirmation; the phone shows it as an alert |
+
+A scheduled task's result is pushed to the owner's phone automatically unless
+`assistant.tasks.notify_results` is off, because a brief nobody sees is not a
+brief. In conversation, `notify_user` is for a requested reminder or a result the
+owner wanted to be told about, not for every reply. Push delivery, the cursor and
+the Android foreground service are in [push.md](./push.md).
 
 Phone answers are snapshots. The prompt carries a compact digest of the last
 sync time, the next 24 hours, unread SMS and today's missed calls, and every

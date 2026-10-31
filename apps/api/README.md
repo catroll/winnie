@@ -18,6 +18,8 @@ incrementally.
   design and operations in [docs/news.md](../../docs/news.md))
 - Phone data package: `packages/winnie-phone` (mounted as `/api/v1/phone`;
   design, contract and privacy notes in [docs/phone.md](../../docs/phone.md))
+- Push package: `packages/winnie-push` (mounted as `/api/v1/push`; protocol and
+  transport choice in [docs/push.md](../../docs/push.md))
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Supplier registry: `data/ai.yaml` (gitignored), owned by
   `packages/winnie-llm` and exposed by `src/winnie_api/ai/` for the console
@@ -479,3 +481,22 @@ proposed command becomes eligible for the phone only after
 See [docs/phone.md](../../docs/phone.md) for the batch contract, the write
 path, retention and the security limits (the database is not encrypted at
 rest).
+
+
+## Push
+
+`/api/v1/push` is the channel the Android foreground service holds open. Every
+event is a database row before it is a WebSocket frame, so an offline phone
+receives it from the backlog on reconnect.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `WS` | `/ws?after=&device_id=` | Backlog after the cursor, then live events; auth by bearer header or `?token=` |
+| `GET` | `/notifications?after_seq=&device_id=&limit=` | The same backlog over HTTP |
+| `GET` | `/status` | Open connections, pending count, last event |
+| `POST` | `/test` | Publish a notification to the caller |
+
+Publishers are in-process: the assistant's `notify_user` tool, scheduled task
+results, an approved phone command (a device-targeted `sync`) and its result. The
+fan-out is per process, so run one API worker or add Redis pub/sub before
+scaling out. See [docs/push.md](../../docs/push.md).

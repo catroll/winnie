@@ -80,6 +80,7 @@ Success for the current phase:
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
 | News | Six-stage pipeline from public sources to a sourced, reviewed draft | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
 | Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
+| Push | Durable notification backlog, WebSocket stream to the phone, assistant reminder tool, scheduled-task and phone-command events | `winnie-push` + `apps/android` + `notify` skill | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
 | Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
@@ -100,6 +101,7 @@ Success for the current phase:
 | M6 | Assistant | A reachable assistant that chats, searches, runs conversation-managed tasks and remembers from local files through the index | **Core done** — chat, search, index-backed recall and chat-managed tasks work; streaming, vector retrieval and an out-of-process worker are open |
 | M8 | News production | A run over real sources groups reports into events, writes one sourced draft per event, reviews it and stops at a reviewed Markdown file; console and assistant operate it | **Core done** — end-to-end verified with the fake model; real-model quality, a worker-backed run and Markdown rendering are open |
 | M9 | Phone data | The phone syncs every enabled scope on a schedule; the assistant answers questions from it and a confirmed calendar/SMS write is executed by the phone | **Core done** — sync, query, tools and the command queue are implemented and tested; a physical-device run, a console page and SMS delivery receipts are open |
+| M10 | Push | A notification published on the server reaches the phone while it is idle, survives a reconnect from the backlog, and is used for reminders, scheduled briefs and phone-action results | **Core done** — stream, backlog, tool and Android service are implemented and tested; a device run, Redis fan-out and notification actions are open |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 **M9** adds the phone as a data source: the Android client uploads the scopes
@@ -525,6 +527,46 @@ Open:
 - SMS edits/deletions on the phone are not propagated; recurring events sync as
   one row with an RRULE rather than expanded instances.
 - MMS, attachments and delivery receipts are out of scope.
+
+### 5.12 Push — Core done
+
+Working:
+
+- `winnie-push` stores every event before delivering it: `seq` cursor, optional
+  device target, TTL for control messages, retention. A reconnecting client
+  replays what it missed; the socket is an accelerator, not the contract.
+- `WS /api/v1/push/ws` serves the backlog and live events with auth, heartbeats
+  and device filtering; REST endpoints provide the same backlog and a test
+  notification.
+- The assistant's `notify_user` tool and `notify` skill send reminders, and a
+  scheduled task pushes its brief (opt-out with `assistant.tasks.notify_results`).
+- Approving a phone command publishes a `sync` control event, so the phone
+  executes it in seconds instead of waiting for the periodic sync; the result
+  publishes a `phone_command` notification.
+- The Android client runs a foreground service with type `specialUse`, reconnects
+  with backoff, restarts after a reboot, uses two notification channels, and
+  shows connection, permission and server state on an **Alerts & background**
+  screen with a test button.
+
+Verified:
+
+- `tests/test_push.py` covers REST publish/backlog, a live WebSocket, auth,
+  device targeting, expiry, retention and the phone-command events.
+- `tests/test_notify_tools.py` covers the tool, its error paths and the skill's
+  scheduled-run availability.
+- Android tests cover frame parsing, routing, preferences, the REST contract and
+  a Robolectric render of the screen.
+- A real uvicorn process plus a real WebSocket client received a live
+  notification, a device-targeted `sync`, a `phone_command` result, and the
+  backlog after a reconnect.
+
+Open:
+
+- No physical-device run: Doze, vendor task killers and the notification
+  permission flow are unverified on a handset.
+- In-process fan-out only; multiple API workers need Redis pub/sub.
+- No notification actions, quiet hours or deep link into a conversation.
+- No new sources yet from meetings, news or the weather watcher.
 
 ## 6. Verification snapshot
 

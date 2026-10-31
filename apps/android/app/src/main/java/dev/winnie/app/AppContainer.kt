@@ -9,6 +9,7 @@ import dev.winnie.app.data.TokenStore
 import dev.winnie.app.data.WinnieApi
 import dev.winnie.app.phone.PhonePrefs
 import dev.winnie.app.phone.PhoneSyncEngine
+import dev.winnie.app.push.PushPrefs
 
 /**
  * Manual dependency container. The app has one graph and no annotation
@@ -22,6 +23,7 @@ class AppContainer(context: Context) {
     val tokenStore = TokenStore(appContext)
     val sessions = SessionManager(tokenStore, settings)
     val phonePrefs = PhonePrefs(appContext)
+    val pushPrefs = PushPrefs(appContext)
 
     fun newRecorder(): AudioRecorder = WavAudioRecorder(appContext)
 

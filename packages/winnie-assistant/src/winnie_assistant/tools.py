@@ -35,6 +35,7 @@ from winnie_local import (
 )
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.news import NewsGateway
+from winnie_assistant.notify import Notifier
 from winnie_assistant.phone import PhoneGateway
 from winnie_assistant.phone_tools import (
     PHONE_TOOL_SCHEMAS,
@@ -500,6 +501,36 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
 ]
 
+TOOL_SCHEMAS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "notify_user",
+            "description": (
+                "Send the owner a notification on their phone. Use it for a "
+                "proactive reminder or a result they asked to be told about, "
+                "not for every reply. Keep the title short and the body to one "
+                "or two sentences."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short notification title.",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "The message, one or two sentences.",
+                    },
+                },
+                "required": ["title"],
+                "additionalProperties": False,
+            },
+        },
+    }
+)
+
 # Phone tools are defined next to their formatting in ``phone_tools``; the skill
 # registry decides whether they are offered at all, so the list stays complete
 # here and the filter lives in one place.
@@ -547,6 +578,7 @@ class ToolBox(PhoneToolMixin):
         news: NewsGateway | None = None,
         weather: WeatherService | None = None,
         phone: PhoneGateway | None = None,
+        notifier: Notifier | None = None,
         timezone: ZoneInfo | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -562,6 +594,7 @@ class ToolBox(PhoneToolMixin):
         self.news = news
         self.weather = weather
         self.phone = phone
+        self.notifier = notifier
         self.timezone = timezone or ZoneInfo("UTC")
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
@@ -576,6 +609,10 @@ class ToolBox(PhoneToolMixin):
     @property
     def has_local_tools(self) -> bool:
         return self.local is not None
+
+    @property
+    def has_notifier(self) -> bool:
+        return self.notifier is not None
 
     def schemas(
         self, *, task_management: bool = True, local_tools: bool = True
@@ -659,6 +696,8 @@ class ToolBox(PhoneToolMixin):
                 output = await self._confirm_action(arguments, conversation_id)
             elif name in PHONE_TOOLS:
                 output = await self._phone_tool(name, arguments)
+            elif name == "notify_user":
+                output = await self._notify_user(arguments)
             else:
                 raise ToolError(f"unknown tool: {name}")
         except (ToolError, LocalToolError, PhoneToolError) as exc:
@@ -980,6 +1019,16 @@ class ToolBox(PhoneToolMixin):
                 raise ToolError("news_read_draft requires an event_id")
             return await gateway.draft(run_id, event_id)
         raise ToolError(f"unknown news tool: {name}")
+
+    async def _notify_user(self, arguments: dict[str, Any]) -> str:
+        if self.notifier is None:
+            raise ToolError("push notifications are disabled")
+        title = str(arguments.get("title") or "").strip()
+        if not title:
+            raise ToolError("notify_user requires a title")
+        body = str(arguments.get("body") or "").strip()
+        await self.notifier.notify(title=title, body=body)
+        return f"Sent the notification \"{title}\"."
 
     def _scheduler(self) -> AssistantScheduler:
         if self.scheduler is None or not self.tasks_enabled:

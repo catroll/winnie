@@ -15,6 +15,7 @@ from winnie_phone.service import (
     DeviceRevoked,
     InvalidCommand,
     PhoneError,
+    PhoneEvents,
     PhoneService,
 )
 
@@ -25,6 +26,7 @@ __all__ = [
     "InvalidCommand",
     "PhoneConfig",
     "PhoneError",
+    "PhoneEvents",
     "PhoneRetentionConfig",
     "PhoneService",
 ]

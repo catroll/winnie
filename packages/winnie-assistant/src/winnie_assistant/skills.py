@@ -189,6 +189,28 @@ Do not send SMS in a scheduled task; a task run has no live owner to confirm.
     scheduled_safe=False,
 )
 
+NOTIFY = SkillManifest(
+    name="notify",
+    title="Phone notifications",
+    description="Send the owner a reminder or a result on their phone.",
+    instructions="""\
+Use notify_user for a proactive reminder the owner asked for, or for a result
+they wanted to be told about when it is ready. Do not notify for every reply:
+the conversation itself is the answer, and a notification is for reaching
+someone who is not looking at the app.
+
+Keep the title short and factual. Put the substance in the body in one or two
+sentences, and never include a credential, a full message transcript or
+anything the owner would not want on a lock screen.
+
+A scheduled task's result is pushed automatically, so inside a task run do not
+send a second notification for the same result.
+""",
+    tools=("notify_user",),
+    permissions=("push:write",),
+    scheduled_safe=True,
+)
+
 LOCAL = SkillManifest(
     name="local",
     title="Local files and commands",
@@ -328,5 +350,11 @@ def build_skills(toolbox: ToolBox) -> list[ToolboxSkill]:
             toolbox,
             available=toolbox.phone is not None,
             unavailable_reason="phone sync is disabled or no phone is registered",
+        ),
+        ToolboxSkill(
+            NOTIFY,
+            toolbox,
+            available=toolbox.notifier is not None,
+            unavailable_reason="push notifications are disabled",
         ),
     ]

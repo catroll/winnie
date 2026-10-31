@@ -25,6 +25,19 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
 
+    <!--
+      The background connection that receives reminders. A self-hosted
+      WebSocket is held by a foreground service rather than a vendor push
+      service; specialUse is the FGS type for a case the standard types do not
+      cover, and it has no time limit on Android 15. Google Play would review
+      this declaration; this build is for sideloading.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="false" />
@@ -57,6 +70,24 @@
           BIND_NOTIFICATION_LISTENER_SERVICE permission is what restricts it to
           the system.
         -->
+        <service
+            android:name=".push.WinniePushService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="self-hosted assistant notification stream" />
+        </service>
+
+        <receiver
+            android:name=".push.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".phone.WinnieNotificationListener"
             android:exported="true"

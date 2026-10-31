@@ -13,6 +13,7 @@ infrastructure below it exists to serve the assistant.
 | **News production** | Six-stage pipeline from public sources to a sourced, reviewed draft, with console and assistant access | **Core implemented** |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
+| **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, news runs and drafts, AI providers, LLM usage and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
@@ -102,6 +103,16 @@ result. Nothing is enabled by default, every scope has its own permission, and
 the server stores the data in clear text with per-kind retention. The client
 builds and its unit tests pass; a run on a physical phone is still pending.
 Design, contract, retention and limits are in [docs/phone.md](./docs/phone.md).
+
+The push capability in `packages/winnie-push` lets Winnie reach the owner
+without the phone polling: the server stores each notification before it sends
+it, streams it over a WebSocket held by an Android foreground service, and
+replays the backlog after a reconnect. The assistant can send a notice with a
+`notify_user` tool, every scheduled task pushes its brief, and a confirmed phone
+command wakes the phone to execute immediately and reports the result. There is
+no vendor push service; the cost is a persistent low-priority notification and
+some battery use. Design, protocol, privacy and limits are in
+[docs/push.md](./docs/push.md).
 
 The news pipeline in `packages/winnie-news` collects RSS, Tencent and tophub
 material, cleans and extracts it, groups reports of one event, searches for
@@ -196,7 +207,11 @@ and endpoint list are in [docs/meetings.md](./docs/meetings.md).
 5. **Phone data** — first slice done: sync, query, assistant tools and the
    confirmed write path. A device run, a console page, a command poll separate
    from the data sync and SMS delivery receipts remain.
-6. **Production readiness** — migrations, queue-backed background work,
+6. **Push notifications** — first slice done: durable backlog, WebSocket stream,
+   the notify tool, scheduled-task and phone-command events, and the Android
+   foreground service. A device run, Redis fan-out for multiple workers,
+   notification actions and more event sources remain.
+7. **Production readiness** — migrations, queue-backed background work,
    retention and backups, deployment hardening.
 
 Details and design rationale are in [DESIGN.md](./DESIGN.md). Concrete follow-ups,
@@ -233,6 +248,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
 - [docs/news.md](./docs/news.md) — news pipeline: stages, contracts, configuration and limits
 - [docs/phone.md](./docs/phone.md) — phone data: sync contract, write path, privacy and limits
+- [docs/push.md](./docs/push.md) — push: transport choice, protocol, foreground service and limits
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan
 - [docs/brand.md](./docs/brand.md) — the woodpecker mark: app icon and console icon geometry, palette and regeneration

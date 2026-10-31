@@ -21,6 +21,7 @@ from winnie_core.auth import models as _auth_models  # noqa: F401
 from winnie_core.db import Base
 from winnie_meetings import models as _meeting_models  # noqa: F401
 from winnie_phone import models as _phone_models  # noqa: F401
+from winnie_push import models as _push_models  # noqa: F401
 from winnie_api.settings import load_settings
 
 config = context.config

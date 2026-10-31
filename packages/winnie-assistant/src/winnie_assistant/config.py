@@ -63,6 +63,10 @@ class TasksConfig(BaseModel):
     # A missed run older than this is skipped instead of replayed.
     catch_up_seconds: int = Field(default=3600, ge=0, le=86400)
     webhook_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
+    # Push the result of a scheduled run to the owner's phone when push is
+    # configured. A brief nobody sees is not a brief; turn this off for tasks
+    # that are only bookkeeping.
+    notify_results: bool = True
 
 
 class WeatherConfig(BaseModel):

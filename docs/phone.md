@@ -185,8 +185,10 @@ phone (next sync): claims it, writes the event, reports the result
 
 Consequences that must not be smoothed over in the assistant's wording:
 
-- Approval is **not** execution. The command runs when the phone next syncs,
-  which can be minutes away, and the result appears on the phone.
+- Approval is **not** execution. The command runs when the phone next syncs.
+  A push `sync` event wakes it immediately while the background connection is
+  up; otherwise it waits for the periodic sync, so the delay is seconds or
+  minutes rather than a guarantee. The result appears on the phone.
 - A proposal that is never confirmed expires and is never dispatched.
 - An approved command whose phone never syncs again just sits there; the
   assistant reports it as pending.
@@ -342,8 +344,9 @@ phone database unless it asks for one.
   providers are verified by unit tests and a successful APK build, not by a
   handset.
 - No MMS, no attachments, no media.
-- No push channel: writes wait for the next sync. A lightweight command poll
-  (separate from the heavy data sync) would shorten that.
+- The push channel wakes the phone for a confirmed write only while the
+  foreground service is connected; if it is stopped, the command waits for the
+  next periodic sync (up to 30 minutes). See [push.md](./push.md).
 - No delivery receipts for SMS.
 - No streaming or long-poll; polls are one request per kind per page.
 - No server-side full-text index. Search is `LIKE` over small phone datasets;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -24,6 +25,7 @@ from winnie_local import (
 )
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.news import NewsGateway
+from winnie_assistant.notify import Notifier
 from winnie_assistant.phone import PhoneGateway
 from winnie_assistant.memory_builder import MemoryBuilder
 from winnie_assistant.scheduler import (
@@ -37,6 +39,8 @@ from winnie_assistant.skills import build_skills
 from winnie_assistant.tools import ToolBox
 from winnie_assistant.weather import WeatherService, WeatherWatch
 
+logger = logging.getLogger(__name__)
+
 
 def build_assistant_service(
     *,
@@ -49,6 +53,7 @@ def build_assistant_service(
     model_name: str = "",
     news: NewsGateway | None = None,
     phone: PhoneGateway | None = None,
+    notifier: Notifier | None = None,
 ) -> AssistantService:
     timezone = _timezone(config.timezone)
     resolved_model = model or FakeChatModel()
@@ -105,7 +110,22 @@ def build_assistant_service(
     holder: dict[str, AssistantService] = {}
 
     async def runner(task: ScheduledTask):
-        return await holder["service"].chat_task(task)
+        reply = await holder["service"].chat_task(task)
+        if notifier is not None and config.tasks.notify_results and reply.text.strip():
+            try:
+                await notifier.notify(
+                    title=task.title,
+                    # A notification body is read on a lock screen, not in the
+                    # chat; keep the full brief in the conversation.
+                    body=reply.text.strip()[:1000],
+                    data={
+                        "task_id": task.id,
+                        "conversation_id": reply.conversation_id,
+                    },
+                )
+            except Exception:  # noqa: BLE001 - a push failure must not fail the run
+                logger.warning("scheduled task push failed", exc_info=True)
+        return reply
 
     scheduler = AssistantScheduler(
         runner=runner,
@@ -132,6 +152,7 @@ def build_assistant_service(
         news=news,
         weather=weather,
         phone=phone,
+        notifier=notifier,
         timezone=timezone,
         clock=clock,
     )

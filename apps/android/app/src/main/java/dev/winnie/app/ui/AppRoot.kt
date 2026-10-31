@@ -12,6 +12,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -23,11 +24,14 @@ import dev.winnie.app.ui.home.HomeScreen
 import dev.winnie.app.ui.login.LoginScreen
 import dev.winnie.app.ui.login.SessionViewModel
 import dev.winnie.app.ui.meeting.MeetingScreen
+import dev.winnie.app.push.PushController
 import dev.winnie.app.ui.phone.PhoneDataScreen
+import dev.winnie.app.ui.push.PushSettingsScreen
 import dev.winnie.app.ui.record.RecordScreen
 
 @Composable
 fun WinnieRoot(container: AppContainer) {
+    val appContext = LocalContext.current.applicationContext
     val sessionViewModel: SessionViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -57,7 +61,10 @@ fun WinnieRoot(container: AppContainer) {
         is SessionState.LoggedIn -> SignedInFlow(
             container = container,
             session = state.session,
-            onSignOut = sessionViewModel::signOut,
+            onSignOut = {
+                PushController.stop(appContext)
+                sessionViewModel.signOut()
+            },
         )
     }
 }
@@ -71,9 +78,13 @@ private fun SignedInFlow(
     var openMeetingId by rememberSaveable { mutableStateOf<String?>(null) }
     var showRecorder by rememberSaveable { mutableStateOf(false) }
     var showPhoneData by rememberSaveable { mutableStateOf(false) }
+    var showPushSettings by rememberSaveable { mutableStateOf(false) }
 
-    BackHandler(enabled = showPhoneData || showRecorder || openMeetingId != null) {
+    BackHandler(
+        enabled = showPushSettings || showPhoneData || showRecorder || openMeetingId != null,
+    ) {
         when {
+            showPushSettings -> showPushSettings = false
             showPhoneData -> showPhoneData = false
             showRecorder -> showRecorder = false
             else -> openMeetingId = null
@@ -82,6 +93,11 @@ private fun SignedInFlow(
 
     val meetingId = openMeetingId
     when {
+        showPushSettings -> PushSettingsScreen(
+            container = container,
+            onBack = { showPushSettings = false },
+        )
+
         showPhoneData -> PhoneDataScreen(
             container = container,
             onBack = { showPhoneData = false },
@@ -108,6 +124,7 @@ private fun SignedInFlow(
             onOpenMeeting = { openMeetingId = it },
             onRecord = { showRecorder = true },
             onOpenPhoneData = { showPhoneData = true },
+            onOpenPushSettings = { showPushSettings = true },
             onSignOut = onSignOut,
         )
     }

@@ -34,6 +34,7 @@ ALLOWED = {
     },
     "winnie-news": {"winnie_core", "winnie_llm", "winnie_news"},
     "winnie-phone": {"winnie_core", "winnie_phone"},
+    "winnie-push": {"winnie_core", "winnie_push"},
 }
 
 
@@ -72,3 +73,8 @@ def test_host_registers_expected_capabilities(meeting_settings: Settings) -> Non
 def test_host_registers_the_assistant_when_enabled(assistant_settings: Settings) -> None:
     app = create_app(settings=assistant_settings)
     assert app.state.capability_names == ("assistant", "gateway")
+
+
+def test_host_registers_push_when_enabled(push_settings: Settings) -> None:
+    app = create_app(settings=push_settings)
+    assert "push" in app.state.capability_names
