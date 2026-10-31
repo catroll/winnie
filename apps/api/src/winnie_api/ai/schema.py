@@ -268,11 +268,13 @@ class ModelRecord(BaseModel):
 
     id: str
     label: str = ""
+    owned_by: str = ""
+    created: int | None = None
     context_window: int | None = Field(default=None, ge=1)
     max_output_tokens: int | None = Field(default=None, ge=1)
     notes: str = ""
 
-    @field_validator("id", "label", "notes")
+    @field_validator("id", "label", "owned_by", "notes")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
@@ -415,15 +417,20 @@ class IntegrationDraft(IntegrationInput):
 
 
 class BindingRecord(BaseModel):
-    """Which integration (and optional model override) serves one feature."""
+    """Which supplier model serves one feature.
+
+    ``integration_id`` is the v3 shape. It is kept only so a v3 file can be
+    read and migrated; version 4 bindings always use ``vendor`` + ``model``.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    integration_id: str | None = None
+    vendor: str = ""
     model: str = ""
+    integration_id: str | None = None
     updated_at: str = Field(default_factory=utcnow)
 
-    @field_validator("model")
+    @field_validator("vendor", "model")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
@@ -432,10 +439,13 @@ class BindingRecord(BaseModel):
 class BindingDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    integration_id: str | None = None
+    # The console sends vendor + model. integration_id remains accepted for
+    # callers written against the v3 API; the store derives the vendor from it.
+    vendor: str = ""
     model: str = ""
+    integration_id: str | None = None
 
-    @field_validator("model")
+    @field_validator("vendor", "model")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
@@ -507,6 +517,41 @@ class AIState(BaseModel):
             feature = FEATURE_BY_KEY.get(key)
             if feature is None:
                 raise ValueError(f"unknown feature in bindings: {key}")
+            if self.version >= 4:
+                if not binding.vendor:
+                    # An unbound feature is represented by an empty binding.
+                    continue
+                vendor = vendors_by_id.get(binding.vendor)
+                if vendor is None:
+                    raise ValueError(
+                        f"feature {key} references missing supplier "
+                        f"{binding.vendor!r}"
+                    )
+                if not binding.model:
+                    raise ValueError(f"feature {key} needs a model")
+                if vendor.id != "fake" and not any(
+                    model.id == binding.model for model in vendor.models
+                ):
+                    raise ValueError(
+                        f"feature {key} model {binding.model!r} is not in the "
+                        f"{vendor.id!r} model catalog"
+                    )
+                candidates = [
+                    integration
+                    for integration in self.integrations
+                    if integration.vendor == vendor.id
+                    and integration.enabled
+                    and not integration.gateway
+                    and integration.kind in feature.kinds
+                    and (integration.kind != "openai" or integration.api_key_env)
+                ]
+                if not candidates:
+                    raise ValueError(
+                        f"feature {key} uses supplier {vendor.id!r}, which has no "
+                        "enabled internal endpoint for this feature"
+                    )
+                continue
+
             if binding.integration_id is None:
                 continue
             integration = by_id.get(binding.integration_id)

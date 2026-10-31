@@ -132,28 +132,23 @@ def seed_state(settings: Settings) -> AIState:
 
     bindings: dict[str, BindingRecord] = {}
 
-    def bind(feature: str, integration: IntegrationRecord, model: str = "") -> None:
+    def bind(feature: str, integration: IntegrationRecord, model: str) -> None:
         bindings[feature] = BindingRecord(
-            integration_id=integration.id,
+            vendor=integration.vendor,
             model=model,
         )
 
     # Model choice is admin-managed: every model feature starts on the fake
-    # provider. The owner adds a real integration and rebinds it in the console.
-    for feature in (
-        "assistant.chat",
-        "meetings.translate",
-        "meetings.summarize",
-        "news.extract",
-        "news.write",
-        "news.review",
-    ):
-        bind(feature, fake)
+    # model. The owner syncs a real supplier's models and rebinds them.
+    for feature in FEATURE_BY_KEY:
+        if feature == "meetings.transcribe":
+            continue
+        bind(feature, fake, "fake")
 
     if settings.meetings.asr_provider == "volcengine":
-        bind("meetings.transcribe", asr)
+        bind("meetings.transcribe", asr, asr.default_model or "bigmodel")
     else:
-        bind("meetings.transcribe", fake)
+        bind("meetings.transcribe", fake, "fake")
 
     assert set(bindings) == set(FEATURE_BY_KEY)
     return AIState(
@@ -264,7 +259,27 @@ def migrate_state(state: AIState) -> bool:
         state.version = 3
         changed = True
 
-    if state.version < 4:
+    legacy_bindings = any(
+        binding.integration_id for binding in state.bindings.values()
+    )
+    if state.version < 4 or legacy_bindings:
+        by_id = {integration.id: integration for integration in state.integrations}
+        for binding in state.bindings.values():
+            if binding.vendor:
+                binding.integration_id = None
+                continue
+            if not binding.integration_id:
+                continue
+            integration = by_id.get(binding.integration_id)
+            if integration is None:
+                continue
+            binding.vendor = integration.vendor
+            model = binding.model or integration.default_model
+            if integration.kind == "fake":
+                model = "fake"
+            binding.model = model
+            binding.integration_id = None
+            binding.updated_at = utcnow()
         _ensure_feature_bindings(state)
         state.version = 4
         changed = True
@@ -308,5 +323,5 @@ def _ensure_feature_bindings(state: AIState) -> None:
         state.integrations.append(fake)
     for spec in missing:
         state.bindings[spec.key] = BindingRecord(
-            integration_id=fake.id, model=""
+            vendor=fake.vendor or "fake", model="fake"
         )

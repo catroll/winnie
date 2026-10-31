@@ -66,7 +66,6 @@ async def test_config_seeds_routes_features_and_the_file(tmp_path: Path) -> None
     assert vendors["volcengine"]["models"][0]["id"] == "bigmodel"
     by_name = {item["name"]: item for item in body["integrations"]}
     assert by_name["openai"]["vendor"] == "openai"
-    assert by_name["openai"]["role_label"] == "OpenAI-compatible gateway"
     assert body["path"].endswith("ai.yaml")
     assert (tmp_path / "ai.yaml").is_file()
 
@@ -150,6 +149,7 @@ async def test_feature_binding_validates_kind_model_and_delete(
                 "base_url": "https://llm.example.com",
                 "api_key_env": "WORK_LLM_KEY",
                 "default_model": "model-1",
+                "gateway": False,
             },
         )
         assert created.status_code == 201, created.text
@@ -175,7 +175,7 @@ async def test_feature_binding_validates_kind_model_and_delete(
             json={"integration_id": integration_id},
         )
         assert wrong_kind.status_code == 400
-        assert "cannot use" in wrong_kind.json()["detail"]
+        assert "no enabled internal endpoint" in wrong_kind.json()["detail"]
 
         no_model = await client.post(
             "/api/v1/ai/integrations",
@@ -184,6 +184,7 @@ async def test_feature_binding_validates_kind_model_and_delete(
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
                 "api_key_env": "NO_MODEL_KEY",
+                "gateway": False,
             },
         )
         no_model_id = no_model.json()["integration"]["id"]
@@ -293,6 +294,7 @@ async def test_assistant_chat_uses_the_bound_integration(
                 "base_url": "https://fake.openai",
                 "api_key_env": "WINNIE_TEST_LLM_KEY",
                 "default_model": "fake-openai-model",
+                "gateway": False,
             },
         )
         assert created.status_code == 201, created.text
@@ -319,7 +321,7 @@ async def test_assistant_chat_uses_the_bound_integration(
             "/api/v1/assistant/chat", json={"message": "again"}
         )
         assert unbound.status_code == 502, unbound.text
-        assert "no provider" in unbound.json()["detail"]
+        assert "no model" in unbound.json()["detail"]
 
     assert len(upstream.requests) == 1
     forwarded = upstream.requests[-1]
@@ -345,6 +347,7 @@ async def test_assistant_reports_a_missing_api_key_environment(
                 "base_url": "https://fake.openai",
                 "api_key_env": "WINNIE_TEST_MISSING_KEY",
                 "default_model": "fake-openai-model",
+                "gateway": False,
             },
         )
         integration_id = created.json()["integration"]["id"]
@@ -418,6 +421,7 @@ async def test_meeting_translation_uses_the_bound_integration(
                 "base_url": "https://fake.openai",
                 "api_key_env": "WINNIE_TEST_LLM_KEY",
                 "default_model": "fake-openai-model",
+                "gateway": False,
             },
         )
         integration_id = created.json()["integration"]["id"]
@@ -485,6 +489,7 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
                 "base_url": "https://llm.example.com",
                 "api_key_env": "BOUND_LLM_KEY",
                 "default_model": "model-1",
+                "gateway": False,
             },
         )
         integration_id = created.json()["integration"]["id"]
@@ -515,6 +520,7 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
                 "base_url": "https://llm.example.com",
                 "api_key_env": "BOUND_LLM_KEY",
                 "default_model": "",
+                "gateway": False,
             },
         )
         assert no_default.status_code == 200, no_default.text
@@ -660,7 +666,7 @@ async def test_a_gateway_only_provider_cannot_serve_an_internal_feature(
             json={"integration_id": integration_id},
         )
         assert rejected.status_code == 400, rejected.text
-        assert "gateway-only" in rejected.json()["detail"]
+        assert "no enabled internal endpoint" in rejected.json()["detail"]
 
         updated = await client.put(
             f"/api/v1/ai/integrations/{integration_id}",
@@ -760,10 +766,6 @@ async def test_supplier_groups_endpoints_models_and_bindings(tmp_path: Path) -> 
         assert created.status_code == 201, created.text
         integration_id = created.json()["integration"]["id"]
         assert created.json()["integration"]["vendor"] == "deepseek"
-        assert (
-            created.json()["integration"]["role_label"]
-            == "Internal (OpenAI-compatible)"
-        )
 
         bound = await client.put(
             "/api/v1/ai/features/assistant.chat",
@@ -810,3 +812,103 @@ async def test_supplier_groups_endpoints_models_and_bindings(tmp_path: Path) -> 
             "deepseek-chat",
             "deepseek-reasoner",
         ]
+
+
+async def test_feature_binding_is_a_model_reference(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        await client.post(
+            "/api/v1/ai/vendors",
+            json={
+                "id": "deepseek",
+                "label": "DeepSeek",
+                "models": [
+                    {"id": "deepseek-chat"},
+                    {"id": "deepseek-reasoner"},
+                ],
+            },
+        )
+        created = await client.post(
+            "/api/v1/ai/integrations",
+            json={
+                "name": "deepseek-internal",
+                "vendor": "deepseek",
+                "kind": "openai",
+                "base_url": "https://api.deepseek.com/v1",
+                "api_key_env": "TEST_DEEPSEEK_KEY",
+                "default_model": "deepseek-chat",
+                "gateway": False,
+            },
+        )
+        assert created.status_code == 201, created.text
+
+        bound = await client.put(
+            "/api/v1/ai/features/assistant.chat",
+            json={"vendor": "deepseek", "model": "deepseek-reasoner"},
+        )
+        assert bound.status_code == 200, bound.text
+        assert bound.json()["binding"]["vendor"] == "deepseek"
+        assert bound.json()["binding"]["model"] == "deepseek-reasoner"
+        assert bound.json()["binding"]["integration_id"] is None
+
+        config = (await client.get("/api/v1/ai/config")).json()
+        feature = next(
+            item for item in config["features"] if item["key"] == "assistant.chat"
+        )
+        assert feature["vendor"] == "deepseek"
+        assert feature["model"] == "deepseek-reasoner"
+        assert feature["source"] == "admin"
+        assert feature["integration_name"] == "deepseek-internal"
+
+
+async def test_supplier_model_sync_fetches_the_model_list(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("TEST_DEEPSEEK_KEY", "secret")
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if request.url.path == "/v1/models":
+            assert request.headers["Authorization"] == "Bearer secret"
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "deepseek-chat", "owned_by": "deepseek", "created": 1},
+                        {"id": "deepseek-reasoner", "owned_by": "deepseek"},
+                    ]
+                },
+            )
+        return httpx.Response(500)
+
+    settings = _settings(tmp_path)
+    async with _open(settings, handler) as client:
+        await client.post(
+            "/api/v1/ai/vendors",
+            json={"id": "deepseek", "label": "DeepSeek", "models": []},
+        )
+        created = await client.post(
+            "/api/v1/ai/integrations",
+            json={
+                "name": "deepseek-internal",
+                "vendor": "deepseek",
+                "kind": "openai",
+                "base_url": "https://api.deepseek.com",
+                "api_key_env": "TEST_DEEPSEEK_KEY",
+                "gateway": False,
+            },
+        )
+        assert created.status_code == 201, created.text
+
+        synced = await client.post("/api/v1/ai/vendors/deepseek/models/sync")
+        assert synced.status_code == 200, synced.text
+        models = synced.json()["vendor"]["models"]
+        assert [model["id"] for model in models] == [
+            "deepseek-chat",
+            "deepseek-reasoner",
+        ]
+        assert models[0]["owned_by"] == "deepseek"
+        assert models[0]["created"] == 1
+
+    assert calls == ["https://api.deepseek.com/v1/models"]

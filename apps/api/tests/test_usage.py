@@ -672,6 +672,7 @@ async def test_dynamic_translator_records_the_bound_integration(
             base_url="https://llm.example",
             api_key_env="TEST_LLM_KEY",
             default_model="deepseek-flash",
+            gateway=False,
         )
     )
     ai.set_binding(

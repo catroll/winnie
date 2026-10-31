@@ -83,6 +83,22 @@ async def create_vendor(
     return {"vendor": _vendor_view(service, vendor.id)}
 
 
+@router.post("/vendors/{vendor_id}/models/sync")
+async def sync_vendor_models(
+    request: Request,
+    vendor_id: str,
+    _: str = Depends(get_user_id),
+) -> dict[str, Any]:
+    service = _service(request)
+    try:
+        vendor = await service.sync_models(
+            vendor_id, getattr(request.app.state, "http", None)
+        )
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {"vendor": _vendor_view(service, vendor.id)}
+
+
 @router.put("/vendors/{vendor_id}")
 async def update_vendor(
     request: Request,
