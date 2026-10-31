@@ -21,6 +21,9 @@ import type {
   RouteList,
   TokenResponse,
   Transcript,
+  UsageBalanceList,
+  UsageOverview,
+  UsageRecordList,
   User,
 } from './types';
 import { getToken } from '../auth/storage';
@@ -302,6 +305,45 @@ export const api = {
     return request<AssistantChatResponse>('/api/v1/assistant/chat', {
       method: 'POST',
       body: payload,
+    });
+  },
+
+  usageOverview(days: number): Promise<UsageOverview> {
+    return request<UsageOverview>(`/api/v1/usage/overview?days=${days}`);
+  },
+
+  usageRecords(params: {
+    days: number;
+    limit?: number;
+    offset?: number;
+    capability?: string;
+    provider?: string;
+    model?: string;
+    status?: string;
+  }): Promise<UsageRecordList> {
+    const search = new URLSearchParams({ days: String(params.days) });
+    if (params.limit !== undefined) {
+      search.set('limit', String(params.limit));
+    }
+    if (params.offset !== undefined) {
+      search.set('offset', String(params.offset));
+    }
+    for (const key of ['capability', 'provider', 'model', 'status'] as const) {
+      const value = params[key];
+      if (value) {
+        search.set(key, value);
+      }
+    }
+    return request<UsageRecordList>(`/api/v1/usage/records?${search.toString()}`);
+  },
+
+  usageBalances(): Promise<UsageBalanceList> {
+    return request<UsageBalanceList>('/api/v1/usage/balances');
+  },
+
+  refreshUsageBalances(): Promise<UsageBalanceList> {
+    return request<UsageBalanceList>('/api/v1/usage/balances/refresh', {
+      method: 'POST',
     });
   },
 

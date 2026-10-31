@@ -383,3 +383,118 @@ export interface AIProviderConfig {
   kinds: AIKind[];
   updated_at: string;
 }
+
+/** Recorded model usage, estimated costs and provider balances. */
+
+export interface UsageTotals {
+  requests: number;
+  errors: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+  cache_write_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+  cost_micros: number;
+  provider_priced_requests: number;
+  estimated_requests: number;
+  unpriced_requests: number;
+  unreported_requests: number;
+}
+
+export interface UsageDayRow extends UsageTotals {
+  date: string;
+}
+
+export interface UsageCapabilityRow extends UsageTotals {
+  capability: string;
+}
+
+export interface UsageModelRow extends UsageTotals {
+  provider: string;
+  model: string;
+}
+
+export interface UsagePriceRow {
+  match: string;
+  input_per_million: number;
+  output_per_million: number;
+  cached_input_per_million: number | null;
+  cache_write_per_million: number | null;
+}
+
+export interface UsagePeriod {
+  days: number;
+  from: string;
+  to: string;
+}
+
+export interface UsageOverview {
+  currency: string;
+  period: UsagePeriod;
+  generated_at: string;
+  totals: UsageTotals;
+  by_day: UsageDayRow[];
+  by_capability: UsageCapabilityRow[];
+  by_model: UsageModelRow[];
+  prices: UsagePriceRow[];
+}
+
+export interface UsageRecord {
+  id: string;
+  at: string;
+  capability: string;
+  source: string;
+  provider: string;
+  model: string;
+  status: string;
+  latency_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_input_tokens: number | null;
+  cache_write_tokens: number | null;
+  reasoning_tokens: number | null;
+  total_tokens: number | null;
+  provider_cost_micros: number | null;
+  error: string;
+  detail: Record<string, unknown>;
+  has_usage: boolean;
+  cost_micros: number | null;
+  cost_source: string;
+  cost_reason: string;
+  cost_currency: string;
+}
+
+export interface UsageRecordList {
+  period: UsagePeriod;
+  items: UsageRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface UsageBalanceLine {
+  label: string;
+  value: string;
+}
+
+export interface UsageBalance {
+  integration_id: string;
+  name: string;
+  label: string;
+  kind: string;
+  base_url: string;
+  supported: boolean;
+  currency: string;
+  total: string;
+  lines: UsageBalanceLine[];
+  fetched_at: string;
+  error: string;
+  cached: boolean;
+  endpoint: string;
+}
+
+export interface UsageBalanceList {
+  ttl_seconds: number;
+  balances: UsageBalance[];
+}
