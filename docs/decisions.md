@@ -995,3 +995,47 @@ field encryption would break the `LIKE` search the assistant depends on. The
 honest position is documented in `docs/phone.md`: encrypt the volume, use TLS,
 and choose a retention window you can live with. Device-level encryption or
 SQLCipher is a recorded follow-up, not a claim.
+
+## A tombstoned path owns its unique key, so the sweep resurrects it (2026-11-01)
+
+**Decision.** `scan()` loads *every* row for a root, tombstones included, and
+`UNIQUE(root_id, rel_path)` stays the one rule that decides who owns a path. A
+file that reappears at a deleted path re-indexes that row in place
+(`state='new'`, `deleted_at=NULL`, chunks rebuilt); a rename may only move a
+live row into a path that holds no row at all, tombstone included; and the
+end-of-sweep deletion pass skips rows already in `state='deleted'`. The contract
+is written down in `docs/knowledge-index.md` under "One row per path, tombstones
+included".
+
+**Why.** The diff filtered `state != 'deleted'` when it built its map of existing
+rows, so a tombstone was invisible to the sweep but still owned the unique key.
+A file that came back — `Winnie/profile/preferences.md`, deleted by one sweep and
+rewritten a few minutes later — went down the `row is None` branch and inserted,
+and the build died with `IntegrityError: UNIQUE constraint failed:
+docs.root_id, docs.rel_path`. The same filter made the rename `UPDATE` collide
+when it moved a live row onto a tombstoned path. Both abort the whole sweep, so
+one delete-then-restore left the index permanently unbuildable, and no amount of
+re-running could get past it: the broken state was in the catalog, not in the
+filesystem.
+
+**Rejected: `INSERT ... ON CONFLICT DO UPDATE`.** It silences the insert, but the
+row it overwrites is a tombstone whose chunks were purged on delete. The
+`text_hash` shortcut in `_index_document` would then mark it `indexed` with zero
+chunks — a document that reports itself indexed and can never be found. Resetting
+the state to `new` is precisely what forces the re-chunk.
+
+**Rejected: delete the tombstone and insert fresh.** Freeing the key works for
+the insert but throws away the record that the path was ever indexed (`status`
+counts it), and it does not help the rename case, where two live rows contend
+for one key.
+
+**Rejected: let tombstones witness renames through the inode map.** A tombstone's
+inode belongs to a file that no longer exists, and inode numbers are reused, so a
+brand-new document could be adopted as the "rename" of a deleted one. Only a live
+row may witness a rename.
+
+**Guard.** `packages/winnie-index/tests/test_index.py` covers the delete → restore
+path, a rename onto a tombstoned path, and a second sweep proving tombstones are
+not re-counted as deletions. The real catalog was repaired by the next sweep
+(row 2006 back to `indexed` with 2 chunks), and the sweep after that was a no-op:
+7423 unchanged, 0 added, 0 deleted.
