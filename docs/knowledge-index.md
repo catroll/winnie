@@ -2,79 +2,66 @@
 
 **Status:** proposed for review. Nothing here is implemented.
 
-**Scope, as of 2026-11-01:** text files only — Markdown, plain text and source
-code. No PDF, Office, OCR, e-mail or image ingestion. The server is always on.
-The same index is consumed through three surfaces: an **Agent Skill** (primary,
-for DSH, Cursor and Claude Code), **MCP** and **HTTP** (for Winnie and anything
-else).
+**Scope, v1 (2026-11-01):** `.txt` and `.md` only. Roots are configured later.
+No sensitive-root handling in v1 — exclusions are a config concern. Code, PDF,
+Office, OCR and e-mail are deferred. The server is always on and runs as a
+`systemctl --user` service. Clients reach it through MCP (loopback HTTP, plus a
+stdio shim) and HTTP; the Agent Skill only declares those two surfaces.
 
 **Goal.** One local index over the owner's text files, kept in step with the
-filesystem, that any coding agent can query without being told the paths, and
-that Winnie's assistant can use as one more tool — with every answer traceable
-to a file and a line range.
+filesystem, that any agent can query through a tool it already understands, with
+every answer traceable to a file and a line range.
 
-**Non-goals.** Cloud sync, multi-user access control, a web UI, a write path
-into the indexed files, and replacing the assistant's long-term memory: memory
-holds distilled facts about the owner, this index holds the source text those
-facts can be checked against.
+**Non-goals.** Cloud sync, multi-user access control, a web UI, a write path into
+the indexed files, and replacing the assistant's long-term memory: memory holds
+distilled facts about the owner, this index holds the source text those facts can
+be checked against.
 
 ## 1. What the index must do
 
 | Requirement | Consequence |
 |---|---|
-| Text only, ~45k files, several roots, outside the repo | Roots are configuration; the index lives outside the checkout |
-| Code is in scope | Source files are chunks with a `path :: symbol` header, not prose |
+| v1: `.txt` + `.md`, ~19k files, roots added later | Roots are configuration; the index lives outside the checkout |
 | Files change often | Incremental, content-addressed ingestion; never re-read everything per change |
-| "Always the latest version" | A bounded-staleness contract plus read-time revalidation (§3) |
-| Agents must find it unprompted | A Skill whose description carries the trigger phrases, not just a server (§8.1) |
-| Winnie must use it too | HTTP API and one assistant tool, separate from memory |
-| One user, one machine, always on | One daemon under systemd; no Elasticsearch, no cluster |
+| "Always the latest version" | Bounded staleness per surface plus read-time revalidation (§3) |
+| Agents must find it unprompted | A Skill that declares MCP/HTTP, nothing else (§8.1) |
+| Winnie must use it too | HTTP API plus one assistant tool, separate from memory |
+| One user, one machine, always on | One daemon under `systemctl --user`; no Elasticsearch, no cluster |
 
-"Always latest" is not free: a derived index only knows what a scan or a
-filesystem event told it. This design states the window per guarantee and closes
-the rest at read time instead of pretending it does not exist.
+"Always latest" is not free: a derived index only knows what a scan or an event
+told it. This design states the window per guarantee and closes the rest at read
+time instead of pretending it does not exist.
 
 ## 2. Measured corpus (this host, 2026-11-01)
 
 | Measurement | Value |
 |---|---|
-| Candidate files after the scope rules (text extensions, ≤ 2 MB, caches excluded) | **44,943** |
-| Raw bytes | **403.5 MB** |
-| Unique content (SHA-1 over every candidate, counted once) | **37,773 files / 365.0 MB** |
-| Exact duplicates | **7,170 files / 38.5 MB** (16 %) |
-| Prose (`md txt rst org tex`) | 19,359 files / 180.5 MB |
-| Code (`py go js ts tsx jsx java kt rs c cpp h sh sql`) | 13,135 files / 124.3 MB |
-| Config (`yaml json toml ini conf cfg`) | 12,449 files / 98.7 MB |
-| Hashing throughput | 403 MB in 7.3 s, including one process per 100 files |
+| v1 candidates: files ending `.txt` or `.md`, ≤ 2 MB, caches excluded | **19,189 files / 180.4 MB** |
+| Unique content (SHA-1 over every candidate, counted once) | **18,111 files** — 1,078 byte-identical duplicates (5.6 %) |
+| Wider text-only set (adds code + config, deferred) | 44,943 files / 403.5 MB |
 | Metadata scan of 202,798 files | 1.0 s warm (one `EACCES` on a root-owned `postgres` data dir) |
+| Hashing throughput | 403 MB in 7.3 s, including one process per 100 files |
 | Directories under `~/Projects` alone | 104,762 (inotify limit 1,048,576) |
 | Free disk | 68 GB (93 % used) |
 | Cores / RAM / GPU | 16 / 26 GB / none |
 | SQLite | 3.46.1, FTS5 available, ICU tokenizer absent |
 | Python | 3.14.4 system, 3.13 present, `uv` absent |
+| Node.js | 22.22.1 (only relevant to the qmd options, §13) |
 
-Estimated from those bytes: **200–250k chunks**, index **1.5–2.5 GB**,
-one-off embedding **1–2 hours** on CPU. The phase-0 dry run replaces every
-estimate with a count.
+Estimated for v1: **120–160k chunks**, index **0.8–1.5 GB**, one-off embedding
+**1–1.5 hours** on CPU. The phase-0 dry run replaces every estimate with a count.
 
-Two findings still shape the rules, even after the scope narrowed:
-
-1. **Extension alone is not enough.** Under the text allowlist, 1,345 files
-   ending in `.ts` are 6.9 GB of MPEG transport-stream segments in
-   `~/Projects/Mine/cinema/data/cache` — not TypeScript. A size cap and cache
-   exclusions remove them, and a decode gate (§7.1) catches whatever a future
-   directory invents.
-2. **Duplicates are material.** 16 % of files are byte-identical to another
-   file; by size alone the figure looked like 57 %. Exact hashing is worth
-   doing before embedding, because every duplicate is an embedding paid twice
-   and a result slot wasted.
+One finding still shapes the rules: extension is not proof of content. Under a
+text allowlist, 1,345 files ending in `.ts` turned out to be 6.9 GB of MPEG
+transport-stream segments. A size cap and a decode gate (§6.2) catch whatever a
+future directory invents.
 
 ## 3. The freshness contract
 
 | Level | Guarantee | Mechanism |
 |---|---|---|
 | Read | A document handed to a model is never stale | `get` stats the file; on any difference it re-reads and re-chunks before returning text |
-| Search | Index reflects changes within one sweep (default 300 s); within ~2 s where the watcher is active | sweep diff plus debounced inotify events |
+| Search | Index reflects changes within one sweep (default 300 s); ~2 s where the watcher is active | sweep diff plus debounced inotify events |
 | Consistency | No ghosts, no duplicated documents | tombstones on delete, content-hash dedupe, daily reconciliation |
 
 Three-stage change detection keeps "often modified" cheap:
@@ -104,8 +91,6 @@ re-chunk (+ re-embed that document only)
 The watcher is an accelerator, never the correctness mechanism: on overflow, a
 killed process or a network mount, the next sweep still converges. It is opt-in
 per root because `~/Projects` alone has 104k directories.
-`~/.local/share/winnie-index/` holds `catalog.sqlite` (WAL), `index.log` (JSON
-lines) and `backups/`.
 
 ## 4. Architecture
 
@@ -122,15 +107,22 @@ roots (YAML) ──► scanner ──► diff vs catalog ──► jobs (SQLite)
                                               ▼
                                     BM25 + KNN → RRF
                                               │
-        ┌─────────────────┬───────────────────┼───────────────────┐
-        ▼                 ▼                   ▼                   ▼
-  Skill (SKILL.md)   MCP server        HTTP API /search      Winnie tool
-  via scripts/       stdio + HTTP      /doc /status          (assistant)
+                     ┌────────────────────────┼────────────────────────┐
+                     ▼                        ▼                        ▼
+              MCP (HTTP)              MCP (stdio shim)            HTTP /search
+                     └─────────── Skill declares these ───────────┘
 ```
 
 One daemon owns the database, the scanner, the queue and both indexes. One
 process means no cross-process locking and no second service: a query can never
 see chunks the catalog has already deleted.
+
+```
+~/.local/share/winnie-index/
+  catalog.sqlite        # docs, chunks, FTS5, vectors, jobs (WAL)
+  index.log             # JSON lines
+  backups/              # 2 daily sqlite .backup snapshots
+```
 
 ### 4.1 Configuration
 
@@ -143,25 +135,18 @@ while a missing file passed with `--config` is an error.
 # ~/.config/winnie-index/config.yaml
 data_dir: ~/.local/share/winnie-index
 
+# Roots are added later; nothing is indexed until at least one exists.
 roots:
-  - name: documents
-    path: /home/catroll/Documents
-    tier: dense
-    exclude: ["xwechat_files/**", "**/CopyQ/**"]
-    watch: false
   - name: notes
-    path: /home/catroll/Notes          # gitpim calendar: journals and events
+    path: /home/catroll/Notes
     tier: dense
-  - name: projects
-    path: /home/catroll/Projects
-    tier: dense
-    exclude: ["**/node_modules/**", "**/.git/**", "**/.venv/**", "**/dist/**",
-              "**/build/**", "**/target/**", "**/.gradle/**", "**/data/cache/**"]
+    exclude: []
+    watch: false
 
 formats:
-  prose:  [md, markdown, txt, rst, org, tex]
-  code:   [py, go, js, ts, tsx, jsx, java, kt, rs, c, cpp, h, sh, sql]
-  config: [yaml, yml, json, toml, ini, conf, cfg]
+  prose:  [txt, md]            # v1
+  # code:   [py, go, js, ts]   # deferred
+  # config: [yaml, json]       # deferred
 
 scan:
   interval_seconds: 300
@@ -173,11 +158,10 @@ index:
   max_chunks_per_doc: 2000
   chunk_tokens: 500
   overlap_tokens: 60
-  vectors: sqlite-vec            # sqlite-vec | qdrant
+  vectors: sqlite-vec          # sqlite-vec | qdrant
   qdrant_url: http://127.0.0.1:6333
   dense:
     enabled: true
-    include: [prose, code]       # config stays lexical: it is keyword-shaped
     model: BAAI/bge-m3
     dims: 1024
     batch: 16
@@ -188,11 +172,11 @@ retrieval:
   rrf_k: 60
   max_per_doc: 2
   limit: 8
-  min_score: 0.25                # below this, return nothing
+  min_score: 0.25              # below this, return nothing
 
 serve:
-  http: 127.0.0.1:8787
-  mcp: http                      # http | stdio
+  http: 127.0.0.1:8787         # /search /doc /status /healthz and /mcp
+  mcp: http                    # http | stdio
   token_env: WINNIE_INDEX_TOKEN  # optional; empty means loopback trust
 
 skill:
@@ -210,8 +194,7 @@ CREATE TABLE roots (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, path TEXT NOT NULL,
   tier TEXT NOT NULL DEFAULT 'dense',     -- dense | lexical
   include TEXT NOT NULL, exclude TEXT NOT NULL,   -- JSON arrays of globs
-  sensitive INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1,
-  watch INTEGER NOT NULL DEFAULT 0
+  enabled INTEGER NOT NULL DEFAULT 1, watch INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE docs (
@@ -230,17 +213,15 @@ CREATE TABLE docs (
 
 -- Decoded text is keyed by content, so a rename or a copy never pays twice.
 CREATE TABLE contents (
-  bytes_hash TEXT PRIMARY KEY,
-  text TEXT NOT NULL,
-  encoding TEXT NOT NULL,
-  meta TEXT NOT NULL           -- JSON: decoded lines, warnings, binary sniff
+  bytes_hash TEXT PRIMARY KEY, text TEXT NOT NULL,
+  encoding TEXT NOT NULL, meta TEXT NOT NULL   -- JSON: lines, warnings, sniff
 );
 
 CREATE TABLE chunks (
   id INTEGER PRIMARY KEY,
   doc_id INTEGER NOT NULL REFERENCES docs(id) ON DELETE CASCADE,
   seq INTEGER NOT NULL,
-  heading TEXT,                -- Markdown heading path, or `path :: symbol` for code
+  heading TEXT,                -- Markdown heading path, e.g. `Deploy > Rollback`
   start_line INTEGER, end_line INTEGER,
   text TEXT NOT NULL,
   terms TEXT NOT NULL,         -- pre-tokenised: CJK bigrams + ASCII words
@@ -278,15 +259,12 @@ a mysterious quality regression. Startup refuses to serve dense results when
 Evaluated in order, all configurable per root:
 
 1. root `include` / `exclude` globs;
-2. extension allowlist for `prose`, `code`, `config` (§4.1);
+2. extension allowlist — v1 is `txt` and `md`;
 3. per-file cap 2 MB (`sealed` above it, counted, not failed);
 4. excluded by default: `.git`, `node_modules`, `.venv`, `dist`, `build`,
    `target`, `data/cache`, hidden dirs, `*.min.*`, lock files;
 5. symlinks not followed; each root walked with `xdev` so a mount cannot pull in
    200 GB silently.
-
-The cap and the cache exclusion are what keep 6.9 GB of `.ts` video segments out
-of a corpus that is otherwise 403 MB.
 
 ### 6.2 Decoding gate
 
@@ -295,10 +273,10 @@ proof that it is text:
 
 1. read at most 2 MB;
 2. refuse a NUL byte in the first 8 KB (`sealed: binary`);
-3. decode as UTF-8, then UTF-8-SIG, then GB18030; failure seals the file with
-   the attempted encodings in `last_error`;
+3. decode as UTF-8, then UTF-8-SIG, then GB18030; failure seals the file with the
+   attempted encodings in `last_error`;
 4. normalise CRLF to LF and strip the BOM, but **never** strip leading
-   whitespace — indentation is content in code;
+   whitespace;
 5. store the text under `bytes_hash` and record the encoding used.
 
 GB18030 is tried last rather than `latin-1`, because a mis-decoded Chinese file
@@ -309,16 +287,15 @@ is visibly sealed, not silently garbled.
 
 | Kind | Boundary | Header |
 |---|---|---|
-| prose | Markdown headings, then paragraphs; 500 tokens, 60 overlap | ancestor heading path, e.g. `Deploy > Rollback` |
-| code | top-level symbol boundaries when tree-sitter knows the language, otherwise blank-line blocks; 60-line windows, 10-line overlap | `path :: symbol` |
-| config | line blocks; 60-line windows | `path` |
+| prose (v1) | Markdown headings, then paragraphs; 500 tokens, 60 overlap | ancestor heading path |
+| code (deferred) | top-level symbol boundaries via tree-sitter, else blank-line blocks | `path :: symbol` |
+| config (deferred) | line blocks | `path` |
 
-- Keep `start_line`/`end_line` so a citation is actionable and the model can
-  read exactly the cited region.
+- Keep `start_line`/`end_line` so a citation is actionable and the model can read
+  exactly the cited region.
 - Never split a fenced code block that fits; if one exceeds the cap, keep it
   whole and mark it truncated.
-- Per-document cap of 2,000 chunks so one generated file cannot dominate the
-  index.
+- Per-document cap of 2,000 chunks so one generated file cannot dominate.
 
 ### 6.4 Dedupe
 
@@ -326,7 +303,7 @@ is visibly sealed, not silently garbled.
   and one set of chunks, while `docs` keeps every path.
 - **Near:** `text_hash` after line-ending normalisation. Search collapses hits
   sharing a `text_hash` into one result whose `also_at` lists the other paths.
-  Without this, 7k duplicate files become 7k duplicate hits.
+  In the v1 subset that is 1,078 files that would otherwise be duplicate hits.
 
 ## 7. Indexing and retrieval
 
@@ -353,11 +330,10 @@ column roughly doubles token volume, measured in phase 1.
 
 | Decision | Choice | Reason |
 |---|---|---|
-| Store | `sqlite-vec` in the catalog file | ~200k × 1024 × 4 B ≈ 800 MB f32, ~200 MB int8; brute-force KNN is ~50–150 ms and transactional with the rows it points at. A second service is not justified |
-| Scale-out | Qdrant behind a `VectorStore` port | Trigger: p95 > 500 ms, > 500k vectors, or a second reader host. The project's earlier Qdrant choice survives as the escape hatch, not the first step |
-| Model | multilingual, 1024-d, CPU-feasible — `BAAI/bge-m3` as candidate | Chinese-heavy corpus; no GPU on this host; verified for ONNX/GGUF availability before adoption |
-| Tiering | prose and code dense; config lexical only | Config is keyword-shaped; embedding 12k YAML/JSON files pays for little recall |
-| Build | one-off batch, resumable per document | ~200k chunks at 30–60 chunks/s is 1–2 hours of CPU, then incremental |
+| Store | `sqlite-vec` in the catalog file | ~160k × 1024 × 4 B ≈ 650 MB f32, ~165 MB int8; brute-force KNN is ~40–120 ms and transactional with the rows it points at |
+| Scale-out | Qdrant behind a `VectorStore` port | Trigger: p95 > 500 ms, > 500k vectors, or a second reader host |
+| Model | multilingual, 1024-d, CPU-feasible — `BAAI/bge-m3` as candidate | Chinese-heavy corpus; no GPU; ONNX/GGUF availability verified before adoption |
+| Build | one-off batch, resumable per document | ~150k chunks at 30–60 chunks/s is 1–1.5 hours, then incremental |
 
 Privacy default: local model, no vendor API. An API embedding provider may be
 added behind a flag that prints a warning, because shipping a personal corpus to
@@ -377,109 +353,110 @@ dense top 50 ─┘
 - A per-document cap stops one long file from filling every slot.
 - Reranking is phase 4, only if the fixture says hybrid is not enough.
 - A relevance floor is mandatory: below `min_score`, return nothing and say so.
-  An index that always returns eight chunks teaches the model to answer from
-  the wrong file.
 - Every hit carries `path`, `heading`, `start_line`–`end_line`, `mtime`,
   `content_hash`, `score`, a snippet, and `fresh` (false means the file changed
   after indexing and the text was re-read at query time).
 
 ## 8. Delivery surfaces
 
-Three surfaces, one daemon, three audiences. They must not drift, so all three
-are rendered from the same catalog and the same query code.
+### 8.1 Agent Skill
 
-### 8.1 Agent Skill (primary)
-
-[Agent Skills](https://cursor.com/docs/skills) is the open `SKILL.md` standard:
-a directory with a short `SKILL.md`, optional `references/` loaded on demand,
-and optional `scripts/`. Cursor 3.x loads it from `.agents/skills/`,
-`.cursor/skills/`, `~/.agents/skills/`, `~/.cursor/skills/` and, for
-compatibility, the Claude and Codex directories. DSH's filesystem provider scans
-`<project>/.dsh/skills`, `<project>/.agents/skills`, configured custom
-directories, `<dshHome>/skills` and `<agentsHome>/skills`, and watches them, so a
-regenerated skill reaches the next session without a restart. One canonical
-install therefore serves DSH, Cursor and Claude Code with no symlinks:
+The skill is a **declaration only**: name, description, and the two ways to reach
+the server. It does not teach the model which directories exist, how to grep, or
+what to run — that is the index's job, behind a tool.
 
 ```
-~/.agents/skills/local-knowledge/
-  SKILL.md                 # ~100 lines; the only file loaded by default
-  references/
-    roots.md               # generated: what is indexed, what is not, counts
-    query-syntax.md        # filters, citation format, worked examples
-  scripts/
-    search.sh              # thin wrapper over the HTTP API, --json output
-    get.sh
-    status.sh
+~/.agents/skills/local-knowledge/SKILL.md     # ~40 lines, the only file
 ```
 
-`SKILL.md` content, in order:
+```markdown
+---
+name: local-knowledge
+description: Search the owner's local notes and Markdown documents. Use when a
+  question depends on what the owner wrote or saved before ("我的笔记",
+  "之前写的", "找一下那份文档", "where did I", "what did we decide about").
+  Backed by an MCP server named local-knowledge and an HTTP API on
+  127.0.0.1:8787; do not search the filesystem for these documents.
+---
 
-| Part | Content |
+# Local knowledge
+
+An index of the owner's own `.txt` and `.md` files. It is reached through tool
+calls, never by walking directories.
+
+## Tools
+- `search_documents(query, roots?, since?, limit?)` → ranked hits with path,
+  heading, line range, mtime and score.
+- `get_document(path, from_line?, lines?)` → the cited text, revalidated against
+  the file before it is returned.
+- `index_status()` → coverage, last sweep, failures.
+
+## HTTP (when MCP is unavailable)
+`POST http://127.0.0.1:8787/search` with `{"query": "...", "limit": 8}`.
+
+## Rules
+- Answer only from text returned by `get_document`; cite `path:line`.
+- An empty result means the corpus has nothing; say so instead of guessing.
+- Results carry `mtime`; re-run the search after files change.
+```
+
+Both client families discover this directory without a symlink: Cursor 3.x loads
+`.agents/skills/` and `~/.agents/skills/` (plus the Claude/Codex directories),
+and DSH's filesystem provider scans `<agentsHome>/skills` and watches it, so a
+regenerated skill reaches the next session without a restart.
+
+Registration is per client, because a skill declares a capability but does not
+configure the transport:
+
+| Client | Registration |
 |---|---|
-| `name` | `local-knowledge` |
-| `description` | Trigger phrases in Chinese and English: "我的笔记", "之前写的", "找一下那份文档", "where did I", "what did we decide about". Plus: prefer the `search_documents` tool, else `scripts/search.sh` |
-| `whenToUse` | DSH's optional field, same trigger sentences; Cursor ignores it, so the description must stand alone |
-| When to use | Questions about the owner's own writing, decisions, code; not for public facts (web search) and not for current events |
-| Workflow | 1) `search` with a specific query, 2) read the cited lines with `get`, 3) answer with `path:line` and quote only what was read |
-| Limits | Text only: no PDF, no Excel, no images; what to say when nothing matches |
-| Freshness | Results carry mtime; `get` revalidates; re-run search after a file changes |
+| DSH | MCP server entry in the DSH config overlay (exact key confirmed in P3) |
+| Cursor | `.cursor/mcp.json` with `{"mcpServers": {"local-knowledge": {"url": "http://127.0.0.1:8787/mcp"}}}` |
+| Claude Code | `claude mcp add --transport http local-knowledge http://127.0.0.1:8787/mcp` |
 
-Regeneration: `winnie-index skill install` renders the templates with live root
-names, counts and gaps; `--check` reports drift and exits non-zero. The templates
-live in the repo, the installed copy lives in `~/.agents/skills`, and a schema or
-root change regenerates `references/roots.md` — never per-file churn.
+Registration syntax is confirmed in P3; the table states the intended shape.
 
-Two constraints on the skill, because every agent pays for its description in
-context:
-
-- `SKILL.md` stays under ~120 lines; detail belongs in `references/`.
-- Neither `SKILL.md` nor `references/` ever contains document text or long path
-  lists — only instructions, root names and counts. A skill is context, not a
-  data channel.
-
-Why one skill rather than one per root: the catalog already holds 134 skills,
-and a per-root split multiplies the trigger ambiguity ("was this note in Notes or
-Documents?"). One skill with a `roots` filter argument is enough.
+The skill never contains document text, path lists or query recipes: it is
+context that every agent pays for on every turn.
 
 ### 8.2 MCP
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `search_documents` | `query`, `roots?`, `kind?`, `since?`, `limit?` | ranked hits with citation fields; an empty list is a valid answer |
+| `search_documents` | `query`, `roots?`, `since?`, `limit?` | ranked hits with citation fields; an empty list is a valid answer |
 | `get_document` | `path`, `from_line?`, `lines?` | revalidated text with line numbers |
 | `index_status` | — | counts by state, last sweep, lag, failures, disk, model |
 
-Transport: loopback HTTP (`POST /mcp`, streamable, stateless) as the default,
-with a `stdio` shim that proxies to the daemon. HTTP is preferred because the
-daemon already runs and model loading/index state should be shared; stdio exists
-for clients that cannot reach a port. Tool descriptions are written for
-selection, not documentation: they say *when* to call, not what the fields mean.
+Transport: loopback HTTP (`POST /mcp`, streamable, stateless) as the default, plus
+a `stdio` shim that proxies to the running daemon. HTTP is preferred because the
+daemon already holds the index and model; stdio exists for clients that cannot
+reach a port. Tool descriptions are written for selection, not documentation.
 
 ### 8.3 HTTP
 
-`POST /search`, `GET /doc/{id}`, `GET /status`, `GET /healthz`. Loopback only;
-a non-loopback bind requires `WINNIE_INDEX_TOKEN` and warns at startup. This is
-what Winnie's assistant calls, and what the skill's scripts fall back to when the
-MCP server is not configured.
+`POST /search`, `GET /doc/{id}`, `GET /status`, `GET /healthz`. Loopback only; a
+non-loopback bind requires `WINNIE_INDEX_TOKEN` and warns at startup. This is what
+Winnie's assistant calls.
 
 ### 8.4 Winnie
 
 One assistant tool, `search_documents`, modelled on the existing `memory_search`
-contract: plain text, bounded, `path:line` citations, empty when nothing
-matches. Memory and documents remain separate tools — memory is what the
-assistant was told, the index is where the source is.
+contract: plain text, bounded, `path:line` citations, empty when nothing matches.
+Memory and documents remain separate tools — memory is what the assistant was
+told, the index is where the source is.
 
 ## 9. Operations
 
 | Concern | Decision |
 |---|---|
-| Process | one daemon (`systemd --user` unit, `Restart=on-failure`), `loginctl enable-linger` so it survives logout; sweep on start, then every 300 s |
+| Process | `systemctl --user` unit, `Restart=on-failure`; `loginctl enable-linger` (currently `Linger=no`) so it survives logout; sweep on start, then every 300 s |
+| Existing pattern | the machine already runs `dsh-web.service` under the same manager, so this matches local practice |
 | Initial build | `winnie-index build --dry-run` prints counts and bytes per root/format and writes nothing; the real build is resumable and safe to interrupt |
-| Order | lexical for all roots first (usable in minutes), dense in the background — a half-finished build is already useful |
+| Order | lexical for all roots first (usable in minutes), dense in the background |
 | Backpressure | the scanner pauses when pending jobs exceed the threshold; `status` shows queue depth |
-| Disk | budget 4 GB (index 1.5–2.5 GB, scratch, 2 snapshots); warn below 30 GB free, refuse to embed below 15 GB (68 GB today) |
-| Growth | daily `PRAGMA optimize`, weekly `VACUUM` if freed pages > 10 %, 2 daily `sqlite3 .backup` snapshots (the index is rebuildable from files; snapshots are convenience, not backup) |
-| Observability | JSON lines: one entry per sweep, batch and failure; `/healthz` returns queue depth and last-sweep age |
+| Disk | budget 4 GB (index 0.8–1.5 GB, scratch, 2 snapshots); warn below 30 GB free, refuse to embed below 15 GB (68 GB today) |
+| Growth | daily `PRAGMA optimize`, weekly `VACUUM` if freed pages > 10 %, 2 daily `sqlite3 .backup` snapshots (the index is rebuildable; snapshots are convenience) |
+| Observability | JSON lines per sweep, batch and failure; `/healthz` returns queue depth and last-sweep age |
 | Doctor | `winnie-index doctor` checks sqlite-vec load, FTS5, model dims, watch limits, free space, skill drift |
 
 ```
@@ -492,13 +469,11 @@ winnie-index init | scan | build [--dry-run] | embed | search | get
 - Local only; no network egress in the default configuration.
 - Catalog mode `0600`, directory `0700`.
 - HTTP/MCP bind `127.0.0.1`; non-loopback requires a token.
-- Per-root `sensitive: true` excludes a root from default searches, demands an
-  explicit `roots` argument, and redacts its paths in logs and status output.
+- v1 has no sensitive-root concept; exclusions are ordinary `exclude` globs, and
+  a `sensitive` flag is added only when there is a root that needs it.
 - Logs record paths, sizes, hashes and errors — never document text.
 - `get_document` refuses paths outside configured roots, so a crafted path cannot
   read `~/.ssh`.
-- The skill is world-readable by design (agents load it); it must therefore never
-  contain corpus text or sensitive paths.
 
 ## 11. Evaluation
 
@@ -522,73 +497,130 @@ Behavioural tests, cheap and decisive:
 4. delete → gone within one sweep, tombstone present;
 5. append a paragraph → found within one sweep;
 6. ask an agent "我之前写的关于 X 的笔记" with no path given → the skill is
-   selected, the search tool is called, the answer cites `path:line`.
+   selected, `search_documents` is called, the answer cites `path:line`.
 
-Test 6 is the one that decides whether the skill is doing its job, and it is the
-one most easily skipped.
+Test 6 decides whether the skill is doing its job, and is the one most easily
+skipped.
 
-## 12. Phases
+## 12. Phases (self-built option)
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **P0 Inventory** | `build --dry-run`, scope rules, per-root/format report | counts match §2 within 5 %; nothing written |
-| **P1 Lexical + Skill** | catalog, sweep, decode gate, chunker, FTS5, `search`/`get` CLI, skill install | 44k files indexed; p95 < 200 ms; rename/delete/touch tests pass; an agent answers from the skill without being given a path |
-| **P2 Code** | symbol chunking, `kind` filters, dedupe collapse | code queries return the enclosing symbol; duplicates collapse |
-| **P3 Dense** | embeddings, sqlite-vec, RRF | hybrid recall@5 ≥ lexical + 0.1; build time and disk recorded |
-| **P4 MCP + Winnie** | MCP HTTP/stdio, HTTP API, assistant tool | one Winnie answer cites an indexed file; MCP client lists the tools |
-| **P5 Operations** | watcher, systemd, linger, gc, doctor | 7 days unattended; lag within target |
+| **P0 Inventory** | `build --dry-run`, scope rules, per-root report; the option choice in §13 | counts match §2 within 5 %; nothing written |
+| **P1 Lexical + Skill** | catalog, sweep, decode gate, chunker, FTS5, `search`/`get` CLI, skill install | 19k files indexed; p95 < 200 ms; rename/delete/touch tests pass; an agent answers from the skill with no path given |
+| **P2 Dense** | embeddings, sqlite-vec, RRF | hybrid recall@5 ≥ lexical + 0.1; build time and disk recorded |
+| **P3 MCP + Winnie** | MCP HTTP/stdio, HTTP API, assistant tool | one Winnie answer cites an indexed file; a Cursor session lists the tools |
+| **P4 Operations** | watcher, systemd unit, linger, gc, doctor | 7 days unattended; lag within target |
 
 Each phase ends with a commit carrying its measured numbers, so later tuning has
 a baseline to beat.
 
-## 13. Rejected alternatives
+## 13. Implementation options: self-built vs qmd
+
+Three ways to get the same external contract (MCP HTTP + stdio, HTTP, a thin
+skill). They differ in who owns the index and how Chinese text behaves.
+
+**A. qmd as-is.** `qmd collection add` for each root, a timer running
+`qmd update`, `qmd mcp --http`, and our 40-line `SKILL.md`. qmd 2.8.3 (MIT,
+published 2026-08-16) already provides SQLite FTS5 + sqlite-vec, RRF fusion, an
+LLM reranker, an MCP server with `query`/`get`/`multi_get`/`status`/`metadata`,
+and an HTTP search endpoint.
+
+**B. qmd SDK.** Import `createStore()` from `@tobilu/qmd` in a small Node/TS
+daemon, own the HTTP and MCP surface, add read-time revalidation and our own tool
+schemas. Reuses qmd's ingestion, hybrid retrieval and reranking; still Node.
+
+**C. Self-built.** The design in this document: Python daemon, own schema,
+FTS5 bigram tokenisation, sqlite-vec, own MCP/HTTP, same stack as Winnie.
+
+| Dimension | A: qmd as-is | B: qmd SDK | C: self-built |
+|---|---|---|---|
+| First-version work | ~0 code: unit, timer, skill | 500–1000 lines TS | ~2–4k lines Python |
+| Chinese lexical | **Broken**: its FTS5 table is `tokenize='porter unicode61'`, and unicode61 was measured on this build to reject `天气` against `今天天气` | Same — the table is qmd's | Correct: bigram tokenisation |
+| Chinese semantic | Works, but needs `QMD_EMBED_MODEL` swapped to a CJK model and a full re-embed | Same | Model is our choice |
+| Freshness | `qmd update` on a timer; `get` reads the index, not the file | Can add a stat-check wrapper | Read-time revalidation built in |
+| MCP | Built in | Ours, on top of qmd | Ours |
+| HTTP | Built in (`/query`, `/health`) | Ours | Ours |
+| Winnie integration | Calls qmd's HTTP | Calls our HTTP | Same process family, same stack |
+| Ops | One Node process, a timer, ~2 GB of GGUF models | Same, plus our daemon | One Python process |
+| Evolvability (code roots, exclusions, scoring) | Constrained by upstream | Medium | High |
+| Upstream risk | 2.8.3, active, MIT; 2.x API still moving | Same | None, but every fix is ours |
+| Time to a usable answer | Hours | Days | 1–2 weeks |
+
+Where the choice actually turns:
+
+- **Chinese lexical search is the differentiator.** qmd's tokenizer makes
+  two-character Chinese words unmatchable through FTS5, so a qmd-based system
+  answers Chinese lexical queries only through dense retrieval and reranking.
+  That may be good enough — but it is an empirical question, and the only honest
+  way to settle it is to measure.
+- **qmd's rerank and query expansion run on CPU here** (1.7B expansion model,
+  0.6B reranker). Its `search` path is fast; its `query` path is not. A
+  latency budget under 300 ms p95 probably rules out `query` on this host.
+- **The skill is identical in all three options**, so it is not a differentiator;
+  neither is the MCP surface shape, which qmd already matches closely.
+
+**Recommendation.** Do a short bake-off before committing (an hour, mostly model
+download): index a 500-file
+sample with `qmd` (dense model swapped to Qwen3-Embedding) and with a ~100-line
+SQLite FTS5-bigram prototype, run the same 20 Chinese queries, and compare
+recall@5 and latency. Then:
+
+- if qmd's dense path clears the fixture → take **A**, and only build **C** when
+  a requirement it cannot meet appears (code roots, sensitive exclusions, scoring
+  control);
+- if Chinese recall collapses without the bigram index → take **C**, starting
+  with P1 (lexical only), and treat qmd as the reference for the MCP surface;
+- **B** only if a Node runtime is acceptable and you want qmd's ingestion without
+  owning it — it does not fix the Chinese lexical gap.
+
+## 14. Rejected alternatives
 
 | Alternative | Why not |
 |---|---|
-| **qmd** as the whole solution | The closest off-the-shelf fit — text/markdown/code over SQLite FTS5 + sqlite-vec, incremental `update`, MCP, and an HTTP search endpoint. Rejected because it generates no Skill, its lexical index uses FTS5's default tokenizer (no CJK bigrams), freshness is driven only by an explicit `qmd update` with no read-time revalidation, and its GGUF embeddings would run slower here than an ONNX path on a CPU-only host. Keep it as the reference implementation for the MCP surface |
 | **RAGFlow** | Excellent chunking, but Docker + Elasticsearch + an LLM stack for one user; this host has 68 GB free |
 | **FTS5 trigram** | Measured: two-character Chinese queries return nothing |
 | **FTS5 ICU** | Not compiled into this SQLite (`no such tokenizer: icu`) |
-| **Qdrant now** | 200k vectors do not justify a second process and a synchronisation problem; kept as the scale-out |
+| **Qdrant now** | 160k vectors do not justify a second process and a synchronisation problem; kept as the scale-out |
 | **inotify-first** | 104k watches and a correctness story that still needs a sweep; the sweep is the mechanism, the watcher is latency |
+| **Scripts or directory recipes in the skill** | Ties every client to a shell and teaches path knowledge that goes stale; MCP/HTTP are the stable contract |
 | **A skill per root** | Multiplies trigger ambiguity in a catalog of 134 skills; one skill with a `roots` filter is enough |
-| **Putting document text in the skill** | The skill is loaded by every agent into its context; it is instructions, not a data channel |
-| **Re-index on every query** | Recorded because "always latest" invites it; the read-time revalidation gets the same guarantee for one stat |
+| **Document text inside the skill** | The skill is loaded by every agent; it is instructions, not a data channel |
+| **Re-index on every query** | Read-time revalidation gets the same guarantee for one `stat` |
 
-## 14. Open questions
+## 15. Open questions
 
-1. **Exact roots.** The measurement covered `~/Documents`, `~/Projects`,
-   `~/Notes`, `~/Desktop`; 42,435 of the 44,943 files are under `~/Projects`.
-   Should `~/Downloads` be included at all?
-2. **Code roots.** Include all of `~/Projects`, or only repositories the owner
-   edits? A vendored library tree adds noise to every code query.
-3. **Config files.** 12,449 YAML/JSON files, 98.7 MB — lexical only, or drop them
-   from the index entirely?
-4. **Skill name and triggers.** Is `local-knowledge` the name agents should see,
-   and do the Chinese trigger phrases match how you actually ask?
-5. **MCP transport.** HTTP on `127.0.0.1:8787` as the default, stdio shim for
-   clients that need it — or stdio only?
-6. **Sensitive roots.** Anything under these paths that must never appear in an
-   agent's context (tokens, credentials, work material)?
-7. **Scope of "always on".** Does the daemon start at boot (system service)
-   or at login (user service with linger)?
+1. **Roots** — deferred by request; v1 indexes nothing until at least one root is
+   listed in the YAML.
+2. **Chinese source or mixed?** All measurement and tokenisation assumes
+   Chinese is primary. If most of the corpus is English, the bigram index is
+   still correct; it is just less of an advantage.
+3. **qmd bake-off or commit directly to C?** The bake-off costs an hour and
+   settles the one open technical question; skipping it commits to ~2–4k lines
+   of Python on a hunch.
+4. **MCP registration details** — the DSH overlay key, and whether Cursor's
+   `.cursor/mcp.json` accepts a URL-only server entry, are confirmed in P3.
+5. **Embedding model** — `BAAI/bge-m3` is the candidate; ONNX/GGUF availability
+   and CPU throughput are measured before adoption.
 
-## 15. Verified versus assumed
+## 16. Verified versus assumed
 
-Verified on this host: file and byte counts, exact duplicate count, hashing
-throughput, scan time, directory count, inotify limits, free disk, SQLite version
-and tokenizer behaviour (trigram, ICU, bigram), CPU/RAM/GPU, Python versions,
-absence of `uv`, and that Ollama is installed but not runnable by this user.
+Verified on this host: file and byte counts for the v1 subset, exact duplicate
+count, scan time, directory count, inotify limits, free disk, SQLite version and
+tokenizer behaviour (trigram, ICU, bigram), CPU/RAM/GPU, Python and Node
+versions, existence of `systemctl --user` services and `Linger=no`.
+
 Verified from upstream: Cursor 3.x discovers Agent Skills in `~/.agents/skills/`
-and the Claude/Codex directories, and DSH's filesystem provider scans
-`<agentsHome>/skills` among its roots and watches them for changes.
+and the Claude/Codex directories; DSH's filesystem provider scans
+`<agentsHome>/skills` and watches it; qmd 2.8.3 is MIT, requires Node ≥ 22, was
+published 2026-08-16, ships an MCP server and HTTP search, and builds its FTS5
+table with `tokenize='porter unicode61'` (read from the published tarball).
 
 Not yet verified, checked at the start of the phase that needs it:
 
 - `sqlite-vec` loads in this Python build and its vector type/distance syntax;
 - `BAAI/bge-m3` ONNX or GGUF availability and throughput on this CPU;
-- tree-sitter coverage for the code languages that matter here;
-- whether DSH's MCP client accepts the loopback HTTP transport or needs the
-  stdio shim;
-- that the skill's description actually triggers on the owner's real phrasing
-  (test 6 in §11).
+- qmd's dense retrieval quality on Chinese with a swapped embedding model, and
+  the latency of its `query` path on this host;
+- whether DSH's MCP client accepts loopback HTTP or needs the stdio shim;
+- that the skill's description triggers on the owner's real phrasing (test 6).
