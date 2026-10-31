@@ -31,6 +31,7 @@ from winnie_local import (
     WriteFile,
 )
 from winnie_assistant.memory import MemoryStore
+from winnie_assistant.news import NewsGateway
 from winnie_assistant.scheduler import AssistantScheduler, TaskDefinitionError
 from winnie_assistant.search import SearchProvider
 
@@ -50,6 +51,9 @@ TASK_MANAGEMENT_TOOLS = frozenset({"schedule_task", "list_tasks", "cancel_task"}
 LOCAL_FILE_TOOLS = frozenset({"list_files", "read_file", "write_file"})
 LOCAL_COMMAND_TOOLS = frozenset({"run_command"})
 LOCAL_TOOLS = LOCAL_FILE_TOOLS | LOCAL_COMMAND_TOOLS | {"confirm_action"}
+NEWS_TOOLS = frozenset(
+    {"news_status", "news_run", "news_run_status", "news_drafts", "news_read_draft"}
+)
 
 
 class ToolError(RuntimeError):
@@ -252,6 +256,96 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "news_status",
+            "description": (
+                "Report the news pipeline's state: whether a model is bound, how "
+                "many events are stored, whether a run is active and the latest "
+                "run's status."
+            ),
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "news_run",
+            "description": (
+                "Start a news run now: collect the configured sources, group reports "
+                "into events, write one draft per event and review it. Returns a run "
+                "id immediately; the run continues in the background and may take "
+                "minutes. Ask the user before starting a run that spends model calls."
+            ),
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "news_run_status",
+            "description": (
+                "Show one news run's stage progress and counts. Omit run_id for the "
+                "most recent run."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {
+                        "type": "string",
+                        "description": "Run id; omit for the latest run.",
+                    }
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "news_drafts",
+            "description": (
+                "List the drafts a run produced with event id, title, revision and "
+                "review status. Omit run_id for the most recent run."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "run_id": {
+                        "type": "string",
+                        "description": "Run id; omit for the latest run.",
+                    }
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "news_read_draft",
+            "description": (
+                "Read one news draft as Markdown. Cite the run id and event id you "
+                "used. A draft is not published; a needs_human review needs a person."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_id": {
+                        "type": "string",
+                        "description": "Event id from news_drafts.",
+                    },
+                    "run_id": {
+                        "type": "string",
+                        "description": "Run id; omit for the latest run.",
+                    },
+                },
+                "required": ["event_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_files",
             "description": (
                 "List a directory in the configured local workspace. Entries "
@@ -417,6 +511,7 @@ class ToolBox:
         max_output_chars: int = 4000,
         fetch_timeout_seconds: float = 20.0,
         local: LocalExecutor | None = None,
+        news: NewsGateway | None = None,
     ) -> None:
         self.search = search
         self.index = index
@@ -427,6 +522,11 @@ class ToolBox:
         self.max_output_chars = max_output_chars
         self.fetch_timeout_seconds = fetch_timeout_seconds
         self.local = local
+        self.news = news
+
+    @property
+    def has_news_tools(self) -> bool:
+        return self.news is not None
 
     @property
     def has_local_tools(self) -> bool:
@@ -498,6 +598,8 @@ class ToolBox:
                 output = self._list_tasks()
             elif name == "cancel_task":
                 output = await self._cancel_task(arguments)
+            elif name in NEWS_TOOLS:
+                output = await self._news_tool(name, arguments)
             elif name == "list_files":
                 output = await self._list_files(arguments, conversation_id)
             elif name == "read_file":
@@ -759,6 +861,67 @@ class ToolBox:
         if not removed:
             raise ToolError(f"no scheduled task with id {task_id}")
         return f"Cancelled task {task_id}."
+
+    # -- news ------------------------------------------------------------
+
+    async def _news_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        gateway = self.news
+        if gateway is None:
+            raise ToolError("the news pipeline is disabled")
+        run_id = str(arguments.get("run_id") or "").strip()
+
+        if name == "news_status":
+            status = await gateway.status()
+            return "\n".join(
+                [
+                    f"ready: {status.get('ready')} (model {status.get('llm') or 'none'})",
+                    f"search: {status.get('search') or 'disabled'}",
+                    f"events: {status.get('events')}",
+                    f"runs: {status.get('runs')}",
+                    f"active run: {status.get('active_run') or 'none'}",
+                ]
+            )
+        if name == "news_run":
+            started = await gateway.start()
+            return (
+                f"Started news run {started.get('run_id')} (status "
+                f"{started.get('status')}). It continues in the background; use "
+                "news_run_status to follow its stages."
+            )
+        if name == "news_run_status":
+            run = await gateway.run(run_id)
+            stages = ", ".join(
+                f"{stage.get('name')}={stage.get('status')}"
+                + (f"({stage.get('count')})" if stage.get("count") is not None else "")
+                for stage in run.get("stages") or []
+            )
+            stats = ", ".join(f"{key}={value}" for key, value in (run.get("stats") or {}).items())
+            lines = [
+                f"run {run.get('id')}: {run.get('status')}",
+                f"stages: {stages}",
+            ]
+            if stats:
+                lines.append(f"stats: {stats}")
+            if run.get("error"):
+                lines.append(f"error: {run['error']}")
+            return "\n".join(lines)
+        if name == "news_drafts":
+            drafts = await gateway.drafts(run_id)
+            if not drafts:
+                return "That run produced no drafts."
+            lines = [
+                f"- {entry.get('event_id')}: {entry.get('title')} "
+                f"(revision {entry.get('revision')}, {entry.get('sources')} sources, "
+                f"review {entry.get('review_status') or 'unknown'})"
+                for entry in drafts
+            ]
+            return "\n".join(lines)
+        if name == "news_read_draft":
+            event_id = str(arguments.get("event_id") or "").strip()
+            if not event_id:
+                raise ToolError("news_read_draft requires an event_id")
+            return await gateway.draft(run_id, event_id)
+        raise ToolError(f"unknown news tool: {name}")
 
     def _scheduler(self) -> AssistantScheduler:
         if self.scheduler is None or not self.tasks_enabled:

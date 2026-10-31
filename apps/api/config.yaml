@@ -210,6 +210,70 @@ assistant:
       # Add diff, log or show only for repositories you trust.
       git_subcommands: ["status", "rev-parse", "ls-files"]
 
+# News production pipeline (packages/winnie-news). A run collects material,
+# cleans and extracts it, groups reports of one event, searches for missing
+# coverage, writes one draft per event and reviews it. The model bindings are
+# news.extract / news.write / news.review on the AI providers page; a fresh
+# registry binds them to the deterministic fake, so a first run works offline.
+# Disabling this hides /api/v1/news and leaves the data under root untouched.
+news:
+  enabled: true
+  # Runs, drafts, reviews and the long-lived events.json live here.
+  root: ../../data/news
+  # The language drafts are written in; it overrides writing.language below.
+  language: zh
+  material:
+    # Empty means every source enabled in the packaged sources.json.
+    source_types: []
+    rss_feed_ids: []
+    # null keeps each RSS feed's configured max_items.
+    rss_limit: null
+    cache_dir: cache/material
+    max_age_seconds: 3600
+    workers: 5
+    # Optional registry overrides; empty uses the files shipped in the package.
+    sources_file: ""
+    rss_sources_file: ""
+  clean:
+    # A longer body is truncated only for the model call, not in the document.
+    max_content_chars: 6000
+    min_title_chars: 4
+    min_total_chars: 12
+    # 0 disables the publication-age filter (hot lists carry no date).
+    max_age_days: 0
+    # Extractions below this score are dropped as not worth writing from.
+    min_quality_score: 0.3
+    max_items: 200
+    concurrency: 3
+  aggregate:
+    # Merge without asking the model only above auto_threshold AND with an
+    # anchor (shared rare actor, number or object).
+    auto_threshold: 0.85
+    # Between the two thresholds one verification call decides; below
+    # gray_threshold the report starts a new event.
+    gray_threshold: 0.55
+    window_days: 7
+    max_candidates: 50
+    max_articles_per_event: 200
+    verify_concurrency: 3
+  search:
+    # Search reuses the assistant's provider (assistant.search above).
+    queries_per_event: 3
+    results_per_query: 5
+    concurrency: 3
+    min_snippet_chars: 20
+  writing:
+    language: zh
+    target_chars: 800
+    audience: general readers
+    style: neutral wire-service report
+    allow_commentary: false
+  # A failed review returns feedback to the writer at most this many times;
+  # after that the draft is marked needs_human.
+  max_review_retries: 2
+  # Older runs are pruned after a successful run.
+  keep_runs: 50
+
 # Local document index (packages/winnie-index). The console reaches it through
 # this API so the browser keeps one origin and one session; set enabled: false
 # to hide the console page and the /api/v1/index/* routes.

@@ -85,6 +85,37 @@ A scheduled task cannot create tasks.""",
     scheduled_safe=False,
 )
 
+NEWS = SkillManifest(
+    name="news",
+    title="News production",
+    description=(
+        "Collect configured news sources, group reports into events, write and "
+        "review one draft per event, and read the drafts."
+    ),
+    instructions="""\
+The news pipeline is asynchronous. news_run starts a run and returns an id
+immediately; the run collects sources, groups events, writes a draft per event
+and reviews it, and may take minutes. Use news_run_status to follow its stages,
+and only report a result the status actually shows.
+
+Ask before starting a run: it spends model calls and reads external sources. Do
+not run it again while a run is active.
+
+Read a draft with news_read_draft and always name the run id and event id. A
+draft is never published by this pipeline: a review that passed means it is
+ready for a person, and a review with status needs_human needs a person's
+decision. Never present a draft as published news.""",
+    tools=(
+        "news_status",
+        "news_run",
+        "news_run_status",
+        "news_drafts",
+        "news_read_draft",
+    ),
+    permissions=("news:write",),
+    scheduled_safe=True,
+)
+
 LOCAL = SkillManifest(
     name="local",
     title="Local files and commands",
@@ -186,6 +217,12 @@ def build_skills(toolbox: ToolBox) -> list[ToolboxSkill]:
             toolbox,
             available=toolbox.memory is not None,
             unavailable_reason="memory is disabled",
+        ),
+        ToolboxSkill(
+            NEWS,
+            toolbox,
+            available=toolbox.news is not None,
+            unavailable_reason="the news pipeline is disabled",
         ),
         ToolboxSkill(
             TASKS,

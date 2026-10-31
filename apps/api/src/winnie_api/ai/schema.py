@@ -33,6 +33,7 @@ _RESERVED_NAMES = frozenset(
     {
         "api",
         "healthz",
+        "news",
         "readyz",
         "routes",
         "admin",
@@ -81,6 +82,30 @@ FEATURES: tuple[FeatureSpec, ...] = (
         key="meetings.summarize",
         label="Meeting minutes",
         description="Turns a transcript into structured minutes, decisions and action items.",
+        kinds=("openai", "fake"),
+        requires_model=True,
+    ),
+    FeatureSpec(
+        key="news.extract",
+        label="News extraction",
+        description=(
+            "Extracts facts and event cards from one news item, and reviews the "
+            "gray-zone candidate matches that scoring could not decide."
+        ),
+        kinds=("openai", "fake"),
+        requires_model=True,
+    ),
+    FeatureSpec(
+        key="news.write",
+        label="News writing",
+        description="Writes one publishable draft from an event's coverage.",
+        kinds=("openai", "fake"),
+        requires_model=True,
+    ),
+    FeatureSpec(
+        key="news.review",
+        label="News review",
+        description="Checks a draft against the material it was written from.",
         kinds=("openai", "fake"),
         requires_model=True,
     ),
@@ -432,7 +457,7 @@ class AIState(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> AIState:
-        if self.version not in (1, 2, 3):
+        if self.version not in (1, 2, 3, 4):
             raise ValueError(f"unsupported ai settings version: {self.version}")
 
         vendor_ids: set[str] = set()

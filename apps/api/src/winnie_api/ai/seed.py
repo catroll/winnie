@@ -140,7 +140,14 @@ def seed_state(settings: Settings) -> AIState:
 
     # Model choice is admin-managed: every model feature starts on the fake
     # provider. The owner adds a real integration and rebinds it in the console.
-    for feature in ("assistant.chat", "meetings.translate", "meetings.summarize"):
+    for feature in (
+        "assistant.chat",
+        "meetings.translate",
+        "meetings.summarize",
+        "news.extract",
+        "news.write",
+        "news.review",
+    ):
         bind(feature, fake)
 
     if settings.meetings.asr_provider == "volcengine":
@@ -150,7 +157,7 @@ def seed_state(settings: Settings) -> AIState:
 
     assert set(bindings) == set(FEATURE_BY_KEY)
     return AIState(
-        version=3,
+        version=4,
         vendors=list(vendors.values()),
         integrations=integrations,
         bindings=bindings,
@@ -257,4 +264,49 @@ def migrate_state(state: AIState) -> bool:
         state.version = 3
         changed = True
 
+    if state.version < 4:
+        _ensure_feature_bindings(state)
+        state.version = 4
+        changed = True
+
     return changed
+
+
+def _ensure_feature_bindings(state: AIState) -> None:
+    """Bind features added after the file was written to the fake provider.
+
+    A missing binding makes ``resolve`` raise, which would leave the new
+    capability unusable with no way to fix it from the console (the feature
+    list is built from FEATURES, and a binding cannot be created by editing a
+    delete). The fake is the documented first-start default; the owner rebinds
+    it like any other feature.
+    """
+    missing = [spec for spec in FEATURE_BY_KEY.values() if spec.key not in state.bindings]
+    if not missing:
+        return
+    fake = next(
+        (integration for integration in state.integrations if integration.kind == "fake"),
+        None,
+    )
+    if fake is None:
+        from winnie_api.ai.schema import IntegrationRecord, VendorRecord
+
+        vendor_id = "fake"
+        if not any(vendor.id == vendor_id for vendor in state.vendors):
+            state.vendors.append(
+                VendorRecord(id=vendor_id, label=vendor_label_for(vendor_id))
+            )
+        fake = IntegrationRecord(
+            name=_unique_name(
+                "fake", {integration.name for integration in state.integrations}
+            ),
+            label="Deterministic fake (offline)",
+            kind="fake",
+            vendor=vendor_id,
+            gateway=False,
+        )
+        state.integrations.append(fake)
+    for spec in missing:
+        state.bindings[spec.key] = BindingRecord(
+            integration_id=fake.id, model=""
+        )

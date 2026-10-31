@@ -76,6 +76,9 @@ async def test_config_seeds_routes_features_and_the_file(tmp_path: Path) -> None
         "meetings.transcribe",
         "meetings.translate",
         "meetings.summarize",
+        "news.extract",
+        "news.write",
+        "news.review",
     }
     # The default assistant model is fake, so the seed binds the fake provider.
     assert features["assistant.chat"]["integration_name"] == "fake"
@@ -609,7 +612,7 @@ bindings:
         routes = (await client.get("/routes")).json()["routes"]
 
     stored = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert stored["version"] == 3
+    assert stored["version"] == 4
     by_name = {item["name"]: item for item in config["integrations"]}
     vendors = {item["id"]: item for item in config["vendors"]}
     assert by_name["deepseek-openai"]["vendor"] == "deepseek"
@@ -627,6 +630,10 @@ bindings:
 
     features = {item["key"]: item for item in config["features"]}
     assert features["assistant.chat"]["integration_name"] == "internal-llm"
+    # Features added after this file was written are bound to the fake, so the
+    # capability is usable (and rebindable) instead of failing to resolve.
+    assert features["news.extract"]["integration_name"] == "fake"
+    assert features["news.review"]["integration_name"] == "fake"
     assert [route["name"] for route in routes] == ["deepseek-openai"]
 
 

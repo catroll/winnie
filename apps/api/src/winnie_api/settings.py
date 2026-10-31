@@ -15,6 +15,7 @@ from winnie_core.config import AuthConfig, JobsConfig
 from winnie_core.usage.config import UsageConfig
 from winnie_gateway.config import GatewayConfig, RouteConfig
 from winnie_meetings.config import MeetingsConfig
+from winnie_news.config import NewsConfig
 
 _API_ROOT = Path(__file__).resolve().parents[2]
 
@@ -63,6 +64,7 @@ class Settings(BaseModel):
     jobs: JobsConfig = Field(default_factory=JobsConfig)
     meetings: MeetingsConfig = Field(default_factory=MeetingsConfig)
     assistant: AssistantConfig = Field(default_factory=AssistantConfig)
+    news: NewsConfig = Field(default_factory=NewsConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     usage: UsageConfig = Field(default_factory=UsageConfig)
@@ -86,6 +88,9 @@ class Settings(BaseModel):
 
     def resolve_assistant_root(self) -> Path:
         return _resolve_path(self.assistant.root)
+
+    def resolve_news_root(self) -> Path:
+        return _resolve_path(self.news.root)
 
     def resolve_assistant_tasks_file(self) -> Path:
         path = Path(self.assistant.tasks.file)

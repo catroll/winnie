@@ -23,6 +23,7 @@ from winnie_local import (
     Workspace,
 )
 from winnie_assistant.memory import MemoryStore
+from winnie_assistant.news import NewsGateway
 from winnie_assistant.memory_builder import MemoryBuilder
 from winnie_assistant.scheduler import (
     AssistantScheduler,
@@ -44,6 +45,7 @@ def build_assistant_service(
     clock=None,
     model: ChatModel | None = None,
     model_name: str = "",
+    news: NewsGateway | None = None,
 ) -> AssistantService:
     timezone = _timezone(config.timezone)
     resolved_model = model or FakeChatModel()
@@ -118,6 +120,7 @@ def build_assistant_service(
         tasks_enabled=config.tasks.enabled,
         max_output_chars=config.max_tool_output_chars,
         local=local,
+        news=news,
     )
     registry = SkillRegistry(
         build_skills(toolbox),

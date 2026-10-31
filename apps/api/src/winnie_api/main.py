@@ -19,9 +19,14 @@ from winnie_core.jobs.queue import ArqJobQueue
 from winnie_core.usage.ledger import UsageLedger
 from winnie_gateway.capability import capability as gateway_capability
 from winnie_meetings.capability import capability as meetings_capability
+from winnie_news.capability import capability as news_capability
+from winnie_news.service import NewsService
 
 from winnie_api import __version__
 from winnie_api.ai.providers import DynamicChatModel
+from winnie_api.news.gateway import NewsGatewayAdapter
+from winnie_api.news.llm import DynamicNewsLLM
+from winnie_api.news.search import build_news_search
 from winnie_api.ai.router import router as ai_router
 from winnie_api.ai.store import AISettingsService
 from winnie_api.index_router import router as index_router
@@ -92,10 +97,32 @@ def create_app(
         app.state.runtime = runtime
         app.state.assistant_service = None
         app.state.assistant_error = ""
+        app.state.news_service = None
+        app.state.news_error = ""
         if runtime is not None:
             await runtime.startup()
             app.state.auth_service = runtime.auth_service
             app.state.meeting_service = runtime.meeting_service
+        news = None
+        if resolved.news.enabled:
+            try:
+                news_llm = (
+                    DynamicNewsLLM(ai_settings, http_client, usage_ledger)
+                    if ai_settings is not None
+                    else None
+                )
+                news = NewsService(
+                    resolved.news,
+                    root=resolved.resolve_news_root(),
+                    llm=news_llm,
+                    search=build_news_search(resolved, http_client),
+                )
+                await news.startup()
+                app.state.news_service = news
+            except Exception as exc:  # noqa: BLE001 - keep the rest of the API up
+                app.state.news_error = f"{type(exc).__name__}: {exc}"
+                logger.exception("news failed to start")
+
         assistant = None
         if resolved.assistant.enabled:
             try:
@@ -111,6 +138,7 @@ def create_app(
                     http=http_client,
                     model=model,
                     model_name=getattr(model, "name", "") if model is not None else "",
+                    news=NewsGatewayAdapter(news) if news is not None else None,
                 )
                 await assistant.startup()
                 app.state.assistant_service = assistant
@@ -120,6 +148,9 @@ def create_app(
         try:
             yield
         finally:
+            if news is not None:
+                await news.shutdown()
+                app.state.news_service = None
             if assistant is not None:
                 await assistant.shutdown()
                 app.state.assistant_service = None
@@ -138,6 +169,8 @@ def create_app(
         framework.register(meetings_capability())
     if resolved.assistant.enabled:
         framework.register(assistant_capability())
+    if resolved.news.enabled:
+        framework.register(news_capability())
     # The document index is not a capability: it is a separate daemon, and this
     # router only proxies to it, so the host owns the mount.
     if resolved.index.enabled:

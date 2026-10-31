@@ -24,6 +24,7 @@ dependencies = [
     "winnie-assistant",
     "winnie-chat",
     "winnie-local",
+    "winnie-news",
 ]
 
 [tool.uv.sources]
@@ -34,6 +35,7 @@ winnie-knowledge = { path = "../../packages/winnie-knowledge", editable = true }
 winnie-assistant = { path = "../../packages/winnie-assistant", editable = true }
 winnie-chat = { path = "../../packages/winnie-chat", editable = true }
 winnie-local = { path = "../../packages/winnie-local", editable = true }
+winnie-news = { path = "../../packages/winnie-news", editable = true }
 
 [build-system]
 requires = ["hatchling"]
