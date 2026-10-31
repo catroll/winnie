@@ -1,0 +1,24 @@
+[project]
+name = "winnie-schedule"
+version = "0.1.0"
+description = "Parse and edit the weekly schedule files kept in the WLB work/ tree"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+winnie-schedule = "winnie_schedule.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/winnie_schedule"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

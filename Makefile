@@ -12,6 +12,7 @@ ANDROID_DIR := $(ROOT)/apps/android
 INDEX_DIR := $(ROOT)/packages/winnie-index
 ADMIN_DIR := $(ROOT)/apps/admin
 NEWS_DIR := $(ROOT)/packages/winnie-news
+SCHEDULE_DIR := $(ROOT)/packages/winnie-schedule
 ENV_FILE ?= $(API_DIR)/.env
 INDEX_PYTHON ?= $(API_DIR)/.venv/bin/python
 INDEX_CONFIG ?= $(HOME)/.config/winnie-index/config.yaml
@@ -40,7 +41,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test
+.PHONY: help api android admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test schedule schedule-test schedule-skill
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -164,3 +165,15 @@ index-skill: ## Install the Agent Skill into ~/.agents/skills/local-knowledge
 
 index-test: ## Run the index test suite
 	@PYTHONPATH='$(INDEX_DIR)/src' '$(INDEX_PYTHON)' -m pytest '$(INDEX_DIR)/tests' -q
+
+# The schedule tool is standard-library only, so it runs on the system python
+# and never needs a virtualenv.
+SCHEDULE ?= ~/Projects/Mine/WLB
+schedule: ## Run the schedule tool: make schedule ARGS="list today"
+	@PYTHONPATH='$(SCHEDULE_DIR)/src' python3 -m winnie_schedule --root '$(SCHEDULE)' $(ARGS)
+
+schedule-test: ## Run the schedule test suite (includes a read-only corpus check)
+	@PYTHONPATH='$(SCHEDULE_DIR)/src' '$(INDEX_PYTHON)' -m pytest '$(SCHEDULE_DIR)/tests' -q
+
+schedule-skill: ## Install the schedule Agent Skill into ~/.agents/skills/winnie-schedule
+	@PYTHONPATH='$(SCHEDULE_DIR)/src' python3 -m winnie_schedule skill install
