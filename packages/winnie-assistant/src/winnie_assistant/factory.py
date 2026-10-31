@@ -36,6 +36,7 @@ from winnie_assistant.scheduler import (
 from winnie_assistant.search import BingRSSSearch, FakeSearchProvider, SearchProvider
 from winnie_assistant.service import AssistantService
 from winnie_assistant.skills import build_skills
+from winnie_assistant.gold import GoldService, GoldWatch
 from winnie_assistant.tools import ToolBox
 from winnie_assistant.weather import WeatherService, WeatherWatch
 
@@ -80,6 +81,11 @@ def build_assistant_service(
     weather = (
         WeatherService(config.weather, http=http, timezone=timezone)
         if config.weather.enabled
+        else None
+    )
+    gold_service = (
+        GoldService(config.gold, http=http, timezone=timezone)
+        if config.gold.enabled
         else None
     )
 
@@ -140,6 +146,20 @@ def build_assistant_service(
         clock=clock,
         background=config.tasks.enabled,
     )
+    gold_watch = (
+        GoldWatch(
+            config=config.gold,
+            service=gold_service,
+            store=store,
+            registry=None,
+            notifier=notifier,
+            state_path=root / ".state" / "gold.json",
+            timezone=timezone,
+            clock=clock,
+        )
+        if gold_service is not None
+        else None
+    )
     toolbox = ToolBox(
         search=search,
         index=index,
@@ -151,6 +171,7 @@ def build_assistant_service(
         local=local,
         news=news,
         weather=weather,
+        gold=gold_watch,
         phone=phone,
         notifier=notifier,
         timezone=timezone,
@@ -160,6 +181,8 @@ def build_assistant_service(
         build_skills(toolbox),
         state_path=root / "skills" / "skills.json",
     )
+    if gold_watch is not None:
+        gold_watch.registry = registry
     engine = ChatEngine(
         registry=registry,
         model=resolved_model,
@@ -204,6 +227,7 @@ def build_assistant_service(
         search=search,
         index=index,
         weather_watch=weather_watch,
+        gold_watch=gold_watch,
         timezone=timezone,
         clock=clock,
     )

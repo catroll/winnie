@@ -64,6 +64,23 @@ not.""",
     scheduled_safe=True,
 )
 
+GOLD = SkillManifest(
+    name="gold",
+    title="Gold price watch",
+    description=(
+        "Read the gold price and push an alert when it moves sharply in a "
+        "short window."
+    ),
+    instructions="""Use gold_price when the user asks about the gold price or a recent move.
+Report the price, the short-window change and the 24-hour change with the
+source. The watcher samples every few minutes and pushes an alert when the move
+clears the threshold, so it can stay silent for a long time. Do not claim an
+alert was sent unless you sent one with notify_user.""",
+    tools=("gold_price",),
+    permissions=("network",),
+    scheduled_safe=True,
+)
+
 DOCUMENTS = SkillManifest(
     name="documents",
     title="Document index",
@@ -306,6 +323,12 @@ def build_skills(toolbox: ToolBox) -> list[ToolboxSkill]:
             toolbox,
             available=toolbox.weather is not None,
             unavailable_reason="weather is disabled",
+        ),
+        ToolboxSkill(
+            GOLD,
+            toolbox,
+            available=toolbox.has_gold,
+            unavailable_reason="gold is disabled",
         ),
         ToolboxSkill(
             DOCUMENTS,

@@ -190,6 +190,20 @@ assistant:
     timeout_seconds: 15
     webhook_timeout_seconds: 10
     tick_seconds: 30
+  # Gold price watch: sample gold-api.com and push an alert to the Winnie app
+  # when the price moves sharply. Samples are kept on disk because the keyless
+  # feed has no candles; a 60-minute window needs about 60 minutes of uptime.
+  gold:
+    enabled: true
+    symbol: XAU
+    schedule: every 5m
+    window_minutes: 60
+    threshold_percent: 1.0
+    daily_threshold_percent: 2.5
+    cooldown_minutes: 120
+    history_hours: 48
+    timeout_seconds: 15
+    tick_seconds: 30
   # Local file and command tools. They are opt-in and audited. File tools stay
   # inside the configured roots; commands run as the API user and are not an OS
   # sandbox. Both require an explicit confirmation for overwrites and commands.

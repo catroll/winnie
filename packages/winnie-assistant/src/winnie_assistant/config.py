@@ -92,6 +92,28 @@ class WeatherConfig(BaseModel):
     tick_seconds: float = Field(default=30.0, ge=5.0, le=600.0)
 
 
+class GoldConfig(BaseModel):
+    """Gold price watch: sample the price and alert on a sharp move."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    # gold-api.com symbol; XAU is gold in USD per troy ounce.
+    symbol: str = "XAU"
+    # Sampling cadence. Every sample is kept, so a 60-minute window needs the
+    # watcher to have been up for roughly that long.
+    schedule: str = "every 5m"
+    window_minutes: int = Field(default=60, ge=5, le=1440)
+    threshold_percent: float = Field(default=1.0, ge=0.1, le=20.0)
+    # A slower, larger move; 0 disables the daily check.
+    daily_threshold_percent: float = Field(default=2.5, ge=0.0, le=50.0)
+    # No second alert within this window, whichever direction.
+    cooldown_minutes: int = Field(default=120, ge=5, le=1440)
+    history_hours: int = Field(default=48, ge=2, le=168)
+    timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
+    tick_seconds: float = Field(default=30.0, ge=5.0, le=600.0)
+
+
 class WorkspaceConfig(BaseModel):
     """Local files the assistant may inspect and change.
 
@@ -153,6 +175,7 @@ class AssistantConfig(BaseModel):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
     weather: WeatherConfig = Field(default_factory=WeatherConfig)
+    gold: GoldConfig = Field(default_factory=GoldConfig)
     workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
     exec: ExecConfig = Field(default_factory=ExecConfig)
     local: LocalConfig = Field(default_factory=LocalConfig)

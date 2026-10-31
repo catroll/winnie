@@ -15,6 +15,7 @@ from winnie_assistant.config import (
     IndexConfig,
     MemoryConfig,
     SearchConfig,
+    GoldConfig,
     TasksConfig,
     WeatherConfig,
 )
@@ -273,6 +274,7 @@ def assistant_settings(tmp_path: Path) -> Settings:
             memory=MemoryConfig(auto_distill=False),
             tasks=TasksConfig(enabled=True, tick_seconds=60),
             weather=WeatherConfig(enabled=False),
+            gold=GoldConfig(enabled=False),
         ),
     )
 

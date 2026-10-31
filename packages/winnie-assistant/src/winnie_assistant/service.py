@@ -29,6 +29,7 @@ from winnie_assistant.scheduler import (
 )
 from winnie_assistant.search import SearchProvider
 from winnie_assistant.types import ChatReply
+from winnie_assistant.gold import GoldRun, GoldWatch
 from winnie_assistant.weather import WeatherRun, WeatherWatch
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class AssistantService:
         search: SearchProvider,
         index: IndexClient | None,
         weather_watch: WeatherWatch | None,
+        gold_watch: GoldWatch | None,
         timezone: ZoneInfo,
         clock=None,
     ) -> None:
@@ -67,6 +69,7 @@ class AssistantService:
         self.search = search
         self.index = index
         self.weather_watch = weather_watch
+        self.gold_watch = gold_watch
         self.timezone = timezone
         self.clock = clock or (lambda: datetime.now(timezone))
         self._distill_task: asyncio.Task[None] | None = None
@@ -83,6 +86,8 @@ class AssistantService:
             await asyncio.to_thread(self.scheduler.reload, force=True)
         if self.weather_watch is not None:
             await self.weather_watch.start()
+        if self.gold_watch is not None:
+            await self.gold_watch.start()
         if self.builder is not None and self.config.memory.auto_distill:
             self._schedule_distill()
 
@@ -90,6 +95,8 @@ class AssistantService:
         await self.scheduler.stop()
         if self.weather_watch is not None:
             await self.weather_watch.stop()
+        if self.gold_watch is not None:
+            await self.gold_watch.stop()
         if self._distill_task is not None:
             self._distill_task.cancel()
             try:
@@ -152,6 +159,32 @@ class AssistantService:
                 "webhook": bool(self.config.weather.webhook),
             }
         return self.weather_watch.status()
+
+    # -- gold ------------------------------------------------------------
+
+    async def check_gold(self) -> GoldRun:
+        if self.gold_watch is None:
+            raise RuntimeError("gold is disabled")
+        return await self.gold_watch.run_now()
+
+    def gold_status(self) -> dict:
+        if self.gold_watch is None:
+            return {
+                "enabled": False,
+                "symbol": self.config.gold.symbol,
+                "schedule": self.config.gold.schedule,
+                "window_minutes": self.config.gold.window_minutes,
+                "threshold_percent": self.config.gold.threshold_percent,
+                "daily_threshold_percent": self.config.gold.daily_threshold_percent,
+                "cooldown_minutes": self.config.gold.cooldown_minutes,
+                "next_poll": None,
+                "last_poll": None,
+                "last_status": None,
+                "last_price": None,
+                "last_alert_at": None,
+                "push": False,
+            }
+        return self.gold_watch.status()
 
     # -- local documents -------------------------------------------------
 
@@ -247,4 +280,5 @@ class AssistantService:
                 "errors": self.scheduler.errors,
             },
             "weather": self.weather_status(),
+            "gold": self.gold_status(),
         }

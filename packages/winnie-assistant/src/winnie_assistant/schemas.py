@@ -156,9 +156,12 @@ class StatusRead(BaseModel):
     timezone: str
     root: str
     conversations: int
+    skills: int = 0
     memory: dict
     index: dict
     scheduler: dict
+    weather: dict = Field(default_factory=dict)
+    gold: dict = Field(default_factory=dict)
 
 
 class WeatherStatusRead(BaseModel):
@@ -177,5 +180,39 @@ class WeatherCheckRead(BaseModel):
     message: str = ""
     conversation_id: str = ""
     advisories: list[str] = Field(default_factory=list)
+    checked_at: datetime
+    error: str = ""
+
+
+class GoldStatusRead(BaseModel):
+    enabled: bool
+    symbol: str
+    schedule: str
+    window_minutes: int
+    threshold_percent: float
+    daily_threshold_percent: float
+    cooldown_minutes: int
+    next_poll: str | None = None
+    last_poll: str | None = None
+    last_status: str | None = None
+    last_price: float | None = None
+    last_alert_at: str | None = None
+    push: bool = False
+
+
+class GoldMoveRead(BaseModel):
+    direction: str
+    percent: float
+    from_price: float
+    to_price: float
+    window_minutes: int
+    daily_percent: float | None = None
+
+
+class GoldCheckRead(BaseModel):
+    status: str
+    message: str = ""
+    price: float | None = None
+    move: GoldMoveRead | None = None
     checked_at: datetime
     error: str = ""

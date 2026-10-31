@@ -36,6 +36,9 @@ from winnie_assistant.schemas import (
     TaskRead,
     TaskRunListRead,
     TaskRunRead,
+    GoldCheckRead,
+    GoldMoveRead,
+    GoldStatusRead,
     WeatherCheckRead,
     WeatherStatusRead,
 )
@@ -193,6 +196,50 @@ async def set_skill(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _skill_view(view)
+
+
+@router.get("/gold", response_model=GoldStatusRead)
+async def gold_status(
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> GoldStatusRead:
+    return GoldStatusRead(**service.gold_status())
+
+
+@router.post("/gold/check", response_model=GoldCheckRead)
+async def check_gold(
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> GoldCheckRead:
+    """Sample the price now and report; a manual check never pushes.
+
+    The watcher owns delivery so a test or a console refresh cannot train the
+    owner to ignore real alerts.
+    """
+    try:
+        run = await service.check_gold()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    move = (
+        GoldMoveRead(
+            direction=run.move.direction,
+            percent=run.move.percent,
+            from_price=run.move.from_price,
+            to_price=run.move.to_price,
+            window_minutes=run.move.window_minutes,
+            daily_percent=run.move.daily_percent,
+        )
+        if run.move is not None
+        else None
+    )
+    return GoldCheckRead(
+        status=run.status,
+        message=run.message,
+        price=run.price,
+        move=move,
+        checked_at=run.checked_at,
+        error=run.error,
+    )
 
 
 @router.get("/weather", response_model=WeatherStatusRead)

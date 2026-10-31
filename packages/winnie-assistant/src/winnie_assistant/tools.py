@@ -45,6 +45,7 @@ from winnie_assistant.phone_tools import (
 )
 from winnie_assistant.scheduler import AssistantScheduler, TaskDefinitionError
 from winnie_assistant.search import SearchProvider
+from winnie_assistant.gold import GoldError, GoldWatch
 from winnie_assistant.weather import WeatherError, WeatherService
 
 logger = logging.getLogger(__name__)
@@ -485,6 +486,22 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "gold_price",
+            "description": (
+                "Read the configured gold price, how much it moved over the "
+                "short window and the day, and the alert rules. Use it when the "
+                "user asks about the gold price or whether it moved sharply."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "weather_forecast",
             "description": (
                 "Read the configured location's forecast for today and tomorrow: "
@@ -577,6 +594,7 @@ class ToolBox(PhoneToolMixin):
         local: LocalExecutor | None = None,
         news: NewsGateway | None = None,
         weather: WeatherService | None = None,
+        gold: GoldWatch | None = None,
         phone: PhoneGateway | None = None,
         notifier: Notifier | None = None,
         timezone: ZoneInfo | None = None,
@@ -593,6 +611,7 @@ class ToolBox(PhoneToolMixin):
         self.local = local
         self.news = news
         self.weather = weather
+        self.gold = gold
         self.phone = phone
         self.notifier = notifier
         self.timezone = timezone or ZoneInfo("UTC")
@@ -605,6 +624,10 @@ class ToolBox(PhoneToolMixin):
     @property
     def has_weather(self) -> bool:
         return self.weather is not None
+
+    @property
+    def has_gold(self) -> bool:
+        return self.gold is not None
 
     @property
     def has_local_tools(self) -> bool:
@@ -670,6 +693,8 @@ class ToolBox(PhoneToolMixin):
                 output = await self._fetch_page(arguments)
             elif name == "weather_forecast":
                 output = await self._weather_forecast()
+            elif name == "gold_price":
+                output = await self._gold_price()
             elif name == "search_documents":
                 output = await self._search_documents(arguments)
             elif name == "read_document":
@@ -723,6 +748,19 @@ class ToolBox(PhoneToolMixin):
             lines.append(f"   {result.url}")
             lines.append(f"   {result.snippet}")
         return "\n".join(lines)
+
+    async def _gold_price(self) -> str:
+        if self.gold is None:
+            raise ToolError("gold is disabled")
+        try:
+            run = await self.gold.run_now()
+        except Exception as exc:  # noqa: BLE001 - report a source failure as text
+            raise ToolError(f"gold check failed: {type(exc).__name__}") from exc
+        if run.status == "error":
+            raise ToolError(run.error or "gold check failed")
+        if run.status == "disabled":
+            raise ToolError(run.error or "gold is disabled")
+        return run.message
 
     async def _weather_forecast(self) -> str:
         if self.weather is None:
