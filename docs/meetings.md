@@ -64,19 +64,20 @@ packages, so a capability cannot import the host or another capability's
 implementation.
 
 ```text
-apps/
-├── api/                              # Python host — one deployable
-│   ├── src/winnie_api/
-│   │   ├── main.py                   # create_app(): registers capabilities
-│   │   ├── runtime.py                # DB + auth + meeting service lifecycle
-│   │   ├── settings.py               # YAML composition, path resolution
-│   │   ├── jobs/
-│   │   │   ├── tasks.py              # arq job functions
-│   │   │   └── worker.py             # WorkerSettings entry point
-│   │   └── cli/                      # host-only cleanup/reset commands
-│   ├── migrations/                   # Alembic, imports both model packages
-│   └── tests/                        # host-level HTTP and integration tests
-├── android/                        # Kotlin client (separate workstream)
+winnie/
+├── apps/
+│   ├── api/                          # Python host — one deployable
+│   │   ├── src/winnie_api/
+│   │   │   ├── main.py               # create_app(): registers capabilities
+│   │   │   ├── runtime.py            # DB + auth + meeting service lifecycle
+│   │   │   ├── settings.py           # YAML composition, path resolution
+│   │   │   ├── jobs/
+│   │   │   │   ├── tasks.py          # arq job functions
+│   │   │   │   └── worker.py         # WorkerSettings entry point
+│   │   │   └── cli/                  # host-only cleanup/reset commands
+│   │   ├── migrations/               # Alembic, imports both model packages
+│   │   └── tests/                    # host-level HTTP and integration tests
+│   └── android/                      # Kotlin client (separate workstream)
 └── packages/
     ├── winnie-core/                  # framework
     │   └── src/winnie_core/
