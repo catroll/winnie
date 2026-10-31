@@ -60,10 +60,17 @@ backend; running it on a device with a live ASR key is still pending.
 ### Quick start
 
 ```bash
-cd apps/api
-uv sync
-uv run uvicorn winnie_api.main:app --reload --host 127.0.0.1 --port 8000
+make api        # http://127.0.0.1:8000, reload enabled
+make android    # debug APK for the Android client
+make help       # targets and overridable variables
 ```
+
+`make api` uses `uv` and falls back to `apps/api/.venv` when `uv` is not on
+`PATH`; run `cd apps/api && uv sync` first on a fresh checkout. It sources
+`apps/api/.env` when that file exists — gitignored, and only a local
+convenience: the application itself reads secrets from the process environment.
+`make android` needs a JDK and the Android SDK; see
+[apps/android/README.md](./apps/android/README.md).
 
 Then check the proxy:
 

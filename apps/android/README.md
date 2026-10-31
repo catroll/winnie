@@ -29,6 +29,17 @@ resolves to the 37.0 platform, so the module sets `compileSdkMinor = 2`.
 
 ## Build
 
+From the repository root, `make android` runs the build with the JDK, SDK and
+Gradle caches kept inside the checkout (see
+[`docs/LESSONS-android.md`](../../docs/LESSONS-android.md)):
+
+```bash
+make android
+# apps/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Or invoke Gradle directly:
+
 ```bash
 cd apps/android
 echo "sdk.dir=/path/to/android-sdk" > local.properties   # or export ANDROID_HOME

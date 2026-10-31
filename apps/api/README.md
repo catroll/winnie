@@ -14,6 +14,9 @@ incrementally.
 
 ## Run
 
+From the repository root, `make api` starts the same server and sources an
+optional `apps/api/.env`; `make help` lists the overridable variables.
+
 ```bash
 # Edit config.yaml as needed.
 uv sync
