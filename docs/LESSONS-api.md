@@ -98,3 +98,37 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
    it exercises the default path, not the injection seam.
 4. **Verification.** `POST /api/v1/assistant/chat` returned a reply and the
    console chat rendered it after the fix; the assistant suites pass.
+
+
+## A stale uvicorn reloader and the IPv4/IPv6 admin proxy (2026-11-01)
+
+1. **Signal.** `GET /healthz` on `http://127.0.0.1:8000` timed out with no
+   bytes, while `ss -ltnp` still showed `:8000` listening and `ps` still showed
+   the `uvicorn ... --reload` process. The admin dev server's `/healthz` proxy
+   returned 502.
+2. **Cause.** The reload child had crashed importing `winnie_chat`, which was
+   added to `apps/api/pyproject.toml` but not yet installed in the venv. The
+   reloader kept the listening socket and did not restart the child; `ps` showed
+   `<defunct>` under the uvicorn pid.
+3. **Check.** `ps -eo pid,ppid,stat,wchan:20,args | grep -E 'uvicorn|<defunct>'`
+   showed the parent sleeping in `hrtimer_nanosleep` and a `<defunct>` child.
+   A one-off `uvicorn` with the same `WINNIE_CONFIG` on port 8021 started and
+   answered `/healthz`, proving the code and configuration were fine and the
+   reloader was stale.
+4. **Fix.** `uv sync` installed `winnie-chat`; `make stop` cleared the stale
+   reloader. A detached `uvicorn` was started on `0.0.0.0:8000` for the local
+   admin. Verify `curl http://127.0.0.1:8000/healthz`, the admin proxy
+   `http://127.0.0.1:5173/healthz`, and `GET /api/v1/assistant/skills` returning
+   401 (route present, auth required).
+5. **Second trap: host family mismatch.** `make api` uses `API_HOST ?= ::`,
+   while the admin Vite proxy defaults to `http://127.0.0.1:8000` (IPv4). On
+   this host the `::` listener was IPv6-only: `curl -6 http://[::1]:8000` worked
+   and `curl -4 http://127.0.0.1:8000` timed out, so the proxy returned 502.
+   Check both families with `ss` and `curl -4`/`-6`; either bind the API to
+   `0.0.0.0` for the local admin or set `VITE_API_PROXY_TARGET` to
+   `http://[::1]:8000` when the API stays on `::`. A listener on one family does
+   not prove the proxy's family.
+6. **Follow-up.** The live recovery process was started without `--reload`.
+   Restore the normal `make api` reload path only after `uv sync` and a clean
+   `/healthz` check; a reload child that crashes on import leaves a listening
+   socket that looks healthy from `ss` but serves nothing.
