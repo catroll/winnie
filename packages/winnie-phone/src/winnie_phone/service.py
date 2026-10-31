@@ -1227,9 +1227,19 @@ class PhoneService:
                     )
                 )
         if "location" in selected:
+            # A location row has no prose: it can only match a coordinate or a
+            # provider name. Including every fix in an unrelated text search
+            # would bury the record the owner asked about.
+            needle = query.strip().lower()
             for row in await self.locations(
                 user_id, since=since, until=until, limit=per_kind
             ):
+                haystack = (
+                    f"{row['latitude']:.5f},{row['longitude']:.5f} "
+                    f"{row['provider']}"
+                ).lower()
+                if needle not in haystack:
+                    continue
                 hits.append(
                     _hit(
                         "location",

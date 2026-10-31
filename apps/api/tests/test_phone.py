@@ -711,3 +711,45 @@ async def test_revoked_device_is_blocked_until_restored(
         phone_client, device["id"], "message", [message("revoked-2", "yes")]
     )
     assert accepted.status_code == 200, accepted.text
+
+
+@pytest.mark.asyncio
+async def test_search_keeps_locations_out_of_text_matches(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    device = await register(phone_client)
+    await sync(
+        phone_client,
+        device["id"],
+        "location",
+        [
+            {
+                "external_id": "loc-search-1",
+                "latitude": 31.2304,
+                "longitude": 121.4737,
+                "accuracy_m": 10.0,
+                "provider": "network",
+                "captured_at": iso(minutes=3),
+            }
+        ],
+    )
+    await sync(
+        phone_client,
+        device["id"],
+        "message",
+        [message("6101", "the dentist called")],
+    )
+
+    unrelated = (
+        await phone_client.get(
+            "/api/v1/phone/search", params={"q": "dentist"}
+        )
+    ).json()
+    assert [hit["kind"] for hit in unrelated["hits"]] == ["message"]
+
+    by_coordinates = (
+        await phone_client.get(
+            "/api/v1/phone/search", params={"q": "31.2304"}
+        )
+    ).json()
+    assert [hit["kind"] for hit in by_coordinates["hits"]] == ["location"]
