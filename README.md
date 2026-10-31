@@ -14,6 +14,7 @@ infrastructure below it exists to serve the assistant.
 | **Management console** | Web view of meetings, transcripts, minutes and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
+| **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
 
 The model gateway is one requirement of the project, not its definition. It
@@ -161,6 +162,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/meetings.md](./docs/meetings.md) — meeting-notes integration design
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan
+- [packages/winnie-index/README.md](./packages/winnie-index/README.md) — the index service: commands, surfaces and limits
 - [apps/api/README.md](./apps/api/README.md) — backend layout, running and tests
 - [apps/android/README.md](./apps/android/README.md) — Android MVP: build, run and limitations
 - [apps/admin/README.md](./apps/admin/README.md) — management console: pages, serving and security

@@ -1,0 +1,20 @@
+[Unit]
+Description=Winnie local document index
+Documentation=https://github.com/catroll/winnie/blob/master/docs/knowledge-index.md
+After=default.target
+
+[Service]
+Type=simple
+# Adjust PYTHONPATH to the checkout. Install the package into a venv and use its
+# console script (`winnie-index serve`) once the package is published.
+Environment=PYTHONPATH=%h/Projects/Mine/winnie/packages/winnie-index/src
+Environment=WINNIE_INDEX_CONFIG=%h/.config/winnie-index/config.yaml
+ExecStart=/usr/bin/env python3 -m winnie_index.cli serve
+Restart=on-failure
+RestartSec=5
+# One JSON object per request is too noisy for a journal; keep the sweep lines.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

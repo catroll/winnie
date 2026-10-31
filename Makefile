@@ -9,8 +9,11 @@ SHELL := /usr/bin/env bash
 ROOT := $(CURDIR)
 API_DIR := $(ROOT)/apps/api
 ANDROID_DIR := $(ROOT)/apps/android
+INDEX_DIR := $(ROOT)/packages/winnie-index
 ADMIN_DIR := $(ROOT)/apps/admin
 ENV_FILE ?= $(API_DIR)/.env
+INDEX_PYTHON ?= $(API_DIR)/.venv/bin/python
+INDEX_CONFIG ?= $(HOME)/.config/winnie-index/config.yaml
 
 API_HOST ?= ::
 API_PORT ?= 8000
@@ -30,7 +33,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android admin admin-build stop restart
+.PHONY: help api android admin admin-build stop restart index-dry index-build index-serve index-status index-search index-skill index-test
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -140,3 +143,28 @@ android: ## Build the debug APK at apps/android/app/build/outputs/apk/debug/
 	JAVA_HOME='$(JAVA_HOME)' \
 	./gradlew :app:assembleDebug --console=plain
 	@printf '\nAPK: %s\n' '$(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk'
+
+# Local document index. Runs with the API venv so nothing extra is installed;
+# `skill install` writes ~/.agents/skills/local-knowledge/SKILL.md.
+INDEX_RUN := PYTHONPATH='$(INDEX_DIR)/src' '$(INDEX_PYTHON)' -m winnie_index.cli --config '$(INDEX_CONFIG)'
+
+index-dry: ## Report what the index would ingest, writing nothing
+	@$(INDEX_RUN) build --dry-run
+
+index-build: ## Sweep the configured roots and index what changed
+	@$(INDEX_RUN) build
+
+index-serve: ## Run the index daemon: sweep loop plus HTTP and MCP on 127.0.0.1:8787
+	@$(INDEX_RUN) serve
+
+index-status: ## Show index coverage and failures
+	@$(INDEX_RUN) status
+
+index-search: ## Search the index: make index-search Q="deployment notes"
+	@$(INDEX_RUN) search '$(Q)'
+
+index-skill: ## Install the Agent Skill into ~/.agents/skills/local-knowledge
+	@$(INDEX_RUN) skill install
+
+index-test: ## Run the index test suite
+	@PYTHONPATH='$(INDEX_DIR)/src' '$(INDEX_PYTHON)' -m pytest '$(INDEX_DIR)/tests' -q

@@ -1,6 +1,7 @@
 # Local document index — technical design
 
-**Status:** proposed for review. Nothing here is implemented.
+**Status:** v1 (lexical) implemented in `packages/winnie-index`; dense retrieval,
+the watcher and the reranker are still design. See §17 for what exists today.
 
 **Scope, v1 (2026-11-01):** `.txt` and `.md` only. Roots are configured later.
 No sensitive-root handling in v1 — exclusions are a config concern. Code, PDF,
@@ -229,28 +230,21 @@ CREATE TABLE chunks (
   UNIQUE(doc_id, seq)
 );
 
-CREATE VIRTUAL TABLE chunks_fts USING fts5(
-  terms, content='chunks', content_rowid='id', tokenize='unicode61');
-
-CREATE VIRTUAL TABLE chunk_vectors USING vec0(
-  chunk_id INTEGER PRIMARY KEY, embedding float[1024] distance_metric=cosine);
-
-CREATE TABLE jobs (
-  id INTEGER PRIMARY KEY, doc_id INTEGER,
-  kind TEXT NOT NULL,          -- decode|chunk|embed|delete
-  state TEXT NOT NULL,         -- pending|running|done|failed
-  priority INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0,
-  last_error TEXT, not_before TEXT, created_at TEXT NOT NULL
-);
+-- Not external-content: rowid equals chunks.id and the indexed column holds
+-- pre-tokenised terms, so a hit joins straight back to its source row.
+CREATE VIRTUAL TABLE chunks_fts USING fts5(terms, tokenize='unicode61');
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 -- schema_version, tokenizer, embedding_model, embedding_dims, last_sweep_at
 ```
 
-`embedding_model` and `embedding_dims` are load-bearing: changing the model
-without a full re-embed leaves two vector spaces in one table, which presents as
-a mysterious quality regression. Startup refuses to serve dense results when
-`meta` disagrees with the config; `embed --force` is the only way through.
+Two tables from the earlier design are deliberately absent in v1. There is no
+`jobs` table: a sweep derives its work from the diff, so a crash simply resumes
+at the next sweep, and the queue only earns its keep once embedding makes work
+long enough to schedule. There is no vector table yet; `embedding_model` and
+`embedding_dims` will be added to `meta` with it, because changing the model
+without a full re-embed leaves two vector spaces in one table and presents as a
+mysterious quality regression.
 
 ## 6. Ingestion
 
@@ -334,6 +328,7 @@ column roughly doubles token volume, measured in phase 1.
 | Scale-out | Qdrant behind a `VectorStore` port | Trigger: p95 > 500 ms, > 500k vectors, or a second reader host |
 | Model | multilingual, 1024-d, CPU-feasible — `BAAI/bge-m3` as candidate | Chinese-heavy corpus; no GPU; ONNX/GGUF availability verified before adoption |
 | Build | one-off batch, resumable per document | ~150k chunks at 30–60 chunks/s is 1–1.5 hours, then incremental |
+| Status | not implemented in v1 | The sessions shipped so far are BM25-only; §17 lists the commands that exist |
 
 Privacy default: local model, no vendor API. An API embedding provider may be
 added behind a flag that prints a warning, because shipping a personal corpus to
@@ -508,6 +503,9 @@ skipped.
 |---|---|---|
 | **P0 Inventory** | `build --dry-run`, scope rules, per-root report; the option choice in §13 | counts match §2 within 5 %; nothing written |
 | **P1 Lexical + Skill** | catalog, sweep, decode gate, chunker, FTS5, `search`/`get` CLI, skill install | 19k files indexed; p95 < 200 ms; rename/delete/touch tests pass; an agent answers from the skill with no path given |
+
+P1 and the MCP/HTTP surface are implemented; P0 (the dry run) exists as
+`build --dry-run`, P2–P4 are open.
 | **P2 Dense** | embeddings, sqlite-vec, RRF | hybrid recall@5 ≥ lexical + 0.1; build time and disk recorded |
 | **P3 MCP + Winnie** | MCP HTTP/stdio, HTTP API, assistant tool | one Winnie answer cites an indexed file; a Cursor session lists the tools |
 | **P4 Operations** | watcher, systemd unit, linger, gc, doctor | 7 days unattended; lag within target |
@@ -560,7 +558,11 @@ Where the choice actually turns:
 - **The skill is identical in all three options**, so it is not a differentiator;
   neither is the MCP surface shape, which qmd already matches closely.
 
-**Recommendation.** Do a short bake-off before committing (an hour, mostly model
+**Decision (2026-11-01):** option **C**, self-built, chosen because Chinese
+lexical retrieval is the primary use and only C gets it right; the bake-off was
+dropped as unnecessary once that was the deciding constraint.
+
+**Recommendation (historical).** Do a short bake-off before committing (an hour, mostly model
 download): index a 500-file
 sample with `qmd` (dense model swapped to Qwen3-Embedding) and with a ~100-line
 SQLite FTS5-bigram prototype, run the same 20 Chinese queries, and compare
@@ -624,3 +626,51 @@ Not yet verified, checked at the start of the phase that needs it:
   the latency of its `query` path on this host;
 - whether DSH's MCP client accepts loopback HTTP or needs the stdio shim;
 - that the skill's description triggers on the owner's real phrasing (test 6).
+
+## 17. Implementation status (2026-11-01)
+
+`packages/winnie-index` contains the v1 build: sweep, decode gate, chunker, FTS5
+with bigram terms, BM25 search, revalidating `get`, MCP (stdio and loopback
+HTTP), the HTTP API, the Skill installer and a `systemctl --user` unit template.
+
+| Check | Result |
+|---|---|
+| Test suite | 66 passed (config, decode, tokenizer, chunker, scan/search, MCP, HTTP, skill) |
+| Smoke corpus | 62 files / 448 KB over three roots → 497 chunks in 0.18 s |
+| Search | `部署`, `决定`, `知识库` and `MCP server` return the expected paths and headings |
+| HTTP | `/healthz`, `/search`, `/doc`, `/status` and `/mcp` answered on 127.0.0.1 |
+| MCP | `initialize`, `tools/list` and `tools/call` answered over HTTP; stdio reads the same dispatcher |
+| Skill | Rendered from the live config, so the port and the rules cannot drift |
+| `get` freshness | An out-of-band edit is re-read and re-chunked before the text is returned |
+
+Commands, from the repository root:
+
+```bash
+make index-dry      # what would be ingested, writes nothing
+make index-build    # sweep and index
+make index-search Q="部署"
+make index-status
+make index-serve    # daemon: sweep loop, HTTP and MCP on 127.0.0.1:8787
+make index-skill    # write ~/.agents/skills/local-knowledge/SKILL.md
+make index-test
+```
+
+Deviations from the design above, each deliberate:
+
+- **No `jobs` table.** Work is derived from the diff on every sweep, so a crash
+  resumes without a queue. The table arrives with embedding, when work becomes
+  long enough to schedule.
+- **No vectors.** BM25 with bigram terms answers the "what did I write" case
+  already; dense retrieval is P2 behind the same `VectorStore` seam.
+- **No `min_score`.** Hits are filtered by query-term coverage instead, because a
+  BM25 threshold has no absolute meaning. The score threshold arrives with the
+  dense scores that make it meaningful.
+- **Headings are indexed.** A section is findable by its heading even when the
+  body does not repeat the word; the heading stays out of `chunk.text` so the
+  citation remains exact.
+- **The sweep is synchronous.** At 19k files a full build is seconds; a worker
+  pool would be complexity without a measured need.
+
+What remains: dense retrieval and RRF (P2), inotify acceleration, the reranker,
+the 40-query evaluation fixture, and the DSH/Cursor registration check that the
+stdio shim and HTTP transport both negotiate correctly with real clients.
