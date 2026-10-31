@@ -151,3 +151,70 @@ not mark "not set".
 **Fix.** Track `right < 0` (or a boolean), and assert the result is non-empty
 before using it — the assertion is what turned a wrong-looking icon into a
 message that named the helper.
+
+## A server error is not a network error: `ApiException : IOException` aborted the whole sync
+
+**Signal.** Calendar, call log, SMS and contacts were switched on in the phone
+data screen. The server showed the device registered and exactly **one** sync
+state (`device`). Every run posted `POST .../sync` twice — `200`, then `500` —
+and nothing after that kind was attempted, although the permission rows in the
+app said all four scopes were ready.
+
+**Cause 1, server.** The calendar batch carried
+`Events.EVENT_TIMEZONE` as a Java `TimeZone.toString()` dump from the OEM
+provider (Huawei/HarmonyOS observed):
+
+```
+java.util.SimpleTimeZone[id=Asia/Shanghai,offset=28800000,dstSavings=0,...]
+```
+
+267 characters against a 64-character column, so pydantic raised
+`ValidationError` and the request became a 500.
+
+**Cause 2, client.** `PhoneSyncEngine.step` rethrew `IOException` so that a
+transport failure would stop the run — but `ApiException` *extends* `IOException`
+(`data/WinnieApi.kt`), so the 500 was classified as a dead network and rethrown.
+`device` had already uploaded; `calendar` failed; every scope after it (call,
+message, contact, app, notification, location) was never attempted. One bad
+field in one calendar row hid six kinds, and the UI said "Network unavailable.
+The background sync will retry."
+
+**Check.** Read the server access log, not the app: pair each
+`POST /api/v1/phone/devices/{id}/sync` status with `phone_sync_states`. A run
+that posts `200` then `500` and creates exactly one state row is this bug, not a
+permission problem. The traceback names the model and field:
+`ValidationError: 1 validation error for CalendarItem / timezone`.
+
+**Fix.** Classify explicitly with `stopsRun(error)`: `UnauthorizedException` and
+a real transport `IOException` stop the run, `ApiException` (any 4xx/5xx) stops
+only its own scope and lands in `lastError`. Order matters — test
+`ApiException` before `IOException`. On the server, a rejected item is a 422
+naming the field, and the OEM timezone form is normalized to its Olson id
+instead of being rejected.
+
+**Generalisation.** A `catch` ordered by superclass silently reclassifies every
+subclass. When one exception type means two different things — "I/O failed" and
+"the server answered with an error" — split it with a predicate and unit-test
+the predicate (`PhoneSyncPolicyTest`), not the handler.
+
+## A failed provider read must not upload as an empty full snapshot
+
+**Signal.** A phone with contacts and a synced calendar reported
+`accepted_total = 0` for both `calendar` and `contact`, and the server showed a
+*successful* sync.
+
+**Cause.** `CalendarSource.readWindow` and `ContactsSource.readAll` wrapped the
+primary provider query in `catch (_: Exception) { return emptyList() }`. Those
+lists are uploaded with `mode: "full"`, where an empty list means "the phone has
+nothing" — so a denied or broken provider read told the server to mark every
+stored contact deleted (calendar deletions are windowed, contacts are not), and
+recorded the run as a success, which made the permission failure invisible.
+
+**Fix.** Let the read failure propagate so the engine records it against that
+scope; keep the per-detail guards (numbers, emails, organisations) because a
+missing email column costs an email, not the whole contact.
+
+**Check.** A snapshot kind whose server count stays at `0` while the phone
+clearly has data is a read failure, not an empty dataset — and a full snapshot
+is an authoritative delete list, so "return empty on error" is a data-loss bug,
+not a safe default.

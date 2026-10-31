@@ -164,3 +164,46 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
    touches, not by the keys it lists. Any capability that is enabled later will
    resolve its default against the real checkout, so a throwaway config must
    override defaults, not delete sections from them.
+
+## A `ValidationError` raised after FastAPI's own validation is a 422, not a 500 (2026-11-01)
+
+1. **Signal.** Every `POST /api/v1/phone/devices/{id}/sync` with
+   `kind=calendar` answered `500 Internal Server Error`. The only clue was the
+   traceback ending in
+   `pydantic_core._pydantic_core.ValidationError: 1 validation error for CalendarItem`.
+2. **Cause.** FastAPI validates the request *envelope* (`SyncRequest`) and
+   returns 422 by itself, but the per-kind items are validated one layer deeper,
+   inside `PhoneService.sync` (`ITEM_MODELS[kind].model_validate(item)`). The
+   route only caught `PhoneError`, so the `ValidationError` escaped to the ASGI
+   error middleware — a 500 with a server-side traceback and no field name.
+3. **Why it matters beyond the status code.** A 500 says "the server is broken":
+   the client cannot act on it, and the Android sync classified it as a dead
+   network and aborted the run. A 422 carrying
+   `String should have at most 64 characters (timezone)` is the whole fix
+   instruction.
+4. **Fix.** Catch `ValidationError` in the route and answer 422 with the first
+   `loc` path:
+
+   ```python
+   except ValidationError as exc:
+       raise _invalid_item(exc) from None
+   ```
+
+5. **Check.** Any handler that calls `model_validate` on user input *after*
+   FastAPI's own validation needs this clause. Exercise it with one deliberately
+   bad item (`{"external_id": "1", "timezone": "x" * 200}`) and assert 422 plus
+   the field name — `test_a_rejected_item_is_422_not_500`.
+
+   **Trap: `--reload` does not watch the packages.** `make api` runs uvicorn
+   with `--reload`, and it watches `apps/api` only
+   (`INFO: Will watch for changes in these directories: [.../apps/api]`). The
+   phone code lives in `packages/winnie-phone`, so editing it changes nothing
+   until the server restarts — a live request kept returning the old 500 while
+   the source on disk was already fixed. Touch a watched file to force a reload
+   (`touch apps/api/src/winnie_api/main.py`), then confirm with a real request
+   against `127.0.0.1:8000`, not with the file you just edited.
+
+6. **Generalisation.** When a request body is validated in two layers, both
+   layers must map their failures to a client-visible 4xx. The inner layer has
+   no idea it is behind HTTP, so the route owns the mapping; leaving it out
+   turns a one-field typo into an opaque crash.

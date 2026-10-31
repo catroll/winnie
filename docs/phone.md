@@ -257,11 +257,22 @@ sideloading. That is a distribution decision, not a code defect.
   skips the fix instead of failing the sync.
 - **A sync run isolates scopes**: one provider throwing records an error and
   the others still upload. Only an expired session or a transport failure stops
-  the run.
+  the run. A **server rejection** (any 4xx/5xx) is one scope's error, recorded
+  in the last-error line, and the remaining scopes still upload — it used to
+  abort the run, which hid every kind after the first rejected one.
+- **A failed provider read is an error, not an empty snapshot.** Calendar and
+  contacts upload with `mode: "full"`, where an empty list means "the phone has
+  nothing"; returning empty on a failed read would delete the server copies.
 
 ### SMS and calendar accuracy notes
 
 - Only the `sms` provider is read. MMS parts are not.
+- `Events.EVENT_TIMEZONE` is not always an Olson id. Some OEM providers
+  (Huawei/HarmonyOS observed) store `TimeZone.toString()`, e.g.
+  `java.util.SimpleTimeZone[id=Asia/Shanghai,offset=28800000,...]` — 267
+  characters. Both sides reduce that form to its id; anything that is still
+  longer than 64 characters is capped rather than allowed to reject the event.
+  The old behaviour was a server-side 500 on the whole calendar batch.
 - SMS edits and deletions made in another app are not visible through the
   `_ID` cursor. The server keeps the last uploaded copy until retention removes
   it. The app does not currently offer message deletion, so it reports no
