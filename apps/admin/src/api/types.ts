@@ -689,3 +689,23 @@ export interface NewsEventSummary {
 export interface NewsEventList {
   events: NewsEventSummary[];
 }
+
+
+export interface NewsSourceState {
+  key: string;
+  type: string;
+  id: string;
+  name: string;
+  last_status: 'ok' | 'error' | 'unknown' | string;
+  last_success: string | null;
+  last_error: string;
+  error_at: string | null;
+  consecutive_failures: number;
+  last_count: number;
+  updated_at: string;
+}
+
+export interface NewsSourceList {
+  updated_at: string;
+  sources: NewsSourceState[];
+}

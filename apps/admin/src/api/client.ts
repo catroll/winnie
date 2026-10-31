@@ -24,6 +24,7 @@ import type {
   NewsEventList,
   NewsRun,
   NewsRunDrafts,
+  NewsSourceList,
   NewsStatus,
   Minutes,
   ModelRuntime,
@@ -469,6 +470,20 @@ export const api = {
   newsDraft(runId: string, eventId: string): Promise<NewsDraftDetail> {
     return request<NewsDraftDetail>(
       `/api/v1/news/runs/${encodeURIComponent(runId)}/drafts/${encodeURIComponent(eventId)}`,
+    );
+  },
+
+  newsSources(): Promise<NewsSourceList> {
+    return request<NewsSourceList>('/api/v1/news/sources');
+  },
+
+  regenerateNewsDraft(
+    runId: string,
+    eventId: string,
+  ): Promise<NewsDraftDetail> {
+    return request<NewsDraftDetail>(
+      `/api/v1/news/runs/${encodeURIComponent(runId)}/drafts/${encodeURIComponent(eventId)}/regenerate`,
+      { method: 'POST', body: {} },
     );
   },
 

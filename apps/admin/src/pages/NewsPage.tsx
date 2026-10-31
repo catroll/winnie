@@ -5,6 +5,7 @@ import type {
   NewsDraftDetail,
   NewsRun,
   NewsRunDrafts,
+  NewsSourceList,
   NewsStatus,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
@@ -15,6 +16,7 @@ import { useApi } from '../lib/hooks';
 interface NewsData {
   status: NewsStatus;
   runs: NewsRun[];
+  sources: NewsSourceList;
 }
 
 const RUN_BADGE: Record<string, string> = {
@@ -38,6 +40,12 @@ const REVIEW_BADGE: Record<string, string> = {
   needs_human: 'text-bg-danger',
 };
 
+const SOURCE_BADGE: Record<string, string> = {
+  ok: 'text-bg-success',
+  error: 'text-bg-danger',
+  unknown: 'text-bg-secondary',
+};
+
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
@@ -52,8 +60,12 @@ function stat(run: NewsRun, key: string): string {
 
 export function NewsPage() {
   const result = useApi<NewsData>(async () => {
-    const [status, runs] = await Promise.all([api.newsStatus(), api.newsRuns(20)]);
-    return { status, runs };
+    const [status, runs, sources] = await Promise.all([
+      api.newsStatus(),
+      api.newsRuns(20),
+      api.newsSources(),
+    ]);
+    return { status, runs, sources };
   }, []);
 
   const [selectedRunId, setSelectedRunId] = useState<string>('');
@@ -136,6 +148,31 @@ export function NewsPage() {
       setMarkdown(text);
     } catch (error) {
       setMessage({ kind: 'danger', text: describe(error) });
+    }
+  }
+
+  async function regenerate(): Promise<void> {
+    if (!selectedRun || !detail) {
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const updated = await api.regenerateNewsDraft(
+        selectedRun.id,
+        detail.draft.event_id,
+      );
+      setDetail(updated);
+      setMarkdown(await api.newsDraftMarkdown(selectedRun.id, detail.draft.event_id));
+      setMessage({
+        kind: 'success',
+        text: `Regenerated ${detail.draft.event_id} (revision ${updated.draft.revision}).`,
+      });
+      result.reload();
+    } catch (error) {
+      setMessage({ kind: 'danger', text: describe(error) });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -279,6 +316,58 @@ export function NewsPage() {
                 </div>
               </div>
 
+              <div className="card mb-3">
+                <div className="card-header d-flex align-items-center justify-content-between">
+                  <h2 className="card-title mb-0">Sources</h2>
+                  <span className="text-secondary small">
+                    updated {formatDateTime(loaded.sources.updated_at)}
+                  </span>
+                </div>
+                <div className="card-body p-0">
+                  {loaded.sources.sources.length === 0 ? (
+                    <EmptyState message="No source has been fetched yet. Start a run to record their health." />
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="table table-sm mb-0 align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">Source</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Items</th>
+                            <th scope="col">Last success</th>
+                            <th scope="col">Failures</th>
+                            <th scope="col">Last error</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {loaded.sources.sources.map((source) => (
+                            <tr key={source.key}>
+                              <td>
+                                <div className="fw-medium">{source.name}</div>
+                                <div className="text-secondary small font-monospace">
+                                  {source.key}
+                                </div>
+                              </td>
+                              <td>
+                                <span className={`badge ${SOURCE_BADGE[source.last_status] ?? 'text-bg-secondary'}`}>
+                                  {source.last_status}
+                                </span>
+                              </td>
+                              <td>{source.last_count}</td>
+                              <td className="small">{formatDateTime(source.last_success)}</td>
+                              <td>{source.consecutive_failures}</td>
+                              <td className="small text-break" style={{ maxWidth: '28rem' }}>
+                                {source.last_error || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {selectedRun ? (
                 <div className="card mb-3">
                   <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
@@ -372,16 +461,32 @@ export function NewsPage() {
                     id={`draft-${detail.draft.event_id}`}
                   >
                     <h2 className="card-title mb-0">{detail.draft.title}</h2>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary"
-                      onClick={() => {
-                        setDetail(null);
-                        setMarkdown('');
-                      }}
-                    >
-                      Close
-                    </button>
+                    <div className="d-flex gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={() => void regenerate()}
+                        disabled={busy || running}
+                        title={
+                          running
+                            ? 'Wait for the active run to finish'
+                            : 'Rewrite this draft from the run material and review it again'
+                        }
+                      >
+                        <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
+                        Regenerate
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() => {
+                          setDetail(null);
+                          setMarkdown('');
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
                   </div>
                   <div className="card-body">
                     {detail.review ? (
