@@ -27,7 +27,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android
+.PHONY: help api android stop restart
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -58,6 +58,48 @@ api: ## Run the API on [::]:8000, reachable over IPv6, with reload enabled
 		printf '       run: cd apps/api && uv sync\n' >&2; \
 		exit 1; \
 	fi
+
+stop: ## Stop the API listening on API_PORT
+	@set -euo pipefail; \
+	port='$(API_PORT)'; \
+	pids=$$(ss -ltnpH "sport = :$$port" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2 | sort -u || true); \
+	if [ -z "$$pids" ]; then \
+		printf 'Nothing is listening on port %s.\n' "$$port"; \
+		exit 0; \
+	fi; \
+	targets=''; \
+	for pid in $$pids; do \
+		cmd=$$(ps -o args= -p "$$pid" 2>/dev/null || true); \
+		ppid=$$(ps -o ppid= -p "$$pid" 2>/dev/null | tr -d ' ' || true); \
+		parent=$$(ps -o args= -p "$$ppid" 2>/dev/null || true); \
+		case "$$cmd" in \
+			*uvicorn*winnie_api.main:app*) targets="$$targets $$pid";; \
+			*) case "$$parent" in \
+				*uvicorn*winnie_api.main:app*) targets="$$targets $$ppid";; \
+				*) printf 'Port %s is held by pid %s, not the Winnie API; leaving it alone.\n' "$$port" "$$pid";; \
+			esac;; \
+		esac; \
+	done; \
+	if [ -z "$$targets" ]; then \
+		printf 'Port %s is used by a process this target did not start; refusing to stop it.\n' "$$port" >&2; \
+		exit 1; \
+	fi; \
+	targets=$$(printf '%s\n' $$targets | sort -u | paste -sd ' ' -); \
+	printf 'Stopping the API on port %s (pid %s).\n' "$$port" "$$targets"; \
+	kill $$targets 2>/dev/null || true; \
+	for _ in $$(seq 1 50); do \
+		if ! ss -ltnH "sport = :$$port" 2>/dev/null | grep -q .; then \
+			printf 'Stopped.\n'; \
+			exit 0; \
+		fi; \
+		sleep 0.1; \
+	done; \
+	printf 'Port %s is still open after 5s; sending SIGKILL.\n' "$$port" >&2; \
+	kill -9 $$targets 2>/dev/null || true; \
+	exit 1
+
+restart: stop ## Stop the API, then start it again with the current environment
+	@$(MAKE) --no-print-directory api
 
 android: ## Build the debug APK at apps/android/app/build/outputs/apk/debug/
 	@test -d '$(JAVA_HOME)' || { printf 'error: JAVA_HOME not found: %s\n' '$(JAVA_HOME)' >&2; exit 1; }

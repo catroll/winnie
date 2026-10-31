@@ -61,6 +61,8 @@ backend; running it on a device with a live ASR key is still pending.
 
 ```bash
 make api        # [::]:8000, reachable over IPv6, reload enabled
+make stop       # stop the API listening on API_PORT
+make restart    # stop, then start again with the current environment
 make android    # debug APK for the Android client
 make help       # targets and overridable variables
 ```
