@@ -27,7 +27,7 @@ not hide state in a database.
 | `conversations/` | One Markdown file per conversation, grouped by date. User, assistant and tool messages are appended; earlier messages are not rewritten. |
 | `tasks/tasks.json` | Scheduled tasks, written by the assistant when you ask for one in conversation. Ask the assistant to list or cancel tasks instead of editing this file. |
 | `tasks/runs.jsonl` | One line per scheduled run: status, timing, conversation id and any error. |
-| `.state/` | Derived bookkeeping: the memory watermark and the next-run state. Safe to delete; it is rebuilt. |
+| `.state/` | Derived bookkeeping: the memory watermark, the next-run state, the `exec.jsonl`/`files.jsonl` audit and `backups/` for overwritten files. The scheduler state is rebuilt; the audit and backups are records you may want to keep. |
 | `README.md` | This file. |
 
 The local index service (`winnie-index`) indexes the Markdown in this directory
@@ -39,6 +39,12 @@ memory in `profile/` is read directly on every turn.
 Scheduled tasks are managed by asking the assistant. It will confirm the
 schedule and the content before creating one, and it can list or cancel tasks
 on request.
+
+The assistant can also list, read and write files in the configured workspace
+and run local commands. Its own `profile/`, `conversations/`, `tasks/` and
+`.state/` are refused by the file tools. Commands and overwrites return a
+pending id and run only after you reply with an explicit confirmation in a
+later turn; their audit is in `.state/`.
 """
 
 

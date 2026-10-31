@@ -8,7 +8,7 @@ infrastructure below it exists to serve the assistant.
 
 | Layer | What it gives you | Status |
 |-------|-------------------|--------|
-| **Assistant** | Chat, web search, scheduled tasks and long-term memory built from local files | **Core implemented** |
+| **Assistant** | Chat, web search, scheduled tasks, long-term memory and opt-in local file/command tools | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, scheduled tasks, AI providers, LLM usage and gateway routes | **MVP implemented** |
@@ -72,7 +72,10 @@ The assistant capability is usable end to end: a phone-sized chat page at
 bounded tool loop with web and local-document search, append-only Markdown
 conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
 those files and recalled through the local index service, and scheduled tasks
-the assistant creates and cancels when asked in conversation. Every conversation
+the assistant creates and cancels when asked in conversation. It can also list,
+read and write files under a configured workspace and run local commands after
+an explicit confirmation; the file and command tools are audited, and the
+command runner is **not** a sandbox. Every conversation
 records its channel, so the console history also covers the phone page, direct
 API clients and unattended task runs. The default provider is the deterministic
 fake until an OpenAI-compatible integration and its environment key are chosen

@@ -74,7 +74,7 @@ Success for the current phase:
 
 | Layer | Capability | Where it lives | Status |
 |---|---|---|---|
-| Assistant | Chat, web search, scheduled tasks, memory from local files | `winnie-assistant` | Core done |
+| Assistant | Chat, web search, scheduled tasks, memory from local files, opt-in local file/command tools | `winnie-assistant` | Core done |
 | Knowledge base | Markdown in Git: browse, edit, classify, version, search | `winnie-knowledge` note sink only | Partial |
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
@@ -338,6 +338,12 @@ Working:
 - `POST /api/v1/assistant/chat` runs a bounded tool loop; the page at
   `/api/v1/assistant/ui` is phone-sized and needs no build step, and the console
   at `/chat` is the desktop surface.
+- Local tools are opt-in: `list_files`, `read_file`, `write_file`,
+  `run_command` and `confirm_action`. File paths are confined to
+  `assistant.workspace.root` and protected paths; overwrites carry the sha256
+  they read, are backed up and require a later explicit confirmation. Commands
+  run as the API user after the same confirmation and are audited under
+  `.state/`; they are not sandboxed. Scheduled task runs get neither group.
 - Each conversation records where it started (`channel`: `admin`, `web`, `api`
   or `task`); the console filters the history by channel and opens task runs
   read-only.
@@ -366,7 +372,10 @@ Verified:
 - A manual task run finished in 6.7 s, wrote a task-sourced conversation with
   tool blocks and one `runs.jsonl` line; after a restart the task, next run,
   conversations and profile survived.
-- `134 passed` in the backend suite.
+- A disposable service with a scripted model exercised the local tools:
+  `read_file`/`write_file` worked, a command stayed pending until the next
+  "确认" turn, and both audit files were written.
+- `180 passed` in the backend suite.
 
 Open:
 
@@ -375,12 +384,16 @@ Open:
   down; a separate worker is the next step for true 24/7 behaviour.
 - Vector retrieval would grow a dense tier in the index, not in the assistant.
 - A task cannot be edited or paused yet; cancel and recreate is the current path.
+- Commands are not sandboxed: they run as the API user. A bubblewrap/firejail or
+  container sandbox is the next hardening step.
+- Scheduled task runs deliberately have no file or command tools; there is no
+  human turn to confirm them.
 
 ## 6. Verification snapshot
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **168 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **180 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -396,6 +409,7 @@ Open:
 | Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
 | Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
+| Local assistant tools | Disposable service with a scripted model | `read_file`/`write_file`; command pending until the next "确认" turn; file and command audit lines |
 | Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Seeded `deepseek-openai` had no server key and `internal-llm` was internal-only; `assistant.chat` pointed at it; created `ui-llm` through the modal, rebound `assistant.chat` and the API reported `source=admin`, deleted it and the binding returned to `source=config`; light/dark captured |
 | AI registry v1 migration | `pytest` against a hand-written v1 file | Split into `deepseek-openai` + `internal-llm`, cleared the route key/model, repointed `assistant.chat`, rewrote `version: 2` |
 | Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |

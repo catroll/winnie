@@ -24,10 +24,13 @@ Success for this slice means all of these are true:
    path and line.
 4. A recurring task is created, listed and cancelled **by talking to the
    assistant**, persisted in `tasks/tasks.json`, and executed on schedule.
+5. The owner can ask the assistant to inspect or change a local file and to run
+   a local command; every such action is confined, audited, and confirmed before
+   it runs.
 
 Out of scope for this slice: voice input, a native mobile app, multi-tenant
-isolation, autonomous long-running agents, and embeddings. Each is a named
-extension point rather than a hidden assumption.
+isolation, autonomous long-running agents, embeddings, and an OS-level sandbox
+for commands. Each is a named extension point rather than a hidden assumption.
 
 ## 2. Why files, and why the index owns retrieval
 
@@ -107,8 +110,15 @@ documents:
 ├── tasks/
 │   ├── tasks.json             # written by the assistant, not by hand
 │   └── runs.jsonl
-└── .state/                    # derived: memory watermark, next-run state
+└── .state/                    # derived: memory watermark, next-run state,
+                               # command/file audit and overwrite backups
 ```
+
+The local file tools are separate from this storage: they operate under
+`assistant.workspace.root` and always refuse the assistant's own
+`conversations/`, `profile/`, `tasks/` and `.state/` directories. Commands run
+in `assistant.exec.workdir`; their audit log and the file-tool backups live under
+`.state/`.
 
 The directory is created on startup with `README.md` and the subdirectories. It
 sits inside the index root (`Documents/Mine`), so every Markdown file written
@@ -275,6 +285,11 @@ Tools:
 | `schedule_task` | `title`, `schedule`, `prompt`, `webhook?` | task id and next run |
 | `list_tasks` | — | id, schedule, next run, last status |
 | `cancel_task` | `id` | confirmation or "no such task" |
+| `list_files` | `path?` | directory entries with sizes and `[protected]` / `[credential]` / `[outside]` markers |
+| `read_file` | `path`, `start_line?`, `max_lines?` | text with its line range and sha256 |
+| `write_file` | `path`, `content`, `mode?`, `expected_sha256?` | write summary, or a `PENDING` id |
+| `run_command` | `argv`, `cwd?` | command output, or a `PENDING` id |
+| `confirm_action` | `pending_id` | executes the pending write/command after a later confirmation |
 
 Bounds and failure behaviour:
 
@@ -287,14 +302,26 @@ Bounds and failure behaviour:
 - A model failure returns `502` and leaves the user message recorded, so a retry
   appends to the same conversation instead of losing it.
 - A scheduled task run is given the tool set **without**
-  `schedule_task`/`list_tasks`/`cancel_task`. A task cannot create tasks, which
-  removes the recursive-schedule failure mode instead of asking the model to
-  behave.
+  `schedule_task`/`list_tasks`/`cancel_task` **and without the local tools**. A
+  task cannot create tasks or run commands, which removes both the
+  recursive-schedule and unattended-side-effect failure modes.
+- `write_file` touches an existing file only after `read_file` returned its
+  current sha256, and only in a later turn confirmed by the user.
+- `run_command` and overwrites return a `PENDING` id and change nothing.
+  `confirm_action` executes them only in a later turn whose user message is an
+  explicit confirmation; a tool call twice in the same turn cannot execute.
+- Every command and file write appends a JSONL audit line under `.state/`;
+  overwrites and appends copy the old file to `.state/backups/` first.
 
-There is no shell, no file write outside `profile/`, and no credential-bearing
-tool. Search results, fetched pages and local documents are framed in the system
-prompt as untrusted data, because prompt injection is the obvious attack on a
-tool-using assistant.
+The local tools are a deliberate, opt-in expansion. `workspace` confines file
+paths to the configured roots and refuses the assistant's own storage plus
+common credential directories; `.env`, private keys and `.git` paths are refused
+even inside the root. Commands are **not** an OS sandbox: they run as the API
+user, with a minimal environment that excludes `WINNIE_*` and vendor keys, a
+timeout, an output cap and an audit line. The confirmation gate is the human
+control; `exec.allow` is a guardrail, not a boundary. Search results, fetched
+pages, file contents and command output are framed as untrusted data, because
+prompt injection is the obvious attack on a tool-using assistant.
 
 ### Why not LangGraph yet
 
@@ -443,7 +470,31 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+  workspace:
+    enabled: true
+    root: "~/Documents/Mine"
+    extra_roots: ["~/Projects"]
+    protected: []
+    max_read_bytes: 200000
+    max_write_bytes: 200000
+    max_list_entries: 500
+    confirm_writes: true
+  exec:
+    enabled: true
+    workdir: "~/Documents/Mine"
+    timeout_seconds: 30
+    max_output_chars: 8000
+    allow: []
+    env: {}
+    require_confirmation: true
+    pending_ttl_seconds: 300
 ```
+
+`workspace` and `exec` are opt-in. The file tools are confined to the roots and
+refuse the assistant's own storage and credential paths. Commands run as the API
+user, with a minimal environment (no `WINNIE_*` or vendor keys), a timeout and an
+output cap; `allow: []` means any executable, and a non-empty list is a guardrail,
+not a sandbox. `exec.pending_ttl_seconds` bounds how long a confirmation can wait.
 
 `assistant.index` is the capability's view of the daemon. The host also has a
 top-level `index` block for the console proxy; they are deliberately separate so
@@ -458,9 +509,13 @@ selected on the AI providers page; see [ai-providers.md](./ai-providers.md).
 
 ## 10. Security and privacy
 
-- **Local files only.** Conversations, profile notes and run history are under
-  `assistant.root`. Nothing is sent anywhere except the configured model, the
-  web search endpoint and the loopback index.
+- **Local files and commands are opt-in.** Conversations, profile notes and run
+  history are under `assistant.root`. The file tools are confined to
+  `assistant.workspace.root`/`extra_roots` and refuse the assistant's own storage
+  and common credential paths. Commands run as the API user with a minimal
+  environment and are **not sandboxed**. Both are audited under `.state/`, and
+  overwrites/commands require a later explicit confirmation. Enable them only
+  with `auth.enabled: true` and on a trusted network.
 - **Auth.** When accounts are enabled every assistant route requires a bearer
   token. The instance is single-user, so the token is access control, not a
   tenancy boundary. The UI stores it in `localStorage` and sends it as a header.
@@ -469,10 +524,23 @@ selected on the AI providers page; see [ai-providers.md](./ai-providers.md).
 - **SSRF.** `fetch_page` accepts only `http`/`https`, resolves the host and
   rejects loopback, private, link-local and reserved addresses; redirects are
   followed manually with the same check per hop.
-- **Prompt injection.** Search results, fetched pages and local documents are
-  untrusted data. Tools have no side effects outside `profile/` and
-  `tasks/tasks.json`, and every write is attributed so a poisoned fact can be
-  traced and deleted.
+- **Prompt injection.** Search results, fetched pages, local documents, file
+  contents and command output are untrusted data. Local side effects exist only
+  behind the local tools: paths are confined and audited, commands are audited
+  and rate-bounded by a timeout, and overwrites/commands require a human
+  confirmation in a later turn. The model cannot execute by calling the tool
+  twice in one turn.
+- **Confirmation is a turn boundary.** A pending action is tied to the
+  conversation and to the turn that created it. It runs only when the next user
+  message is an explicit, short confirmation; a new non-confirmation message
+  discards it, and it expires after `pending_ttl_seconds`.
+- **Audit and backups.** `files.jsonl` and `exec.jsonl` under `.state/` record
+  the path/argv, exit code, duration and hashes, not file contents or command
+  output. Overwrites and appends copy the old file to `.state/backups/` first.
+- **Commands are not a sandbox.** A command can read anything the API user can
+  read and reach the network. The allowlist checks the executable name only;
+  `bash`/`python`/`node` restore full shell power. A real sandbox (bubblewrap,
+  firejail or a container) is a follow-up, not a claim.
 - **Search terms.** The default web provider is Bing's RSS output, intended for
   personal, non-commercial aggregation. A paid search API can replace it
   through the `SearchProvider` port.
@@ -488,6 +556,7 @@ selected on the AI providers page; see [ai-providers.md](./ai-providers.md).
 | A2 | Agent loop, web tools, index-backed recall | A real model answers with a web result and cites a local path | Done |
 | A3 | Conversation-managed tasks | A task is created by chat, persisted, run and cancelled | Done |
 | A4 | Chat page, docs, verification | Phone-sized page sends and renders; suite passes | Done |
+| A5 | Local file tools and confirmed commands | List/read/write under the workspace; a command runs only after a later confirmation; audit and protected paths | Done |
 
 Follow-ups after this slice, in order:
 
@@ -498,19 +567,24 @@ Follow-ups after this slice, in order:
 4. A worker outside the API process so tasks run while the API is down.
 5. Fewer redundant tool calls: the live recall test used five
    `search_documents` calls for one question, which is accurate but wasteful.
+6. Sandbox commands with bubblewrap/firejail or a container, and decide
+   whether scheduled tasks may ever use local tools (today they cannot).
 
 ## 12. Verification
 
 Automated:
 
 ```bash
-cd apps/api && .venv/bin/python -m pytest -q    # 134 passed
+cd apps/api && .venv/bin/python -m pytest -q
 ```
 
 Covers the conversation store (including channel recording, filtering and the
 task-run read-only guard), profile files and digest, distillation idempotency,
 the index client, the tool loop with a fake model, task creation and
-cancellation, scheduler arithmetic and the HTTP routes.
+cancellation, scheduler arithmetic, the HTTP routes, and the local tools:
+path confinement, protected/credential paths, overwrite hashes, backups,
+command timeout/allowlist/env scrubbing, the confirmation turn boundary, the
+audit logs and task-run exclusion.
 
 Live, on 2026-11-01, with DeepSeek, Bing RSS, `winnie-index` on `127.0.0.1:8790`
 and the real storage root:
@@ -525,6 +599,11 @@ and the real storage root:
 | Task run | manual run finished in 6.7 s, status `ok`, task-sourced conversation with tool blocks, one `runs.jsonl` line |
 | Restart | task, next run, conversations and profile entries survived |
 | Console chat | Firefox against a disposable API and assistant root: login, new chat, four-channel history, channel filter, task record read-only, tool trace, light/dark and mobile with no horizontal overflow |
+| Local tools | Disposable service with a scripted model: `read_file`/`write_file` worked; a command stayed pending until the next "确认" turn; the file and command audit lines were written |
+
+The local-tools check used a scripted model rather than a vendor model: the
+confirmation gate is in the tool layer, so the provider does not change the
+result.
 
 ## 13. Open questions
 
@@ -535,6 +614,12 @@ and the real storage root:
   make the distinction visible.
 - How should a task be edited later: cancel and recreate (today), or an
   `update_task` tool with the same confirmation step?
+- Should commands run in an OS sandbox (bubblewrap, firejail or a container)?
+  Today they run as the API user with a confirmation gate and an audit log.
+- Should the default workspace add `~/Downloads` or `~/Desktop`? Today it is
+  `~/Documents/Mine` plus `~/Projects`; the config is the boundary.
+- Should scheduled task runs ever get file or command tools? Today they do not,
+  because there is no human turn to confirm.
 - The live recall test needed several searches because the first queries were
   broad. Better tool descriptions or a two-step "find then read" prompt may cut
   that cost.

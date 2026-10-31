@@ -189,6 +189,34 @@ assistant:
     tick_seconds: 30
     catch_up_seconds: 3600
     webhook_timeout_seconds: 10
+  # Local file and command tools. They are opt-in and audited. File tools stay
+  # inside the configured roots; commands run as the API user and are not an OS
+  # sandbox. Both require an explicit confirmation for overwrites and commands.
+  workspace:
+    enabled: true
+    # The owner's documents and projects, not the whole home. The assistant's
+    # own storage and the usual credential directories are refused even though
+    # they are inside these roots. Add paths here if your files are elsewhere.
+    root: "~/Documents/Mine"
+    extra_roots: ["~/Projects"]
+    protected: []
+    max_read_bytes: 200000
+    max_write_bytes: 200000
+    max_list_entries: 500
+    confirm_writes: true
+  exec:
+    enabled: true
+    # Relative paths are resolved against the workspace root.
+    workdir: "~/Documents/Mine"
+    timeout_seconds: 30
+    max_output_chars: 8000
+    # Empty means any executable. A non-empty list checks argv[0]'s basename;
+    # it is a guardrail, not a security boundary. Adding a shell or interpreter
+    # restores full shell power.
+    allow: []
+    env: {}
+    require_confirmation: true
+    pending_ttl_seconds: 300
 
 # Local document index (packages/winnie-index). The console reaches it through
 # this API so the browser keeps one origin and one session; set enabled: false

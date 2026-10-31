@@ -17,6 +17,12 @@ from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
 from winnie_assistant.fake import FakeChatModel
 from winnie_assistant.index_client import IndexClient
+from winnie_assistant.local import (
+    AuditLog,
+    CommandRunner,
+    PendingActions,
+    Workspace,
+)
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.memory_builder import MemoryBuilder
 from winnie_assistant.scheduler import (
@@ -56,6 +62,9 @@ def build_assistant_service(
         if config.index.enabled
         else None
     )
+
+    workspace = _build_workspace(config, root)
+    commands = _build_commands(config, workspace, root)
 
     store = ConversationStore(root / "conversations")
     memory = (
@@ -107,6 +116,9 @@ def build_assistant_service(
         http=http,
         tasks_enabled=config.tasks.enabled,
         max_output_chars=config.max_tool_output_chars,
+        workspace=workspace,
+        commands=commands,
+        pending=PendingActions(ttl_seconds=config.exec.pending_ttl_seconds),
     )
     agent = AssistantAgent(
         store=store,
@@ -134,6 +146,72 @@ def build_assistant_service(
     )
     holder["service"] = service
     return service
+
+
+def _expand_path(value: str) -> Path:
+    return Path(value).expanduser().resolve(strict=False)
+
+
+def _path_from(root: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = root / path
+    return path.resolve(strict=False)
+
+
+def _build_workspace(config: AssistantConfig, root: Path) -> Workspace | None:
+    if not config.workspace.enabled:
+        return None
+    workspace_root = _expand_path(config.workspace.root)
+    protected = [
+        root / "conversations",
+        root / "profile",
+        root / ".state",
+        root / "tasks",
+        *[
+            _path_from(workspace_root, value)
+            for value in config.workspace.protected
+        ],
+    ]
+    state = root / ".state"
+    return Workspace(
+        root=workspace_root,
+        extra_roots=[
+            _path_from(workspace_root, value)
+            for value in config.workspace.extra_roots
+        ],
+        protected=protected,
+        max_read_bytes=config.workspace.max_read_bytes,
+        max_write_bytes=config.workspace.max_write_bytes,
+        max_list_entries=config.workspace.max_list_entries,
+        confirm_writes=config.workspace.confirm_writes,
+        audit=AuditLog(state / "files.jsonl"),
+        backup_dir=state / "backups",
+    )
+
+
+def _build_commands(
+    config: AssistantConfig, workspace: Workspace | None, root: Path
+) -> CommandRunner | None:
+    if not config.exec.enabled:
+        return None
+    base = workspace.root if workspace is not None else Path.home()
+    workdir = _path_from(base, config.exec.workdir or ".")
+    roots = list(workspace.roots) if workspace is not None else [workdir]
+    if workdir not in roots and not any(
+        workdir.is_relative_to(candidate) for candidate in roots
+    ):
+        roots.append(workdir)
+    return CommandRunner(
+        roots=roots,
+        workdir=workdir,
+        timeout_seconds=config.exec.timeout_seconds,
+        max_output_chars=config.exec.max_output_chars,
+        allow=config.exec.allow,
+        extra_env=config.exec.env,
+        require_confirmation=config.exec.require_confirmation,
+        audit=AuditLog(root / ".state" / "exec.jsonl"),
+    )
 
 
 def _build_model(

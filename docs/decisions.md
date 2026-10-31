@@ -473,3 +473,52 @@ usage comes from the response, not from the key.
 telemetry disk error must never turn a successful model call into an error. The
 same rule covers the balance query: one provider's failure becomes an error on
 its row, not a failed page.
+
+## Local file and command tools: opt-in, confirmed, audited (2026-11-01)
+
+**The assistant has to act, not only read.** The first slice deliberately had
+no shell and no file write outside `profile/`. The owner asked for a personal
+assistant that can inspect and change local files and run local commands, which
+is a real capability, not a prompt tweak. It is therefore a separate, opt-in
+layer with its own controls rather than a small widening of the existing tools.
+
+**File tools are confined by configuration.** `assistant.workspace.root` and
+`extra_roots` are the only allowed trees; every path is resolved (following
+symlinks) and checked before use. The assistant's own `conversations/`,
+`profile/`, `tasks/` and `.state/` are always refused, as are common credential
+directories, `.env`, private-key suffixes and `.git` writes. This is path
+confinement, not an OS sandbox: the command tool is the escape hatch, and it is
+gated.
+
+**Overwrites carry the hash they read.** `read_file` returns a sha256 and
+`write_file(mode=overwrite)` requires it; the writer re-checks the hash before
+replacing the file. That prevents a blind or stale overwrite, which is the most
+damaging file operation. Existing files are copied to `.state/backups/` first.
+
+**Commands are not a sandbox.** They run as the API user, with the process
+timeout, an output cap, a minimal environment (no `WINNIE_*` or vendor keys) and
+a JSONL audit line. A hard allowlist was rejected as the default because the
+owner asked for general system commands, and an allowlist that includes a shell
+or interpreter is not a boundary anyway. `exec.allow` remains available as a
+guardrail. A real sandbox (bubblewrap, firejail or a container) is a follow-up
+and is stated as such in `assistant.md`.
+
+**Confirmation is a turn boundary.** A command or an existing-file write returns
+a `PENDING` id and changes nothing. `confirm_action` executes it only when the
+next user message is an explicit, short confirmation, and only when the pending
+action was created in an earlier turn. A model cannot self-approve by calling
+the tool twice in one turn, which is exactly what a prompt injection would try.
+The pending action expires after `pending_ttl_seconds` and is discarded by a
+non-confirmation message.
+
+**Scheduled runs get neither group.** A task run has no human turn to confirm,
+so it gets no file or command tools. This is enforced by the tool schemas and by
+`ToolBox.execute(allow_local=False)`, not by a prompt rule.
+
+**The default roots are documents and projects, not all of home.** The owner
+asked for local access; the assistant's own storage and the usual credential
+paths are refused, and reading every dotfile in `$HOME` by default would have
+been a silent privacy expansion. `~/Documents/Mine` plus `~/Projects` cover the
+owner's notes and code; a deployment with files elsewhere changes
+`workspace.root`/`extra_roots`, not code. The command tool can reach the rest of
+the machine after confirmation, which is the deliberate escape hatch.

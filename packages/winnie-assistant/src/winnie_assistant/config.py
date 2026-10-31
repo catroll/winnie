@@ -63,6 +63,49 @@ class TasksConfig(BaseModel):
     webhook_timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
 
 
+class WorkspaceConfig(BaseModel):
+    """Local files the assistant may inspect and change.
+
+    The file tools resolve every path against ``root`` and ``extra_roots`` and
+    refuse the assistant's own storage and common credential directories. This
+    is path confinement for the file tools, not an OS sandbox.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    root: str = "~"
+    extra_roots: list[str] = Field(default_factory=list)
+    # Extra denied paths. The built-in protected set always applies.
+    protected: list[str] = Field(default_factory=list)
+    max_read_bytes: int = Field(default=200_000, ge=1_000, le=5_000_000)
+    max_write_bytes: int = Field(default=200_000, ge=1_000, le=5_000_000)
+    max_list_entries: int = Field(default=500, ge=1, le=5_000)
+    # Overwriting or appending to an existing file asks for confirmation.
+    confirm_writes: bool = True
+
+
+class ExecConfig(BaseModel):
+    """Local command execution.
+
+    Disabled by default. When enabled, commands run as the API user; the
+    confirmation gate and audit log are guardrails, not a sandbox.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    workdir: str = "~"
+    timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
+    max_output_chars: int = Field(default=8_000, ge=200, le=100_000)
+    # Empty means any executable. A non-empty list checks argv[0]'s basename;
+    # it is a guardrail, not a security boundary.
+    allow: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    require_confirmation: bool = True
+    pending_ttl_seconds: int = Field(default=300, ge=30, le=3_600)
+
+
 class AssistantConfig(BaseModel):
     """Everything the assistant capability needs from the host."""
 
@@ -82,3 +125,5 @@ class AssistantConfig(BaseModel):
     index: IndexConfig = Field(default_factory=IndexConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     tasks: TasksConfig = Field(default_factory=TasksConfig)
+    workspace: WorkspaceConfig = Field(default_factory=WorkspaceConfig)
+    exec: ExecConfig = Field(default_factory=ExecConfig)

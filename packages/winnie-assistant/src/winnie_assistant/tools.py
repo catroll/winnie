@@ -1,8 +1,10 @@
 """Tools the assistant may call during a turn.
 
 Every tool returns plain text that is safe to put in the model context: no
-exceptions escape, no response is unbounded, and no tool has a side effect
-outside the assistant's memory directory.
+exceptions escape and no response is unbounded. Most tools are read-only or
+write only the assistant's memory; the local file/command tools are the
+exception. Their side effects live in ``local.py``, are confined or audited,
+and commands and overwrites require a confirmation in a later turn.
 """
 
 from __future__ import annotations
@@ -20,6 +22,12 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from winnie_assistant.index_client import IndexClient, IndexUnavailable
+from winnie_assistant.local import (
+    CommandRunner,
+    LocalToolError,
+    PendingActions,
+    Workspace,
+)
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.scheduler import AssistantScheduler, TaskDefinitionError
 from winnie_assistant.search import SearchProvider
@@ -37,6 +45,9 @@ _SPACE = re.compile(r"[ \t\r\f\v]+")
 _BLANK_LINES = re.compile(r"\n{3,}")
 
 TASK_MANAGEMENT_TOOLS = frozenset({"schedule_task", "list_tasks", "cancel_task"})
+LOCAL_FILE_TOOLS = frozenset({"list_files", "read_file", "write_file"})
+LOCAL_COMMAND_TOOLS = frozenset({"run_command"})
+LOCAL_TOOLS = LOCAL_FILE_TOOLS | LOCAL_COMMAND_TOOLS | {"confirm_action"}
 
 
 class ToolError(RuntimeError):
@@ -236,23 +247,159 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": (
+                "List a directory in the configured local workspace. Entries "
+                "marked [protected], [credential] or [outside] cannot be read. "
+                "Paths are absolute or relative to the workspace root."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory; default the workspace root.",
+                    }
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": (
+                "Read a UTF-8 text file from the workspace. Returns the path, "
+                "line range, sha256 and text. Read before overwriting and pass "
+                "the sha256 as expected_sha256. Use run_command for files over "
+                "the size limit."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "start_line": {"type": "integer", "minimum": 1},
+                    "max_lines": {"type": "integer", "minimum": 1, "maximum": 2000},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": (
+                "Create or change a UTF-8 text file in the workspace. mode=create "
+                "fails if the file exists; overwrite requires expected_sha256 "
+                "from read_file; append adds to an existing file. Overwrite and "
+                "append return a PENDING id and write nothing until the user "
+                "confirms and you call confirm_action on the next turn."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                    "mode": {
+                        "type": "string",
+                        "enum": ["create", "overwrite", "append"],
+                    },
+                    "expected_sha256": {
+                        "type": "string",
+                        "description": "The sha256 returned by read_file.",
+                    },
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": (
+                "Run a local program with an argv array and no shell. It runs as "
+                "the owner's user and is not sandboxed. The first call returns a "
+                "PENDING id and runs nothing; after the user confirms, call "
+                "confirm_action on the next turn. Do not read credentials or run "
+                "destructive commands unless the user explicitly asked for that "
+                "exact action."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "argv": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 1,
+                        "maxItems": 64,
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Directory; default the configured workdir.",
+                    },
+                },
+                "required": ["argv"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirm_action",
+            "description": (
+                "Execute the pending file write or command identified by "
+                "pending_id, only after the user's current message is an "
+                "explicit confirmation. Call it on the turn after the pending "
+                "id was returned."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pending_id": {
+                        "type": "string",
+                        "description": "The token shown in the PENDING message.",
+                    }
+                },
+                "required": ["pending_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
-def tool_schemas(*, task_management: bool = True) -> list[dict[str, Any]]:
+def tool_schemas(
+    *, task_management: bool = True, local_tools: bool = True
+) -> list[dict[str, Any]]:
     """Tool schemas for a turn.
 
-    A task run must not create more tasks, so management tools are left out of
-    scheduled turns; that removes the recursive-schedule failure mode instead
-    of asking the model to behave.
+    A task run must not create more tasks or run local side effects, so both
+    groups are left out of scheduled turns; that removes the recursive-schedule
+    and unattended-command failure modes instead of asking the model to behave.
     """
-    if task_management:
-        return list(TOOL_SCHEMAS)
-    return [
-        schema
-        for schema in TOOL_SCHEMAS
-        if schema["function"]["name"] not in TASK_MANAGEMENT_TOOLS
-    ]
+    selected = list(TOOL_SCHEMAS)
+    if not task_management:
+        selected = [
+            schema
+            for schema in selected
+            if schema["function"]["name"] not in TASK_MANAGEMENT_TOOLS
+        ]
+    if not local_tools:
+        selected = [
+            schema
+            for schema in selected
+            if schema["function"]["name"] not in LOCAL_TOOLS
+        ]
+    return selected
 
 
 class ToolBox:
@@ -267,6 +414,9 @@ class ToolBox:
         tasks_enabled: bool = True,
         max_output_chars: int = 4000,
         fetch_timeout_seconds: float = 20.0,
+        workspace: Workspace | None = None,
+        commands: CommandRunner | None = None,
+        pending: PendingActions | None = None,
     ) -> None:
         self.search = search
         self.index = index
@@ -276,6 +426,40 @@ class ToolBox:
         self.tasks_enabled = tasks_enabled
         self.max_output_chars = max_output_chars
         self.fetch_timeout_seconds = fetch_timeout_seconds
+        self.workspace = workspace
+        self.commands = commands
+        self.pending = pending or PendingActions()
+
+    @property
+    def has_local_tools(self) -> bool:
+        return self.workspace is not None or self.commands is not None
+
+    def schemas(
+        self, *, task_management: bool = True, local_tools: bool = True
+    ) -> list[dict[str, Any]]:
+        selected = tool_schemas(
+            task_management=task_management,
+            local_tools=local_tools and self.has_local_tools,
+        )
+        if self.workspace is None:
+            selected = [
+                schema
+                for schema in selected
+                if schema["function"]["name"] not in LOCAL_FILE_TOOLS
+            ]
+        if self.commands is None:
+            selected = [
+                schema
+                for schema in selected
+                if schema["function"]["name"] not in LOCAL_COMMAND_TOOLS
+            ]
+        return selected
+
+    def begin_turn(self, conversation_id: str, user_message: str) -> None:
+        self.pending.begin_turn(conversation_id, user_message)
+
+    def pending_summary(self, conversation_id: str) -> str:
+        return self.pending.summary(conversation_id)
 
     async def execute(
         self,
@@ -284,12 +468,20 @@ class ToolBox:
         *,
         conversation_id: str,
         allow_task_management: bool = True,
+        allow_local: bool = True,
     ) -> str:
         try:
             if name in TASK_MANAGEMENT_TOOLS and not allow_task_management:
                 raise ToolError(
                     "scheduled tasks cannot be managed from inside a task run"
                 )
+            if name in LOCAL_TOOLS:
+                if not allow_local:
+                    raise ToolError(
+                        "local file and command tools are unavailable in a task run"
+                    )
+                if not self.pending.has_turn(conversation_id):
+                    self.pending.begin_turn(conversation_id, "")
             if name == "web_search":
                 output = await self._web_search(arguments)
             elif name == "fetch_page":
@@ -306,9 +498,19 @@ class ToolBox:
                 output = self._list_tasks()
             elif name == "cancel_task":
                 output = await self._cancel_task(arguments)
+            elif name == "list_files":
+                output = await self._list_files(arguments)
+            elif name == "read_file":
+                output = await self._read_file(arguments)
+            elif name == "write_file":
+                output = await self._write_file(arguments, conversation_id)
+            elif name == "run_command":
+                output = await self._run_command(arguments, conversation_id)
+            elif name == "confirm_action":
+                output = await self._confirm_action(arguments, conversation_id)
             else:
                 raise ToolError(f"unknown tool: {name}")
-        except ToolError as exc:
+        except (ToolError, LocalToolError) as exc:
             return f"ERROR: {exc}"
         except Exception as exc:  # noqa: BLE001 - a tool must not break the turn
             logger.exception("assistant tool %s failed", name)
@@ -426,6 +628,107 @@ class ToolBox:
         if document.get("fresh") is False:
             header += " (reindexed just now)"
         return f"{header}\n\n{text}"
+
+    # -- local files and commands ---------------------------------------
+
+    def _workspace(self) -> Workspace:
+        if self.workspace is None:
+            raise ToolError(
+                "local file tools are disabled (assistant.workspace.enabled)"
+            )
+        return self.workspace
+
+    def _commands(self) -> CommandRunner:
+        if self.commands is None:
+            raise ToolError(
+                "local command execution is disabled (assistant.exec.enabled)"
+            )
+        return self.commands
+
+    async def _list_files(self, arguments: dict[str, Any]) -> str:
+        raw_path = str(arguments.get("path") or ".")
+        return await asyncio.to_thread(self._workspace().list, raw_path)
+
+    async def _read_file(self, arguments: dict[str, Any]) -> str:
+        raw_path = str(arguments.get("path") or "").strip()
+        if not raw_path:
+            raise ToolError("read_file requires a path")
+        start = _as_int(arguments.get("start_line"), default=1, minimum=1, maximum=1_000_000)
+        max_lines = _as_int(
+            arguments.get("max_lines"), default=400, minimum=1, maximum=2000
+        )
+        return await asyncio.to_thread(
+            self._workspace().read,
+            raw_path,
+            start_line=start,
+            max_lines=max_lines,
+        )
+
+    async def _write_file(
+        self, arguments: dict[str, Any], conversation_id: str
+    ) -> str:
+        workspace = self._workspace()
+        raw_path = str(arguments.get("path") or "").strip()
+        if not raw_path:
+            raise ToolError("write_file requires a path")
+        content = arguments.get("content")
+        if not isinstance(content, str):
+            raise ToolError("write_file requires string content")
+        mode = str(arguments.get("mode") or "create").strip().lower()
+        expected = str(arguments.get("expected_sha256") or "").strip()
+        plan = await asyncio.to_thread(
+            workspace.plan_write,
+            raw_path,
+            content,
+            mode=mode,
+            expected_sha256=expected,
+        )
+        if plan.requires_confirmation:
+            action = self.pending.put(
+                conversation_id,
+                kind="write_file",
+                summary=plan.summary,
+                execute=lambda: asyncio.to_thread(
+                    workspace.write, plan, conversation_id
+                ),
+            )
+            return self._pending_message(action)
+        return await asyncio.to_thread(workspace.write, plan, conversation_id)
+
+    async def _run_command(
+        self, arguments: dict[str, Any], conversation_id: str
+    ) -> str:
+        commands = self._commands()
+        plan = commands.plan(
+            arguments.get("argv"), str(arguments.get("cwd") or "")
+        )
+        if commands.require_confirmation:
+            action = self.pending.put(
+                conversation_id,
+                kind="run_command",
+                summary=plan.summary,
+                execute=lambda: commands.run(plan, conversation_id),
+            )
+            return self._pending_message(action)
+        return await commands.run(plan, conversation_id)
+
+    async def _confirm_action(
+        self, arguments: dict[str, Any], conversation_id: str
+    ) -> str:
+        pending_id = str(arguments.get("pending_id") or "").strip()
+        if not pending_id:
+            raise ToolError("confirm_action requires pending_id")
+        action = self.pending.take(conversation_id, pending_id)
+        return await action.execute()
+
+    def _pending_message(self, action) -> str:
+        return (
+            f"PENDING {action.token}: nothing has been changed or run.\n"
+            f"{action.summary}\n"
+            "Explain exactly what will happen, ask the user to reply with an "
+            "explicit confirmation, and call confirm_action with "
+            f'pending_id="{action.token}" on the next turn.'
+        )
 
     # -- memory ----------------------------------------------------------
 
