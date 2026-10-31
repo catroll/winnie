@@ -763,3 +763,48 @@ Publishing needs its own target, credentials and audit trail.
 renderer plus a sanitizer, because the text is model output derived from
 untrusted articles. Showing the source costs readability and closes an XSS
 class; a sanitised renderer is a follow-up with its own tests.
+
+## Weekly schedule tool (2026-11-01)
+
+**Line splicing, not re-serialisation.** `packages/winnie-schedule` edits
+`~/Projects/Mine/WLB/work/**/<week>.md` by replacing the exact lines an event
+occupies. Rendering the parsed model back to Markdown would be shorter to write
+and would quietly rewrite prose, blank lines, `\x0b` paste artifacts and badge
+definitions in a file a human also edits. The parser therefore owns the file's
+line list and the model is a view with line ranges; a corpus test asserts that
+every week file parses and renders back to its original bytes, and that
+add-then-delete returns the file unchanged.
+
+**The package does not create week files.** The skeleton — calendar block,
+routine items, badge definitions — comes from WLB `tools/weekly.py`, which also
+creates month/quarter/year indexes and the `S_*` symlinks. A second generator
+here would drift from it, and skipping weeks silently would be worse than a
+clear "expected path, run the generator" error.
+
+**Week files before 2024 are read-only.** They have no `### MM/DD` day sections,
+so there is nowhere to anchor a day-scoped edit. The tool parses them, lists
+their week-level items and refuses mutation with exit code 4 rather than
+guessing which day an item belongs to.
+
+**Disagreements are reported, not repaired.** A day heading that contradicts its
+date, or an event whose `` `MM/DD` `` tag contradicts its section, is a human
+mistake in the source: the parser emits a warning that `parse --json` carries,
+because silently rewriting the tag would hide the fact that a line was pasted
+into the wrong day.
+
+**Standard library only.** The tool runs on the system `python3` with no
+virtualenv, so an agent can invoke it from any directory with
+`PYTHONPATH=.../src python3 -m winnie_schedule`. A scheduling helper that needs a
+dependency resolved before it can answer "what is left today" is not a helper.
+
+**The Skill is written in Chinese.** Every other document in this repository is
+English, but this one describes a Chinese Markdown format and is read together
+with the sibling `wlb-work-notes` skill while editing Chinese content; a
+translated vocabulary ("day section", "week item") would have to be mapped back
+to the headings in the file on every use. Code, comments and this README stay
+English.
+
+**Root resolution: flag, then environment, then the conventional path.** The
+schedule is not inside this repository, so `--root` / `WINNIE_SCHEDULE_ROOT`
+precede the default `~/Projects/Mine/WLB`, and a root without a `work/`
+directory is an error instead of an empty result.

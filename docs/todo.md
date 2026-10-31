@@ -228,3 +228,17 @@ status are in [plan.md](./plan.md).
 - [ ] Keep adding to `docs/decisions.md` for every provider or architecture
       choice that is not obvious from the code. The Android client entries are
       recorded there.
+
+## P3 — weekly schedule tool
+
+The owner's schedule is Markdown in the WLB tree; `packages/winnie-schedule`
+reads and edits it. Two follow-ups are deliberately open:
+
+- [ ] `week create`: render a new week skeleton from the package instead of
+      pointing at WLB `tools/weekly.py`. Only worth doing if the WLB generator
+      goes away — two generators would drift, and the routine items in the
+      skeleton are the owner's, not Winnie's.
+- [ ] Edit continuation lines. `--text` rewrites the first line and `--note`
+      appends, but a nested list or a fenced block still has to be edited by
+      hand. A line-range selector would close that, at the cost of a second way
+      to address an event.
