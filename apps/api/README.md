@@ -166,11 +166,20 @@ fake) and which integration each AI-using feature calls:
 
 `config.yaml` seeds the registry on first start from `routes`, `llm`,
 `meetings.asr_provider`, `meetings.translator`, `meetings.summarizer` and
-`assistant.model`, then writes `data/ai.yaml`. After that file exists the console
-is authoritative; a binding with no integration still falls back to the YAML
-value. `ai.enabled: false` (the programmatic `Settings()` default) disables both
-the file and the endpoints, and the capability factories build providers from
-the YAML configuration as before.
+`assistant.model`, then writes `data/ai.yaml`. Routes seed as
+`gateway: true` with an empty `api_key_env`; a separate `internal-llm` record
+(`gateway: false`) carries `llm.api_key_env` and `llm.model` for the assistant
+and meetings. After that file exists the console is authoritative; a binding
+with no integration still falls back to the YAML value. `ai.enabled: false` (the
+programmatic `Settings()` default) disables both the file and the endpoints, and
+the capability factories build providers from the YAML configuration as before.
+
+`gateway` controls exposure, not the kind: an OpenAI-compatible integration can
+be a public `/{name}/v1/...` route, an internal-only provider, or both. A
+gateway-only provider has no `api_key_env`; binding it to an internal feature is
+rejected. A `version: 1` file (where a route doubled as the internal LLM) is
+migrated on first read: the route key/model are cleared, a separate
+`internal-llm` is created and the affected bindings are repointed.
 
 ```yaml
 ai:
@@ -194,15 +203,17 @@ curl -s -X POST http://[::1]:8000/api/v1/ai/integrations \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"deepseek","kind":"openai","base_url":"https://api.deepseek.com",
-       "api_key_env":"DEEPSEEK_API_KEY","default_model":"deepseek-chat"}'
+       "api_key_env":"DEEPSEEK_API_KEY","default_model":"deepseek-chat",
+       "gateway":true}'
 ```
 
-The registry stores `api_key_env` (the variable name), never the key. The API
-reads the value when it builds the provider. Adding an OpenAI or Anthropic
-integration also exposes its gateway route at `/{name}/v1/...` immediately;
-disabling or deleting it removes the route. A provider change applies on the
-next model call, and the arq worker re-reads the file by modification time.
-The console page is documented in [docs/ai-providers.md](../../docs/ai-providers.md).
+Set `"gateway": false` for an internal-only provider. The registry stores
+`api_key_env` (the variable name), never the key; the API reads the value when it
+builds the provider. An OpenAI or Anthropic integration with `gateway: true`
+exposes its route at `/{name}/v1/...` immediately; disabling, deleting or
+clearing the flag removes the route. A provider change applies on the next model
+call, and the arq worker re-reads the file by modification time. The console
+page is documented in [docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## LLM usage
 

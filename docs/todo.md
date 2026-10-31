@@ -156,6 +156,17 @@ status are in [plan.md](./plan.md).
       compatibility when a binding is saved, and fall back to the YAML value for
       unbound features. Covered by `apps/api/tests/test_ai_admin.py` and a
       Firefox run of create → bind → delete.
+- [x] Separate gateway exposure from internal credentials: every
+      OpenAI/Anthropic integration has a `gateway` flag, the seed creates a
+      dedicated `internal-llm` record, and a keyless provider cannot serve an
+      internal feature. A `version: 1` file is migrated in place.
+- [ ] Group protocol endpoints under their vendor in the console (DeepSeek →
+      OpenAI/Anthropic endpoints) so the protocol split does not read as two
+      suppliers. The records stay separate; only the presentation changes.
+- [ ] Add an Anthropic Messages adapter for internal features if there is a real
+      need to bind the assistant/translation/minutes to an Anthropic endpoint.
+      DeepSeek's OpenAI-compatible endpoint already covers them today, so this is
+      not on the critical path.
 - [ ] Add a **Check** action per integration that performs one cheap call
       (`GET /models`, or a one-token chat) and reports the provider's HTTP
       response. "Key set" in the environment is not proof that the key works or

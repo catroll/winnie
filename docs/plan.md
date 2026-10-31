@@ -242,10 +242,13 @@ Working:
   execution and delivery errors.
 - AI providers: add, edit and delete integrations (OpenAI-compatible, Anthropic,
   Volcengine ASR and the deterministic fake), and choose the provider and model
-  for each AI-using feature. Changing a binding takes effect on the next model
-  call; adding an OpenAI/Anthropic provider adds its gateway route immediately.
-  API keys are environment-variable names shown with a set/missing indicator,
-  never key values.
+  for each AI-using feature. Each OpenAI/Anthropic integration is independently a
+  gateway route or an internal-only provider; the seed keeps the internal LLM on
+  its own record instead of reusing a public route. Changing a binding takes
+  effect on the next model call; adding a gateway provider adds its route
+  immediately. API keys are environment-variable names shown with a set/missing
+  indicator, never key values; a keyless OpenAI provider is gateway-only and
+  cannot serve an internal feature.
 - Gateway routes: protocol, upstream, API base and proxy paths from the AI
   provider registry (or from `config.yaml` when the registry is disabled).
 - Account: profile, session expiry and password change. A password change
@@ -278,11 +281,14 @@ Verified:
   `web_search` block, light and dark mode, and a 390 px viewport with no
   horizontal overflow.
 - The AI providers page was checked in Firefox against a disposable API and
-  registry: the seeded providers and bindings rendered, a provider was created
-  through the modal, its gateway paths and missing-key indicator appeared, the
-  assistant was rebound to it and the API reported the new integration, then the
-  provider was deleted and the binding fell back to `config.yaml`. Light and
-  dark mode were captured at 1440×1200.
+  registry: the seeded `deepseek-openai` route had no server key, the separate
+  `internal-llm` record was marked internal-only, `assistant.chat` was bound to
+  it, and a provider was created through the modal, bound, then deleted with the
+  binding falling back to `config.yaml`. The Volcengine defaults, light and dark
+  mode were captured at 1440×1200.
+- A `version: 1` registry (combined route + internal LLM) was loaded and checked:
+  the migration split it into `deepseek-openai` + `internal-llm`, cleared the
+  route key/model, repointed the bindings and wrote `version: 2`.
 
 Open:
 
@@ -390,7 +396,8 @@ Open:
 | Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
 | Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
-| Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Seeded providers and bindings rendered; created `ui-llm` through the modal; gateway paths and missing-key badge appeared; rebound `assistant.chat` and the API reported `source=admin`; deleted it and the binding returned to `source=config`; light/dark captured |
+| Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Seeded `deepseek-openai` had no server key and `internal-llm` was internal-only; `assistant.chat` pointed at it; created `ui-llm` through the modal, rebound `assistant.chat` and the API reported `source=admin`, deleted it and the binding returned to `source=config`; light/dark captured |
+| AI registry v1 migration | `pytest` against a hand-written v1 file | Split into `deepseek-openai` + `internal-llm`, cleared the route key/model, repointed `assistant.chat`, rewrote `version: 2` |
 | Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |
 | Admin LLM usage page | Firefox against the same disposal API | Period switch, metrics, balances (not-exposed and missing-key states), by-day/by-feature/by-model tables, feature filter (8 gateway calls), detail row without column resize, price table, light/dark and 500 px width with no page overflow |
 

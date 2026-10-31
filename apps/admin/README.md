@@ -20,7 +20,7 @@ not store vendor API keys.
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **LLM usage** | Recorded model calls with token classes, latency, status and cost; breakdowns by day, feature and model; provider balances with a refresh; the configured price table |
-| **AI providers** | Add, edit and delete vendor integrations (OpenAI-compatible, Anthropic, Volcengine ASR, deterministic fake); choose the provider and model for the assistant, transcription, translation and minutes; see each provider's gateway paths and whether its environment key is set |
+| **AI providers** | Add, edit and delete vendor integrations (OpenAI-compatible, Anthropic, Volcengine ASR, deterministic fake); mark an OpenAI/Anthropic provider as a gateway route or internal-only; choose the provider and model for the assistant, transcription, translation and minutes; see gateway paths, internal-only status and whether the environment key is set |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
 | **Account** | Profile, session expiry and password change |
@@ -66,16 +66,20 @@ integration and an optional model:
 | Meeting translation | Non-local transcript segments |
 | Meeting minutes | Structured summary, decisions and action items |
 
-Adding an OpenAI-compatible or Anthropic provider exposes a gateway route at
-`/{name}/v1/...` on the next save. A provider change takes effect on the next
-model call; no API restart is needed. Deleting a provider resets its features to
-their `config.yaml` fallback.
+An OpenAI/Anthropic integration has a separate **Gateway route** switch. With it
+on, the provider is reachable at `/{name}/v1/...` and the client supplies the
+vendor key; with it off, the provider is internal-only and is called by the
+assistant or meetings with `api_key_env`. The seeded `internal-llm` is
+internal-only; the seeded routes have no server-side key. A keyless
+OpenAI-compatible provider cannot serve an internal feature, so it is not listed
+in those feature dropdowns.
 
-The page never receives or stores a vendor key. `api_key_env` is the *name* of
-an environment variable, and the table shows whether it is currently set; the
-API process reads the value when it builds the provider. The full model,
-first-start precedence and the HTTP API are in
-[docs/ai-providers.md](../../docs/ai-providers.md).
+A provider change takes effect on the next model call; no API restart is needed.
+Deleting a provider resets its features to their `config.yaml` fallback. The
+page never receives or stores a vendor key: `api_key_env` is the *name* of an
+environment variable, and the table shows whether it is currently set. The full
+model, first-start precedence (including the `version: 1` migration) and the HTTP
+API are in [docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## Quick start
 

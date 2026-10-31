@@ -377,12 +377,34 @@ the API process; a second API worker would see a new route on its next restart,
 which is why a single API process remains the simple deployment and is stated
 in the operations doc.
 
-**Kind and model are validated at the binding, not at the provider call.** An
-ASR integration cannot serve `assistant.chat`, and an OpenAI-compatible
-integration with no model cannot serve a model feature. Catching that while the
-binding is saved gives the user an immediate, named error instead of a failed
-meeting pipeline later. The same validation runs on load, so a hand-edited file
-fails loudly.
+**Gateway exposure is separate from server-side credentials.** A vendor endpoint
+can be a public proxy route (`gateway: true`), an internal provider
+(`gateway: false`, `api_key_env` set), or both. The first version of the seed
+matched a route by base URL and reused it as the internal LLM, which put the
+server-side key on a public route and made `deepseek-openai` look like it
+required `WINNIE_LLM_API_KEY`. v2 always creates a separate `internal-llm`
+record with `gateway: false`; the route keeps `api_key_env: ""` and forwards the
+client's key. A v1 file is migrated in place on the next read. The alternative —
+one record with a per-role key — was rejected because the two roles can use
+different keys, different owners and different lifetimes; a single `api_key_env`
+cannot express that, and combining them is what caused the original confusion.
+
+**The protocol suffix is not a second vendor.** The kind is the wire format and
+adapter, so DeepSeek's OpenAI and Anthropic endpoints must remain separate
+records: the gateway paths and payloads differ, and the internal adapters only
+speak OpenAI `/chat/completions`. The label now says
+`DeepSeek (OpenAI-compatible)` rather than `Deepseek Openai`, and
+`DeepSeek (Anthropic-compatible)` rather than a second supplier. A vendor
+grouping in the console is a UI follow-up; collapsing the records would still
+require an endpoint/protocol dimension and would break capability validation.
+
+**Kind/model and credentials are validated at the binding.** An ASR integration
+cannot serve `assistant.chat`, an OpenAI-compatible integration with no model
+cannot serve a model feature, and a gateway-only OpenAI provider (no
+`api_key_env`) cannot serve an internal feature. Catching that while the binding
+is saved gives the user an immediate, named error instead of a failed meeting
+pipeline later. The same validation runs on load, so a hand-edited file fails
+loudly.
 
 **The fake provider is a first-class integration.** It makes the registry
 usable offline and keeps the existing deterministic demos selectable from the
