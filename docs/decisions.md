@@ -332,14 +332,26 @@ usable `clamp()` height; no other chat CSS or component layer was added.
 
 ## Admin-managed AI providers (2026-11-01)
 
-**One registry, one binding per feature.** The console owns a list of
-integrations (vendor endpoints) and a map from feature to integration. A
-feature is the stable unit (`assistant.chat`, `meetings.transcribe`,
-`meetings.translate`, `meetings.summarize`); the integration is the replaceable
-unit. The alternative — a provider name inside each feature's YAML block — would
-have duplicated endpoint and key settings four times and made "switch the
-assistant to DeepSeek" a multi-key edit. It would also have left the gateway
-route table as a second, unrelated list of the same vendors.
+**One registry, one binding per feature.** The console owns suppliers,
+endpoints, models and a map from feature to endpoint/model. A feature is the
+stable unit (`assistant.chat`, `meetings.transcribe`, `meetings.translate`,
+`meetings.summarize`); the endpoint is the replaceable unit. The alternative — a
+provider name inside each feature's YAML block — would have duplicated endpoint
+and key settings four times and made "switch the assistant to DeepSeek" a
+multi-key edit. It would also have left the gateway route table as a second,
+unrelated list of the same vendors.
+
+**The supplier is the unit the user configures; endpoints and models hang off
+it.** One DeepSeek supplier owns up to three endpoints (OpenAI-compatible
+gateway, Anthropic-compatible gateway, internal OpenAI-compatible) and one model
+catalog. Endpoints remain separate records because the protocol, gateway paths,
+payloads and key role differ; collapsing them would require a protocol dimension
+anyway and would break capability validation. Models belong to the supplier, not
+the endpoint, because the same `deepseek-chat` id is valid on every DeepSeek
+endpoint; putting the catalog on each endpoint would duplicate it and make
+"which models exist" ambiguous. The console therefore groups endpoints under the
+supplier and shows one **Models** editor per supplier. This is the presentation
+the earlier protocol-suffix decision deferred.
 
 **The state is a YAML file, not a database table.** `data/ai.yaml` is
 human-readable, easy to back up, and works when the database is disabled
@@ -358,7 +370,7 @@ named error. Re-reading the YAML on every resolve was rejected because it makes
 "the console changed something" indistinguishable from "an operator edited a
 file".
 
-**Keys stay in the environment.** An integration stores `api_key_env`, the name
+**Keys stay in the environment.** An endpoint stores `api_key_env`, the name
 of a variable, and the console shows whether it is set. Pasting a key into that
 field fails validation. The alternative — encrypting keys in the registry — was
 rejected for this slice: it needs a master-key lifecycle, a new dependency, a
@@ -387,8 +399,9 @@ features to `fake`; the owner adds a real provider in the console. Runtime
 limits (timeouts, retries, token caps, chunk sizes) move with the choice into
 `data/ai.yaml` as a `runtime` section, editable in the console. The v1 migration
 still recovers an existing `internal-llm` from the file, because that record is
-the only evidence of the old `llm` configuration; it is then a normal
-integration.
+the only evidence of the old `llm` configuration; it is then a normal endpoint.
+v2 files are grouped under suppliers and their endpoint defaults/bound models
+become the supplier model catalog; the schema is version 3.
 
 **Gateway exposure is separate from server-side credentials.** A vendor endpoint
 can be a public proxy route (`gateway: true`), an internal provider
@@ -402,22 +415,24 @@ one record with a per-role key — was rejected because the two roles can use
 different keys, different owners and different lifetimes; a single `api_key_env`
 cannot express that, and combining them is what caused the original confusion.
 
-**The protocol suffix is not a second vendor.** The kind is the wire format and
-adapter, so DeepSeek's OpenAI and Anthropic endpoints must remain separate
-records: the gateway paths and payloads differ, and the internal adapters only
-speak OpenAI `/chat/completions`. The label now says
-`DeepSeek (OpenAI-compatible)` rather than `Deepseek Openai`, and
-`DeepSeek (Anthropic-compatible)` rather than a second supplier. A vendor
-grouping in the console is a UI follow-up; collapsing the records would still
-require an endpoint/protocol dimension and would break capability validation.
+**The protocol suffix identifies an endpoint within one supplier.** The kind is
+the wire format and adapter, so DeepSeek's OpenAI and Anthropic endpoints must
+remain separate records: the gateway paths and payloads differ, and the internal
+adapters only speak OpenAI `/chat/completions`. They are no longer presented as
+separate suppliers: the console groups them under one **DeepSeek** supplier and
+labels the rows by role (`OpenAI-compatible gateway`,
+`Anthropic-compatible gateway`, `Internal (OpenAI-compatible)`). The endpoint
+`name` stays the gateway path prefix; the supplier `id` is the grouping key and
+the models are shared.
 
-**Kind/model and credentials are validated at the binding.** An ASR integration
-cannot serve `assistant.chat`, an OpenAI-compatible integration with no model
-cannot serve a model feature, and a gateway-only OpenAI provider (no
-`api_key_env`) cannot serve an internal feature. Catching that while the binding
-is saved gives the user an immediate, named error instead of a failed meeting
-pipeline later. The same validation runs on load, so a hand-edited file fails
-loudly.
+**Kind/model and credentials are validated at the binding.** An ASR endpoint
+cannot serve `assistant.chat`, an OpenAI-compatible endpoint with no model
+cannot serve a model feature, a model must be in the supplier catalog, and a
+gateway-only OpenAI endpoint (no `api_key_env`) cannot serve an internal feature.
+Catching that while the binding is saved gives the user an immediate, named
+error instead of a failed meeting pipeline later. The same validation runs on
+load, so a hand-edited file fails loudly. Removing a model that an endpoint
+default or binding still uses is rejected for the same reason.
 
 **The fake provider is a first-class integration.** It makes the registry
 usable offline and keeps the existing deterministic demos selectable from the

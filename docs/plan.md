@@ -243,17 +243,20 @@ Working:
 - Skills: the registered chat skills with title, description, tools,
   permissions, prompt instructions, availability and scheduled-run safety. The
   switch calls `PUT /assistant/skills/{name}`; the core skill is always on.
-- AI providers: add, edit and delete integrations (OpenAI-compatible, Anthropic,
-  Volcengine ASR and the deterministic fake), and choose the provider and model
-  for each AI-using feature. This registry is the only model choice;
+- AI suppliers: add, edit and delete suppliers (DeepSeek, OpenAI, Qwen,
+  Anthropic, Volcengine, fake), their endpoints (OpenAI-compatible, Anthropic,
+  Volcengine ASR, fake) and their model catalogs. The console groups endpoints
+  under one supplier, so DeepSeek's gateway/internal records do not read as
+  three suppliers. Each feature selects an internal endpoint and a model from
+  that supplier's catalog. This registry is the only model choice;
   `config.yaml` has no `llm`, `assistant.model`, `meetings.translator` or
   `meetings.summarizer`. A fresh registry binds the model features to `fake`;
-  the owner adds a real provider and rebinds them. Each OpenAI/Anthropic
-  integration is independently a gateway route or an internal-only provider.
-  Changing a binding takes effect on the next model call; adding a gateway
-  provider adds its route immediately. API keys are environment-variable names
-  shown with a set/missing indicator, never key values; a keyless OpenAI provider
-  is gateway-only and cannot serve an internal feature.
+  the owner adds a real supplier/endpoint and rebinds them. Each
+  OpenAI/Anthropic endpoint is independently a gateway route or an internal-only
+  provider. Changing a binding takes effect on the next model call; adding a
+  gateway endpoint adds its route immediately. API keys are environment-variable
+  names shown with a set/missing indicator, never key values; a keyless OpenAI
+  endpoint is gateway-only and cannot serve an internal feature.
 - Model runtime: shared timeout, token, temperature, retry and chunk limits live
   in the registry and are editable in the console; they apply to the next call.
 - Gateway routes: protocol, upstream, API base and proxy paths from the AI
@@ -287,11 +290,13 @@ Verified:
   filter, a task-run record with no composer, a transcript with a collapsed
   `web_search` block, light and dark mode, and a 390 px viewport with no
   horizontal overflow.
-- The AI providers page was checked in Firefox against a disposable API and
-  registry: a fresh seed bound the model features to `fake`, a provider was
-  created through the modal, bound, then deleted so the feature became unbound
-  (no YAML fallback); the Model runtime card saved new limits; the Volcengine
-  defaults, light and dark mode were captured at 1440×1200.
+- The AI suppliers page was checked in Firefox against a disposable API and
+  registry: a fresh seed bound the model features to `fake`; DeepSeek's
+  endpoints were grouped under one supplier; a model was added through the
+  supplier **Models** editor; an endpoint was created, bound and deleted so the
+  feature became unbound (no YAML fallback); the Model runtime card saved new
+  limits; the Volcengine defaults, light and dark mode were captured at
+  1440×1200.
 - A `version: 1` registry (combined route + internal LLM) was loaded and checked:
   the migration split it into `deepseek-openai` + `internal-llm`, cleared the
   route key/model, repointed the bindings and wrote `version: 2`.
@@ -432,8 +437,8 @@ Open:
 | Local LLM review | `winnie-local` test suite | Whitelisted reads skipped the reviewer; non-whitelisted write/command allowed or denied; malformed JSON, timeout and provider errors denied; denied actions changed nothing |
 | Chat engine and skills | `winnie-chat` and API tests | Registry persistence and duplicate rejection; enabled-only schemas and prompt; disabled-tool rejection; scheduled filtering; skills list/toggle/persistence |
 | Admin skills page | TypeScript/Vite build + Firefox production preview | Page typechecks and builds; six skills listed with instructions; unavailable index and always-on core; web toggle persisted; light/dark/mobile |
-| Admin AI providers page | Firefox against a disposable API and `ai.yaml` | Fresh seed bound model features to `fake`; created `ui-llm` through the modal, rebound `assistant.chat` and the API reported `source=admin`, deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
-| AI registry v1 migration | `pytest` against a hand-written v1 file | Split into `deepseek-openai` + `internal-llm`, cleared the route key/model, repointed `assistant.chat`, rewrote `version: 2` |
+| Admin AI suppliers page | Firefox against a disposable API and `ai.yaml` | Fresh seed bound model features to `fake`; DeepSeek endpoints were grouped under one supplier; added a model through **Models**; created `ui-llm`, rebound `assistant.chat` (`source=admin`), deleted it and the feature became unbound; saved Model runtime limits; Volcengine defaults, light/dark captured |
+| AI registry migration | `pytest` against hand-written v1/v2 files | v1 split into gateway + `internal-llm`; v2 grouped under suppliers and collected endpoint/bound models; both rewritten `version: 3` |
 | Usage recording | Synthetic OpenAI-compatible upstream through the gateway (`WINNIE_CONFIG=.tmp/usage-e2e/config.yaml`) | 6 real gateway calls (4 ok, 500, 401) plus 12 seeded historical records: 18 calls, 131.71K tokens, `0.0410 USD`, 16 priced / 2 without usage |
 | Admin LLM usage page | Firefox against the same disposal API | Period switch, metrics, balances (not-exposed and missing-key states), by-day/by-feature/by-model tables, feature filter (8 gateway calls), detail row without column resize, price table, light/dark and 500 px width with no page overflow |
 

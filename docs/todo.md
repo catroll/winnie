@@ -149,9 +149,10 @@ status are in [plan.md](./plan.md).
 
 ## P2 — AI provider administration
 
-- [x] Admin CRUD for integrations and feature bindings, with gateway routes
-      derived from the registry. Changing a provider or binding applies on the
-      next model call; the arq worker re-reads the file by mtime.
+- [x] Admin CRUD for suppliers, endpoints, model catalogs and feature
+      bindings, with gateway routes derived from endpoints. Changing a
+      supplier/model/binding applies on the next model call; the arq worker
+      re-reads the file by mtime.
 - [x] Seed gateway routes and the Volcengine ASR defaults on first start,
       bind model features to `fake`, validate kind/model compatibility when a
       binding is saved, and require a binding for every feature. There is no
@@ -165,9 +166,10 @@ status are in [plan.md](./plan.md).
       OpenAI/Anthropic integration has a `gateway` flag, and a keyless provider
       cannot serve an internal feature. A `version: 1` file is migrated in place
       and keeps its old `internal-llm` record as a normal integration.
-- [ ] Group protocol endpoints under their vendor in the console (DeepSeek →
-      OpenAI/Anthropic endpoints) so the protocol split does not read as two
-      suppliers. The records stay separate; only the presentation changes.
+- [x] Group protocol endpoints under their supplier in the console (DeepSeek →
+      one supplier with OpenAI/Anthropic/internal endpoints). Models live in a
+      per-supplier catalog shown in the feature model select and edited with
+      **Models**; a model not in the catalog is rejected.
 - [ ] Add an Anthropic Messages adapter for internal features if there is a real
       need to bind the assistant/translation/minutes to an Anthropic endpoint.
       DeepSeek's OpenAI-compatible endpoint already covers them today, so this is
