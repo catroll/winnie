@@ -33,7 +33,12 @@ from winnie_api.ai.schema import (
     ResolvedProvider,
     utcnow,
 )
-from winnie_api.ai.seed import config_provider, describe_provider, seed_state
+from winnie_api.ai.seed import (
+    config_provider,
+    describe_provider,
+    migrate_state,
+    seed_state,
+)
 
 _HEADER = (
     "# Winnie AI providers and feature bindings.\n"
@@ -79,6 +84,15 @@ class AISettingsService:
             raise AIProviderError(
                 f"invalid AI settings at {self.path}: {exc}"
             ) from exc
+        if migrate_state(state, self.settings):
+            try:
+                state = AIState.model_validate(state.model_dump(mode="json"))
+            except ValidationError as exc:
+                raise AIProviderError(
+                    f"migrated AI settings are invalid at {self.path}: {exc}"
+                ) from exc
+            self._write(state)
+            return
         self._state = state
         self._mtime_ns = self.path.stat().st_mtime_ns
 
@@ -188,6 +202,8 @@ class AISettingsService:
                 continue
             if integration.kind not in {"openai", "anthropic"}:
                 continue
+            if not integration.gateway:
+                continue
             table[integration.name] = Route(
                 name=integration.name,
                 protocol=integration.kind,
@@ -236,7 +252,7 @@ class AISettingsService:
         ]
         kind = KIND_BY_KEY[integration.kind]
         paths: list[str] = []
-        if integration.enabled and kind.gateway:
+        if integration.enabled and integration.gateway and kind.gateway:
             if integration.kind == "openai":
                 paths = [
                     f"/{integration.name}/v1/chat/completions",
@@ -378,6 +394,11 @@ class AISettingsService:
                 if integration.kind not in spec.kinds:
                     raise AIProviderError(
                         f"feature {feature} cannot use a {integration.kind} integration"
+                    )
+                if integration.kind == "openai" and not integration.api_key_env:
+                    raise AIProviderError(
+                        f"integration {integration.name!r} is gateway-only; set "
+                        f"api_key_env before binding {feature}"
                     )
 
             model = draft.model

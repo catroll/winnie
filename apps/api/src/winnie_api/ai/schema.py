@@ -200,6 +200,9 @@ class IntegrationInput(BaseModel):
     api_key_env: str = ""
     default_model: str = ""
     enabled: bool = True
+    # Whether an OpenAI/Anthropic integration is exposed as a gateway route.
+    # Internal-only providers (including the seeded internal LLM) keep False.
+    gateway: bool = True
     options: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("name")
@@ -230,6 +233,8 @@ class IntegrationInput(BaseModel):
             raise ValueError(f"{spec.label} requires a base_url")
         if self.kind == "fake" and (self.api_key_env or self.default_model):
             raise ValueError("fake integrations do not use an API key or model")
+        if not spec.gateway:
+            self.gateway = False
         self.options = _normalize_options(self.kind, self.options)
         return self
 
@@ -278,13 +283,13 @@ class AIState(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    version: int = 1
+    version: int = 2
     integrations: list[IntegrationRecord] = Field(default_factory=list)
     bindings: dict[str, BindingRecord] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> AIState:
-        if self.version != 1:
+        if self.version not in (1, 2):
             raise ValueError(f"unsupported ai settings version: {self.version}")
 
         ids: set[str] = set()
@@ -317,6 +322,11 @@ class AIState(BaseModel):
                 model = binding.model or integration.default_model
                 if integration.kind != "fake" and not model:
                     raise ValueError(f"feature {key} needs a model")
+            if integration.kind == "openai" and not integration.api_key_env:
+                raise ValueError(
+                    f"feature {key} is bound to {integration.name!r}, which has "
+                    "no api_key_env; set one or choose an internal provider"
+                )
         return self
 
     def integration(self, integration_id: str) -> IntegrationRecord | None:

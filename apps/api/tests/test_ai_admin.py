@@ -140,6 +140,7 @@ async def test_feature_binding_validates_kind_model_and_delete(
                 "name": "work-llm",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
+                "api_key_env": "WORK_LLM_KEY",
                 "default_model": "model-1",
             },
         )
@@ -174,6 +175,7 @@ async def test_feature_binding_validates_kind_model_and_delete(
                 "name": "no-model",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
+                "api_key_env": "NO_MODEL_KEY",
             },
         )
         no_model_id = no_model.json()["integration"]["id"]
@@ -509,6 +511,7 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
                 "name": "bound-llm",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
+                "api_key_env": "BOUND_LLM_KEY",
                 "default_model": "model-1",
             },
         )
@@ -538,6 +541,7 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
                 "name": "bound-llm",
                 "kind": "openai",
                 "base_url": "https://llm.example.com",
+                "api_key_env": "BOUND_LLM_KEY",
                 "default_model": "",
             },
         )
@@ -548,3 +552,164 @@ async def test_editing_a_bound_integration_cannot_break_the_binding(
         )
         assert feature["model"] == "model-1"
         assert feature["source"] == "admin"
+
+
+async def test_seed_separates_the_gateway_route_from_the_internal_llm(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={
+            "deepseek-openai": RouteConfig(
+                protocol="openai", base_url="https://api.deepseek.com"
+            )
+        },
+        llm=LLMConfig(
+            base_url="https://api.deepseek.com/v1",
+            api_key_env="WINNIE_LLM_API_KEY",
+            model="deepseek-chat",
+        ),
+        ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
+    )
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        config = (await client.get("/api/v1/ai/config")).json()
+        routes = (await client.get("/routes")).json()["routes"]
+
+    by_name = {item["name"]: item for item in config["integrations"]}
+    gateway = by_name["deepseek-openai"]
+    assert gateway["api_key_env"] == ""
+    assert gateway["gateway"] is True
+    assert gateway["label"] == "DeepSeek (OpenAI-compatible)"
+    assert gateway["gateway_paths"]
+
+    internal = by_name["internal-llm"]
+    assert internal["api_key_env"] == "WINNIE_LLM_API_KEY"
+    assert internal["gateway"] is False
+    assert internal["gateway_paths"] == []
+    assert internal["default_model"] == "deepseek-chat"
+
+    features = {item["key"]: item for item in config["features"]}
+    assert features["assistant.chat"]["integration_name"] == "internal-llm"
+    assert features["assistant.chat"]["model"] == "deepseek-chat"
+
+    names = [route["name"] for route in routes]
+    assert names == ["deepseek-openai"]
+
+
+async def test_v1_registry_is_split_and_rewritten(tmp_path: Path) -> None:
+    import yaml
+
+    path = tmp_path / "ai.yaml"
+    path.write_text(
+        """version: 1
+integrations:
+- name: deepseek-openai
+  label: Deepseek Openai
+  kind: openai
+  base_url: https://api.deepseek.com
+  api_key_env: WINNIE_LLM_API_KEY
+  default_model: deepseek-chat
+  enabled: true
+  options: {}
+  id: 11111111-1111-4111-8111-111111111111
+  created_at: '2026-10-31T19:20:35+00:00'
+  updated_at: '2026-10-31T19:20:35+00:00'
+- name: fake
+  label: Deterministic fake (offline)
+  kind: fake
+  base_url: ''
+  api_key_env: ''
+  default_model: ''
+  enabled: true
+  options: {}
+  id: 22222222-2222-4222-8222-222222222222
+  created_at: '2026-10-31T19:20:35+00:00'
+  updated_at: '2026-10-31T19:20:35+00:00'
+bindings:
+  assistant.chat:
+    integration_id: 11111111-1111-4111-8111-111111111111
+    model: deepseek-chat
+    updated_at: '2026-10-31T19:20:35+00:00'
+""",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        log_root=str(tmp_path / "logs"),
+        routes={
+            "deepseek-openai": RouteConfig(
+                protocol="openai", base_url="https://api.deepseek.com"
+            )
+        },
+        llm=LLMConfig(
+            base_url="https://api.deepseek.com/v1",
+            api_key_env="WINNIE_LLM_API_KEY",
+            model="deepseek-chat",
+        ),
+        ai=AIConfig(enabled=True, path=str(path)),
+    )
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        config = (await client.get("/api/v1/ai/config")).json()
+        routes = (await client.get("/routes")).json()["routes"]
+
+    stored = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert stored["version"] == 2
+    by_name = {item["name"]: item for item in config["integrations"]}
+    assert by_name["deepseek-openai"]["api_key_env"] == ""
+    assert by_name["deepseek-openai"]["default_model"] == ""
+    assert by_name["deepseek-openai"]["label"] == "DeepSeek (OpenAI-compatible)"
+    assert by_name["deepseek-openai"]["gateway"] is True
+    assert by_name["internal-llm"]["api_key_env"] == "WINNIE_LLM_API_KEY"
+    assert by_name["internal-llm"]["gateway"] is False
+    assert by_name["internal-llm"]["default_model"] == "deepseek-chat"
+
+    features = {item["key"]: item for item in config["features"]}
+    assert features["assistant.chat"]["integration_name"] == "internal-llm"
+    assert [route["name"] for route in routes] == ["deepseek-openai"]
+
+
+async def test_a_gateway_only_provider_cannot_serve_an_internal_feature(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        created = await client.post(
+            "/api/v1/ai/integrations",
+            json={
+                "name": "gateway-only",
+                "kind": "openai",
+                "base_url": "https://llm.example.com",
+                "default_model": "model-1",
+                "gateway": True,
+            },
+        )
+        assert created.status_code == 201, created.text
+        integration_id = created.json()["integration"]["id"]
+
+        rejected = await client.put(
+            "/api/v1/ai/features/assistant.chat",
+            json={"integration_id": integration_id},
+        )
+        assert rejected.status_code == 400, rejected.text
+        assert "gateway-only" in rejected.json()["detail"]
+
+        updated = await client.put(
+            f"/api/v1/ai/integrations/{integration_id}",
+            json={
+                "name": "internal-only",
+                "kind": "openai",
+                "base_url": "https://llm.example.com",
+                "api_key_env": "INTERNAL_KEY",
+                "default_model": "model-1",
+                "gateway": False,
+            },
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["integration"]["gateway_paths"] == []
+
+        bound = await client.put(
+            "/api/v1/ai/features/assistant.chat",
+            json={"integration_id": integration_id},
+        )
+        assert bound.status_code == 200, bound.text
+        routes = (await client.get("/routes")).json()["routes"]
+        assert "internal-only" not in [route["name"] for route in routes]

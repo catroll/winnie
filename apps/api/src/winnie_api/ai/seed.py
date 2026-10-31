@@ -1,9 +1,12 @@
-"""Seed the admin registry from the YAML config and resolve config fallbacks.
+"""Seed the admin registry from the YAML config and migrate old files.
 
 The YAML file remains the bootstrap: on the first start the currently
-configured routes and providers are imported into ``data/ai.yaml``. From then
-on the console is authoritative, and a feature that has no binding keeps using
-the YAML value so an existing deployment never breaks on upgrade.
+configured routes and providers are imported into ``data/ai.yaml``. Gateway
+routes stay gateway-only (clients pass their own keys); the internal LLM is a
+separate, ``gateway: false`` record because its server-side key is a different
+concern. From then on the console is authoritative, and a feature that has no
+binding keeps using the YAML value so an existing deployment never breaks on
+upgrade.
 """
 
 from __future__ import annotations
@@ -19,10 +22,19 @@ from winnie_api.ai.schema import (
     FEATURE_BY_KEY,
     IntegrationRecord,
     ResolvedProvider,
+    utcnow,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle is avoided at runtime
     from winnie_api.settings import Settings
+
+_VENDOR_LABELS = {
+    "anthropic": "Anthropic",
+    "deepseek": "DeepSeek",
+    "openai": "OpenAI",
+    "qwen": "Qwen",
+    "volcengine": "Volcengine",
+}
 
 
 def _normalized_base(url: str) -> str:
@@ -33,8 +45,16 @@ def _normalized_base(url: str) -> str:
 
 
 def _route_label(name: str) -> str:
-    known = {"openai": "OpenAI", "anthropic": "Anthropic"}
-    return known.get(name, name.replace("-", " ").title())
+    """A readable label; protocol suffixes remain visible, not a second vendor."""
+    parts = name.split("-")
+    if len(parts) > 1 and parts[-1] in {"openai", "anthropic"}:
+        vendor = "-".join(parts[:-1])
+        vendor_label = _VENDOR_LABELS.get(vendor, vendor.replace("-", " ").title())
+        protocol = (
+            "OpenAI-compatible" if parts[-1] == "openai" else "Anthropic-compatible"
+        )
+        return f"{vendor_label} ({protocol})"
+    return _VENDOR_LABELS.get(name, name.replace("-", " ").title())
 
 
 def _unique_name(name: str, taken: set[str]) -> str:
@@ -46,9 +66,14 @@ def _unique_name(name: str, taken: set[str]) -> str:
     return f"{name}-{index}"
 
 
-def _has_llm_model(settings: Settings) -> bool:
-    """An OpenAI-compatible feature needs a real model, not the fake marker."""
-    return bool(settings.llm.model and settings.llm.model != "fake")
+def _can_use_llm(settings: Settings, model: str) -> bool:
+    """The internal client needs a base URL, a key variable and a real model."""
+    return bool(
+        settings.llm.base_url
+        and settings.llm.api_key_env
+        and model
+        and model != "fake"
+    )
 
 
 def _llm_provider(settings: Settings, feature: str, model: str) -> ResolvedProvider:
@@ -153,32 +178,34 @@ def seed_state(settings: Settings) -> AIState:
         integrations.append(record)
         return record
 
-    routes: dict[str, IntegrationRecord] = {}
     for name, route in settings.routes.items():
-        routes[name] = add(
+        add(
             name=name,
             label=_route_label(name),
             kind=route.protocol,
             base_url=route.base_url,
+            # Gateway routes forward the client's key; no server-side key.
+            api_key_env="",
+            gateway=True,
         )
 
     llm: IntegrationRecord | None = None
     if settings.llm.base_url:
-        requested = _normalized_base(settings.llm.base_url)
-        for route in routes.values():
-            if _normalized_base(route.base_url) == requested:
-                llm = route
-                break
-        if llm is None:
-            llm = add(
-                name="internal-llm",
-                label="Internal LLM",
-                kind="openai",
-                base_url=settings.llm.base_url,
-            )
-        llm.api_key_env = settings.llm.api_key_env
-        if not llm.default_model and settings.llm.model != "fake":
-            llm.default_model = settings.llm.model
+        # A separate record, never a gateway route: the internal key and the
+        # public proxy path have different owners and different lifetimes.
+        llm = add(
+            name="internal-llm",
+            label="Internal LLM",
+            kind="openai",
+            base_url=settings.llm.base_url,
+            api_key_env=settings.llm.api_key_env,
+            default_model=(
+                settings.llm.model
+                if settings.llm.model not in ("", "fake")
+                else ""
+            ),
+            gateway=False,
+        )
 
     asr: IntegrationRecord | None = None
     if settings.meetings.asr_provider == "volcengine":
@@ -192,6 +219,7 @@ def seed_state(settings: Settings) -> AIState:
             base_url=config.base_url,
             api_key_env=API_KEY_ENV,
             default_model=config.model_name,
+            gateway=False,
             options=options,
         )
 
@@ -199,6 +227,7 @@ def seed_state(settings: Settings) -> AIState:
         name="fake",
         label="Deterministic fake (offline)",
         kind="fake",
+        gateway=False,
     )
 
     bindings: dict[str, BindingRecord] = {}
@@ -214,7 +243,7 @@ def seed_state(settings: Settings) -> AIState:
     chat_model = (settings.assistant.model or settings.llm.model or "fake").strip()
     if chat_model == "fake" or not chat_model:
         bind("assistant.chat", fake)
-    else:
+    elif llm is not None and _can_use_llm(settings, chat_model):
         bind("assistant.chat", llm, chat_model)
 
     asr_name = settings.meetings.asr_provider
@@ -225,20 +254,84 @@ def seed_state(settings: Settings) -> AIState:
 
     if settings.meetings.translator == "fake":
         bind("meetings.translate", fake)
-    elif settings.meetings.translator == "openai_compatible" and _has_llm_model(
-        settings
-    ):
-        bind("meetings.translate", llm, settings.llm.model)
+    elif settings.meetings.translator == "openai_compatible" and llm is not None:
+        if _can_use_llm(settings, settings.llm.model):
+            bind("meetings.translate", llm, settings.llm.model)
 
     if settings.meetings.summarizer == "fake":
         bind("meetings.summarize", fake)
-    elif settings.meetings.summarizer == "openai_compatible" and _has_llm_model(
-        settings
-    ):
-        bind("meetings.summarize", llm, settings.llm.model)
+    elif settings.meetings.summarizer == "openai_compatible" and llm is not None:
+        if _can_use_llm(settings, settings.llm.model):
+            bind("meetings.summarize", llm, settings.llm.model)
 
     assert set(bindings) <= set(FEATURE_BY_KEY)
-    return AIState(integrations=integrations, bindings=bindings)
+    return AIState(version=2, integrations=integrations, bindings=bindings)
+
+
+def migrate_state(state: AIState, settings: Settings) -> bool:
+    """Upgrade a v1 registry in place; return whether it must be written back.
+
+    v1 reused the OpenAI route whose base URL matched ``llm.base_url`` as the
+    internal LLM. That put the server-side key on a public gateway route and
+    made one record serve two roles. v2 stores the internal LLM separately and
+    adds an explicit ``gateway`` flag.
+    """
+    if state.version >= 2:
+        return False
+
+    for integration in state.integrations:
+        if integration.kind not in {"openai", "anthropic"}:
+            integration.gateway = False
+        # Only replace the label the old seed generated; keep manual edits.
+        if integration.label == integration.name.replace("-", " ").title():
+            label = _route_label(integration.name)
+            if label != integration.label:
+                integration.label = label
+
+    llm_base = _normalized_base(settings.llm.base_url)
+    llm_env = settings.llm.api_key_env.strip()
+    if llm_base and llm_env:
+        combined = next(
+            (
+                integration
+                for integration in state.integrations
+                if integration.kind == "openai"
+                and _normalized_base(integration.base_url) == llm_base
+                and integration.api_key_env == llm_env
+            ),
+            None,
+        )
+        if combined is not None:
+            internal = IntegrationRecord(
+                name=_unique_name(
+                    "internal-llm",
+                    {integration.name for integration in state.integrations},
+                ),
+                label="Internal LLM",
+                kind="openai",
+                base_url=settings.llm.base_url,
+                api_key_env=llm_env,
+                default_model=combined.default_model
+                or (
+                    settings.llm.model
+                    if settings.llm.model not in ("", "fake")
+                    else ""
+                ),
+                enabled=combined.enabled,
+                gateway=False,
+            )
+            combined.api_key_env = ""
+            combined.default_model = ""
+            combined.gateway = True
+            combined.updated_at = utcnow()
+            for binding in state.bindings.values():
+                if binding.integration_id == combined.id:
+                    binding.integration_id = internal.id
+                    binding.updated_at = utcnow()
+            state.integrations.append(internal)
+
+    state.version = 2
+    return True
 
 
 def describe_provider(provider: ResolvedProvider) -> str:
