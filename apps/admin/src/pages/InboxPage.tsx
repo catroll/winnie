@@ -164,7 +164,7 @@ export function InboxPage() {
             </>
           ) : (
             <div className="table-responsive">
-              <table className="table table-striped align-middle mb-0">
+              <table className="table table-striped align-middle mb-0" style={{ minWidth: '920px' }}>
                 <thead>
                   <tr>
                     <th scope="col">{tr('When')}</th>
@@ -179,18 +179,20 @@ export function InboxPage() {
                   {items.map((item) => (
                     <tr key={item.id}>
                       <td className="text-nowrap small">{formatDateTime(item.planned_at)}</td>
-                      <td>
+                      <td style={{ minWidth: '320px' }}>
                         <div className="fw-semibold">{item.title}</div>
                         <div className="small text-body-secondary" style={{ whiteSpace: 'pre-wrap' }}>
                           {item.body}
                         </div>
                       </td>
                       <td className="text-nowrap small">
-                        <span className="badge text-bg-light text-dark">
-                          {STAGE_LABELS[item.stage] ?? item.stage}
-                        </span>
-                        <span className="ms-1 badge text-bg-light text-dark">
-                          P{item.priority}
+                        <span className="d-inline-flex align-items-center gap-1">
+                          <span className="badge text-bg-light text-dark">
+                            {STAGE_LABELS[item.stage] ?? item.stage}
+                          </span>
+                          <span className="badge text-bg-light text-dark">
+                            P{item.priority}
+                          </span>
                         </span>
                       </td>
                       <td className="text-nowrap">
