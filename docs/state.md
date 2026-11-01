@@ -28,7 +28,8 @@ that can say *unknown*, and a prompt that shows freshness first.
 | Signal | Measurable? | Best source | Honest limit |
 |---|---|---|---|
 | Which building / neighbourhood | yes | phone location + geofence | indoors a phone falls back to a network fix: 20–200 m |
-| Which room | only with infrastructure | BLE beacon, mmWave, Wi-Fi fingerprint | GPS cannot do it; needs tags or sensors per room |
+| Which room | only with infrastructure | camera, BLE beacon, mmWave, Wi-Fi fingerprint | GPS cannot do it; needs tags, sensors or a camera per room |
+| Whether anyone is in a room | with a camera | Frigate person detection in a zone | a camera is not a person counter; two people read as "occupied" |
 | Gross motion (still / walking / running / cycling / driving) | yes, coarse | accelerometer + step counter, cross-checked by fix speed | cycling vs driving is the classic confusion; ~85–95 % on the coarse classes |
 | A workout is in progress | yes with a wearable | heart rate + cadence from a band/ring | from the phone alone it is a heuristic, not a measurement |
 | Asleep / awake | partly — phone-only is a guess | screen-off + still + charging + night window; a bed sensor is far better | usually right about bedtime and wake time; unreliable for naps, and it cannot stage sleep |
@@ -117,16 +118,43 @@ denylist (password managers, banking) reports only the class, everything else
 reports class + a category. Uploading raw titles for every window is a
 surveillance log, not a state.
 
-### 4.3 A wearable or an under-mattress sensor (phone-independent)
+### 4.3 The watch (the only reliable sleep source, and already owned)
 
-The only reliable source for sleep, and the only one that keeps working while
-the phone charges in another room. Four routes, all with a real cost:
+The owner owns a Huawei watch and two Huawei phones, so the shortest path to
+real sleep data needs no purchase: **Huawei Health Kit, device side**. The
+watch writes into Huawei Health, Health Kit reads Huawei Health's store, and the
+Winnie app reads Health Kit. The app never talks to the watch, and no vendor
+cloud is involved in the read.
+
+| Scope | Data |
+|---|---|
+| `HEALTHKIT_SLEEP_READ` | sleep sessions and stages |
+| `HEALTHKIT_HEARTRATE_READ` | heart rate, resting heart rate |
+| `HEALTHKIT_STEP_READ` | steps |
+| `HEALTHKIT_ACTIVITY_RECORD_READ` | workouts |
+| `HEALTHKIT_OXYGEN_SATURATION_READ` | SpO₂ |
+| `HEALTHKIT_STRESS_READ` | stress |
+
+What it needs, and what can block it:
+
+- AppGallery Connect registration: package name, signing-certificate SHA-256,
+  the Health Kit service enabled, HMS Core on the phone, a Huawei account.
+- The owner authorizes each scope in Huawei Health's own dialog, and can revoke
+  it there; a refusal must surface in the app, not as an empty sleep history.
+- **The risk is onboarding, not the data path.** Whether a sideloaded build with
+  a registered debug certificate is accepted for these scopes has to be tested
+  on the device before anything is built on it — it is the riskiest integration
+  in this plan, so spike it first.
+- Fallback: the Health Kit cloud REST API (same developer account, OAuth,
+  server-side polling). Heavier to onboard, but independent of the app's
+  signing certificate.
+
+Alternatives, only if the watch path fails or a second person needs tracking:
 
 | Route | Data | Cost | Catch |
 |---|---|---|---|
-| Huawei band + **Health Kit** cloud API | sleep stages, HR, steps, SpO₂ | band ~¥250–400 + developer account | Huawei developer onboarding and scope review; the natural fit for the owner's phones |
-| Band + **Gadgetbridge** auto-export | sleep sessions, HR, steps, workouts | band ~¥250 | no cloud, no membership; the bridge must parse Gadgetbridge's exported database ([docs](https://gadgetbridge.org/internals/automations/auto-export/)) |
-| **Withings Sleep Analyzer** under the mattress | sleep stages, HR, bed presence | device ~¥1,000–1,500 | nothing to wear; but since 2026-10-12 a new Withings account needs a Withings+ membership to share data with a free-plan app ([plans](https://static.withings.com/content/api/plans/plans.html)) |
+| Band + **Gadgetbridge** auto-export | sleep sessions, HR, steps, workouts | band ~¥250 | no cloud; the bridge must parse Gadgetbridge's exported database ([docs](https://gadgetbridge.org/internals/automations/auto-export/)) |
+| **Withings Sleep Analyzer** under the mattress | sleep stages, HR, bed presence | ~¥1,000–1,500 | nothing to wear; new accounts need Withings+ to share with a free-plan app ([plans](https://static.withings.com/content/api/plans/plans.html)) |
 | **Oura Ring** | best staging, HR, temperature | ring + subscription | the API refuses accounts without an active membership ([Oura](https://support.ouraring.com/hc/en-us/articles/4415266939155-The-Oura-API)) |
 
 **Health Connect is not the path here.** It is built into Android 14+, and on
@@ -149,6 +177,36 @@ These publish to the hub (HTTP or MQTT). Home Assistant is acceptable as a
 *collector* for Zigbee/BLE devices; it must not become the model of the world,
 or Winnie inherits a second source of truth and a second failure mode.
 
+Cameras and microphones are the other room sensor, and they are planned in
+[senses.md](./senses.md) because their installation, retention and security
+rules are a different problem: one BLE tag cannot record a conversation.
+
+### 4.6 More phone sensors
+
+The phone carries a dozen context signals that need no purchase and no vendor
+SDK. They are corroboration, not conclusions — each is one bit, and several are
+wrong indoors — but together they sharpen `body` and `focus` a lot:
+
+| Sensor / API | Infers | Note |
+|---|---|---|
+| accelerometer, gyroscope | still vs moving, posture, gait | no permission for raw sensors; classify on device |
+| step counter / detector | walking, running cadence | needs `ACTIVITY_RECOGNITION` |
+| `TYPE_LIGHT` | in a pocket, room lit, night | coarse, but excellent for "screen in pocket vs on a table" |
+| proximity | phone at the ear (a call), in a pocket | |
+| barometer | floor, stairs, elevation change | home vs office floor, and "went downstairs" |
+| magnetometer | heading, docked in a car mount | |
+| connected Bluetooth devices | in the car, headset on, near the watch | the strongest zero-permission context signal |
+| battery and charging | at a desk, charging overnight, unplugged and moving | |
+| screen / keyguard / app usage | `focus`, "what am I doing" | `PACKAGE_USAGE_STATS` |
+| audio playback and recording state | in a call, watching a video, music | `AudioManager` callbacks |
+| Wi-Fi SSID/BSSID | building, and a room fingerprint | location permission |
+| cell tower id | coarse movement between areas | |
+| significant motion | wake the collector at near-zero cost | |
+
+The barometer and Bluetooth lists are the two that surprise people: a floor
+change is what distinguishes "at the office" from "at the office's café", and a
+car's Bluetooth is a more reliable "driving" than any accelerometer classifier.
+
 ### 4.5 Self-report, the fallback that labels the rest
 
 A one-tap "what are you doing?" on the phone (and a `state_report` tool) is the
@@ -167,21 +225,25 @@ cumulative; each is useful on its own.
 | 1 | 4–6 BLE beacons | ¥80–240 | room-level `place` at home and office | beacon battery life; one per room plus one for the bag |
 | 1 | 1–2 mmWave sensors | ¥200–1,400 | occupancy and bed presence without the phone | zone support (FP2) vs plain presence (Tuya); false positives |
 | 1 | metering smart plug | ¥30–60 | desk presence corroboration | which plug ecosystem the owner already has |
-| 2 | Huawei band | ¥250–400 | HR, steps, workouts, sleep (via Health Kit) | developer account and scope approval |
+| 2 | **the Huawei watch the owner already has** | ¥0 | HR, steps, workouts, **staged sleep** via Health Kit | Health Kit onboarding and scope approval ([§4.3](#43-the-watch-the-only-reliable-sleep-source-and-already-owned)) |
+| 2 | cameras + room microphones | ¥2,300–6,000 | ambient presence, `look`, `listen`, room voice | a separate design: [senses.md](./senses.md) |
 | 2 | Withings Sleep Analyzer | ¥1,000–1,500 | staged sleep, HR, bed presence, nothing to wear | Withings+ requirement for new accounts; availability in CN |
 | 2 | Oura Ring | ring + subscription | best sleep staging | membership is mandatory for API access |
 | 3 | 4 × UWB anchors | ¥600–1,200 | 10–30 cm indoor position | overkill unless room automation needs it; WiFi fingerprinting is free first |
 
-**Do not buy**: cameras or always-on microphones for rooms (a privacy cost that
-does not answer the question better than a window title), an EEG headband
-(staging, not activity), or a "smart mattress" (the same data as an under-mattress
-sensor at several times the price).
+**Do not buy**: an EEG headband (staging, not activity), or a "smart mattress"
+(the same data as an under-mattress sensor at several times the price). Cameras
+and microphones are now in scope, but only under the conditions in
+[senses.md](./senses.md) §8 — no vendor cloud, isolated network, no bathroom or
+bedroom camera.
 
-The cheapest configuration that answers all four questions is **tier 0 plus one
-Huawei band**: the phone supplies place, motion, focus and a sleep guess; the
-band supplies real sleep and workouts; the PC supplies the "what am I doing"
-answer. Room-level location is the only thing that genuinely needs new
-infrastructure, and only if "which room" matters.
+The cheapest configuration that answers all four questions is **tier 0 plus the
+watch the owner already wears**: the phone supplies place, motion, focus and a
+sleep guess; the watch supplies real sleep and workouts; the PC supplies the
+"what am I doing" answer; and the room cameras from [senses.md](./senses.md)
+are what turn guesswork into observation. Room-level location is the only thing
+in this document that genuinely needs new infrastructure, and only if "which
+room" matters.
 
 ## 6. Architecture in this repository
 
@@ -204,6 +266,8 @@ state_digest    state_now /      transition triggers
 - **`packages/winnie-state`** mirrors `winnie-phone`: it owns the schema, the
   fusion rules, retention and queries, and never imports the host. The host
   adapts it to a `StateGateway` protocol, exactly as `phone/gateway.py` does.
+- **Room cameras and microphones** publish `room.*` signals into the same
+  ingest; their own pipeline is [senses.md](./senses.md).
 - **Ingest** is one endpoint with a batch of signals; each carries its own
   timestamp and source, so a late upload does not rewrite "now". Idempotency by
   `(source, signal_id)`, the same rule phone sync uses.
@@ -240,8 +304,8 @@ exclusions recorded in [decisions.md](./decisions.md) ("health data and
 per-app usage statistics are not collected"). That reversal is a decision the
 owner makes explicitly, not a side effect of a new scope:
 
-- **Per-signal consent.** Four switches, each with its own disclosure, and a
-  master switch. Nothing is enabled by default; the phone's `Phone data` screen
+- **Per-signal consent.** One switch per scope, each with its own disclosure, and
+  a master switch. Nothing is enabled by default; the phone's `Phone data` screen
   stays the consent surface.
 - **Derived facts over raw streams.** Classify motion on the device; upload
   "walking, 09:12–09:20", not 50 Hz accelerometer data. Never upload audio.
@@ -253,32 +317,39 @@ owner makes explicitly, not a side effect of a new scope:
 - **The database is not encrypted today** ([phone.md](./phone.md) §8). Sleep,
   location and app usage in one file raises the stakes: volume encryption before
   the first health signal, not after.
-- **Windows titles and SMS bodies are untrusted data**, like every other tool
-  output; the prompt already frames tool results that way, and the state digest
-  must follow the same rule.
+- **Windows titles, SMS bodies and camera transcripts are untrusted data**,
+  like every other tool output; the prompt already frames tool results that
+  way, and the state digest must follow the same rule.
+- **Cameras and room microphones are the largest surface of all**, and they have
+  their own requirements — no vendor cloud, an isolated VLAN with no WAN
+  egress, encrypted storage, a visible indicator, and no bathroom or bedroom
+  camera. See [senses.md](./senses.md) §8.
 
 ## 9. Phases
 
 | Phase | Scope | Acceptance |
 |---|---|---|
-| P0 | `winnie-state` package, ingest, projection, digest, `state_now`, phone `motion`/`screen`/`place`, PC agent | ask "where am I", "what am I doing", "did I sleep"; each answer is correct or says unknown with a reason; killing a signal makes it unknown within its TTL |
+| P0 | `winnie-state` package, ingest, projection, digest, `state_now`, phone `motion`/`screen`/`place`/`sensors`, Health Kit spike, PC agent | ask "where am I", "what am I doing", "did I sleep"; each answer is correct or says unknown with a reason; killing a signal makes it unknown within its TTL |
 | P1 | BLE/mmWave, room-level `place`, transition triggers, quiet-hours delivery | "when I get to the office, show my day" fires once per arrival; no push during sleep |
-| P2 | band or mattress integration: real sleep, HR, workouts | the morning brief reports last night's sleep and starts at wake, not at 07:00 |
+| P2 | Health Kit sleep, HR and workouts | the morning brief reports last night's sleep and starts at wake, not at 07:00 |
 | P3 | travel time from current place to the next calendar event; "leave now" | the notice is earlier than the event by the measured travel time, not a fixed 30 minutes |
+
+The room senses (cameras, microphones, `look`/`listen`/`speak`) have their own
+phases S0–S3 in [senses.md](./senses.md) §10. They are independent of P0–P3 and
+feed the same state signals.
 
 Each phase is independently useful; P0 needs no purchase and answers all four
 questions, three of them coarsely.
 
 ## 10. Open questions for the owner
 
-1. **Which phone(s)** run the client in daily use, and does the ROM have HMS Core?
-   That decides band-vs-Gadgetbridge and whether any Google API is usable.
-2. **Will you wear something at night?** A band answers sleep for ~¥300; a ring
-   costs more and is more accurate; nothing at all means an under-mattress
-   sensor or a phone-only guess.
+1. **Which Huawei watch**, and is it paired to Huawei Health on one of the two
+   phones? That decides whether sleep needs no purchase at all.
+2. **Is there a GPU** that can host a local vision model, or is a cloud VLM
+   acceptable for `look`? See [senses.md](./senses.md) §7.
 3. **Which workstation(s)?** This Linux box only, or Windows/macOS too? The PC
    agent is per-OS.
-4. **Is "which room" worth ¥100–1,400 of sensors**, or is home/office/commuting
-   enough?
+4. **Is "which room" worth ¥100–1,400 of sensors** now that the cameras will
+   answer it too, or is home/office/commuting enough?
 5. **Retention and encryption**: is a LAN-only, unencrypted SQLite acceptable
    until the production-readiness milestone, or should state wait for it?

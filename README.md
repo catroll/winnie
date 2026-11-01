@@ -271,6 +271,7 @@ including the ASR evaluation and provider verification, are in
 - [docs/news.md](./docs/news.md) — news pipeline: stages, contracts, configuration and limits
 - [docs/phone.md](./docs/phone.md) — phone data: sync contract, write path, privacy and limits
 - [docs/state.md](./docs/state.md) — personal state: what is measurable, the hardware options and the proactive pipeline (proposal)
+- [docs/senses.md](./docs/senses.md) — room cameras and microphones: architecture, hardware, security and phases (proposal)
 - [docs/push.md](./docs/push.md) — push: transport choice, protocol, foreground service and limits
 - [docs/todo.md](./docs/todo.md) — prioritized follow-ups and ASR evaluation plan
 - [docs/knowledge-index.md](./docs/knowledge-index.md) — local document index: freshness contract, Skill/MCP/HTTP surfaces and phased plan
