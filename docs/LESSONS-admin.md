@@ -321,3 +321,57 @@ starts, the bar says "Listening", and no audio arrives.
 buttons that touch audio or permissions this is not optional. The test profile
 also sets `media.autoplay.default=0` and `media.autoplay.block-webaudio=false`,
 but the trusted click is what a person actually does.
+
+## A full-width form control in a flex row shrinks its buttons, not itself
+
+**Signal.** The chat composer's Send button stood 62 px tall next to a 38 px
+textarea: the plane icon sat on one line and "Send" on the next. The microphone
+button stretched to the same 62 px. Every screenshot of the composer looked
+squeezed, with an empty draft as much as with a long one.
+
+**Cause.** `.form-control` is `width: 100%`. As a flex item that width is its
+flex basis, so `d-flex align-items-end gap-2` held an 824.5 px textarea plus
+126 px of buttons in an 824.5 px row. Negative free space is distributed by
+`flex-shrink`, which is 1 on every item by default and which `.btn` does not
+override, so the buttons paid for the overflow: the Send button shrank
+87.3 → 76.9 px, below its one-line content width, and `.btn` sets no
+`white-space: nowrap`, so "Send" wrapped under its icon. The wrapped label made
+the row 62 px tall, and `align-self-stretch` on the microphone stretched it to
+match. Nothing about the textarea looked wrong, which is why the symptom reads
+as "the buttons are deformed".
+
+**Fix.** Say at the row which item grows and which must not shrink:
+`flex-grow-1` on the textarea, `flex-shrink-0` on both buttons, and no
+`align-self-stretch` on the microphone — `align-items-end` already matches the
+textarea's height at one line, and while a draft grows the buttons keep their
+own 38 px instead of stretching with the row. Both utilities ship with
+Bootstrap; no custom CSS was needed.
+
+**Check.** Measure, do not squint:
+
+```js
+const ta = document.querySelector('#chat-message');
+const send = document.querySelector('#chat-send');
+[ta, send].map((e) => Math.round(e.getBoundingClientRect().height)); // [38, 38], was [38, 62]
+Math.round(send.getBoundingClientRect().width);                      // 87, was 77
+const label = send.querySelector('span');
+Math.round(label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight)); // 1, was 2
+```
+
+**Generalisable.** `width: 100%` on a form control inside a flex row is a basis
+as wide as the whole row, and the flex default makes every other item absorb the
+overflow. A button is the visible victim because its label can wrap, so the
+deformation appears on the neighbour, not on the field that caused it.
+
+**Auth got in the way, so the measurement was made next door.** The composer is
+behind the console login and every API call needs a session, so the layout was
+measured on a temporary page under `apps/admin/public/` that copies the
+composer's markup class for class into the same card and grid, loading the
+console's own bundles (`adminlte.min.css`, the fontsource CSS, `src/styles.css`)
+with the same `layout-fixed sidebar-expand-lg` on `<body>`. Firefox's BiDi agent
+read `getBoundingClientRect()` at 1440×1000, 390×844 and 320×700: 62 px before,
+38 px after, no row overflow at any width, and the `public/` page was deleted
+afterwards. That is evidence about Bootstrap flex behaviour and about the
+classes, not about the page: it does not prove the composer appears, that the
+voice bar replaces it, or how the disabled state looks. Keep such a harness's
+class list identical to the JSX — one drifted class and it proves nothing.

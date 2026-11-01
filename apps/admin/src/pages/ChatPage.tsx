@@ -558,11 +558,15 @@ export function ChatPage() {
                     <label className="visually-hidden" htmlFor="chat-message">
                       {tr('Message Winnie')}
                     </label>
+                    {/* `.form-control` is `width: 100%`, which as a flex item
+                        is a basis the width of the whole row; without
+                        `flex-shrink-0` the buttons absorb that overflow and the
+                        send label wraps under its icon. */}
                     <div className="d-flex align-items-end gap-2">
                       <textarea
                         id="chat-message"
                         ref={textareaRef}
-                        className="form-control"
+                        className="form-control flex-grow-1"
                         rows={1}
                         value={draft}
                         placeholder={tr('Message Winnie…')}
@@ -583,7 +587,7 @@ export function ChatPage() {
                       <button
                         type="button"
                         id="chat-voice"
-                        className="btn btn-outline-secondary align-self-stretch"
+                        className="btn btn-outline-secondary flex-shrink-0"
                         onClick={voice.start}
                         disabled={composerBlocked}
                         title={tr('Voice conversation')}
@@ -593,7 +597,7 @@ export function ChatPage() {
                       </button>
                       <button
                         type="submit"
-                        className="btn btn-primary"
+                        className="btn btn-primary flex-shrink-0"
                         disabled={composerBlocked || !draft.trim()}
                       >
                         {sending ? (
