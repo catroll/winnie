@@ -92,6 +92,17 @@ Logs and PID files:
 .cache/run/<service>.pid
 ```
 
+`api.log` carries two kinds of line: uvicorn's access log (`INFO: <client> -
+"POST /api/v1/phone/…/sync" 200 OK`) and the application's own records
+(`2026-11-01 20:18:57,259 INFO winnie_phone.service phone sync user=… device=…
+kind=location mode=incremental accepted=1`). The second kind is what says *what*
+a request did — which phone kind it carried and how many rows it touched — and
+it also holds every other capability's operational log, which was silently
+dropped before `winnie_api.main._configure_logging` installed a root handler.
+`WINNIE_LOG_LEVEL=DEBUG make api` lowers the threshold for a session; `httpx`,
+`httpcore`, `sqlalchemy.engine` and `watchfiles` stay at `WARNING` so their
+chatter does not bury those lines.
+
 `make start` needs:
 
 - `uv` (or `apps/api/.venv`) for the API;

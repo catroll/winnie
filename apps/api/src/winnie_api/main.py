@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -50,6 +51,31 @@ from winnie_api.usage.balances import BalanceService
 from winnie_api.usage.router import router as usage_router
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_logging() -> None:
+    """Give the capability packages' loggers somewhere to go.
+
+    Uvicorn configures only its own loggers, so the root logger had no handler
+    and every ``logger.info`` in the packages was dropped: the server kept an
+    access log but no record of *what* a phone uploaded, which is why "kind=call
+    never arrived" had to be inferred from a sync-state table. A no-op when a
+    handler is already installed, so tests and embedders keep their own setup.
+    """
+    if logging.getLogger().handlers:
+        return
+    level = os.environ.get("WINNIE_LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, level, logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    # Third-party chatter that would otherwise drown the one line per request
+    # per phone that matters here.
+    for noisy in ("httpx", "httpcore", "sqlalchemy.engine", "watchfiles"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+_configure_logging()
 
 
 def create_app(
