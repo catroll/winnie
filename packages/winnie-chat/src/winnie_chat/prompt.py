@@ -37,8 +37,9 @@ def build_system_prompt(turn: ChatTurn, skills: list[Skill]) -> str:
         lines.extend(
             [
                 "",
-                "Memory notes that may bear on this message (matched by wording, so",
-                "some may be unrelated; cite path:line if you use one):",
+                "Memory notes retrieved for this conversation (matched by wording",
+                "against the message and the recent exchange, so some may be",
+                "unrelated; cite path:line if you use one):",
                 turn.recalled_memory,
             ]
         )

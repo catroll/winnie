@@ -265,9 +265,13 @@ Three read paths reach a turn, and they are not redundant:
 - **Pinned profile facts** (`identity`, `preferences`, `procedures`,
   `constraints`) are read from disk every turn and are in the system prompt
   immediately.
-- **Per-turn recall** scores the unpinned notes against the message and puts at
-  most six of them in the prompt with their `path:line`. It reads the parsed
-  notes in process, so it sees a note written a second ago.
+- **Per-turn recall** scores the unpinned notes against the message *and the
+  recent exchange* and puts at most six of them in the prompt with their
+  `path:line`. A bigram shared with the message is worth three times one shared
+  with the exchange, and characters count only in the message; the last
+  `recall_context_messages` messages keep a subject alive across short turns, so
+  "那明天呢？" still reaches the notes about tomorrow. It reads the parsed notes in process, so it sees a note written a
+  second ago. `recall_limit: 0` turns it off; the pinned digest is unaffected.
 - **Search** is the model's own call when it needs the wider corpus. A note
   written by `remember` is reindexed immediately through the daemon's
   `POST /admin/index`; everything else (a hand edit, a note from another
@@ -691,6 +695,9 @@ assistant:
     auto_distill: true
     max_facts_per_run: 12
     max_fact_chars: 500
+    recall_limit: 6
+    recall_chars: 1200
+    recall_context_messages: 6
   tasks:
     enabled: true
     file: tasks/tasks.json

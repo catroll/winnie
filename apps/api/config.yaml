@@ -171,10 +171,18 @@ assistant:
     limit: 8
   memory:
     enabled: true
+    # Pinned categories (identity, preferences, procedures, constraints) are in
+    # every prompt; this bounds their size.
     digest_chars: 3000
     auto_distill: true
     max_facts_per_run: 12
     max_fact_chars: 500
+    # Per-turn retrieval: the notes matched to the conversation are added to the
+    # prompt as well. recall_limit = 0 disables it.
+    recall_limit: 6
+    recall_chars: 1200
+    # Recent messages the match looks at, so "那明天呢？" still finds its subject.
+    recall_context_messages: 6
   tasks:
     enabled: true
     # Written by the assistant when a task is created in conversation; do not

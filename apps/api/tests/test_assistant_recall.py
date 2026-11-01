@@ -140,3 +140,66 @@ async def test_the_agent_feeds_recalled_memory_into_the_turn(tmp_path) -> None:
     reply = await agent.chat("天气默认查哪里？")
     assert reply.text == "ok"
     assert "默认查询武汉" in engine.turns[0].recalled_memory
+
+
+async def test_the_second_turn_recalls_through_the_conversation(tmp_path) -> None:
+    """Every turn searches memory against the exchange, not just the last line."""
+    from winnie_chat import ChatResult
+
+    from winnie_assistant.agent import AssistantAgent
+
+    class _Engine:
+        def __init__(self) -> None:
+            self.turns = []
+
+        async def run(self, turn, *, on_tool=None):
+            self.turns.append(turn)
+            return ChatResult(text="ok")
+
+    memory = MemoryStore(tmp_path / "profile", label="profile")
+    memory.append("people", "图图是胡昂需要接送的孩子。", source="chat:1")
+    engine = _Engine()
+    agent = AssistantAgent(
+        store=ConversationStore(tmp_path / "conversations"),
+        memory=memory,
+        toolbox=_toolbox(tmp_path, memory=memory),
+        engine=engine,  # type: ignore[arg-type]
+        timezone=ZoneInfo("Asia/Shanghai"),
+    )
+
+    first = await agent.chat("明天带图图去上课是几点？")
+    await agent.chat("那呢？", conversation_id=first.conversation_id)
+
+    assert "图图" in engine.turns[0].recalled_memory
+    # "那呢？" shares nothing on its own; the exchange supplies the subject.
+    assert "图图" in engine.turns[1].recalled_memory
+
+
+async def test_recall_can_be_disabled_by_its_limit(tmp_path) -> None:
+    from winnie_chat import ChatResult
+
+    from winnie_assistant.agent import AssistantAgent
+
+    class _Engine:
+        def __init__(self) -> None:
+            self.turns = []
+
+        async def run(self, turn, *, on_tool=None):
+            self.turns.append(turn)
+            return ChatResult(text="ok")
+
+    memory = MemoryStore(tmp_path / "profile", label="profile")
+    memory.append("people", "图图是胡昂需要接送的孩子。", source="chat:1")
+    engine = _Engine()
+    agent = AssistantAgent(
+        store=ConversationStore(tmp_path / "conversations"),
+        memory=memory,
+        toolbox=_toolbox(tmp_path, memory=memory),
+        engine=engine,  # type: ignore[arg-type]
+        timezone=ZoneInfo("Asia/Shanghai"),
+        recall_limit=0,
+    )
+
+    await agent.chat("明天带图图去上课是几点？")
+
+    assert engine.turns[0].recalled_memory == ""

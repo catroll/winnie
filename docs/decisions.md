@@ -38,6 +38,21 @@ on its own:
 - and the tool being steered by the memory had no input for the place, so even
   the turn that read the rule forecast 上海 and said so.
 
+**Follow-up the same day: recall reads the conversation, not just the last
+message.** The owner's requirement is that *every* turn retrieves memory against
+the context and the message. A recall keyed only on the current line fails the
+most common shape of a chat: "明天有雨么？" → "那武汉呢？", where the follow-up
+carries one place name and no subject. `recall(text, context=[...])` now scores
+the notes against the message (a shared bigram or word is worth 6) and the recent
+exchange (worth 2), with the admission bar lowered to a single context bigram
+when the message contributed no match of its own. `recall_limit`, `recall_chars` and
+`recall_context_messages` make the budget and the window deployment settings.
+Rejected alternative: run `search_documents` over the index on every turn. It
+would add a network hop and a 5 s timeout to the critical path of every reply,
+could not see a note written in the previous second, and pulls the whole owner
+document corpus into a prompt that asked for memory. The index stays the model's
+tool for the wider corpus; recall stays in-process over `profile/`.
+
 **Rejected: pin every category.** The digest is a fixed budget in every prompt;
 pinning `episodes` and `people` would spend it on facts that matter to a handful
 of questions and starve the rules that matter to all of them. Recall is the

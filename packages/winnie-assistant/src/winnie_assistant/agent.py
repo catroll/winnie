@@ -37,6 +37,9 @@ class AssistantAgent:
         max_history_messages: int = 30,
         timezone: ZoneInfo,
         clock: Any = None,
+        recall_limit: int = 6,
+        recall_chars: int = 1200,
+        recall_context_messages: int = 6,
     ) -> None:
         self.store = store
         self.memory = memory
@@ -45,6 +48,11 @@ class AssistantAgent:
         self.max_history_messages = max_history_messages
         self.timezone = timezone
         self.clock = clock or (lambda: datetime.now(timezone))
+        # Per-turn retrieval. `recall_limit = 0` disables it; the pinned digest
+        # is unaffected either way.
+        self.recall_limit = recall_limit
+        self.recall_chars = recall_chars
+        self.recall_context_messages = recall_context_messages
 
     async def chat(
         self,
@@ -81,13 +89,25 @@ class AssistantAgent:
             if message.role in {"user", "assistant"} and message.text.strip()
         ][-self.max_history_messages :]
         # The digest is the pinned truth; recall adds the unpinned notes that
-        # share wording with this message. It runs in-process, so a note written
-        # a second ago is already visible — the index would still be five
-        # minutes behind its next sweep.
+        # share wording with this message *and with the exchange so far*, because
+        # a follow-up ("那明天呢？") carries no subject words of its own. The
+        # current message is the last history entry, so the context is everything
+        # before it. This runs in-process, so a note written a second ago is
+        # already visible — the index would still be minutes behind its sweep.
         recalled = ""
-        if self.memory is not None:
+        if self.memory is not None and self.recall_limit > 0:
+            context = [
+                str(item["content"])
+                for item in history[:-1]
+                if str(item.get("content") or "").strip()
+            ][-self.recall_context_messages :] if self.recall_context_messages > 0 else []
             try:
-                recalled = self.memory.recall(text)
+                recalled = self.memory.recall(
+                    text,
+                    context=context,
+                    limit=self.recall_limit,
+                    chars=self.recall_chars,
+                )
             except Exception:  # noqa: BLE001 - recall must not fail a turn
                 logger.warning("memory recall failed", exc_info=True)
         turn = ChatTurn(

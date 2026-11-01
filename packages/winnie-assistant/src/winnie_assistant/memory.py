@@ -9,6 +9,7 @@ them, so the assistant keeps one retrieval implementation instead of two.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -97,6 +98,18 @@ def _recall_terms(text: str) -> tuple[set[str], set[str], set[str]]:
     return bigrams, chars, words
 
 
+def _match_counts(
+    terms: tuple[set[str], set[str], set[str]], body: str
+) -> tuple[int, int, int]:
+    """How many bigrams, words and characters of ``terms`` occur in ``body``."""
+    bigrams, chars, words = terms
+    return (
+        sum(1 for term in bigrams if term in body),
+        sum(1 for word in words if word in body),
+        sum(1 for char in chars if char in body),
+    )
+
+
 class MemoryStore:
     def __init__(
         self,
@@ -183,10 +196,11 @@ class MemoryStore:
         self,
         text: str,
         *,
+        context: Sequence[str] = (),
         limit: int = 6,
         chars: int = 1200,
     ) -> str:
-        """Unpinned notes that share wording with ``text``.
+        """Unpinned notes relevant to this message and the conversation around it.
 
         This is the read path that does not go through the index: the notes are
         already parsed here, so a note written a second ago is visible, and a
@@ -194,27 +208,50 @@ class MemoryStore:
         is a supplement, not a replacement — pinned memory is in the digest, and
         the index still answers "find the document that says X".
 
+        ``context`` is the recent exchange (oldest first). A follow-up such as
+        "那明天呢？" means nothing on its own, so the conversation carries a
+        third of the weight: the message decides what is relevant now, the
+        context keeps a subject alive across short turns.
+
         Matching is deliberately loose, because Chinese has no spaces and the
         caller's wording rarely repeats the note's. A shared bigram is worth more
-        than a shared character, and a note needs either one bigram (or Latin
-        word) or three shared characters: two shared common characters is what
-        "帮我写个新闻稿" and "新写入内容" have in common, and that is noise.
+        than a shared character, and a note must clear one of these bars: one
+        bigram (or Latin word) shared with the message; one shared with the
+        context when the message has no subject words of its own ("那几点？"); two
+        shared with the context when the message does; or three shared characters
+        with the message. Two shared common characters is what "帮我写个新闻稿"
+        and "新写入内容" have in common, and that is noise.
         """
         self.refresh()
-        bigrams, chars_set, words = _recall_terms(text)
-        if chars <= 0 or not (bigrams or chars_set or words):
+        if chars <= 0 or limit <= 0:
+            return ""
+        primary = _recall_terms(text)
+        secondary = _recall_terms(" ".join(context)) if context else (set(), set(), set())
+        if not any(primary) and not any(secondary):
             return ""
         scored: list[tuple[int, MemoryEntry]] = []
         for entry in self._entries:
             if entry.pinned:
                 continue
             body = normalize(entry.text)
-            bigram_hits = sum(1 for term in bigrams if term in body)
-            word_hits = sum(1 for word in words if word in body)
-            char_hits = sum(1 for term in chars_set if term in body)
-            if not (bigram_hits or word_hits) and char_hits < 3:
+            primary_bigrams, primary_words, primary_chars = _match_counts(primary, body)
+            context_bigrams, context_words, _ = _match_counts(secondary, body)
+            from_message = primary_bigrams + primary_words
+            from_context = context_bigrams + context_words
+            if not (
+                from_message
+                or from_context >= (1 if not from_message else 2)
+                or primary_chars >= 3
+            ):
                 continue
-            scored.append((2 * bigram_hits + 2 * word_hits + char_hits, entry))
+            score = (
+                6 * primary_bigrams
+                + 6 * primary_words
+                + 2 * primary_chars
+                + 2 * context_bigrams
+                + 2 * context_words
+            )
+            scored.append((score, entry))
         if not scored:
             return ""
         scored.sort(key=lambda item: (-item[0], item[1].relpath, item[1].line))

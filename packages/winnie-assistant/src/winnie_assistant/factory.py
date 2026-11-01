@@ -212,6 +212,9 @@ def build_assistant_service(
         max_history_messages=config.max_history_messages,
         timezone=timezone,
         clock=clock,
+        recall_limit=config.memory.recall_limit,
+        recall_chars=config.memory.recall_chars,
+        recall_context_messages=config.memory.recall_context_messages,
     )
     service = AssistantService(
         config=config,

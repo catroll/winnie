@@ -139,3 +139,14 @@ def test_recall_keeps_the_budget(tmp_path) -> None:
     recalled = memory.recall("同事的联系方式", limit=3, chars=80)
     assert len(recalled.splitlines()) <= 3
     assert len(recalled) <= 80
+
+
+def test_recall_uses_the_conversation_to_resolve_a_bare_follow_up(tmp_path) -> None:
+    """A follow-up says nothing on its own; the exchange carries the subject."""
+    memory = MemoryStore(tmp_path)
+    memory.append("people", "图图是胡昂需要接送的孩子。", source="chat:1")
+
+    assert memory.recall("那几点？") == ""
+    recalled = memory.recall("那几点？", context=["明天带图图去上课是几点？"])
+    assert "图图" in recalled
+

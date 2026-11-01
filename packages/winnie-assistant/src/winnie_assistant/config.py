@@ -51,6 +51,13 @@ class MemoryConfig(BaseModel):
     auto_distill: bool = True
     max_facts_per_run: int = Field(default=12, ge=1, le=100)
     max_fact_chars: int = Field(default=500, ge=50, le=2000)
+    # Per-turn retrieval: the notes matched to the conversation go into the
+    # prompt separately from the pinned digest. 0 disables the match.
+    recall_limit: int = Field(default=6, ge=0, le=20)
+    recall_chars: int = Field(default=1200, ge=0, le=8000)
+    # Recent messages used as part of the match, so a follow-up that says
+    # nothing by itself ("那明天呢？") still reaches the notes about its subject.
+    recall_context_messages: int = Field(default=6, ge=0, le=30)
 
 
 class TasksConfig(BaseModel):
