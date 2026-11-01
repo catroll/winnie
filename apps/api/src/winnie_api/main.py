@@ -42,6 +42,7 @@ from winnie_api.news.search import build_news_search
 from winnie_api.phone.gateway import PhoneGatewayAdapter
 from winnie_api.push.notify import PushNotifierAdapter
 from winnie_api.ai.router import router as ai_router
+from winnie_api.assistant_voice import router as assistant_voice_router
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.schedule.router import router as schedule_router
@@ -317,6 +318,10 @@ def create_app(
         app.include_router(index_router, prefix="/api/v1")
     if resolved.ai.enabled:
         app.include_router(ai_router, prefix="/api/v1")
+        # Voice chat is a short ASR call on the same binding as meeting notes,
+        # not an assistant-service endpoint: it must answer even when the
+        # assistant capability itself is switched off.
+        app.include_router(assistant_voice_router, prefix="/api/v1")
     # Recording telemetry is a host concern: it spans the gateway and every
     # capability's internal model calls, so it is not owned by one capability.
     app.include_router(usage_router, prefix="/api/v1")
