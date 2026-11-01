@@ -43,7 +43,7 @@ type TabData =
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'calendar', label: 'Calendar', icon: 'bi-calendar3' },
-  { key: 'call', label: 'Calls', icon: 'bi-telephone' },
+  { key: 'call', label: 'Call log', icon: 'bi-telephone' },
   { key: 'message', label: 'SMS', icon: 'bi-chat-text' },
   { key: 'contact', label: 'Contacts', icon: 'bi-person-lines-fill' },
   { key: 'notification', label: 'Notifications', icon: 'bi-bell' },
