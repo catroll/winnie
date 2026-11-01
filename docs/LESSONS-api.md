@@ -586,3 +586,33 @@ root logger's existing set (`disable_existing_loggers=False`, or leave it alone)
 and a test that asserts on log output should attach its own handler to the exact
 logger it cares about instead of trusting the root capture — the failure then
 points at the code, not at whatever reconfigured logging earlier in the session.
+
+## A `Settings()` fixture that names no database syncs into the owner's data (2026-11-01)
+
+**Signal.** A test that had passed for weeks started failing with
+`assert 0 == 1` on the number of provider calls — no exception, no schema error,
+just an address arriving without anyone buying it.
+
+**Cause.** `Settings.database.url` defaults to `sqlite+aiosqlite:///../../data/winnie.db`,
+and the fixture built `Settings(log_root=..., routes={}, phone=...)` without
+overriding it. The endpoint test therefore registered a device, synced a fix and
+wrote an address into the owner's real phone data — and the row it left behind
+(`Pixel`, `fix-1`, 39.996/116.48) became a legitimate reuse candidate for the next
+run, which is why the new cache turned a passing test into a failing one. Two
+bugs, one visible: the litter and the leakage.
+
+**Check.** A test fixture that touches the app must name its own database, and this
+grep is the audit:
+
+```bash
+grep -rn 'Settings(' apps/api/tests | grep -v 'database='
+```
+
+**Fix.** `geocode_settings` now builds
+`DatabaseConfig(url=f"sqlite+aiosqlite:///{tmp_path / 'geocode-api.db'}")`.
+
+**Generalisable.** A default that points at production data makes "I forgot a
+field" indistinguishable from "I read production", and a fixture that overrides
+*most* of a config object is the usual shape of that mistake. A cached answer is
+also a very effective detector: it makes the leftover state visible, because the
+second run stops doing the work the first one recorded.

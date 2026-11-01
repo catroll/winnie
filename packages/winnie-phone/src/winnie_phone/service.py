@@ -12,6 +12,7 @@ never confirmed expires and is never dispatched.
 from __future__ import annotations
 
 import logging
+import math
 import uuid
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
@@ -80,6 +81,15 @@ RECORD_SPECS: dict[str, RecordSpec] = {
     ),
 }
 
+# Reverse geocoding is a metered third-party call, so an address the database
+# already holds for the same place is reused instead of bought again. The reach
+# is wider than the provider cache's ~111 m rounding cell so a fix that rounds
+# into the neighbouring cell still finds the answer.
+REUSE_RADIUS_M = 150.0
+# How many recent fixes a sync looks through for a reusable answer. At one fix
+# per sync interval this is days of history, and retention bounds it anyway.
+REUSE_ROWS = 200
+
 SIGNAL_KINDS = frozenset({"notification", "location", "app"})
 # Kinds whose "full" batch is a complete current view, so the server can mark
 # anything it holds but the batch omits as deleted. A paged snapshot must not
@@ -105,6 +115,50 @@ SEARCH_KINDS = (
     "location",
     "app",
 )
+
+
+def shared_address(
+    payloads: Sequence[dict[str, Any]],
+    latitude: float,
+    longitude: float,
+    provider: str,
+) -> dict[str, Any] | None:
+    """An address already stored for this place, or ``None``.
+
+    Only an answer from the *configured* provider counts: after a provider
+    switch the stored rows still carry the old provider's addresses, and reusing
+    one would quietly answer with the thing that was replaced.
+    """
+    for payload in payloads:
+        address = payload.get("address")
+        if not isinstance(address, dict):
+            continue
+        if str(address.get("provider") or "") != provider:
+            continue
+        if not address_fields(payload)["address"]:
+            continue
+        if not _same_place(payload, latitude, longitude):
+            continue
+        return dict(address)
+    return None
+
+
+def _same_place(
+    payload: dict[str, Any], latitude: float, longitude: float
+) -> bool:
+    """Whether a payload's fix is within :data:`REUSE_RADIUS_M` of a point."""
+    try:
+        other_latitude = float(payload.get("latitude"))
+        other_longitude = float(payload.get("longitude"))
+    except (TypeError, ValueError):
+        return False
+    delta_latitude = abs(other_latitude - latitude) * 111_320.0
+    delta_longitude = (
+        abs(other_longitude - longitude)
+        * 111_320.0
+        * math.cos(math.radians(latitude))
+    )
+    return delta_latitude <= REUSE_RADIUS_M and delta_longitude <= REUSE_RADIUS_M
 
 
 class PhoneEvents(Protocol):
@@ -491,7 +545,9 @@ class PhoneService:
         validated = [ITEM_MODELS[kind].model_validate(item) for item in request.items]
         # Resolve addresses before the session opens: the provider call must not
         # hold a transaction, and a failure here must not fail the sync.
-        addresses = await self._geocode_items(validated) if kind == "location" else {}
+        addresses = (
+            await self._geocode_items(user_id, validated) if kind == "location" else {}
+        )
         window = (as_utc(request.since), as_utc(request.until))
         if window == (None, None):
             window = None
@@ -1311,16 +1367,50 @@ class PhoneService:
             for row, name in rows
         ]
 
-    async def _geocode_items(self, items: list[Any]) -> dict[str, dict]:
+    async def _geocode_items(
+        self, user_id: str, items: list[Any]
+    ) -> dict[str, dict]:
         """Resolve an address for the accepted fixes, bounded and best-effort."""
         if self.geocoder is None or self.config.geocode.max_per_sync <= 0:
             return {}
+        provider = getattr(self.geocoder, "name", "")
+        known = await self._stored_payloads(user_id)
         resolved: dict[str, dict] = {}
         for item in items[: self.config.geocode.max_per_sync]:
+            shared = shared_address(known, item.latitude, item.longitude, provider)
+            if shared is not None:
+                logger.debug("reused a stored address for a location fix")
+                resolved[item.external_id] = shared
+                continue
             address = await self._reverse(item.latitude, item.longitude)
             if address is not None:
-                resolved[item.external_id] = address.to_payload()
+                payload = address.to_payload()
+                resolved[item.external_id] = payload
+                # A batch can carry several fixes from one place; the later ones
+                # reuse this answer instead of buying it again.
+                known.append(
+                    {
+                        "latitude": item.latitude,
+                        "longitude": item.longitude,
+                        "address": payload,
+                    }
+                )
         return resolved
+
+    async def _stored_payloads(self, user_id: str) -> list[dict[str, Any]]:
+        """Recent location payloads, newest first, as reuse candidates."""
+        async with self._session() as session:
+            payloads = await session.scalars(
+                select(PhoneSignal.payload)
+                .where(
+                    PhoneSignal.user_id == user_id,
+                    PhoneSignal.kind == "location",
+                    PhoneSignal.deleted_at.is_(None),
+                )
+                .order_by(PhoneSignal.occurred_at.desc())
+                .limit(REUSE_ROWS)
+            )
+            return [dict(payload) for payload in payloads if isinstance(payload, dict)]
 
     async def _reverse(self, latitude: float, longitude: float) -> Address | None:
         try:
@@ -1368,6 +1458,8 @@ class PhoneService:
                     .limit(max(limit * 4, 50))
                 )
             )
+            provider = getattr(self.geocoder, "name", "")
+            known = [dict(row.payload or {}) for row in rows]
             for row in rows:
                 payload = row.payload or {}
                 if address_fields(payload)["address"]:
@@ -1375,14 +1467,20 @@ class PhoneService:
                 if geocoded >= limit:
                     remaining += 1
                     continue
-                address = await self._reverse(
-                    float(payload.get("latitude") or 0.0),
-                    float(payload.get("longitude") or 0.0),
-                )
+                latitude = float(payload.get("latitude") or 0.0)
+                longitude = float(payload.get("longitude") or 0.0)
+                shared = shared_address(known, latitude, longitude, provider)
+                if shared is not None:
+                    row.payload = {**payload, "address": shared}
+                    known.append(row.payload)
+                    geocoded += 1
+                    continue
+                address = await self._reverse(latitude, longitude)
                 if address is None:
                     remaining += 1
                     continue
                 row.payload = {**payload, "address": address.to_payload()}
+                known.append(row.payload)
                 geocoded += 1
         return {"configured": True, "geocoded": geocoded, "remaining": remaining}
 

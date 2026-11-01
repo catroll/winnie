@@ -21,7 +21,7 @@ import pytest_asyncio
 from pydantic import ValidationError
 
 from winnie_api.main import create_app
-from winnie_api.settings import Settings
+from winnie_api.settings import DatabaseConfig, Settings
 from winnie_core.db import create_all, create_engine, create_session_factory
 from winnie_phone.config import PhoneConfig, PhoneGeocodeConfig
 from winnie_phone.geocode import (
@@ -155,9 +155,11 @@ class FakePhoton:
 class FakeGeocoder:
     name = "fake"
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, name: str | None = None) -> None:
         self.calls: list[tuple[float, float]] = []
         self.fail = fail
+        if name is not None:
+            self.name = name
 
     async def reverse(self, latitude: float, longitude: float) -> Address | None:
         self.calls.append((latitude, longitude))
@@ -172,7 +174,7 @@ class FakeGeocoder:
             street="阜通东大街",
             street_number="6号",
             poi="望京SOHO (12m)",
-            provider="fake",
+            provider=self.name,
         )
 
     async def aclose(self) -> None:
@@ -599,6 +601,196 @@ async def test_backfill_fills_old_fixes_in_bounded_batches(tmp_path: Path) -> No
 
 
 # --------------------------------------------------------------------------- #
+# The quota: an answer the database already holds is not bought twice
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_a_second_sync_at_the_same_place_does_not_call_the_provider(
+    tmp_path: Path,
+) -> None:
+    """A phone on a desk syncs without moving; each sync must not cost a call.
+
+    The provider cache only lives inside the provider, so this is the service's
+    own reuse of the address it stored on the previous sync.
+    """
+    config = PhoneConfig(enabled=True, geocode=geocode_config())
+    geocoder = FakeGeocoder()
+    engine, service, device = await service_for(tmp_path, config, geocoder)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        for index, (latitude, longitude) in enumerate(
+            [(39.9960, 116.4800), (39.9962, 116.4802), (39.9959, 116.4799)]
+        ):
+            await service.sync(
+                "local",
+                device_id,
+                SyncRequest(
+                    kind="location", items=[fix(f"fix-{index}", latitude, longitude)]
+                ),
+            )
+        rows = await service.locations("local")
+    finally:
+        await engine.dispose()
+    assert geocoder.calls == [(39.996, 116.48)]
+    assert all(row["address"] for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_a_restart_reuses_the_address_the_database_already_holds(
+    tmp_path: Path,
+) -> None:
+    """The in-memory cache is gone after a restart; the database is not."""
+    config = PhoneConfig(enabled=True, geocode=geocode_config())
+    first = FakeGeocoder()
+    engine, service, device = await service_for(tmp_path, config, first)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local", device_id, SyncRequest(kind="location", items=[fix("fix-1")])
+        )
+    finally:
+        await engine.dispose()
+    assert len(first.calls) == 1
+
+    second = FakeGeocoder()
+    engine, service, device = await service_for(tmp_path, config, second)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(kind="location", items=[fix("fix-2", 39.9961, 116.4801)]),
+        )
+        rows = await service.locations("local")
+    finally:
+        await engine.dispose()
+    assert second.calls == []
+    assert len(rows) == 2
+    assert all(row["address"] == "测试地址 39.996,116.480" for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_a_nearby_fix_in_another_cache_cell_is_still_reused(
+    tmp_path: Path,
+) -> None:
+    """0.0011° away rounds to a different cell, and is still the same place."""
+    config = PhoneConfig(enabled=True, geocode=geocode_config())
+    geocoder = FakeGeocoder()
+    engine, service, device = await service_for(tmp_path, config, geocoder)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(kind="location", items=[fix("fix-1", 39.9960, 116.4800)]),
+        )
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(kind="location", items=[fix("fix-2", 39.9970, 116.4810)]),
+        )
+        rows = await service.locations("local")
+    finally:
+        await engine.dispose()
+    assert geocoder.calls == [(39.996, 116.48)]
+    assert {row["address"] for row in rows} == {"测试地址 39.996,116.480"}
+
+
+@pytest.mark.asyncio
+async def test_a_fix_kilometres_away_is_not_answered_from_a_neighbour(
+    tmp_path: Path,
+) -> None:
+    config = PhoneConfig(enabled=True, geocode=geocode_config())
+    geocoder = FakeGeocoder()
+    engine, service, device = await service_for(tmp_path, config, geocoder)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local", device_id, SyncRequest(kind="location", items=[fix("fix-1")])
+        )
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(
+                kind="location",
+                items=[
+                    fix(
+                        "fix-2",
+                        40.01,
+                        116.50,
+                        captured_at=(NOW - timedelta(minutes=1)).isoformat(),
+                    )
+                ],
+            ),
+        )
+        rows = await service.locations("local")
+    finally:
+        await engine.dispose()
+    assert len(geocoder.calls) == 2
+    assert rows[0]["address"] == "测试地址 40.010,116.500"
+
+
+@pytest.mark.asyncio
+async def test_an_answer_from_another_provider_is_not_reused(tmp_path: Path) -> None:
+    """Switching provider must buy the new provider's answer, not inherit the old."""
+    config = PhoneConfig(enabled=True, geocode=geocode_config())
+    first = FakeGeocoder()
+    engine, service, device = await service_for(tmp_path, config, first)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local", device_id, SyncRequest(kind="location", items=[fix("fix-1")])
+        )
+    finally:
+        await engine.dispose()
+
+    other = FakeGeocoder(name="amap")
+    engine, service, device = await service_for(tmp_path, config, other)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(kind="location", items=[fix("fix-2", 39.9961, 116.4801)]),
+        )
+        rows = await service.locations("local")
+    finally:
+        await engine.dispose()
+    assert len(other.calls) == 1
+    assert {row["address"] for row in rows} == {"测试地址 39.996,116.480"}
+    assert {row["poi"] for row in rows} == {"望京SOHO (12m)"}
+
+
+@pytest.mark.asyncio
+async def test_the_backfill_reuses_a_neighbour_it_just_resolved(tmp_path: Path) -> None:
+    config = PhoneConfig(enabled=True, geocode=geocode_config())
+    engine, service, device = await service_for(tmp_path, config)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(
+                kind="location",
+                items=[
+                    fix("fix-1", 39.9960, 116.4800, captured_at=(NOW - timedelta(hours=2)).isoformat()),
+                    fix("fix-2", 39.9970, 116.4810, captured_at=(NOW - timedelta(hours=1)).isoformat()),
+                ],
+            ),
+        )
+        geocoder = FakeGeocoder()
+        service.geocoder = geocoder
+        result = await service.geocode_locations("local", limit=5)
+        rows = await service.locations("local")
+    finally:
+        await engine.dispose()
+    assert result == {"configured": True, "geocoded": 2, "remaining": 0}
+    assert len(geocoder.calls) == 1
+    assert all(row["address"] for row in rows)
+
+
+# --------------------------------------------------------------------------- #
 # The HTTP surface
 # --------------------------------------------------------------------------- #
 
@@ -609,6 +801,13 @@ def geocode_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Setting
     return Settings(
         log_root=str(tmp_path / "logs"),
         routes={},
+        # A Settings() that names no database falls back to data/winnie.db, so
+        # these tests used to sync into the owner's real phone data — and the
+        # row they left there was then a legitimate reuse candidate for the next
+        # run. Every fixture that builds the app names its own database.
+        database=DatabaseConfig(
+            url=f"sqlite+aiosqlite:///{tmp_path / 'geocode-api.db'}"
+        ),
         phone=PhoneConfig(enabled=True, geocode=geocode_config()),
     )
 

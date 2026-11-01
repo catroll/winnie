@@ -589,8 +589,22 @@ owner pays for the answer:
 | `photon` | nothing — no account, no quota | the nearest named OSM feature plus city and district | WGS-84, unchanged |
 | `amap` | a free key in `AMAP_API_KEY` | a composed street address (省 市 区 街道 门牌) | GCJ-02, converted server-side |
 
-A fix accepted by a sync is resolved once and cached by rounded coordinate
-(~111 m), so a phone that has not moved costs one call rather than one per sync.
+The provider is a metered third-party call, so the same place is bought once.
+Two layers, and the second is the one that survives a restart:
+
+1. **Inside the provider** an answer is cached by rounded coordinate (~111 m, 512
+   entries). A phone that has not moved stops calling the provider at all.
+2. **In the database** a new fix reuses the address already stored for a fix
+   within 150 m, when that address came from the *currently configured*
+   provider. Nothing is written for the reused row beyond the address it gets,
+   and a restart, a redeploy or a separate backfill run reuses instead of paying.
+
+The 150 m window is deliberately wider than the 111 m cache cell: a fix that
+rounds into the neighbouring cell is the same place. An answer from another
+provider is not reused, so switching providers buys the new provider's answer
+instead of mixing qualities. The console's "Fill addresses" counts a reused
+address as filled, because from the owner's side it is.
+
 A provider failure never fails the sync: the row keeps its coordinates and the
 address stays empty. A rejected Amap key is logged with the provider's own
 `infocode` (for example `10002 SERVICE_NOT_AVAILABLE`, which is what a JS API key
