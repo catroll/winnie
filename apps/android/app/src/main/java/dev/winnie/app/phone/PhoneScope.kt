@@ -1,6 +1,8 @@
 package dev.winnie.app.phone
 
 import android.Manifest
+import androidx.annotation.StringRes
+import dev.winnie.app.R
 
 /**
  * The pieces of phone data the app can sync.
@@ -11,16 +13,16 @@ import android.Manifest
  */
 enum class PhoneScope(
     val key: String,
-    val title: String,
-    val description: String,
+    @StringRes val titleRes: Int,
+    @StringRes val descriptionRes: Int,
     val permissions: List<String> = emptyList(),
     val needsNotificationAccess: Boolean = false,
     val needsBackgroundLocation: Boolean = false,
 ) {
     CALENDAR(
         key = "calendar",
-        title = "Calendar",
-        description = "Read events; the assistant can add, change or delete one after you confirm.",
+        titleRes = R.string.scope_calendar_title,
+        descriptionRes = R.string.scope_calendar_description,
         permissions = listOf(
             Manifest.permission.READ_CALENDAR,
             Manifest.permission.WRITE_CALENDAR,
@@ -28,14 +30,14 @@ enum class PhoneScope(
     ),
     CALLS(
         key = "call",
-        title = "Call log",
-        description = "Incoming, outgoing, missed and rejected calls with duration.",
+        titleRes = R.string.scope_call_title,
+        descriptionRes = R.string.scope_call_description,
         permissions = listOf(Manifest.permission.READ_CALL_LOG),
     ),
     MESSAGES(
         key = "message",
-        title = "SMS",
-        description = "Text messages. The assistant can send one only after you confirm it in chat.",
+        titleRes = R.string.scope_message_title,
+        descriptionRes = R.string.scope_message_description,
         permissions = listOf(
             Manifest.permission.READ_SMS,
             Manifest.permission.SEND_SMS,
@@ -43,31 +45,31 @@ enum class PhoneScope(
     ),
     CONTACTS(
         key = "contact",
-        title = "Contacts",
-        description = "Names, phone numbers, email addresses and organisation.",
+        titleRes = R.string.scope_contact_title,
+        descriptionRes = R.string.scope_contact_description,
         permissions = listOf(Manifest.permission.READ_CONTACTS),
     ),
     NOTIFICATIONS(
         key = "notification",
-        title = "Notifications",
-        description = "What apps notified you about, including verification codes.",
+        titleRes = R.string.scope_notification_title,
+        descriptionRes = R.string.scope_notification_description,
         needsNotificationAccess = true,
     ),
     LOCATION(
         key = "location",
-        title = "Location",
-        description = "One position per sync. Background access is needed for a trail.",
+        titleRes = R.string.scope_location_title,
+        descriptionRes = R.string.scope_location_description,
         needsBackgroundLocation = true,
     ),
     APPS(
         key = "app",
-        title = "Installed apps",
-        description = "Package names, versions, install dates and system flags.",
+        titleRes = R.string.scope_app_title,
+        descriptionRes = R.string.scope_app_description,
     ),
     DEVICE(
         key = "device",
-        title = "Device info",
-        description = "Model, Android version, battery, storage, network, SIM and accounts.",
+        titleRes = R.string.scope_device_title,
+        descriptionRes = R.string.scope_device_description,
     ),
     ;
 

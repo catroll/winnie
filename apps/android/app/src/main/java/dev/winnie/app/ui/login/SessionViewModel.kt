@@ -2,6 +2,8 @@ package dev.winnie.app.ui.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.data.AppSettings
 import dev.winnie.app.data.CredentialStore
 import dev.winnie.app.data.DEFAULT_SERVER_URL
@@ -93,11 +95,11 @@ class SessionViewModel(
 
         val name = current.username.trim()
         val validation = when {
-            current.serverUrl.isBlank() -> "Enter the Winnie server address."
-            name.isBlank() -> "Enter a username."
-            current.password.isEmpty() -> "Enter a password."
+            current.serverUrl.isBlank() -> AppStrings.get(R.string.login_need_server)
+            name.isBlank() -> AppStrings.get(R.string.login_need_username)
+            current.password.isEmpty() -> AppStrings.get(R.string.login_need_password)
             current.registerMode && current.password.length < 8 ->
-                "Passwords need at least 8 characters."
+                AppStrings.get(R.string.login_need_password_length)
             else -> null
         }
         if (validation != null) {

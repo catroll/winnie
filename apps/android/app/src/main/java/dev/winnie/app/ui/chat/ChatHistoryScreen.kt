@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.winnie.app.R
@@ -56,7 +58,7 @@ fun ChatHistoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Conversations") },
+                title = { Text(stringResource(R.string.chat_history_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
@@ -66,7 +68,7 @@ fun ChatHistoryScreen(
                     IconButton(onClick = onRefresh, enabled = !ui.historyLoading) {
                         Icon(
                             painterResource(R.drawable.ic_refresh),
-                            contentDescription = "Refresh",
+                            contentDescription = stringResource(R.string.common_refresh),
                         )
                     }
                 },
@@ -87,7 +89,7 @@ fun ChatHistoryScreen(
             ) {
                 Icon(painterResource(R.drawable.ic_new_chat), contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Start a new conversation")
+                Text(stringResource(R.string.chat_start_new))
             }
 
             when {
@@ -109,11 +111,13 @@ fun ChatHistoryScreen(
                         color = MaterialTheme.colorScheme.error,
                     )
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = onRefresh) { Text("Retry") }
+                    Button(onClick = onRefresh) {
+                        Text(stringResource(R.string.common_retry))
+                    }
                 }
 
                 ui.history.isEmpty() -> Text(
-                    text = "No conversations yet. Send a message to start one.",
+                    text = stringResource(R.string.chat_no_conversations),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(32.dp),
@@ -151,7 +155,9 @@ private fun ConversationRow(
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = summary.title.ifBlank { "Untitled conversation" },
+                    text = summary.title.ifBlank {
+                        stringResource(R.string.chat_untitled)
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -164,7 +170,7 @@ private fun ConversationRow(
                         shape = MaterialTheme.shapes.small,
                     ) {
                         Text(
-                            text = "Open",
+                            text = stringResource(R.string.chat_open),
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                         )
@@ -189,13 +195,21 @@ private fun ConversationRow(
                 Spacer(Modifier.weight(1f))
                 if (summary.source == "task") {
                     Text(
-                        text = "Scheduled task · read-only",
+                        text = stringResource(R.string.chat_scheduled_read_only),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
                     Text(
-                        text = pluralMessages(summary.messageCount),
+                        text = if (summary.messageCount == 0) {
+                            stringResource(R.string.chat_no_messages)
+                        } else {
+                            pluralStringResource(
+                                R.plurals.chat_message_count,
+                                summary.messageCount,
+                                summary.messageCount,
+                            )
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -204,10 +218,3 @@ private fun ConversationRow(
         }
     }
 }
-
-private fun pluralMessages(count: Int): String =
-    when (count) {
-        0 -> "No messages"
-        1 -> "1 message"
-        else -> "$count messages"
-    }

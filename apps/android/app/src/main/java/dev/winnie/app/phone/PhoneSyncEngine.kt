@@ -1,12 +1,15 @@
 package dev.winnie.app.phone
 
 import android.content.Context
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.data.ApiException
+import dev.winnie.app.data.PhoneAppItem
 import dev.winnie.app.data.PhoneCalendarItem
 import dev.winnie.app.data.PhoneCallItem
 import dev.winnie.app.data.PhoneCommandResult
 import dev.winnie.app.data.PhoneContactItem
-import dev.winnie.app.data.PhoneAppItem
+import dev.winnie.app.data.PhoneDevice
 import dev.winnie.app.data.PhoneLocationItem
 import dev.winnie.app.data.PhoneMessageItem
 import dev.winnie.app.data.PhoneNotificationItem
@@ -40,15 +43,26 @@ data class PhoneSyncOutcome(
     val accepted: Int = 0,
     val commands: Int = 0,
     val errors: List<String> = emptyList(),
+    /** Scopes whose step completed; the change detector commits only these. */
+    val uploadedScopes: Set<PhoneScope> = emptySet(),
+    /** Scopes whose step failed; their fingerprint stays uncommitted. */
+    val failedScopes: Set<PhoneScope> = emptySet(),
 )
 
 /**
- * One sync run: register the device if needed, upload every enabled scope, then
- * execute confirmed commands.
+ * One sync run: register the device if needed, upload the scopes the run was
+ * asked for, then (optionally) execute confirmed commands.
+ *
+ * There are two entry points on purpose. [syncNow] is the full run used by the
+ * periodic worker, the phone-data screen's button and every scope toggle: it
+ * reads every enabled scope. [syncScopes] is the 5-second loop's path and reads
+ * only the scopes whose local change check found something, so a tick that
+ * detects a new SMS does not re-upload the calendar or the app list.
  *
  * Scopes are isolated: a provider that throws (a vendor ROM refusing a column,
  * a revoked permission) records an error and the other scopes still upload.
- * Only an expired session or a transport failure stops the run.
+ * Only an expired session, a revoked device or a transport failure stops the
+ * run.
  */
 class PhoneSyncEngine(
     private val context: Context,
@@ -66,120 +80,183 @@ class PhoneSyncEngine(
     private val notificationBuffer = NotificationBuffer(context)
     private val commandRunner = PhoneCommandRunner(context)
 
-    suspend fun syncNow(): PhoneSyncOutcome = withContext(Dispatchers.IO) {
-        val scopes = prefs.enabledScopes()
-        if (!prefs.masterEnabled || scopes.isEmpty()) {
+    /** A full run: every enabled scope, the device snapshot, and commands. */
+    suspend fun syncNow(): PhoneSyncOutcome = run(only = null, pollCommands = true)
+
+    /** The 5-second path: only [only], with commands when [pollCommands]. */
+    suspend fun syncScopes(
+        only: Set<PhoneScope>,
+        pollCommands: Boolean = false,
+    ): PhoneSyncOutcome = run(only = only, pollCommands = pollCommands)
+
+    private suspend fun run(
+        only: Set<PhoneScope>?,
+        pollCommands: Boolean,
+    ): PhoneSyncOutcome = withContext(Dispatchers.IO) {
+        val enabled = prefs.enabledScopes()
+        if (!prefs.masterEnabled || enabled.isEmpty()) {
+            return@withContext PhoneSyncOutcome(skipped = true)
+        }
+        val scopes = only?.intersect(enabled) ?: enabled
+        // A commands-only tick has no scope work but still needs a round trip.
+        if (only != null && scopes.isEmpty() && !pollCommands) {
             return@withContext PhoneSyncOutcome(skipped = true)
         }
         val api = apiProvider() ?: return@withContext PhoneSyncOutcome(skipped = true)
 
-        try {
-            val device = ensureDevice(api, scopes)
-            var accepted = 0
-            val errors = mutableListOf<String>()
+        val uploaded = mutableSetOf<PhoneScope>()
+        val failed = mutableSetOf<PhoneScope>()
+        val errors = mutableListOf<String>()
+        var accepted = 0
 
-            suspend fun step(label: String, block: suspend () -> Int) {
+        try {
+            val deviceId = deviceId(api, enabled)
+
+            suspend fun step(scope: PhoneScope, block: suspend () -> Int) {
                 try {
                     accepted += block()
+                    uploaded += scope
                 } catch (e: Exception) {
                     if (stopsRun(e)) throw e
-                    errors += "$label: ${e.friendlyMessage()}"
+                    failed += scope
+                    errors += AppStrings.get(
+                        R.string.phone_message_scope_blocked,
+                        context.getString(scope.titleRes),
+                        e.friendlyMessage(),
+                    )
                 }
             }
 
-            step("device") { uploadDevice(api, device.id, scopes) }
-            if (PhoneScope.CALENDAR in scopes) {
-                step("calendar") { uploadCalendar(api, device.id) }
-            }
-            if (PhoneScope.CALLS in scopes) {
-                step("call") {
-                    uploadPaged(
-                        api = api,
-                        deviceId = device.id,
-                        kind = "call",
-                        serializer = PhoneCallItem.serializer(),
-                        idOf = { it.externalId.toLongOrNull() ?: 0L },
-                        readPage = { cursor, limit -> callSource.readPage(cursor, limit) },
-                    )
-                }
-            }
-            if (PhoneScope.MESSAGES in scopes) {
-                step("message") {
-                    uploadPaged(
-                        api = api,
-                        deviceId = device.id,
-                        kind = "message",
-                        serializer = PhoneMessageItem.serializer(),
-                        idOf = { it.externalId.toLongOrNull() ?: 0L },
-                        readPage = { cursor, limit -> smsSource.readPage(cursor, limit) },
-                    )
-                }
-            }
-            if (PhoneScope.CONTACTS in scopes) {
-                step("contact") {
-                    uploadSnapshot(
-                        api = api,
-                        deviceId = device.id,
-                        kind = "contact",
-                        items = contactsSource.readAll(),
-                        serializer = PhoneContactItem.serializer(),
-                        idOf = { it.externalId },
-                    )
-                }
-            }
-            if (PhoneScope.APPS in scopes) {
-                step("app") {
-                    uploadSnapshot(
-                        api = api,
-                        deviceId = device.id,
-                        kind = "app",
-                        items = appSource.readAll(),
-                        serializer = PhoneAppItem.serializer(),
-                        idOf = { it.externalId },
-                    )
-                }
-            }
-            if (PhoneScope.NOTIFICATIONS in scopes) {
-                step("notification") { uploadNotifications(api, device.id) }
-            }
-            if (PhoneScope.LOCATION in scopes) {
-                step("location") { uploadLocation(api, device.id) }
+            for (scope in PhoneScope.entries) {
+                if (scope !in scopes) continue
+                step(scope) { upload(scope, api, deviceId, enabled) }
             }
 
-            val commandCount = try {
-                runCommands(api, device.id)
-            } catch (e: UnauthorizedException) {
-                throw e
-            } catch (e: Exception) {
-                errors += "commands: ${e.friendlyMessage()}"
+            // A full run refreshes the device row (its scope list and current
+            // state) even when the Device info scope itself is switched off.
+            if (only == null && PhoneScope.DEVICE !in scopes) {
+                step(PhoneScope.DEVICE) { uploadDevice(api, deviceId, enabled) }
+            }
+
+            val commandCount = if (pollCommands) {
+                try {
+                    runCommands(api, deviceId).also {
+                        prefs.lastCommandPollAt = System.currentTimeMillis()
+                    }
+                } catch (e: UnauthorizedException) {
+                    throw e
+                } catch (e: Exception) {
+                    errors += AppStrings.get(
+                        R.string.phone_message_commands_failed,
+                        e.friendlyMessage(),
+                    )
+                    0
+                }
+            } else {
                 0
             }
 
             prefs.lastSyncAt = System.currentTimeMillis()
             prefs.lastError = errors.joinToString("; ")
             prefs.lastResult = buildString {
-                append(accepted).append(" records")
-                if (commandCount > 0) append(", ").append(commandCount).append(" commands")
+                append(
+                    context.resources.getQuantityString(
+                        R.plurals.phone_synced_records,
+                        accepted,
+                        accepted,
+                    ),
+                )
+                if (commandCount > 0) {
+                    append(' ')
+                    append(
+                        context.resources.getQuantityString(
+                            R.plurals.phone_synced_commands,
+                            commandCount,
+                            commandCount,
+                        ),
+                    )
+                }
             }
-            PhoneSyncScheduler.configure(context, prefs.intervalMinutes)
+            if (only == null) {
+                // A full run just uploaded every scope; align the change
+                // detector so the next loop tick does not upload them again.
+                PhoneChangeDetector(context, prefs).commitCurrent(
+                    scopes = enabled,
+                    now = System.currentTimeMillis(),
+                    failed = failed,
+                )
+                PhoneSyncScheduler.configure(context, prefs.intervalMinutes)
+            }
             PhoneSyncOutcome(
                 ok = errors.isEmpty(),
                 accepted = accepted,
                 commands = commandCount,
                 errors = errors,
+                uploadedScopes = uploaded,
+                failedScopes = failed,
             )
         } catch (e: UnauthorizedException) {
-            prefs.lastError = "The session expired. Sign in again to resume syncing."
+            prefs.lastError = AppStrings.get(R.string.phone_message_session_expired)
             PhoneSyncOutcome(unauthorized = true)
         } catch (e: ApiException) {
-            // The server answered before any scope ran — registration or the
-            // device lookup. Retrying will not change that, so report it.
+            if (e.statusCode == 404) {
+                // The device row is gone (revoked from another client). Drop
+                // the id so the next run registers a fresh one.
+                prefs.deviceId = null
+            }
             prefs.lastError = e.friendlyMessage()
-            PhoneSyncOutcome(errors = listOf(e.friendlyMessage()))
+            PhoneSyncOutcome(
+                retry = e.statusCode == 404,
+                errors = listOf(e.friendlyMessage()),
+            )
         } catch (e: IOException) {
             prefs.lastError = e.friendlyMessage()
             PhoneSyncOutcome(retry = true, errors = listOf(e.friendlyMessage()))
         }
+    }
+
+    private suspend fun upload(
+        scope: PhoneScope,
+        api: WinnieApi,
+        deviceId: String,
+        enabled: Set<PhoneScope>,
+    ): Int = when (scope) {
+        PhoneScope.DEVICE -> uploadDevice(api, deviceId, enabled)
+        PhoneScope.CALENDAR -> uploadCalendar(api, deviceId)
+        PhoneScope.CALLS -> uploadPaged(
+            api = api,
+            deviceId = deviceId,
+            kind = "call",
+            serializer = PhoneCallItem.serializer(),
+            idOf = { it.externalId.toLongOrNull() ?: 0L },
+            readPage = { cursor, limit -> callSource.readPage(cursor, limit) },
+        )
+        PhoneScope.MESSAGES -> uploadPaged(
+            api = api,
+            deviceId = deviceId,
+            kind = "message",
+            serializer = PhoneMessageItem.serializer(),
+            idOf = { it.externalId.toLongOrNull() ?: 0L },
+            readPage = { cursor, limit -> smsSource.readPage(cursor, limit) },
+        )
+        PhoneScope.CONTACTS -> uploadSnapshot(
+            api = api,
+            deviceId = deviceId,
+            kind = "contact",
+            items = contactsSource.readAll(),
+            serializer = PhoneContactItem.serializer(),
+            idOf = { it.externalId },
+        )
+        PhoneScope.APPS -> uploadSnapshot(
+            api = api,
+            deviceId = deviceId,
+            kind = "app",
+            items = appSource.readAll(),
+            serializer = PhoneAppItem.serializer(),
+            idOf = { it.externalId },
+        )
+        PhoneScope.NOTIFICATIONS -> uploadNotifications(api, deviceId)
+        PhoneScope.LOCATION -> uploadLocation(api, deviceId)
     }
 
     // -- device ----------------------------------------------------------
@@ -188,29 +265,35 @@ class PhoneSyncEngine(
      * Registers this phone if it has no device id yet, without syncing data.
      * The push service needs an id to receive device-targeted control events.
      */
-    suspend fun ensureRegisteredDevice(): dev.winnie.app.data.PhoneDevice? {
+    suspend fun ensureRegisteredDevice(): PhoneDevice? {
         val api = apiProvider() ?: return null
-        return runCatching {
-            ensureDevice(api, prefs.enabledScopes())
-        }.getOrNull()
-    }
-
-    private suspend fun ensureDevice(
-        api: WinnieApi,
-        scopes: Set<PhoneScope>,
-    ): dev.winnie.app.data.PhoneDevice {
         val stored = prefs.deviceId
         if (stored != null) {
             try {
                 return api.phoneDevice(stored)
             } catch (e: ApiException) {
-                if (e.statusCode != 404) throw e
+                if (e.statusCode != 404) return null
+                prefs.deviceId = null
+            } catch (_: Exception) {
+                return null
             }
         }
+        return runCatching { registerDevice(api, prefs.enabledScopes()) }.getOrNull()
+    }
+
+    /**
+     * The id every upload is addressed to. No device lookup on the hot path: a
+     * revoked device answers 404, the run clears the id, and the next run
+     * re-registers.
+     */
+    private suspend fun deviceId(api: WinnieApi, scopes: Set<PhoneScope>): String {
+        prefs.deviceId?.let { return it }
+        return registerDevice(api, scopes).id
+    }
+
+    private suspend fun registerDevice(api: WinnieApi, scopes: Set<PhoneScope>): PhoneDevice {
         val keys = scopes.map { it.key }.sorted()
-        val device = api.registerPhoneDevice(
-            deviceSource.registration(prefs.deviceKey, keys)
-        )
+        val device = api.registerPhoneDevice(deviceSource.registration(prefs.deviceKey, keys))
         prefs.deviceId = device.id
         return device
     }
@@ -233,8 +316,8 @@ class PhoneSyncEngine(
 
     private suspend fun uploadCalendar(api: WinnieApi, deviceId: String): Int {
         val now = System.currentTimeMillis()
-        val since = now - CALENDAR_BACK_DAYS * DAY_MS
-        val until = now + CALENDAR_AHEAD_DAYS * DAY_MS
+        val since = PhoneSyncWindow.from(now)
+        val until = PhoneSyncWindow.to(now)
         val items = calendarSource.readWindow(since, until)
         return uploadSnapshot(
             api = api,
@@ -405,29 +488,26 @@ class PhoneSyncEngine(
 
     private companion object {
         const val BATCH = 200
-        const val CALENDAR_BACK_DAYS = 180L
-        const val CALENDAR_AHEAD_DAYS = 365L
-        const val DAY_MS = 24L * 60L * 60L * 1000L
     }
 }
 
 /**
  * Whether an exception ends the whole run instead of just one scope.
  *
- * A transport failure or a dead session stops the run: the rest cannot succeed.
- * An HTTP error does not — the server answered, so it is one scope's problem
- * and the remaining scopes must still upload.
+ * A transport failure, a dead session or a revoked device ends the run: the
+ * rest cannot succeed. Any other HTTP error does not — the server answered, so
+ * it is one scope's problem and the remaining scopes must still upload.
  *
  * The ordering is the point. `ApiException` extends `IOException`, so a plain
- * `catch (e: IOException) throw e` — which this used to be — classifies every
- * 4xx/5xx as a dead network and aborts the run. That is how one calendar row
- * the server rejected kept calls, SMS, contacts, apps, notifications and
- * location from ever being attempted.
+ * `catch (e: IOException) throw e` classifies every 4xx/5xx as a dead network
+ * and aborts the run. That is how one calendar row the server rejected kept
+ * calls, SMS, contacts, apps, notifications and location from ever being
+ * attempted.
  */
 internal fun stopsRun(error: Throwable): Boolean = when (error) {
     is CancellationException -> true
     is UnauthorizedException -> true
-    is ApiException -> false
+    is ApiException -> error.statusCode == 404
     is IOException -> true
     else -> false
 }

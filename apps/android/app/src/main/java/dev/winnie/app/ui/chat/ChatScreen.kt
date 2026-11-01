@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -54,9 +55,9 @@ import com.mikepenz.markdown.model.rememberMarkdownState
 import dev.winnie.app.R
 
 private val SUGGESTIONS = listOf(
-    "What is on my schedule today?",
-    "Summarise my latest meeting",
-    "What did I miss on my phone?",
+    R.string.chat_suggestion_schedule,
+    R.string.chat_suggestion_meeting,
+    R.string.chat_suggestion_phone,
 )
 
 /**
@@ -96,7 +97,7 @@ fun ChatScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Winnie",
+                        text = stringResource(R.string.chat_title),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -111,7 +112,9 @@ fun ChatScreen(
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_history),
-                            contentDescription = "Conversation history",
+                            contentDescription = stringResource(
+                                R.string.chat_history_description,
+                            ),
                         )
                     }
                     IconButton(
@@ -121,7 +124,9 @@ fun ChatScreen(
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_new_chat),
-                            contentDescription = "New chat",
+                            contentDescription = stringResource(
+                                R.string.chat_new_chat_description,
+                            ),
                         )
                     }
                 },
@@ -186,12 +191,14 @@ private fun ReadOnlyNotice(onNewChat: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "This is a scheduled task run. Start a new chat to reply.",
+                text = stringResource(R.string.chat_read_only),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onNewChat) { Text("New chat") }
+            TextButton(onClick = onNewChat) {
+                Text(stringResource(R.string.common_new_chat))
+            }
         }
     }
 }
@@ -274,7 +281,10 @@ private fun AssistantMessage(message: ChatMessage) {
                 if (message.tools.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Used " + message.tools.joinToString(", "),
+                        text = stringResource(
+                            R.string.chat_used_tools,
+                            message.tools.joinToString(", "),
+                        ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -336,12 +346,21 @@ private fun ToolMessage(message: ChatMessage) {
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = "Tool · " + message.name.ifBlank { "result" },
+                    text = stringResource(
+                        R.string.chat_tool,
+                        message.name.ifBlank {
+                            stringResource(R.string.chat_tool_result)
+                        },
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "Hide" else "Show")
+                    Text(
+                        stringResource(
+                            if (expanded) R.string.common_hide else R.string.common_show,
+                        ),
+                    )
                 }
             }
             if (expanded) {
@@ -378,7 +397,7 @@ private fun ThinkingRow() {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Winnie is thinking…",
+                    text = stringResource(R.string.chat_thinking),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -404,22 +423,22 @@ private fun EmptyChat(
         )
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Ask Winnie anything",
+            text = stringResource(R.string.chat_answer_anything),
             style = MaterialTheme.typography.titleLarge,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Meetings, your schedule, your phone's data or the web. " +
-                "Replies are Markdown, so lists, code and links render properly.",
+            text = stringResource(R.string.chat_empty_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(20.dp))
         SUGGESTIONS.forEach { suggestion ->
+            val label = stringResource(suggestion)
             AssistChip(
-                onClick = { onSuggestion(suggestion) },
-                label = { Text(suggestion) },
+                onClick = { onSuggestion(label) },
+                label = { Text(label) },
                 modifier = Modifier.padding(vertical = 2.dp),
             )
         }
@@ -442,7 +461,9 @@ private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = onDismiss) { Text("Dismiss") }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_dismiss))
+            }
         }
     }
 }
@@ -468,7 +489,7 @@ private fun Composer(
                 modifier = Modifier
                     .weight(1f)
                     .testTag("chatInput"),
-                placeholder = { Text("Message Winnie…") },
+                placeholder = { Text(stringResource(R.string.chat_message_hint)) },
                 maxLines = 5,
                 shape = RoundedCornerShape(24.dp),
                 keyboardOptions = KeyboardOptions(
@@ -483,7 +504,10 @@ private fun Composer(
                     .padding(bottom = 4.dp)
                     .testTag("chatSend"),
             ) {
-                Icon(painterResource(R.drawable.ic_send), contentDescription = "Send")
+                Icon(
+                    painterResource(R.drawable.ic_send),
+                    contentDescription = stringResource(R.string.common_send),
+                )
             }
         }
     }

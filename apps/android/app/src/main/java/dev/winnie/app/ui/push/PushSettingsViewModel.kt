@@ -5,6 +5,8 @@ import android.os.PowerManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.winnie.app.AppContainer
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.push.PushController
 import dev.winnie.app.push.PushNotifications
 import dev.winnie.app.push.PushStatusBus
@@ -25,7 +27,7 @@ data class PushSettingsUi(
     val enabled: Boolean = false,
     val connection: String = "disconnected",
     val error: String = "",
-    val lastEventLabel: String = "never",
+    val lastEventLabel: String = "",
     val lastSeq: Long = 0,
     val notificationsAllowed: Boolean = true,
     val batteryUnrestricted: Boolean = false,
@@ -95,9 +97,9 @@ class PushSettingsViewModel(
         _ui.update {
             it.copy(
                 message = if (enabled) {
-                    "Background connection starting."
+                    AppStrings.get(R.string.alerts_message_starting)
                 } else {
-                    "Background connection stopped. You will not receive reminders."
+                    AppStrings.get(R.string.alerts_message_stopped)
                 },
             )
         }
@@ -107,14 +109,23 @@ class PushSettingsViewModel(
     fun sendTest() {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { container.phoneApi()?.sendTestPush() }
+                runCatching {
+                    container.phoneApi()?.sendTestPush(
+                        title = AppStrings.get(R.string.alerts_test_title),
+                        body = AppStrings.get(R.string.alerts_test_body),
+                    )
+                }
             }
             _ui.update {
                 it.copy(
                     message = if (result.isSuccess) {
-                        "Test notification published. It should arrive now while the connection is up."
+                        AppStrings.get(R.string.alerts_message_test_sent)
                     } else {
-                        "Could not send the test: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+                        AppStrings.get(
+                            R.string.alerts_message_test_failed,
+                            result.exceptionOrNull()?.message
+                                ?: AppStrings.get(R.string.common_unknown_error),
+                        )
                     },
                 )
             }
@@ -125,8 +136,7 @@ class PushSettingsViewModel(
     fun permissionDenied() {
         _ui.update {
             it.copy(
-                message = "Notifications are blocked. The connection can run, " +
-                    "but alerts will not be shown until you allow them.",
+                message = AppStrings.get(R.string.alerts_message_blocked),
             )
         }
     }
@@ -149,7 +159,7 @@ class PushSettingsViewModel(
 
     private companion object {
         fun formatEpoch(millis: Long?): String {
-            if (millis == null) return "never"
+            if (millis == null) return AppStrings.get(R.string.common_never)
             return DateTimeFormatter
                 .ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
                 .withZone(ZoneId.systemDefault())

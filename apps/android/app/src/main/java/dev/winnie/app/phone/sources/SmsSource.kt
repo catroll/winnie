@@ -37,6 +37,22 @@ class SmsSource(private val context: Context) {
         return cursor.use { mapSmsCursor(it, limit) }
     }
 
+    /** See [CallLogSource.hasNew]: the same primary-key probe over `sms`. */
+    fun hasNew(afterId: Long): Boolean {
+        val cursor = try {
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(Telephony.Sms._ID),
+                "${Telephony.Sms._ID} > ?",
+                arrayOf(afterId.toString()),
+                "${Telephony.Sms._ID} ASC",
+            )
+        } catch (_: Exception) {
+            null
+        } ?: return false
+        return cursor.use { it.moveToFirst() }
+    }
+
 }
 
 internal fun mapSmsCursor(cursor: android.database.Cursor, limit: Int): List<PhoneMessageItem> {

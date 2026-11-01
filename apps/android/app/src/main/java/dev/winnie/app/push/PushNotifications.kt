@@ -31,18 +31,18 @@ object PushNotifications {
             ?: return
         val background = NotificationChannel(
             BACKGROUND_CHANNEL,
-            "Background connection",
+            context.getString(R.string.notif_channel_background),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "The notification that keeps Winnie reachable."
+            description = context.getString(R.string.notif_channel_background_description)
             setShowBadge(false)
         }
         val alerts = NotificationChannel(
             ALERT_CHANNEL,
-            "Winnie alerts",
+            context.getString(R.string.notif_channel_alerts),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Reminders and results from Winnie."
+            description = context.getString(R.string.notif_channel_alerts_description)
         }
         manager.createNotificationChannels(listOf(background, alerts))
     }
@@ -58,19 +58,19 @@ object PushNotifications {
         )
         return NotificationCompat.Builder(context, BACKGROUND_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
-            .setContentTitle("Winnie is listening")
-            .setContentText("Reminders arrive while this notification is shown.")
+            .setContentTitle(context.getString(R.string.notif_foreground_title))
+            .setContentText(context.getString(R.string.notif_foreground_text))
             .setContentIntent(open)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .addAction(0, "Stop", stop)
+            .addAction(0, context.getString(R.string.notif_stop), stop)
             .build()
     }
 
     fun show(context: Context, event: PushEvent) {
         if (!notificationsAllowed(context)) return
-        val title = event.title.ifBlank { "Winnie" }
+        val title = event.title.ifBlank { context.getString(R.string.notif_default_title) }
         val open = openApp(context, event.seq.toInt())
         val notification = NotificationCompat.Builder(context, ALERT_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)

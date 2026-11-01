@@ -17,6 +17,37 @@ class PhonePrefsTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
+    fun storesChangeFingerprintsAndCheckTimes() {
+        val prefs = PhonePrefs(context)
+
+        assertEquals("", prefs.fingerprint("message"))
+        assertEquals(0L, prefs.lastCheckAt("message"))
+        assertEquals(0L, prefs.lastCommandPollAt)
+
+        prefs.setFingerprint("message", "idle")
+        prefs.setLastCheckAt("message", 1_700_000_000_000L)
+        prefs.lastCommandPollAt = 1_700_000_000_500L
+
+        assertEquals("idle", prefs.fingerprint("message"))
+        assertEquals(1_700_000_000_000L, prefs.lastCheckAt("message"))
+        assertEquals(1_700_000_000_500L, prefs.lastCommandPollAt)
+    }
+
+    @Test
+    fun resetSyncStateClearsWhatAFullReuploadNeeds() {
+        val prefs = PhonePrefs(context)
+        prefs.setFingerprint("call", "idle")
+        prefs.setLastCheckAt("call", 42L)
+        prefs.lastCommandPollAt = 43L
+
+        prefs.resetSyncState()
+
+        assertEquals("", prefs.fingerprint("call"))
+        assertEquals(0L, prefs.lastCheckAt("call"))
+        assertEquals(0L, prefs.lastCommandPollAt)
+    }
+
+    @Test
     fun defaultsToSharingNothing() {
         val prefs = PhonePrefs(context)
 

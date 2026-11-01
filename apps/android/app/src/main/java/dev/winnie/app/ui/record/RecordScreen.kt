@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -48,6 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.winnie.app.AppContainer
+import dev.winnie.app.R
 import dev.winnie.app.ui.defaultMeetingTitle
 import dev.winnie.app.ui.formatElapsed
 
@@ -87,7 +89,7 @@ fun RecordScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("New meeting") },
+                title = { Text(stringResource(R.string.record_new_meeting)) },
                 navigationIcon = {
                     TextButton(
                         onClick = {
@@ -96,7 +98,7 @@ fun RecordScreen(
                         },
                         enabled = !working,
                     ) {
-                        Text("Close")
+                        Text(stringResource(R.string.record_close))
                     }
                 },
             )
@@ -117,12 +119,12 @@ fun RecordScreen(
             when (val current = state) {
                 is RecordUiState.Idle -> {
                     Text(
-                        text = "Record a meeting",
+                        text = stringResource(R.string.record_start_title),
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Audio is recorded at 16 kHz mono. Live captions stream while you record; the file is transcribed again on stop.",
+                        text = stringResource(R.string.record_description),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -131,14 +133,14 @@ fun RecordScreen(
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
-                        label = { Text("Title") },
+                        label = { Text(stringResource(R.string.record_title)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     if (permissionDenied) {
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            text = "Microphone permission is required to record.",
+                            text = stringResource(R.string.record_mic_required),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -165,7 +167,7 @@ fun RecordScreen(
                             }
                         },
                     ) {
-                        Text("Start recording")
+                        Text(stringResource(R.string.record_start))
                     }
                 }
 
@@ -183,7 +185,7 @@ fun RecordScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Recording",
+                        text = stringResource(R.string.record_recording),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -191,7 +193,7 @@ fun RecordScreen(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text(
-                                text = "Live captions",
+                                text = stringResource(R.string.record_live_captions),
                                 style = MaterialTheme.typography.titleSmall,
                             )
                             Spacer(Modifier.height(6.dp))
@@ -211,7 +213,7 @@ fun RecordScreen(
                                         Spacer(Modifier.height(6.dp))
                                         Text(
                                             text = current.liveError
-                                                ?: "Live captions stopped; the recording is still being saved.",
+                                                ?: stringResource(R.string.record_live_stopped),
                                             color = MaterialTheme.colorScheme.error,
                                             style = MaterialTheme.typography.bodySmall,
                                         )
@@ -219,14 +221,14 @@ fun RecordScreen(
                                 }
                                 current.liveState == LiveState.Connecting -> {
                                     Text(
-                                        text = "Connecting…",
+                                        text = stringResource(R.string.record_connecting),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                                 current.liveState == LiveState.Streaming -> {
                                     Text(
-                                        text = "Listening…",
+                                        text = stringResource(R.string.record_listening),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -234,7 +236,7 @@ fun RecordScreen(
                                 else -> {
                                     Text(
                                         text = current.liveError
-                                            ?: "Live captions are unavailable. The recording will still be transcribed.",
+                                            ?: stringResource(R.string.record_live_unavailable),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.error,
                                     )
@@ -244,18 +246,18 @@ fun RecordScreen(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Live captions are provisional; the recording is transcribed again on stop.",
+                        text = stringResource(R.string.record_live_provisional),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(24.dp))
                     Button(onClick = viewModel::stopAndProcess) {
-                        Text("Stop and transcribe")
+                        Text(stringResource(R.string.record_stop_transcribe))
                     }
                     Spacer(Modifier.height(8.dp))
                     TextButton(onClick = viewModel::discard) {
-                        Text("Discard recording")
+                        Text(stringResource(R.string.record_discard))
                     }
                 }
 
@@ -269,7 +271,7 @@ fun RecordScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Keep this screen open until this step finishes.",
+                        text = stringResource(R.string.record_keep_open),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -278,7 +280,7 @@ fun RecordScreen(
 
                 is RecordUiState.Failed -> {
                     Text(
-                        text = "The meeting could not be created",
+                        text = stringResource(R.string.record_create_failed),
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -290,7 +292,7 @@ fun RecordScreen(
                     )
                     Spacer(Modifier.height(24.dp))
                     Button(onClick = viewModel::discard) {
-                        Text("Back to start")
+                        Text(stringResource(R.string.record_back_to_start))
                     }
                 }
 

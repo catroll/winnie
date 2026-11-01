@@ -59,7 +59,8 @@ class WinnieNotificationListener : NotificationListenerService() {
             isClearable = sbn.isClearable,
         )
         runCatching { buffer.append(item) }
-        PhoneSyncScheduler.requestSync(this, delaySeconds = 5)
+        PhoneChangeFlags.mark(PhoneScope.NOTIFICATIONS)
+        PhoneSyncLoop.wake()
     }
 
     private fun label(packageName: String): String = labels.getOrPut(packageName) {

@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.annotation.DrawableRes
@@ -70,7 +71,7 @@ fun AccountScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Account",
+                        text = stringResource(R.string.account_title),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -91,10 +92,10 @@ fun AccountScreen(
             item { IdentityCard(user = user, serverUrl = serverUrl) }
 
             item {
-                SectionCard(title = "This device") {
+                SectionCard(title = stringResource(R.string.account_this_device)) {
                     SettingRow(
-                        title = "Alerts & background",
-                        subtitle = "Reminders and the self-hosted notification stream",
+                        title = stringResource(R.string.account_alerts),
+                        subtitle = stringResource(R.string.account_alerts_subtitle),
                         icon = R.drawable.ic_alerts,
                         onClick = onOpenAlerts,
                     )
@@ -107,22 +108,24 @@ fun AccountScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Saved password",
+                                text = stringResource(R.string.account_saved_password),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Text(
-                                text = if (savedPassword) {
-                                    "Encrypted with a key in this phone's Keystore"
-                                } else {
-                                    "Not saved. Tick Remember on the sign-in screen."
-                                },
+                                text = stringResource(
+                                    if (savedPassword) {
+                                        R.string.account_password_saved
+                                    } else {
+                                        R.string.account_password_not_saved
+                                    },
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         if (savedPassword) {
                             TextButton(onClick = { confirmForget = true }) {
-                                Text("Forget")
+                                Text(stringResource(R.string.account_forget))
                             }
                         }
                     }
@@ -130,7 +133,7 @@ fun AccountScreen(
             }
 
             item {
-                SectionCard(title = "About") {
+                SectionCard(title = stringResource(R.string.account_about)) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -138,7 +141,7 @@ fun AccountScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Winnie for Android",
+                            text = stringResource(R.string.account_app_name),
                             style = MaterialTheme.typography.bodyLarge,
                             modifier = Modifier.weight(1f),
                         )
@@ -160,7 +163,7 @@ fun AccountScreen(
                 ) {
                     Icon(painterResource(R.drawable.ic_logout), contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Sign out")
+                    Text(stringResource(R.string.account_sign_out))
                 }
             }
         }
@@ -169,15 +172,16 @@ fun AccountScreen(
     if (confirmSignOut) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
-            title = { Text("Sign out?") },
+            title = { Text(stringResource(R.string.account_sign_out_title)) },
             text = {
                 Text(
-                    "The session token is deleted from this phone. " +
-                        (if (savedPassword) {
-                            "Your saved username and password are kept, so you can sign back in with one tap."
+                    stringResource(
+                        if (savedPassword) {
+                            R.string.account_sign_out_body_saved
                         } else {
-                            "Your username stays in the form; the password is not saved."
-                        }),
+                            R.string.account_sign_out_body_unsigned
+                        },
+                    ),
                 )
             },
             confirmButton = {
@@ -187,10 +191,12 @@ fun AccountScreen(
                         onSignOut()
                     },
                     modifier = Modifier.testTag("confirmSignOut"),
-                ) { Text("Sign out") }
+                ) { Text(stringResource(R.string.account_sign_out)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmSignOut = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
         )
     }
@@ -198,8 +204,8 @@ fun AccountScreen(
     if (confirmForget) {
         AlertDialog(
             onDismissRequest = { confirmForget = false },
-            title = { Text("Forget the saved password?") },
-            text = { Text("The next sign-in asks for the username and password again.") },
+            title = { Text(stringResource(R.string.account_forget_title)) },
+            text = { Text(stringResource(R.string.account_forget_body)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -207,10 +213,12 @@ fun AccountScreen(
                         onForgetPassword()
                     },
                     modifier = Modifier.testTag("confirmForget"),
-                ) { Text("Forget") }
+                ) { Text(stringResource(R.string.account_forget)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmForget = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmForget = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
         )
     }

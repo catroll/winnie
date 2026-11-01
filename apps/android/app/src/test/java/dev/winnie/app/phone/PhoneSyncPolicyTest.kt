@@ -37,6 +37,11 @@ class PhoneSyncPolicyTest {
     }
 
     @Test
+    fun aRevokedDeviceStopsTheRunSoItCanReRegister() {
+        assertTrue(stopsRun(ApiException(404, "device not found")))
+    }
+
+    @Test
     fun anExpiredSessionStopsTheRun() {
         assertTrue(stopsRun(UnauthorizedException("session expired")))
     }

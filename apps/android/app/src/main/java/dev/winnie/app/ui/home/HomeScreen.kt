@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,7 +75,7 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Meetings",
+                        text = stringResource(R.string.meetings_title),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -87,7 +88,7 @@ fun HomeScreen(
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_refresh),
-                            contentDescription = "Refresh",
+                            contentDescription = stringResource(R.string.common_refresh),
                         )
                     }
                 },
@@ -101,7 +102,7 @@ fun HomeScreen(
             ) {
                 Icon(painterResource(R.drawable.ic_record), contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Record")
+                Text(stringResource(R.string.meetings_record))
             }
         },
     ) { padding ->
@@ -125,7 +126,7 @@ fun HomeScreen(
 
                 state.meetings.isEmpty() -> {
                     Text(
-                        text = "No meetings yet. Tap Record to make one.",
+                        text = stringResource(R.string.meetings_empty),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
@@ -217,6 +218,6 @@ private fun ErrorMessage(
             color = MaterialTheme.colorScheme.error,
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onRetry) { Text("Retry") }
+        Button(onClick = onRetry) { Text(stringResource(R.string.common_retry)) }
     }
 }

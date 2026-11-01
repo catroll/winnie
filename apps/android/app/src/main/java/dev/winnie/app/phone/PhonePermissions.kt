@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 
 /** Runtime and special-access checks for phone scopes. */
 object PhonePermissions {
@@ -43,9 +45,10 @@ object PhonePermissions {
      * the location trail does not.
      */
     fun blocker(context: Context, scope: PhoneScope): String = when {
-        missing(context, scope).isNotEmpty() -> "Permission needed"
+        missing(context, scope).isNotEmpty() ->
+            AppStrings.get(R.string.common_permission_needed)
         scope.needsNotificationAccess && !notificationAccess(context) ->
-            "Notification access needed"
+            AppStrings.get(R.string.common_notification_access_needed)
         else -> ""
     }
 }

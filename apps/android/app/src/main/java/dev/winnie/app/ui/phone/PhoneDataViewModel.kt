@@ -4,8 +4,11 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.winnie.app.AppContainer
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.phone.PhonePermissions
 import dev.winnie.app.phone.PhoneScope
+import dev.winnie.app.phone.PhoneSyncLoop
 import dev.winnie.app.phone.PhoneSyncScheduler
 import java.time.Instant
 import java.time.ZoneId
@@ -31,12 +34,14 @@ data class PhoneDataUi(
     val master: Boolean = false,
     val scopes: List<PhoneScopeUi> = emptyList(),
     val running: Boolean = false,
-    val lastSyncLabel: String = "never",
+    val lastSyncLabel: String = "",
     val lastError: String = "",
     val lastResult: String = "",
     val deviceName: String = "",
     val counts: Map<String, Int> = emptyMap(),
     val pendingCommands: Int = 0,
+    /** The server-suggested interval for the background worker, in minutes. */
+    val intervalMinutes: Int = 30,
     val message: String? = null,
 )
 
@@ -93,18 +98,19 @@ class PhoneDataViewModel(
         if (enabled) {
             if (prefs.enabledScopes().isEmpty()) {
                 _ui.update {
-                    it.copy(message = "Choose at least one scope below to start syncing.")
+                    it.copy(message = AppStrings.get(R.string.phone_message_choose_scope))
                 }
                 return
             }
             prefs.masterEnabled = true
             PhoneSyncScheduler.configure(context, prefs.intervalMinutes)
             PhoneSyncScheduler.requestSync(context, delaySeconds = 1)
-            _ui.update { it.copy(message = "Sync enabled.") }
+            PhoneSyncLoop.wake()
+            _ui.update { it.copy(message = AppStrings.get(R.string.phone_message_enabled)) }
         } else {
             prefs.masterEnabled = false
             PhoneSyncScheduler.cancel(context)
-            _ui.update { it.copy(message = "Sync paused. Nothing is uploaded.") }
+            _ui.update { it.copy(message = AppStrings.get(R.string.phone_message_paused)) }
         }
         refresh()
     }
@@ -112,36 +118,65 @@ class PhoneDataViewModel(
     fun enableScope(scope: PhoneScope) {
         if (!PhonePermissions.ready(context, scope)) {
             _ui.update {
-                it.copy(message = "${scope.title}: ${PhonePermissions.blocker(context, scope)}")
+                it.copy(message = AppStrings.get(
+                    R.string.phone_message_scope_blocked,
+                    AppStrings.get(scope.titleRes),
+                    PhonePermissions.blocker(context, scope),
+                ))
             }
             refresh()
             return
         }
         prefs.setEnabled(scope, true)
+        // A scope that was synced before keeps its fingerprint; clearing
+        // it makes the first tick after re-enabling upload the snapshot.
+        container.phoneChangeDetector.forget(scope)
         if (!prefs.masterEnabled) {
             prefs.masterEnabled = true
             PhoneSyncScheduler.configure(context, prefs.intervalMinutes)
         }
         PhoneSyncScheduler.requestSync(context, delaySeconds = 1)
-        _ui.update { it.copy(message = "${scope.title} is now shared. First sync queued.") }
+        PhoneSyncLoop.wake()
+        _ui.update {
+            it.copy(
+                message = AppStrings.get(
+                    R.string.phone_message_scope_enabled,
+                    AppStrings.get(scope.titleRes),
+                ),
+            )
+        }
         refresh()
     }
 
     fun disableScope(scope: PhoneScope) {
         prefs.setEnabled(scope, false)
+        container.phoneChangeDetector.forget(scope)
         if (prefs.enabledScopes().isEmpty()) {
             prefs.masterEnabled = false
             PhoneSyncScheduler.cancel(context)
+        } else {
+            // The device row advertises the enabled scopes; refresh it now
+            // rather than at the next periodic run.
+            PhoneSyncScheduler.requestSync(context, delaySeconds = 1)
         }
-        _ui.update { it.copy(message = "${scope.title} is no longer shared. Server copies stay until deleted.") }
+        _ui.update {
+            it.copy(
+                message = AppStrings.get(
+                    R.string.phone_message_scope_disabled,
+                    AppStrings.get(scope.titleRes),
+                ),
+            )
+        }
         refresh()
     }
 
     fun permissionDenied(scope: PhoneScope) {
         _ui.update {
             it.copy(
-                message = "${scope.title} needs its permission to sync. " +
-                    "Grant it in system settings, then switch it on again.",
+                message = AppStrings.get(
+                    R.string.phone_message_needs_permission,
+                    AppStrings.get(scope.titleRes),
+                ),
             )
         }
         refresh()
@@ -155,17 +190,33 @@ class PhoneDataViewModel(
                 container.newPhoneSyncEngine().syncNow()
             }
             val message = when {
-                outcome.skipped -> "Nothing to sync: enable a scope first."
-                outcome.unauthorized -> "The session expired. Sign in again."
-                outcome.retry -> "Network unavailable. The background sync will retry."
+                outcome.skipped ->
+                    AppStrings.get(R.string.phone_message_nothing_to_sync)
+                outcome.unauthorized ->
+                    AppStrings.get(R.string.phone_message_session_expired)
+                outcome.retry ->
+                    AppStrings.get(R.string.phone_message_network_retry)
                 outcome.errors.isNotEmpty() -> outcome.errors.joinToString("; ")
-                outcome.accepted == 0 && outcome.commands == 0 -> "Nothing new to upload."
+                outcome.accepted == 0 && outcome.commands == 0 ->
+                    AppStrings.get(R.string.phone_message_nothing_new)
                 else -> buildString {
-                    append("Synced ").append(outcome.accepted).append(" records")
+                    append(
+                        AppStrings.quantity(
+                            R.plurals.phone_synced_records,
+                            outcome.accepted,
+                            outcome.accepted,
+                        ),
+                    )
                     if (outcome.commands > 0) {
-                        append(", ran ").append(outcome.commands).append(" commands")
+                        append(' ')
+                        append(
+                            AppStrings.quantity(
+                                R.plurals.phone_synced_commands,
+                                outcome.commands,
+                                outcome.commands,
+                            ),
+                        )
                     }
-                    append(".")
                 }
             }
             _ui.update { it.copy(running = false, message = message) }
@@ -176,7 +227,7 @@ class PhoneDataViewModel(
     fun wipeServerData() {
         val deviceId = prefs.deviceId
         if (deviceId == null) {
-            _ui.update { it.copy(message = "This phone has not synced yet.") }
+            _ui.update { it.copy(message = AppStrings.get(R.string.phone_message_not_synced)) }
             return
         }
         viewModelScope.launch {
@@ -184,12 +235,20 @@ class PhoneDataViewModel(
                 runCatching { container.phoneApi()?.wipePhoneDevice(deviceId) }
             }
             prefs.resetCursors()
+            // The server holds nothing now, so every scope must upload
+            // from scratch; the old fingerprints describe deleted rows.
+            prefs.resetSyncState()
+            PhoneSyncLoop.wake()
             _ui.update {
                 it.copy(
                     message = if (result.isSuccess) {
-                        "Server copies deleted. The next sync uploads the selected scopes again."
+                        AppStrings.get(R.string.phone_message_deleted)
                     } else {
-                        "Could not delete: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+                        AppStrings.get(
+                            R.string.phone_message_delete_failed,
+                            result.exceptionOrNull()?.message
+                                ?: AppStrings.get(R.string.common_unknown_error),
+                        )
                     },
                 )
             }
@@ -211,11 +270,12 @@ class PhoneDataViewModel(
         lastSyncLabel = formatEpoch(prefs.lastSyncAt),
         lastError = prefs.lastError,
         lastResult = prefs.lastResult,
+        intervalMinutes = prefs.intervalMinutes,
     )
 
     private companion object {
         fun formatEpoch(millis: Long?): String {
-            if (millis == null) return "never"
+            if (millis == null) return AppStrings.get(R.string.common_never)
             return DateTimeFormatter
                 .ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
                 .withZone(ZoneId.systemDefault())

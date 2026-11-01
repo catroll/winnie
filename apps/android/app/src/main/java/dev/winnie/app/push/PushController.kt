@@ -3,6 +3,8 @@ package dev.winnie.app.push
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 
 /** Starts and stops the background connection; the service does the work. */
 object PushController {
@@ -18,7 +20,8 @@ object PushController {
         } catch (e: Exception) {
             // Android 12+ can refuse a foreground-service start from the
             // background. The service will start when the app is opened.
-            prefs.lastError = e.message ?: "Could not start the background service."
+            prefs.lastError = e.message
+                ?: AppStrings.get(R.string.alerts_message_start_failed)
             PushStatusBus.update {
                 it.copy(state = "blocked", error = prefs.lastError)
             }

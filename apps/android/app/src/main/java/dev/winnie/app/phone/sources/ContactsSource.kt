@@ -153,6 +153,41 @@ class ContactsSource(private val context: Context) {
         }
     }
 
+    /**
+     * A cheap token for "did the contact list change?". `CONTACT_LAST_UPDATED_TIMESTAMP`
+     * is bumped by the provider on an edit, so a count plus its maximum catches
+     * adds, deletes and edits without reading every contact. A provider without
+     * the column falls back to the aggregate count.
+     */
+    fun fingerprint(): String? {
+        val cursor = try {
+            context.contentResolver.query(
+                ContactsContract.Contacts.CONTENT_URI,
+                arrayOf(
+                    ContactsContract.Contacts._ID,
+                    ContactsContract.Contacts.CONTACT_LAST_UPDATED_TIMESTAMP,
+                ),
+                null,
+                null,
+                null,
+            )
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        return cursor.use {
+            var count = 0
+            var newest = 0L
+            val updated = it.getColumnIndex(
+                ContactsContract.Contacts.CONTACT_LAST_UPDATED_TIMESTAMP,
+            )
+            while (it.moveToNext()) {
+                count++
+                if (updated >= 0) newest = maxOf(newest, it.getLong(updated))
+            }
+            "count:$count:updated:$newest"
+        }
+    }
+
     private data class MutableContact(
         val id: Long,
         val displayName: String,

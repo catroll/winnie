@@ -82,6 +82,41 @@ class PhonePrefs(context: Context) {
             putInt(KEY_INTERVAL, value.coerceAtLeast(MIN_INTERVAL_MINUTES))
         }
 
+    /**
+     * The cheapest "did anything change?" token for a kind, as of its last
+     * sync. The 5-second loop only computes it again when a check is due, and
+     * only uploads when it differs — which is what keeps a 5-second cadence
+     * from turning into a 5-second upload.
+     */
+    fun fingerprint(kind: String): String =
+        prefs.getString("$KEY_FINGERPRINT_PREFIX$kind", "") ?: ""
+
+    fun setFingerprint(kind: String, value: String) =
+        prefs.edit { putString("$KEY_FINGERPRINT_PREFIX$kind", value.take(1000)) }
+
+    /** When this kind was last checked locally, changed or not. */
+    fun lastCheckAt(kind: String): Long =
+        prefs.getLong("$KEY_CHECK_PREFIX$kind", 0L)
+
+    fun setLastCheckAt(kind: String, value: Long) =
+        prefs.edit { putLong("$KEY_CHECK_PREFIX$kind", value) }
+
+    /** When the phone last asked the server for pending commands. */
+    var lastCommandPollAt: Long
+        get() = prefs.getLong(KEY_LAST_COMMAND_POLL, 0L)
+        set(value) = prefs.edit { putLong(KEY_LAST_COMMAND_POLL, value) }
+
+    /** Wipes what a full re-upload needs to be scheduled again. */
+    fun resetSyncState() {
+        prefs.edit {
+            PhoneScope.entries.forEach {
+                remove("$KEY_FINGERPRINT_PREFIX${it.key}")
+                remove("$KEY_CHECK_PREFIX${it.key}")
+            }
+            remove(KEY_LAST_COMMAND_POLL)
+        }
+    }
+
     private companion object {
         const val PREFS_NAME = "winnie_phone"
         const val KEY_MASTER = "master_enabled"
@@ -89,6 +124,9 @@ class PhonePrefs(context: Context) {
         const val KEY_DEVICE_KEY = "device_key"
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_CURSOR_PREFIX = "cursor_"
+        const val KEY_FINGERPRINT_PREFIX = "fingerprint_"
+        const val KEY_CHECK_PREFIX = "checked_"
+        const val KEY_LAST_COMMAND_POLL = "last_command_poll_at"
         const val KEY_LAST_SYNC = "last_sync_at"
         const val KEY_LAST_ERROR = "last_error"
         const val KEY_LAST_RESULT = "last_result"

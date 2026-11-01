@@ -21,6 +21,7 @@ import dev.winnie.app.ui.chat.ChatUiState
 import dev.winnie.app.ui.login.LoginScreen
 import dev.winnie.app.ui.login.LoginUiState
 import dev.winnie.app.ui.phone.PhoneDataScreen
+import dev.winnie.app.ui.push.PushSettingsScreen
 import dev.winnie.app.ui.theme.WinnieTheme
 import java.io.File
 import org.junit.Rule
@@ -287,6 +288,76 @@ class LayoutScreenshotTest {
         // The screenshot the owner sees: a prefilled form and the eye icon.
         compose.onNodeWithText("Remember username and password").assertExists()
         capture("login")
+    }
+
+    @Test
+    @Config(qualifiers = "zh-w360dp-h800dp-xhdpi")
+    fun chineseChat() {
+        compose.setContent {
+            WinnieTheme {
+                ChatScreen(
+                    ui = ChatUiState(),
+                    onInputChange = {},
+                    onSend = {},
+                    onNewChat = {},
+                    onOpenHistory = {},
+                    onDismissError = {},
+                    bottomBar = { navBar(SignedInTab.Chat) },
+                )
+            }
+        }
+        capture("chat-empty-zh")
+    }
+
+    @Test
+    @Config(qualifiers = "zh-w360dp-h800dp-xhdpi")
+    fun chinesePhoneData() {
+        val app = ApplicationProvider.getApplicationContext<WinnieApplication>()
+        compose.setContent {
+            WinnieTheme {
+                PhoneDataScreen(
+                    container = app.container,
+                    bottomBar = { navBar(SignedInTab.Phone) },
+                )
+            }
+        }
+        capture("phone-data-zh")
+    }
+
+    @Test
+    @Config(qualifiers = "zh-w360dp-h800dp-xhdpi")
+    fun chineseAlerts() {
+        val app = ApplicationProvider.getApplicationContext<WinnieApplication>()
+        compose.setContent {
+            WinnieTheme {
+                PushSettingsScreen(container = app.container, onBack = {})
+            }
+        }
+        capture("alerts-zh")
+    }
+
+    @Test
+    @Config(qualifiers = "zh-w360dp-h800dp-xhdpi")
+    fun chineseAccount() {
+        compose.setContent {
+            WinnieTheme {
+                AccountScreen(
+                    user = User(
+                        id = "u1",
+                        username = "alice",
+                        displayName = null,
+                        createdAt = "2026-10-31T00:00:00",
+                    ),
+                    serverUrl = "https://winnie.example.com",
+                    savedPassword = true,
+                    onForgetPassword = {},
+                    onOpenAlerts = {},
+                    onSignOut = {},
+                    bottomBar = { navBar(SignedInTab.Account) },
+                )
+            }
+        }
+        capture("account-zh")
     }
 
     @Test

@@ -1,5 +1,7 @@
 package dev.winnie.app.data
 
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -8,18 +10,19 @@ import java.net.UnknownHostException
 /** Turns transport and API failures into a sentence a user can act on. */
 fun Throwable.friendlyMessage(): String = when (this) {
     is UnauthorizedException -> message?.takeIf { it.isNotBlank() }
-        ?: "Invalid username or password."
+        ?: AppStrings.get(R.string.error_invalid_credentials)
 
     is ApiException -> when (statusCode) {
-        413 -> "The recording is too large for the server."
-        429 -> "Too many attempts. Try again in a few minutes."
+        413 -> AppStrings.get(R.string.error_recording_too_large)
+        429 -> AppStrings.get(R.string.error_too_many_attempts)
         else -> message?.takeIf { it.isNotBlank() }
-            ?: "The server returned HTTP $statusCode."
+            ?: AppStrings.get(R.string.error_http_status, statusCode)
     }
 
-    is UnknownHostException -> "Server not found. Check the address."
-    is ConnectException -> "Could not connect to the server. Check the address and that Winnie is running."
-    is SocketTimeoutException -> "The server took too long to respond."
-    is IOException -> message?.takeIf { it.isNotBlank() } ?: "Network error."
+    is UnknownHostException -> AppStrings.get(R.string.error_server_not_found)
+    is ConnectException -> AppStrings.get(R.string.error_could_not_connect)
+    is SocketTimeoutException -> AppStrings.get(R.string.error_timeout)
+    is IOException -> message?.takeIf { it.isNotBlank() }
+        ?: AppStrings.get(R.string.error_network)
     else -> message?.takeIf { it.isNotBlank() } ?: javaClass.simpleName
 }

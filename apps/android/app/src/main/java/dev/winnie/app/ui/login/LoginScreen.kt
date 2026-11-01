@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -68,12 +69,12 @@ fun LoginScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "Winnie",
+                text = stringResource(R.string.chat_title),
                 style = MaterialTheme.typography.displaySmall,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Your assistant, your meetings, your data.",
+                text = stringResource(R.string.login_tagline),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -82,7 +83,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value = ui.serverUrl,
                 onValueChange = onServerUrlChange,
-                label = { Text("Server address") },
+                label = { Text(stringResource(R.string.login_server)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier
@@ -91,7 +92,7 @@ fun LoginScreen(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Default: $DEFAULT_SERVER_URL. Change it for your network.",
+                text = stringResource(R.string.login_server_hint, DEFAULT_SERVER_URL),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -100,7 +101,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value = ui.username,
                 onValueChange = onUsernameChange,
-                label = { Text("Username") },
+                label = { Text(stringResource(R.string.login_username)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
@@ -114,7 +115,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value = ui.password,
                 onValueChange = onPasswordChange,
-                label = { Text("Password") },
+                label = { Text(stringResource(R.string.login_password)) },
                 singleLine = true,
                 visualTransformation = if (passwordVisible) {
                     VisualTransformation.None
@@ -139,11 +140,13 @@ fun LoginScreen(
                                     R.drawable.ic_visibility
                                 },
                             ),
-                            contentDescription = if (passwordVisible) {
-                                "Hide password"
-                            } else {
-                                "Show password"
-                            },
+                            contentDescription = stringResource(
+                                if (passwordVisible) {
+                                    R.string.login_hide_password
+                                } else {
+                                    R.string.login_show_password
+                                },
+                            ),
                         )
                     }
                 },
@@ -166,12 +169,12 @@ fun LoginScreen(
                     modifier = Modifier.testTag("remember"),
                 )
                 Text(
-                    text = "Remember username and password",
+                    text = stringResource(R.string.login_remember),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             Text(
-                text = "Saved encrypted on this phone; turn it off to forget them.",
+                text = stringResource(R.string.login_remember_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 12.dp),
@@ -201,7 +204,15 @@ fun LoginScreen(
                         strokeWidth = 2.dp,
                     )
                 } else {
-                    Text(if (ui.registerMode) "Create account" else "Sign in")
+                    Text(
+                        stringResource(
+                            if (ui.registerMode) {
+                                R.string.login_create_account
+                            } else {
+                                R.string.login_sign_in
+                            },
+                        ),
+                    )
                 }
             }
 
@@ -211,11 +222,13 @@ fun LoginScreen(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
                 Text(
-                    if (ui.registerMode) {
-                        "I already have an account"
-                    } else {
-                        "Create the first account"
-                    },
+                    stringResource(
+                        if (ui.registerMode) {
+                            R.string.login_switch_login
+                        } else {
+                            R.string.login_switch_register
+                        },
+                    ),
                 )
             }
         }

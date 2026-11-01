@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.provider.CalendarContract
 import dev.winnie.app.data.PhoneCalendarItem
+import dev.winnie.app.phone.snapshotDigest
 import java.time.Instant
 
 /**
@@ -48,6 +49,19 @@ class CalendarSource(private val context: Context) {
         ) ?: return emptyList()
 
         return cursor.use { mapCalendarCursor(it, names) }
+    }
+
+    /**
+     * A digest of the same window the sync uploads. It is a full read every
+     * calendar cadence (30 s), not every tick; an edit, a deletion or a new
+     * event changes the digest, and the loop only uploads when it does.
+     */
+    fun fingerprint(fromMillis: Long, toMillis: Long): String? = try {
+        snapshotDigest(
+            readWindow(fromMillis, toMillis).joinToString("|") { it.toString() },
+        )
+    } catch (_: Exception) {
+        null
     }
 
     fun calendarNames(): Map<Long, String> {

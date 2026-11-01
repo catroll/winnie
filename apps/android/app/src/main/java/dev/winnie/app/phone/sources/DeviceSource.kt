@@ -11,6 +11,8 @@ import android.os.Build
 import android.os.StatFs
 import android.telephony.TelephonyManager
 import dev.winnie.app.BuildConfig
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.data.PhoneDevicePayload
 import dev.winnie.app.data.PhoneDeviceSnapshot
 import dev.winnie.app.phone.PhoneScope
@@ -57,7 +59,7 @@ class DeviceSource(private val context: Context) {
 
     private fun deviceName(): String {
         val model = Build.MODEL.orEmpty()
-        return model.ifBlank { "Android phone" }
+        return model.ifBlank { AppStrings.get(R.string.device_fallback_name) }
     }
 
     private fun info(): JsonObject = buildJsonObject {

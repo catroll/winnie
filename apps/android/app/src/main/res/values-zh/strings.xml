@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Simplified Chinese. Every key in values/strings.xml must exist here; the
+  key-parity test under app/src/test enforces it.
+-->
+<resources>
+
+    <string name="app_name">Winnie</string>
+
+    <!-- 通用 -->
+    <string name="common_back">返回</string>
+    <string name="common_refresh">刷新</string>
+    <string name="common_retry">重试</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_delete">删除</string>
+    <string name="common_dismiss">关闭</string>
+    <string name="common_show">展开</string>
+    <string name="common_hide">收起</string>
+    <string name="common_send">发送</string>
+    <string name="common_never">从未</string>
+    <string name="common_unknown_error">未知错误</string>
+    <string name="common_open_settings">打开设置</string>
+    <string name="common_granted">已授权</string>
+    <string name="common_not_granted">未授权</string>
+    <string name="common_new_chat">新对话</string>
+    <string name="common_permission_needed">需要权限</string>
+    <string name="common_notification_access_needed">需要通知使用权</string>
+
+    <!-- 底部导航 -->
+    <string name="tab_chat">聊天</string>
+    <string name="tab_meetings">会议</string>
+    <string name="tab_phone">手机</string>
+    <string name="tab_account">账户</string>
+
+    <!-- 登录 -->
+    <string name="login_tagline">你的助手、你的会议、你的数据。</string>
+    <string name="login_server">服务器地址</string>
+    <string name="login_server_hint">默认：%1$s。请按你的网络环境修改。</string>
+    <string name="login_username">用户名</string>
+    <string name="login_password">密码</string>
+    <string name="login_show_password">显示密码</string>
+    <string name="login_hide_password">隐藏密码</string>
+    <string name="login_remember">记住用户名和密码</string>
+    <string name="login_remember_hint">已加密保存在本机；关闭后将删除。</string>
+    <string name="login_sign_in">登录</string>
+    <string name="login_create_account">创建账户</string>
+    <string name="login_switch_register">创建第一个账户</string>
+    <string name="login_switch_login">我已有账户</string>
+    <string name="login_need_server">请输入 Winnie 服务器地址。</string>
+    <string name="login_need_username">请输入用户名。</string>
+    <string name="login_need_password">请输入密码。</string>
+    <string name="login_need_password_length">密码至少需要 8 个字符。</string>
+
+    <!-- 错误 -->
+    <string name="error_invalid_credentials">用户名或密码错误。</string>
+    <string name="error_recording_too_large">录音文件超出服务器限制。</string>
+    <string name="error_too_many_attempts">尝试次数过多，请几分钟后再试。</string>
+    <string name="error_http_status">服务器返回 HTTP %1$d。</string>
+    <string name="error_server_not_found">找不到服务器，请检查地址。</string>
+    <string name="error_could_not_connect">无法连接服务器，请检查地址以及 Winnie 是否正在运行。</string>
+    <string name="error_timeout">服务器响应超时。</string>
+    <string name="error_network">网络错误。</string>
+
+    <!-- 会议状态 -->
+    <string name="status_draft">草稿</string>
+    <string name="status_uploaded">已上传</string>
+    <string name="status_queued">排队中</string>
+    <string name="status_transcribing">转写中</string>
+    <string name="status_transcribed">已转写</string>
+    <string name="status_translating">翻译中</string>
+    <string name="status_writing_minutes">生成纪要中</string>
+    <string name="status_ready">已完成</string>
+    <string name="status_failed">失败</string>
+
+    <!-- 会议列表 -->
+    <string name="meetings_title">会议</string>
+    <string name="meetings_record">录音</string>
+    <string name="meetings_empty">还没有会议。点“录音”创建一个。</string>
+
+    <!-- 会议详情 -->
+    <string name="meeting_fallback_title">会议</string>
+    <string name="meeting_load_failed">无法加载会议。</string>
+    <string name="meeting_processing">处理中：%1$s</string>
+    <string name="meeting_transcript">转写</string>
+    <string name="meeting_no_transcript">没有返回转写内容。</string>
+    <string name="meeting_minutes">纪要</string>
+    <string name="meeting_topics">主题</string>
+    <string name="meeting_decisions">决定</string>
+    <string name="meeting_action_items">待办事项</string>
+    <string name="meeting_owner">负责人：%1$s</string>
+    <string name="meeting_due">截止：%1$s</string>
+    <string name="meeting_processing_failed">处理失败。</string>
+    <string name="meeting_processing_slow">处理时间比预期长。完成后请刷新。</string>
+
+    <!-- 录音 -->
+    <string name="record_new_meeting">新会议</string>
+    <string name="record_close">关闭</string>
+    <string name="record_start_title">录制会议</string>
+    <string name="record_description">以 16 kHz 单声道录音。录制时实时字幕会串流显示；停止后会对文件重新转写。</string>
+    <string name="record_title">标题</string>
+    <string name="record_mic_required">录音需要麦克风权限。</string>
+    <string name="record_start">开始录音</string>
+    <string name="record_recording">录音中</string>
+    <string name="record_live_captions">实时字幕</string>
+    <string name="record_live_stopped">实时字幕已中断；录音仍在保存。</string>
+    <string name="record_connecting">连接中…</string>
+    <string name="record_listening">聆听中…</string>
+    <string name="record_live_unavailable">实时字幕不可用。录音仍会被转写。</string>
+    <string name="record_live_provisional">实时字幕仅供参考；停止后会重新转写录音。</string>
+    <string name="record_stop_transcribe">停止并转写</string>
+    <string name="record_discard">丢弃录音</string>
+    <string name="record_keep_open">请保持此页面打开，直到这一步完成。</string>
+    <string name="record_create_failed">无法创建会议</string>
+    <string name="record_back_to_start">返回开始</string>
+    <string name="record_default_title">会议 %1$s</string>
+    <string name="record_creating">正在创建会议…</string>
+    <string name="record_saving">正在保存录音…</string>
+    <string name="record_uploading">正在上传音频…</string>
+    <string name="record_transcribing">正在转写并生成纪要…</string>
+    <string name="record_live_failed">实时字幕失败</string>
+    <string name="record_live_unavailable_short">实时字幕不可用</string>
+    <string name="device_fallback_name">Android 手机</string>
+    <string name="record_live_disconnected">实时字幕已断开</string>
+
+    <!-- 手机数据 -->
+    <string name="phone_title">手机数据</string>
+    <string name="phone_what_to_share">共享内容</string>
+    <string name="phone_delete_title">删除服务器副本？</string>
+    <string name="phone_delete_body">将删除本机已同步到服务器的全部记录。设备仍保持注册，下次同步会重新上传已选范围。</string>
+    <string name="phone_read_first">请先阅读</string>
+    <string name="phone_read_first_body">你在这里开启的内容都会离开本机。Winnie 服务器以明文存入数据库，以便助手读取和检索，并按服务器配置的保留期限保存。请使用你自控的服务器，通过 HTTPS 或自己的网络访问。</string>
+    <string name="phone_read_first_sideload">此版本仅供个人侧载使用。Google Play 限制读取短信或通话记录的应用。</string>
+    <string name="phone_sync">同步</string>
+    <string name="phone_last_sync">上次同步：%1$s</string>
+    <string name="phone_sync_policy">Winnie 运行期间每 5 秒检查一次变更，只上传有变化的内容。应用关闭后，后台任务仍每 %1$d 分钟同步一次。</string>
+    <string name="phone_device_on_server">服务器上的设备：%1$s</string>
+    <string name="phone_stored">已存：%1$s</string>
+    <string name="phone_sync_now">立即同步</string>
+    <string name="phone_syncing">同步中…</string>
+    <string name="phone_special_access">特殊权限</string>
+    <string name="phone_special_access_hint">这两项需要在系统设置中授权，而不是普通权限弹窗。</string>
+    <string name="phone_notification_access">通知使用权</string>
+    <string name="phone_location_background">后台位置</string>
+    <string name="phone_server_copies">服务器副本</string>
+    <string name="phone_not_synced">本机尚未同步。</string>
+    <string name="phone_delete_server">删除服务器数据</string>
+    <string name="phone_scope_off_note">关闭某个范围只会停止后续上传，不会删除服务器已有的数据。如需删除请用“删除服务器数据”。服务器也会按自身的保留策略过期记录。</string>
+    <string name="session_restore_failed">无法恢复会话：%1$s</string>
+    <string name="phone_message_choose_scope">请先在下方选择至少一个范围再开始同步。</string>
+    <string name="phone_message_enabled">同步已开启。</string>
+    <string name="phone_message_paused">同步已暂停，不会上传任何内容。</string>
+    <string name="phone_message_scope_enabled">%1$s 已开始共享，首次同步已排队。</string>
+    <string name="phone_message_scope_disabled">%1$s 已停止共享，服务器副本需手动删除。</string>
+    <string name="phone_message_scope_blocked">%1$s：%2$s</string>
+    <string name="phone_message_needs_permission">%1$s 需要权限才能同步。请在系统设置中授予后重新开启。</string>
+    <string name="phone_message_nothing_to_sync">没有可同步的内容：请先开启一个范围。</string>
+    <string name="phone_message_session_expired">会话已过期，请重新登录。</string>
+    <string name="phone_message_network_retry">网络不可用，后台同步会重试。</string>
+    <string name="phone_message_commands_failed">命令：%1$s</string>
+    <string name="phone_message_nothing_new">没有新的内容需要上传。</string>
+    <string name="phone_message_not_synced">本机尚未同步。</string>
+    <string name="phone_message_deleted">服务器副本已删除，下次同步会重新上传已选范围。</string>
+    <string name="phone_message_delete_failed">删除失败：%1$s</string>
+    <plurals name="phone_synced_records">
+        <item quantity="other">已同步 %1$d 条记录。</item>
+    </plurals>
+    <plurals name="phone_synced_commands">
+        <item quantity="other">执行了 %1$d 条命令。</item>
+    </plurals>
+    <plurals name="phone_device_and_actions">
+        <item quantity="other">%1$s · %2$d 个待执行的助手操作</item>
+    </plurals>
+
+    <!-- 手机范围 -->
+    <string name="scope_calendar_title">日历</string>
+    <string name="scope_calendar_description">读取日程；你确认后助手可以新增、修改或删除日程。</string>
+    <string name="scope_call_title">通话记录</string>
+    <string name="scope_call_description">来电、去电、未接和拒接记录，含通话时长。</string>
+    <string name="scope_message_title">短信</string>
+    <string name="scope_message_description">文本短信。只有在对话中确认后，助手才能发送。</string>
+    <string name="scope_contact_title">联系人</string>
+    <string name="scope_contact_description">姓名、电话号码、邮箱和组织信息。</string>
+    <string name="scope_notification_title">通知</string>
+    <string name="scope_notification_description">各应用的通知内容，包括验证码。</string>
+    <string name="scope_location_title">位置</string>
+    <string name="scope_location_description">每隔几分钟记录一次位置。记录轨迹需要后台位置权限。</string>
+    <string name="scope_app_title">已安装应用</string>
+    <string name="scope_app_description">包名、版本、安装日期和系统标记。</string>
+    <string name="scope_device_title">设备信息</string>
+    <string name="scope_device_description">型号、Android 版本、电量、存储、网络、SIM 卡和账户。</string>
+
+    <!-- 提醒 / 后台连接 -->
+    <string name="alerts_title">提醒与后台连接</string>
+    <string name="alerts_how_title">工作原理</string>
+    <string name="alerts_how_body">Winnie 通过一个前台服务保持一条连接，提醒或任务结果无需轮询即可送达。连接期间 Android 会显示一条常驻的低优先级通知，并消耗少量电量。</string>
+    <string name="alerts_no_vendor">没有使用 Google 或厂商推送：连接建立在这台手机和你自己的 Winnie 服务器之间，因此需要前台服务。</string>
+    <string name="alerts_connection">后台连接</string>
+    <string name="alerts_state_off">已关闭 — 不会收到提醒</string>
+    <string name="alerts_state_connected">已连接</string>
+    <string name="alerts_state_connecting">连接中…</string>
+    <string name="alerts_state_signed_out">未登录</string>
+    <string name="alerts_state_blocked">无法在后台启动</string>
+    <string name="alerts_state_stopped">已停止</string>
+    <string name="alerts_state_disconnected">已断开</string>
+    <string name="alerts_last_event">最近事件：%1$s · 游标 %2$d</string>
+    <string name="alerts_check_title">验证连接</string>
+    <string name="alerts_check_body">服务器会向此账户发布一条通知。连接正常时会立即送达；连接断开时会在下次连接后从积压中补发。</string>
+    <string name="alerts_test_title">测试通知</string>
+    <string name="alerts_test_body">如果你能看到这条通知，说明后台连接正常。</string>
+    <string name="alerts_send_test">发送测试通知</string>
+    <string name="alerts_permissions">设备权限</string>
+    <string name="alerts_notifications">通知</string>
+    <string name="alerts_notifications_allowed">已允许</string>
+    <string name="alerts_notifications_blocked">已屏蔽 — 无法显示提醒</string>
+    <string name="alerts_battery">电池优化</string>
+    <string name="alerts_battery_unrestricted">Winnie 不受限制</string>
+    <string name="alerts_battery_optimized">已优化 — 部分机型会杀掉连接</string>
+    <string name="alerts_unrestrict">取消限制</string>
+    <string name="alerts_server">服务器端</string>
+    <string name="alerts_server_counts">已连接设备：%1$d · 待发通知：%2$d</string>
+    <string name="alerts_server_body">通知会先存储再发送，因此离线的手机会在下次连接时收到。服务器按配置的保留期限保存。</string>
+    <string name="alerts_troubleshoot">如果提醒不再到达，请打开一次应用。部分厂商会积极终止后台服务（即使已关闭电池优化），而开机广播要等系统启动完成后才能重启服务。</string>
+    <string name="alerts_message_start_failed">无法启动后台服务。</string>
+    <string name="alerts_message_starting">后台连接正在启动。</string>
+    <string name="alerts_message_stopped">后台连接已停止，你将收不到提醒。</string>
+    <string name="alerts_message_test_sent">测试通知已发布。连接正常时应立即到达。</string>
+    <string name="alerts_message_test_failed">发送测试失败：%1$s</string>
+    <string name="alerts_message_blocked">通知已被屏蔽。连接仍可运行，但在允许通知前不会显示提醒。</string>
+    <string name="alerts_error_expired">会话已过期，请重新登录。</string>
+    <string name="alerts_error_revoked">此手机已在服务器上被撤销。</string>
+    <string name="alerts_error_failed">连接失败。</string>
+    <string name="alerts_error_closed">连接已关闭。</string>
+    <string name="alerts_sign_in">登录后即可接收提醒。</string>
+    <string name="alerts_settings">设置</string>
+
+    <!-- 通知 -->
+    <string name="notif_channel_background">后台连接</string>
+    <string name="notif_channel_background_description">保持 Winnie 可被触达的常驻通知。</string>
+    <string name="notif_channel_alerts">Winnie 提醒</string>
+    <string name="notif_channel_alerts_description">Winnie 的提醒和结果。</string>
+    <string name="notif_foreground_title">Winnie 正在监听</string>
+    <string name="notif_foreground_text">显示此通知期间可以收到提醒。</string>
+    <string name="notif_stop">停止</string>
+    <string name="notif_default_title">Winnie</string>
+
+    <!-- 聊天 -->
+    <string name="chat_title">Winnie</string>
+    <string name="chat_answer_anything">问 Winnie 任何事</string>
+    <string name="chat_empty_body">会议、日程、手机数据或网络信息都可以问。回复以 Markdown 渲染，列表、代码和链接都能正常显示。</string>
+    <string name="chat_suggestion_schedule">今天有什么安排？</string>
+    <string name="chat_suggestion_meeting">总结我最近的会议</string>
+    <string name="chat_suggestion_phone">我手机上有哪些新消息？</string>
+    <string name="chat_message_hint">给 Winnie 发消息…</string>
+    <string name="chat_thinking">Winnie 正在思考…</string>
+    <string name="chat_used_tools">使用了 %1$s</string>
+    <string name="chat_tool">工具 · %1$s</string>
+    <string name="chat_tool_result">结果</string>
+    <string name="chat_history_description">会话历史</string>
+    <string name="chat_new_chat_description">新对话</string>
+    <string name="chat_read_only">这是一次定时任务的记录。请开始新对话后回复。</string>
+    <string name="chat_history_title">会话</string>
+    <string name="chat_start_new">开始新对话</string>
+    <string name="chat_no_conversations">还没有会话。发送一条消息即可开始。</string>
+    <string name="chat_open">当前</string>
+    <string name="chat_scheduled_read_only">定时任务 · 只读</string>
+    <string name="chat_untitled">未命名会话</string>
+    <plurals name="chat_message_count">
+        <item quantity="other">%1$d 条消息</item>
+    </plurals>
+    <string name="chat_no_messages">没有消息</string>
+
+    <!-- 账户 -->
+    <string name="account_title">账户</string>
+    <string name="account_this_device">本机</string>
+    <string name="account_alerts">提醒与后台连接</string>
+    <string name="account_alerts_subtitle">提醒和自托管的通知流</string>
+    <string name="account_saved_password">已保存的密码</string>
+    <string name="account_password_saved">已用本机 Keystore 中的密钥加密</string>
+    <string name="account_password_not_saved">未保存。在登录页勾选“记住用户名和密码”。</string>
+    <string name="account_forget">清除</string>
+    <string name="account_about">关于</string>
+    <string name="account_app_name">Winnie Android 版</string>
+    <string name="account_sign_out">退出登录</string>
+    <string name="account_sign_out_title">退出登录？</string>
+    <string name="account_sign_out_body_saved">会从本机删除会话令牌。已保存的用户名和密码会保留，下次可一键登录。</string>
+    <string name="account_sign_out_body_unsigned">会从本机删除会话令牌。用户名仍保留在表单中，密码未保存。</string>
+    <string name="account_forget_title">清除已保存的密码？</string>
+    <string name="account_forget_body">下次登录时需要重新输入用户名和密码。</string>
+
+</resources>

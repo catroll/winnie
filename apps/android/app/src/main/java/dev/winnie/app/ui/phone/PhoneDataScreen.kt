@@ -43,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -97,7 +99,7 @@ fun PhoneDataScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Phone data",
+                        text = stringResource(R.string.phone_title),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -107,7 +109,7 @@ fun PhoneDataScreen(
                     IconButton(onClick = viewModel::refresh) {
                         Icon(
                             painterResource(R.drawable.ic_refresh),
-                            contentDescription = "Refresh",
+                            contentDescription = stringResource(R.string.common_refresh),
                         )
                     }
                 },
@@ -130,7 +132,7 @@ fun PhoneDataScreen(
                     onSyncNow = viewModel::syncNow,
                 )
             }
-            item { SectionTitle("What to share") }
+            item { SectionTitle(stringResource(R.string.phone_what_to_share)) }
             items(ui.scopes, key = { it.scope.key }) { item ->
                 ScopeRow(
                     item = item,
@@ -168,24 +170,20 @@ fun PhoneDataScreen(
     if (confirmWipe) {
         AlertDialog(
             onDismissRequest = { confirmWipe = false },
-            title = { Text("Delete server copies?") },
-            text = {
-                Text(
-                    "Every synced record for this phone is deleted from the server. " +
-                        "The phone stays registered and the next sync uploads the " +
-                        "selected scopes again."
-                )
-            },
+            title = { Text(stringResource(R.string.phone_delete_title)) },
+            text = { Text(stringResource(R.string.phone_delete_body)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         confirmWipe = false
                         viewModel.wipeServerData()
                     },
-                ) { Text("Delete") }
+                ) { Text(stringResource(R.string.common_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmWipe = false }) { Text("Cancel") }
+                TextButton(onClick = { confirmWipe = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
         )
     }
@@ -198,20 +196,15 @@ private fun PrivacyNotice() {
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("Read this first", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.phone_read_first), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Everything you enable here leaves this phone. The Winnie server " +
-                    "stores it in clear text in its database so the assistant can " +
-                    "read and search it, and keeps it for the retention window " +
-                    "configured on the server. Use a server you control, over HTTPS " +
-                    "or your own network.",
+                stringResource(R.string.phone_read_first_body),
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "This build is for personal sideloading. Google Play restricts apps " +
-                    "that read SMS or the call log.",
+                stringResource(R.string.phone_read_first_sideload),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -229,9 +222,14 @@ private fun SyncCard(
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Sync", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.phone_sync), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Last sync: ${ui.lastSyncLabel}",
+                        stringResource(R.string.phone_last_sync, ui.lastSyncLabel),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        stringResource(R.string.phone_sync_policy, ui.intervalMinutes),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -248,15 +246,16 @@ private fun SyncCard(
             if (ui.deviceName.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Device on server: ${ui.deviceName}",
+                    stringResource(R.string.phone_device_on_server, ui.deviceName),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             if (ui.counts.isNotEmpty()) {
                 Text(
-                    "Stored: " + ui.counts.entries.joinToString(" · ") {
-                        "${it.key} ${it.value}"
-                    },
+                    stringResource(
+                        R.string.phone_stored,
+                        ui.counts.entries.joinToString(" · ") { "${it.key} ${it.value}" },
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -275,7 +274,11 @@ private fun SyncCard(
                     onClick = onSyncNow,
                     enabled = ui.master && !ui.running,
                 ) {
-                    Text(if (ui.running) "Syncing…" else "Sync now")
+                    Text(
+                        stringResource(
+                            if (ui.running) R.string.phone_syncing else R.string.phone_sync_now,
+                        ),
+                    )
                 }
                 if (ui.running) {
                     Spacer(Modifier.width(12.dp))
@@ -304,9 +307,12 @@ private fun ScopeRow(item: PhoneScopeUi, onToggle: (Boolean) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(item.scope.title, style = MaterialTheme.typography.titleSmall)
                 Text(
-                    item.scope.description,
+                    stringResource(item.scope.titleRes),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    stringResource(item.scope.descriptionRes),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
@@ -332,24 +338,24 @@ private fun SpecialAccessCard(context: Context) {
     val backgroundLocation = PhonePermissions.backgroundLocation(context)
     Card {
         Column(Modifier.padding(16.dp)) {
-            Text("Special access", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.phone_special_access), style = MaterialTheme.typography.titleMedium)
             Text(
-                "These two are granted in system settings, not with a normal permission prompt.",
+                stringResource(R.string.phone_special_access_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
             AccessRow(
-                title = "Notification access",
+                title = stringResource(R.string.phone_notification_access),
                 granted = notificationAccess,
-                action = "Open settings",
+                action = stringResource(R.string.common_open_settings),
                 onOpen = { openNotificationSettings(context) },
             )
             HorizontalDivider()
             AccessRow(
-                title = "Location in the background",
+                title = stringResource(R.string.phone_location_background),
                 granted = backgroundLocation,
-                action = "Open settings",
+                action = stringResource(R.string.common_open_settings),
                 onOpen = { openAppSettings(context) },
             )
         }
@@ -372,7 +378,9 @@ private fun AccessRow(
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
             Text(
-                if (granted) "Granted" else "Not granted",
+                stringResource(
+                    if (granted) R.string.common_granted else R.string.common_not_granted,
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (granted) {
                     MaterialTheme.colorScheme.primary
@@ -393,18 +401,25 @@ private fun DangerCard(
 ) {
     Card {
         Column(Modifier.padding(16.dp)) {
-            Text("Server copies", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.phone_server_copies), style = MaterialTheme.typography.titleMedium)
             Text(
                 if (deviceName.isBlank()) {
-                    "This phone has not synced yet."
+                    stringResource(R.string.phone_not_synced)
                 } else {
-                    "$deviceName · $pendingCommands pending assistant action(s)"
+                    pluralStringResource(
+                        R.plurals.phone_device_and_actions,
+                        pendingCommands,
+                        deviceName,
+                        pendingCommands,
+                    )
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
-            OutlinedButton(onClick = onWipe) { Text("Delete data on server") }
+            OutlinedButton(onClick = onWipe) {
+                Text(stringResource(R.string.phone_delete_server))
+            }
         }
     }
 }
@@ -412,9 +427,7 @@ private fun DangerCard(
 @Composable
 private fun RetentionNote() {
     Text(
-        "Turning a scope off stops future uploads but does not remove what the " +
-            "server already has. Use \"Delete data on server\" for that. The server " +
-            "also expires records on its own retention schedule.",
+        stringResource(R.string.phone_scope_off_note),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

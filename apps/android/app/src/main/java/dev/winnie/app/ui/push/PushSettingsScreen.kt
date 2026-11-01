@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -81,7 +82,7 @@ fun PushSettingsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Alerts & background",
+                        text = stringResource(R.string.alerts_title),
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
@@ -96,7 +97,7 @@ fun PushSettingsScreen(
                     IconButton(onClick = viewModel::refresh) {
                         Icon(
                             painterResource(R.drawable.ic_refresh),
-                            contentDescription = "Refresh",
+                            contentDescription = stringResource(R.string.common_refresh),
                         )
                     }
                 },
@@ -155,20 +156,15 @@ private fun Explanation() {
         shape = MaterialTheme.shapes.medium,
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text("How this works", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.alerts_how_title), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Winnie keeps one connection open from a foreground service so a " +
-                    "reminder or a finished task reaches you without polling. " +
-                    "Android shows a persistent, low-priority notification while " +
-                    "that connection runs, and it costs some battery.",
+                stringResource(R.string.alerts_how_body),
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "There is no Google or vendor push service: the connection is " +
-                    "between this phone and your Winnie server. That is why it " +
-                    "needs the foreground service.",
+                stringResource(R.string.alerts_no_vendor),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -181,9 +177,12 @@ private fun ConnectionCard(ui: PushSettingsUi, onToggle: (Boolean) -> Unit) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Background connection", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        statusLabel(ui),
+                        stringResource(R.string.alerts_connection),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        connectionStatusLabel(ui),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (ui.connection == "connected") {
                             MaterialTheme.colorScheme.primary
@@ -203,7 +202,7 @@ private fun ConnectionCard(ui: PushSettingsUi, onToggle: (Boolean) -> Unit) {
                 )
             }
             Text(
-                "Last event: ${ui.lastEventLabel} · cursor ${ui.lastSeq}",
+                stringResource(R.string.alerts_last_event, ui.lastEventLabel, ui.lastSeq),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -215,16 +214,16 @@ private fun ConnectionCard(ui: PushSettingsUi, onToggle: (Boolean) -> Unit) {
 private fun TestCard(ui: PushSettingsUi, onSend: () -> Unit) {
     Card {
         Column(Modifier.padding(16.dp)) {
-            Text("Check it", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.alerts_check_title), style = MaterialTheme.typography.titleMedium)
             Text(
-                "The server publishes a notification to this account. It arrives " +
-                    "immediately when the connection is up, and from the backlog on " +
-                    "the next connect if it is not.",
+                stringResource(R.string.alerts_check_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
-            Button(onClick = onSend, enabled = ui.enabled) { Text("Send test notification") }
+            Button(onClick = onSend, enabled = ui.enabled) {
+                Text(stringResource(R.string.alerts_send_test))
+            }
         }
     }
 }
@@ -237,27 +236,34 @@ private fun PermissionCard(
 ) {
     Card {
         Column(Modifier.padding(16.dp)) {
-            Text("Device permissions", style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.alerts_permissions),
+                style = MaterialTheme.typography.titleMedium,
+            )
             PermissionRow(
-                title = "Notifications",
-                detail = if (ui.notificationsAllowed) {
-                    "Allowed"
-                } else {
-                    "Blocked — alerts cannot be shown"
-                },
+                title = stringResource(R.string.alerts_notifications),
+                detail = stringResource(
+                    if (ui.notificationsAllowed) {
+                        R.string.alerts_notifications_allowed
+                    } else {
+                        R.string.alerts_notifications_blocked
+                    },
+                ),
                 ok = ui.notificationsAllowed,
-                action = "Settings",
+                action = stringResource(R.string.alerts_settings),
                 onOpen = onOpenNotificationSettings,
             )
             PermissionRow(
-                title = "Battery optimization",
-                detail = if (ui.batteryUnrestricted) {
-                    "Winnie is unrestricted"
-                } else {
-                    "Optimized — some phones will kill the connection"
-                },
+                title = stringResource(R.string.alerts_battery),
+                detail = stringResource(
+                    if (ui.batteryUnrestricted) {
+                        R.string.alerts_battery_unrestricted
+                    } else {
+                        R.string.alerts_battery_optimized
+                    },
+                ),
                 ok = ui.batteryUnrestricted,
-                action = "Unrestrict",
+                action = stringResource(R.string.alerts_unrestrict),
                 onOpen = onOpenBatterySettings,
             )
         }
@@ -298,16 +304,18 @@ private fun PermissionRow(
 private fun ServerCard(ui: PushSettingsUi) {
     Card {
         Column(Modifier.padding(16.dp)) {
-            Text("Server side", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.alerts_server), style = MaterialTheme.typography.titleMedium)
             Text(
-                "Connected devices: ${ui.serverConnected} · pending notifications: ${ui.pending}",
+                stringResource(
+                    R.string.alerts_server_counts,
+                    ui.serverConnected,
+                    ui.pending,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "A notification is stored before it is sent, so a phone that was " +
-                    "offline still receives it on the next connect. The server keeps " +
-                    "it for the configured retention window.",
+                stringResource(R.string.alerts_server_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -318,24 +326,22 @@ private fun ServerCard(ui: PushSettingsUi) {
 @Composable
 private fun BackgroundNote() {
     Text(
-        "If reminders stop arriving, open the app once. Some vendors end " +
-            "background services aggressively even with battery optimization " +
-            "disabled, and the boot receiver cannot restart the service until the " +
-            "phone finishes booting.",
+        stringResource(R.string.alerts_troubleshoot),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
-private fun statusLabel(ui: PushSettingsUi): String {
-    if (!ui.enabled) return "Off — no reminders"
+@Composable
+private fun connectionStatusLabel(ui: PushSettingsUi): String {
+    if (!ui.enabled) return stringResource(R.string.alerts_state_off)
     return when (ui.connection) {
-        "connected" -> "Connected"
-        "connecting" -> "Connecting…"
-        "signed out" -> "Signed out"
-        "blocked" -> "Could not start in the background"
-        "stopped" -> "Stopped"
-        else -> "Disconnected"
+        "connected" -> stringResource(R.string.alerts_state_connected)
+        "connecting" -> stringResource(R.string.alerts_state_connecting)
+        "signed out" -> stringResource(R.string.alerts_state_signed_out)
+        "blocked" -> stringResource(R.string.alerts_state_blocked)
+        "stopped" -> stringResource(R.string.alerts_state_stopped)
+        else -> stringResource(R.string.alerts_state_disconnected)
     }
 }
 

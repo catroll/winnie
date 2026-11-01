@@ -2,6 +2,8 @@ package dev.winnie.app.ui.meeting
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.data.Meeting
 import dev.winnie.app.data.Minutes
 import dev.winnie.app.data.Segment
@@ -78,15 +80,17 @@ class MeetingViewModel(
 
         if (meeting.isFailed) {
             _state.update {
-                it.copy(error = meeting.error ?: "Processing failed.")
+                it.copy(
+                    error = meeting.error
+                        ?: AppStrings.get(R.string.meeting_processing_failed),
+                )
             }
             return
         }
         if (!meeting.isReady) {
             _state.update {
                 it.copy(
-                    error = "Processing is taking longer than expected. " +
-                        "Refresh when it finishes.",
+                    error = AppStrings.get(R.string.meeting_processing_slow),
                 )
             }
             return

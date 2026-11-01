@@ -2,6 +2,7 @@ package dev.winnie.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
@@ -17,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -40,11 +42,11 @@ import dev.winnie.app.ui.record.RecordScreen
  * top of them. Four text actions used to share the app bar with the title, which
  * is what squeezed "Winnie" onto two lines; each destination now owns a tab.
  */
-enum class SignedInTab(val label: String, @DrawableRes val icon: Int) {
-    Chat("Chat", R.drawable.ic_chat),
-    Meetings("Meetings", R.drawable.ic_meetings),
-    Phone("Phone", R.drawable.ic_phone_data),
-    Account("Account", R.drawable.ic_account),
+enum class SignedInTab(@StringRes val labelRes: Int, @DrawableRes val icon: Int) {
+    Chat(R.string.tab_chat, R.drawable.ic_chat),
+    Meetings(R.string.tab_meetings, R.drawable.ic_meetings),
+    Phone(R.string.tab_phone, R.drawable.ic_phone_data),
+    Account(R.string.tab_account, R.drawable.ic_account),
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -197,7 +199,7 @@ internal fun WinnieNavBar(
                         contentDescription = null,
                     )
                 },
-                label = { Text(destination.label) },
+                label = { Text(stringResource(destination.labelRes)) },
             )
         }
     }

@@ -21,14 +21,17 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 
 /**
- * Schedules syncs.
+ * Schedules the background syncs that outlive the app process.
  *
  * `configure` keeps one periodic worker at the server's interval (never below
- * Android's 15-minute minimum) and is idempotent: the sync engine calls it after
- * every run, so a changed server interval takes effect without a restart.
- * `requestSync` debounces a one-shot run when data changes or a notification
- * arrives; content observers only fire while the process is alive, which is why
- * the periodic worker is the real safety net.
+ * Android's 15-minute minimum) and is idempotent: a full sync calls it, so a
+ * changed server interval takes effect without a restart.
+ *
+ * `requestSync` is the one-shot path for an explicit action — a scope toggle or
+ * enabling sync — that must land even if the process is about to die. The
+ * routine 5-second work is [PhoneSyncLoop], which is started with the process;
+ * the content observers below only mark a scope dirty and wake that loop, so the
+ * process no longer enqueues a worker for every row of a calendar edit.
  */
 object PhoneSyncScheduler {
 
@@ -82,21 +85,24 @@ object PhoneSyncScheduler {
     }
 
     /**
-     * Watches the four databases the app copies. Registering does not need the
-     * read permission, and the sync engine checks the enabled scopes anyway,
-     * so a later scope change needs no re-registration.
+     * Watches the four databases the app copies. A change marks the scope dirty
+     * and wakes the 5-second loop, which reads only that scope. It is a cheap
+     * in-process signal, not a WorkManager job: enqueueing a worker per row was
+     * both slower and more expensive than the loop that now exists.
+     *
+     * Registering does not need the read permission; the loop checks the enabled
+     * scopes anyway, so a later scope change needs no re-registration.
      */
     fun registerObservers(context: Context) {
         if (registered) return
         val handler = Handler(Looper.getMainLooper())
-        val trigger = Runnable { requestSync(context, 3) }
         val resolver: ContentResolver = context.contentResolver
 
-        fun observe(uri: Uri) {
+        fun observe(uri: Uri, scope: PhoneScope) {
             val observer = object : ContentObserver(handler) {
                 override fun onChange(selfChange: Boolean, uri: Uri?) {
-                    handler.removeCallbacks(trigger)
-                    handler.postDelayed(trigger, 3000)
+                    PhoneChangeFlags.mark(scope)
+                    PhoneSyncLoop.wake()
                 }
             }
             try {
@@ -108,10 +114,10 @@ object PhoneSyncScheduler {
             }
         }
 
-        observe(Telephony.Sms.CONTENT_URI)
-        observe(CallLog.Calls.CONTENT_URI)
-        observe(CalendarContract.Events.CONTENT_URI)
-        observe(ContactsContract.Contacts.CONTENT_URI)
+        observe(Telephony.Sms.CONTENT_URI, PhoneScope.MESSAGES)
+        observe(CallLog.Calls.CONTENT_URI, PhoneScope.CALLS)
+        observe(CalendarContract.Events.CONTENT_URI, PhoneScope.CALENDAR)
+        observe(ContactsContract.Contacts.CONTENT_URI, PhoneScope.CONTACTS)
         registered = true
     }
 

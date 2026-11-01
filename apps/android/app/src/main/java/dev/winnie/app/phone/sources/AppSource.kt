@@ -53,4 +53,26 @@ class AppSource(private val context: Context) {
             )
         }.sortedBy { it.label.lowercase() }
     }
+
+    /**
+     * Count plus the newest update time. The package manager query is the
+     * expensive part, which is why the 5-second loop only runs this check on the
+     * apps cadence (or when the app list is explicitly refreshed).
+     */
+    fun fingerprint(): String? {
+        val manager = context.packageManager
+        val packages = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                manager.getInstalledPackages(PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                manager.getInstalledPackages(0)
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        var newest = 0L
+        packages.forEach { newest = maxOf(newest, it.lastUpdateTime) }
+        return "count:${packages.size}:updated:$newest"
+    }
 }

@@ -7,10 +7,12 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.ServiceCompat
 import dev.winnie.app.AppContainer
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.WinnieApplication
 import dev.winnie.app.data.PushEvent
 import dev.winnie.app.data.WinnieApi
-import dev.winnie.app.phone.PhoneSyncScheduler
+import dev.winnie.app.phone.PhoneSyncLoop
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -105,7 +107,7 @@ class WinniePushService : Service() {
             val api = container.phoneApi()
             if (api == null) {
                 connecting = false
-                updateStatus("signed out", "Sign in to receive reminders.")
+                updateStatus("signed out", AppStrings.get(R.string.alerts_sign_in))
                 scheduleReconnect()
                 return@launch
             }
@@ -150,9 +152,10 @@ class WinniePushService : Service() {
             connecting = false
             socket = null
             val error = when (response?.code) {
-                401 -> "The session expired. Sign in again."
-                403 -> "This phone is revoked on the server."
-                else -> t.message?.takeIf { it.isNotBlank() } ?: "Connection failed."
+                401 -> AppStrings.get(R.string.alerts_error_expired)
+                403 -> AppStrings.get(R.string.alerts_error_revoked)
+                else -> t.message?.takeIf { it.isNotBlank() }
+                    ?: AppStrings.get(R.string.alerts_error_failed)
             }
             updateStatus("disconnected", error)
             scheduleReconnect()
@@ -162,7 +165,10 @@ class WinniePushService : Service() {
             connecting = false
             socket = null
             if (closing) return
-            updateStatus("disconnected", reason.ifBlank { "Connection closed." })
+            updateStatus(
+                "disconnected",
+                reason.ifBlank { AppStrings.get(R.string.alerts_error_closed) },
+            )
             scheduleReconnect()
         }
     }
@@ -187,9 +193,9 @@ class WinniePushService : Service() {
 
     private fun route(event: PushEvent) {
         when (val action = pushActionFor(event)) {
-            // A confirmed phone command: run the sync now instead of waiting
-            // for the periodic worker.
-            PushAction.RunSync -> PhoneSyncScheduler.requestSync(this, delaySeconds = 0)
+            // A confirmed phone command: check for it now instead of waiting
+            // for the command cadence.
+            PushAction.RunSync -> PhoneSyncLoop.wake(forceCommands = true)
             is PushAction.ShowNotification -> PushNotifications.show(this, action.event)
             PushAction.Ignore -> Unit
         }

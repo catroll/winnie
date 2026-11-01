@@ -1,4 +1,294 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  English is the default resource set; values-zh/strings.xml is the Chinese
+  translation and must keep every key. The app follows the system locale.
+-->
 <resources>
+
     <string name="app_name">Winnie</string>
+
+    <!-- Shared -->
+    <string name="common_back">Back</string>
+    <string name="common_refresh">Refresh</string>
+    <string name="common_retry">Retry</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_dismiss">Dismiss</string>
+    <string name="common_show">Show</string>
+    <string name="common_hide">Hide</string>
+    <string name="common_send">Send</string>
+    <string name="common_never">never</string>
+    <string name="common_unknown_error">unknown error</string>
+    <string name="common_open_settings">Open settings</string>
+    <string name="common_granted">Granted</string>
+    <string name="common_not_granted">Not granted</string>
+    <string name="common_new_chat">New chat</string>
+    <string name="common_permission_needed">Permission needed</string>
+    <string name="common_notification_access_needed">Notification access needed</string>
+
+    <!-- Bottom navigation -->
+    <string name="tab_chat">Chat</string>
+    <string name="tab_meetings">Meetings</string>
+    <string name="tab_phone">Phone</string>
+    <string name="tab_account">Account</string>
+
+    <!-- Login -->
+    <string name="login_tagline">Your assistant, your meetings, your data.</string>
+    <string name="login_server">Server address</string>
+    <string name="login_server_hint">Default: %1$s. Change it for your network.</string>
+    <string name="login_username">Username</string>
+    <string name="login_password">Password</string>
+    <string name="login_show_password">Show password</string>
+    <string name="login_hide_password">Hide password</string>
+    <string name="login_remember">Remember username and password</string>
+    <string name="login_remember_hint">Saved encrypted on this phone; turn it off to forget them.</string>
+    <string name="login_sign_in">Sign in</string>
+    <string name="login_create_account">Create account</string>
+    <string name="login_switch_register">Create the first account</string>
+    <string name="login_switch_login">I already have an account</string>
+    <string name="login_need_server">Enter the Winnie server address.</string>
+    <string name="login_need_username">Enter a username.</string>
+    <string name="login_need_password">Enter a password.</string>
+    <string name="login_need_password_length">Passwords need at least 8 characters.</string>
+
+    <!-- Errors -->
+    <string name="error_invalid_credentials">Invalid username or password.</string>
+    <string name="error_recording_too_large">The recording is too large for the server.</string>
+    <string name="error_too_many_attempts">Too many attempts. Try again in a few minutes.</string>
+    <string name="error_http_status">The server returned HTTP %1$d.</string>
+    <string name="error_server_not_found">Server not found. Check the address.</string>
+    <string name="error_could_not_connect">Could not connect to the server. Check the address and that Winnie is running.</string>
+    <string name="error_timeout">The server took too long to respond.</string>
+    <string name="error_network">Network error.</string>
+
+    <!-- Meeting status -->
+    <string name="status_draft">Draft</string>
+    <string name="status_uploaded">Uploaded</string>
+    <string name="status_queued">Queued</string>
+    <string name="status_transcribing">Transcribing</string>
+    <string name="status_transcribed">Transcribed</string>
+    <string name="status_translating">Translating</string>
+    <string name="status_writing_minutes">Writing minutes</string>
+    <string name="status_ready">Ready</string>
+    <string name="status_failed">Failed</string>
+
+    <!-- Meetings list -->
+    <string name="meetings_title">Meetings</string>
+    <string name="meetings_record">Record</string>
+    <string name="meetings_empty">No meetings yet. Tap Record to make one.</string>
+
+    <!-- Meeting detail -->
+    <string name="meeting_fallback_title">Meeting</string>
+    <string name="meeting_load_failed">The meeting could not be loaded.</string>
+    <string name="meeting_processing">Processing: %1$s</string>
+    <string name="meeting_transcript">Transcript</string>
+    <string name="meeting_no_transcript">No transcript was returned.</string>
+    <string name="meeting_minutes">Minutes</string>
+    <string name="meeting_topics">Topics</string>
+    <string name="meeting_decisions">Decisions</string>
+    <string name="meeting_action_items">Action items</string>
+    <string name="meeting_owner">Owner: %1$s</string>
+    <string name="meeting_due">Due: %1$s</string>
+    <string name="meeting_processing_failed">Processing failed.</string>
+    <string name="meeting_processing_slow">Processing is taking longer than expected. Refresh when it finishes.</string>
+
+    <!-- Recorder -->
+    <string name="record_new_meeting">New meeting</string>
+    <string name="record_close">Close</string>
+    <string name="record_start_title">Record a meeting</string>
+    <string name="record_description">Audio is recorded at 16 kHz mono. Live captions stream while you record; the file is transcribed again on stop.</string>
+    <string name="record_title">Title</string>
+    <string name="record_mic_required">Microphone permission is required to record.</string>
+    <string name="record_start">Start recording</string>
+    <string name="record_recording">Recording</string>
+    <string name="record_live_captions">Live captions</string>
+    <string name="record_live_stopped">Live captions stopped; the recording is still being saved.</string>
+    <string name="record_connecting">Connecting…</string>
+    <string name="record_listening">Listening…</string>
+    <string name="record_live_unavailable">Live captions are unavailable. The recording will still be transcribed.</string>
+    <string name="record_live_provisional">Live captions are provisional; the recording is transcribed again on stop.</string>
+    <string name="record_stop_transcribe">Stop and transcribe</string>
+    <string name="record_discard">Discard recording</string>
+    <string name="record_keep_open">Keep this screen open until this step finishes.</string>
+    <string name="record_create_failed">The meeting could not be created</string>
+    <string name="record_back_to_start">Back to start</string>
+    <string name="record_default_title">Meeting %1$s</string>
+    <string name="record_creating">Creating the meeting…</string>
+    <string name="record_saving">Saving the recording…</string>
+    <string name="record_uploading">Uploading audio…</string>
+    <string name="record_transcribing">Transcribing and writing minutes…</string>
+    <string name="record_live_failed">live captions failed</string>
+    <string name="record_live_unavailable_short">live captions are unavailable</string>
+    <string name="device_fallback_name">Android phone</string>
+    <string name="record_live_disconnected">live captions disconnected</string>
+
+    <!-- Phone data -->
+    <string name="phone_title">Phone data</string>
+    <string name="phone_what_to_share">What to share</string>
+    <string name="phone_delete_title">Delete server copies?</string>
+    <string name="phone_delete_body">Every synced record for this phone is deleted from the server. The phone stays registered and the next sync uploads the selected scopes again.</string>
+    <string name="phone_read_first">Read this first</string>
+    <string name="phone_read_first_body">Everything you enable here leaves this phone. The Winnie server stores it in clear text in its database so the assistant can read and search it, and keeps it for the retention window configured on the server. Use a server you control, over HTTPS or your own network.</string>
+    <string name="phone_read_first_sideload">This build is for personal sideloading. Google Play restricts apps that read SMS or the call log.</string>
+    <string name="phone_sync">Sync</string>
+    <string name="phone_last_sync">Last sync: %1$s</string>
+    <string name="phone_sync_policy">Checks for changes every 5 seconds while Winnie runs, and uploads only what changed. The background worker still runs every %1$d minutes when the app is closed.</string>
+    <string name="phone_device_on_server">Device on server: %1$s</string>
+    <string name="phone_stored">Stored: %1$s</string>
+    <string name="phone_sync_now">Sync now</string>
+    <string name="phone_syncing">Syncing…</string>
+    <string name="phone_special_access">Special access</string>
+    <string name="phone_special_access_hint">These two are granted in system settings, not with a normal permission prompt.</string>
+    <string name="phone_notification_access">Notification access</string>
+    <string name="phone_location_background">Location in the background</string>
+    <string name="phone_server_copies">Server copies</string>
+    <string name="phone_not_synced">This phone has not synced yet.</string>
+    <string name="phone_delete_server">Delete data on server</string>
+    <string name="phone_scope_off_note">Turning a scope off stops future uploads but does not remove what the server already has. Use \"Delete data on server\" for that. The server also expires records on its own retention schedule.</string>
+    <string name="session_restore_failed">Could not restore the session: %1$s</string>
+    <string name="phone_message_choose_scope">Choose at least one scope below to start syncing.</string>
+    <string name="phone_message_enabled">Sync enabled.</string>
+    <string name="phone_message_paused">Sync paused. Nothing is uploaded.</string>
+    <string name="phone_message_scope_enabled">%1$s is now shared. First sync queued.</string>
+    <string name="phone_message_scope_disabled">%1$s is no longer shared. Server copies stay until deleted.</string>
+    <string name="phone_message_scope_blocked">%1$s: %2$s</string>
+    <string name="phone_message_needs_permission">%1$s needs its permission to sync. Grant it in system settings, then switch it on again.</string>
+    <string name="phone_message_nothing_to_sync">Nothing to sync: enable a scope first.</string>
+    <string name="phone_message_session_expired">The session expired. Sign in again.</string>
+    <string name="phone_message_network_retry">Network unavailable. The background sync will retry.</string>
+    <string name="phone_message_commands_failed">commands: %1$s</string>
+    <string name="phone_message_nothing_new">Nothing new to upload.</string>
+    <string name="phone_message_not_synced">This phone has not synced yet.</string>
+    <string name="phone_message_deleted">Server copies deleted. The next sync uploads the selected scopes again.</string>
+    <string name="phone_message_delete_failed">Could not delete: %1$s</string>
+    <plurals name="phone_synced_records">
+        <item quantity="one">Synced %1$d record.</item>
+        <item quantity="other">Synced %1$d records.</item>
+    </plurals>
+    <plurals name="phone_synced_commands">
+        <item quantity="one">Ran %1$d command.</item>
+        <item quantity="other">Ran %1$d commands.</item>
+    </plurals>
+    <plurals name="phone_device_and_actions">
+        <item quantity="one">%1$s · %2$d pending assistant action</item>
+        <item quantity="other">%1$s · %2$d pending assistant actions</item>
+    </plurals>
+
+    <!-- Phone scopes -->
+    <string name="scope_calendar_title">Calendar</string>
+    <string name="scope_calendar_description">Read events; the assistant can add, change or delete one after you confirm.</string>
+    <string name="scope_call_title">Call log</string>
+    <string name="scope_call_description">Incoming, outgoing, missed and rejected calls with duration.</string>
+    <string name="scope_message_title">SMS</string>
+    <string name="scope_message_description">Text messages. The assistant can send one only after you confirm it in chat.</string>
+    <string name="scope_contact_title">Contacts</string>
+    <string name="scope_contact_description">Names, phone numbers, email addresses and organisation.</string>
+    <string name="scope_notification_title">Notifications</string>
+    <string name="scope_notification_description">What apps notified you about, including verification codes.</string>
+    <string name="scope_location_title">Location</string>
+    <string name="scope_location_description">One position every few minutes. Background access is needed for a trail.</string>
+    <string name="scope_app_title">Installed apps</string>
+    <string name="scope_app_description">Package names, versions, install dates and system flags.</string>
+    <string name="scope_device_title">Device info</string>
+    <string name="scope_device_description">Model, Android version, battery, storage, network, SIM and accounts.</string>
+
+    <!-- Alerts / background connection -->
+    <string name="alerts_title">Alerts &amp; background</string>
+    <string name="alerts_how_title">How this works</string>
+    <string name="alerts_how_body">Winnie keeps one connection open from a foreground service so a reminder or a finished task reaches you without polling. Android shows a persistent, low-priority notification while that connection runs, and it costs some battery.</string>
+    <string name="alerts_no_vendor">There is no Google or vendor push service: the connection is between this phone and your Winnie server. That is why it needs the foreground service.</string>
+    <string name="alerts_connection">Background connection</string>
+    <string name="alerts_state_off">Off — no reminders</string>
+    <string name="alerts_state_connected">Connected</string>
+    <string name="alerts_state_connecting">Connecting…</string>
+    <string name="alerts_state_signed_out">Signed out</string>
+    <string name="alerts_state_blocked">Could not start in the background</string>
+    <string name="alerts_state_stopped">Stopped</string>
+    <string name="alerts_state_disconnected">Disconnected</string>
+    <string name="alerts_last_event">Last event: %1$s · cursor %2$d</string>
+    <string name="alerts_check_title">Check it</string>
+    <string name="alerts_check_body">The server publishes a notification to this account. It arrives immediately when the connection is up, and from the backlog on the next connect if it is not.</string>
+    <string name="alerts_test_title">Test notification</string>
+    <string name="alerts_test_body">If you can see this, the background connection works.</string>
+    <string name="alerts_send_test">Send test notification</string>
+    <string name="alerts_permissions">Device permissions</string>
+    <string name="alerts_notifications">Notifications</string>
+    <string name="alerts_notifications_allowed">Allowed</string>
+    <string name="alerts_notifications_blocked">Blocked — alerts cannot be shown</string>
+    <string name="alerts_battery">Battery optimization</string>
+    <string name="alerts_battery_unrestricted">Winnie is unrestricted</string>
+    <string name="alerts_battery_optimized">Optimized — some phones will kill the connection</string>
+    <string name="alerts_unrestrict">Unrestrict</string>
+    <string name="alerts_server">Server side</string>
+    <string name="alerts_server_counts">Connected devices: %1$d · pending notifications: %2$d</string>
+    <string name="alerts_server_body">A notification is stored before it is sent, so a phone that was offline still receives it on the next connect. The server keeps it for the configured retention window.</string>
+    <string name="alerts_troubleshoot">If reminders stop arriving, open the app once. Some vendors end background services aggressively even with battery optimization disabled, and the boot receiver cannot restart the service until the phone finishes booting.</string>
+    <string name="alerts_message_start_failed">Could not start the background service.</string>
+    <string name="alerts_message_starting">Background connection starting.</string>
+    <string name="alerts_message_stopped">Background connection stopped. You will not receive reminders.</string>
+    <string name="alerts_message_test_sent">Test notification published. It should arrive now while the connection is up.</string>
+    <string name="alerts_message_test_failed">Could not send the test: %1$s</string>
+    <string name="alerts_message_blocked">Notifications are blocked. The connection can run, but alerts will not be shown until you allow them.</string>
+    <string name="alerts_error_expired">The session expired. Sign in again.</string>
+    <string name="alerts_error_revoked">This phone is revoked on the server.</string>
+    <string name="alerts_error_failed">Connection failed.</string>
+    <string name="alerts_error_closed">Connection closed.</string>
+    <string name="alerts_sign_in">Sign in to receive reminders.</string>
+    <string name="alerts_settings">Settings</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_background">Background connection</string>
+    <string name="notif_channel_background_description">The notification that keeps Winnie reachable.</string>
+    <string name="notif_channel_alerts">Winnie alerts</string>
+    <string name="notif_channel_alerts_description">Reminders and results from Winnie.</string>
+    <string name="notif_foreground_title">Winnie is listening</string>
+    <string name="notif_foreground_text">Reminders arrive while this notification is shown.</string>
+    <string name="notif_stop">Stop</string>
+    <string name="notif_default_title">Winnie</string>
+
+    <!-- Chat -->
+    <string name="chat_title">Winnie</string>
+    <string name="chat_answer_anything">Ask Winnie anything</string>
+    <string name="chat_empty_body">Meetings, your schedule, your phone\'s data or the web. Replies are Markdown, so lists, code and links render properly.</string>
+    <string name="chat_suggestion_schedule">What is on my schedule today?</string>
+    <string name="chat_suggestion_meeting">Summarise my latest meeting</string>
+    <string name="chat_suggestion_phone">What did I miss on my phone?</string>
+    <string name="chat_message_hint">Message Winnie…</string>
+    <string name="chat_thinking">Winnie is thinking…</string>
+    <string name="chat_used_tools">Used %1$s</string>
+    <string name="chat_tool">Tool · %1$s</string>
+    <string name="chat_tool_result">result</string>
+    <string name="chat_history_description">Conversation history</string>
+    <string name="chat_new_chat_description">New chat</string>
+    <string name="chat_read_only">This is a scheduled task run. Start a new chat to reply.</string>
+    <string name="chat_history_title">Conversations</string>
+    <string name="chat_start_new">Start a new conversation</string>
+    <string name="chat_no_conversations">No conversations yet. Send a message to start one.</string>
+    <string name="chat_open">Open</string>
+    <string name="chat_scheduled_read_only">Scheduled task · read-only</string>
+    <string name="chat_untitled">Untitled conversation</string>
+    <plurals name="chat_message_count">
+        <item quantity="one">%1$d message</item>
+        <item quantity="other">%1$d messages</item>
+    </plurals>
+    <string name="chat_no_messages">No messages</string>
+
+    <!-- Account -->
+    <string name="account_title">Account</string>
+    <string name="account_this_device">This device</string>
+    <string name="account_alerts">Alerts &amp; background</string>
+    <string name="account_alerts_subtitle">Reminders and the self-hosted notification stream</string>
+    <string name="account_saved_password">Saved password</string>
+    <string name="account_password_saved">Encrypted with a key in this phone\'s Keystore</string>
+    <string name="account_password_not_saved">Not saved. Tick Remember on the sign-in screen.</string>
+    <string name="account_forget">Forget</string>
+    <string name="account_about">About</string>
+    <string name="account_app_name">Winnie for Android</string>
+    <string name="account_sign_out">Sign out</string>
+    <string name="account_sign_out_title">Sign out?</string>
+    <string name="account_sign_out_body_saved">The session token is deleted from this phone. Your saved username and password are kept, so you can sign back in with one tap.</string>
+    <string name="account_sign_out_body_unsigned">The session token is deleted from this phone. Your username stays in the form; the password is not saved.</string>
+    <string name="account_forget_title">Forget the saved password?</string>
+    <string name="account_forget_body">The next sign-in asks for the username and password again.</string>
+
 </resources>

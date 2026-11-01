@@ -1,5 +1,7 @@
 package dev.winnie.app.data
 
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Response
@@ -51,7 +53,7 @@ class RealtimeTranscriber(
                         closing = true
                         onEvent(
                             RealtimeEvent.Failed(
-                                message.message ?: "live captions failed",
+                                message.message ?: AppStrings.get(R.string.record_live_failed),
                             ),
                         )
                     }
@@ -67,7 +69,7 @@ class RealtimeTranscriber(
                 closing = true
                 onEvent(
                     RealtimeEvent.Failed(
-                        t.message ?: "live captions are unavailable",
+                        t.message ?: AppStrings.get(R.string.record_live_unavailable_short),
                     ),
                 )
             }

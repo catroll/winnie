@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,21 +72,24 @@ fun MeetingScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = meeting?.title ?: "Meeting",
+                        text = meeting?.title ?: stringResource(R.string.meeting_fallback_title),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
+                        Icon(
+                        painterResource(R.drawable.ic_back),
+                        contentDescription = stringResource(R.string.common_back),
+                    )
                     }
                 },
                 actions = {
                     IconButton(onClick = viewModel::refresh) {
                         Icon(
                             painterResource(R.drawable.ic_refresh),
-                            contentDescription = "Refresh",
+                            contentDescription = stringResource(R.string.common_refresh),
                         )
                     }
                 },
@@ -110,11 +114,14 @@ fun MeetingScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(
-                            text = state.error ?: "The meeting could not be loaded.",
+                            text = state.error
+                                ?: stringResource(R.string.meeting_load_failed),
                             color = MaterialTheme.colorScheme.error,
                         )
                         Spacer(Modifier.height(16.dp))
-                        Button(onClick = viewModel::refresh) { Text("Retry") }
+                        Button(onClick = viewModel::refresh) {
+                            Text(stringResource(R.string.common_retry))
+                        }
                     }
                 }
 
@@ -128,8 +135,10 @@ fun MeetingScreen(
                             item {
                                 Column(Modifier.padding(horizontal = 16.dp)) {
                                     Text(
-                                        text = "Processing: " +
+                                        text = stringResource(
+                                            R.string.meeting_processing,
                                             statusLabel(meeting.stage ?: meeting.status),
+                                        ),
                                         style = MaterialTheme.typography.bodyMedium,
                                     )
                                     Spacer(Modifier.height(8.dp))
@@ -156,7 +165,7 @@ fun MeetingScreen(
                         if (meeting.isReady) {
                             item {
                                 Text(
-                                    text = "Transcript",
+                                    text = stringResource(R.string.meeting_transcript),
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.padding(
                                         start = 16.dp,
@@ -169,7 +178,7 @@ fun MeetingScreen(
                             if (state.segments.isEmpty()) {
                                 item {
                                     Text(
-                                        text = "No transcript was returned.",
+                                        text = stringResource(R.string.meeting_no_transcript),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(16.dp),
@@ -267,7 +276,7 @@ private fun MinutesCard(minutes: Minutes) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Minutes",
+                text = stringResource(R.string.meeting_minutes),
                 style = MaterialTheme.typography.titleLarge,
             )
             Text(
@@ -276,17 +285,17 @@ private fun MinutesCard(minutes: Minutes) {
             )
 
             if (minutes.topics.isNotEmpty()) {
-                MinutesSection("Topics") {
+                MinutesSection(stringResource(R.string.meeting_topics)) {
                     minutes.topics.forEach { TopicBlock(it) }
                 }
             }
             if (minutes.decisions.isNotEmpty()) {
-                MinutesSection("Decisions") {
+                MinutesSection(stringResource(R.string.meeting_decisions)) {
                     minutes.decisions.forEach { DecisionBlock(it) }
                 }
             }
             if (minutes.actionItems.isNotEmpty()) {
-                MinutesSection("Action items") {
+                MinutesSection(stringResource(R.string.meeting_action_items)) {
                     minutes.actionItems.forEach { ActionItemBlock(it) }
                 }
             }
@@ -339,8 +348,12 @@ private fun ActionItemBlock(item: ActionItem) {
     Column {
         Text(text = item.text, style = MaterialTheme.typography.bodyMedium)
         val meta = listOfNotNull(
-            item.owner?.takeIf { it.isNotBlank() }?.let { "Owner: $it" },
-            item.dueDate?.takeIf { it.isNotBlank() }?.let { "Due: $it" },
+            item.owner?.takeIf { it.isNotBlank() }?.let {
+                stringResource(R.string.meeting_owner, it)
+            },
+            item.dueDate?.takeIf { it.isNotBlank() }?.let {
+                stringResource(R.string.meeting_due, it)
+            },
         )
         if (meta.isNotEmpty()) {
             Text(

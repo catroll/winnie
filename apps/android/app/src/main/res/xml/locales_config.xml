@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Languages the app ships. On Android 13+ this makes the system's
+  Settings > Apps > Winnie > Language page offer English and Chinese; on older
+  versions the app follows the system locale only.
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="zh" />
+</locale-config>

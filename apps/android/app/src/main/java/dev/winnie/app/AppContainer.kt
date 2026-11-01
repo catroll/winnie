@@ -9,6 +9,7 @@ import dev.winnie.app.data.KeystoreSecretBox
 import dev.winnie.app.data.SessionManager
 import dev.winnie.app.data.TokenStore
 import dev.winnie.app.data.WinnieApi
+import dev.winnie.app.phone.PhoneChangeDetector
 import dev.winnie.app.phone.PhonePrefs
 import dev.winnie.app.phone.PhoneSyncEngine
 import dev.winnie.app.push.PushPrefs
@@ -31,6 +32,9 @@ class AppContainer(context: Context) {
     val sessions = SessionManager(tokenStore, settings, credentials)
     val phonePrefs = PhonePrefs(appContext)
     val pushPrefs = PushPrefs(appContext)
+
+    /** The 5-second loop's local change check; sources are cheap to hold. */
+    val phoneChangeDetector by lazy { PhoneChangeDetector(appContext, phonePrefs) }
 
     fun newRecorder(): AudioRecorder = WavAudioRecorder(appContext)
 

@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import dev.winnie.app.audio.AudioRecorder
 import dev.winnie.app.data.RealtimeEvent
 import dev.winnie.app.data.RealtimeTranscriber
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import dev.winnie.app.data.SessionManager
 import dev.winnie.app.data.UnauthorizedException
 import dev.winnie.app.data.WinnieApi
@@ -75,7 +77,7 @@ class RecordViewModel(
 
     fun start(title: String) {
         if (_state.value !is RecordUiState.Idle) return
-        _state.value = RecordUiState.Working("Creating the meeting…")
+        _state.value = RecordUiState.Working(AppStrings.get(R.string.record_creating))
         work = viewModelScope.launch {
             val api = try {
                 sessions.requireApi()
@@ -157,7 +159,7 @@ class RecordViewModel(
         ticker = null
 
         work = viewModelScope.launch {
-            _state.value = RecordUiState.Working("Saving the recording…")
+            _state.value = RecordUiState.Working(AppStrings.get(R.string.record_saving))
             val file = try {
                 recorder.stop()
             } catch (e: CancellationException) {
@@ -177,10 +179,10 @@ class RecordViewModel(
 
             try {
                 val api = sessions.requireApi()
-                _state.value = RecordUiState.Working("Uploading audio…")
+                _state.value = RecordUiState.Working(AppStrings.get(R.string.record_uploading))
                 api.uploadAudio(current.meetingId, file, file.name)
                 _state.value = RecordUiState.Working(
-                    "Transcribing and writing minutes…",
+                    AppStrings.get(R.string.record_transcribing),
                 )
                 api.transcribe(current.meetingId)
                 _state.value = RecordUiState.Finished(current.meetingId)
@@ -265,7 +267,7 @@ class RecordViewModel(
                 RealtimeEvent.Closed -> if (current.liveState == LiveState.Connecting) {
                     current.copy(
                         liveState = LiveState.Unavailable,
-                        liveError = "live captions disconnected",
+                        liveError = AppStrings.get(R.string.record_live_disconnected),
                     )
                 } else {
                     current

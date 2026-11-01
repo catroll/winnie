@@ -1,5 +1,7 @@
 package dev.winnie.app.data
 
+import dev.winnie.app.AppStrings
+import dev.winnie.app.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,7 +60,7 @@ class SessionManager(
                 tokenStore.clear()
                 _state.value = SessionState.LoggedOut(
                     serverUrl,
-                    "Your session expired. Sign in again.",
+                    AppStrings.get(R.string.phone_message_session_expired),
                 )
             } catch (e: CancellationException) {
                 throw e
@@ -66,7 +68,10 @@ class SessionManager(
                 // Keep the token: an unreachable server is not an invalid one.
                 _state.value = SessionState.LoggedOut(
                     serverUrl,
-                    "Could not restore the session: ${e.friendlyMessage()}",
+                    AppStrings.get(
+                        R.string.session_restore_failed,
+                        e.friendlyMessage(),
+                    ),
                 )
             }
         }
@@ -126,6 +131,9 @@ class SessionManager(
     fun requireApi(): WinnieApi =
         api ?: throw IllegalStateException("No signed-in session")
 
+    /** The live client, or null when no session is established. */
+    fun apiOrNull(): WinnieApi? = api
+
     suspend fun logout() {
         val client = api
         // Clear local state first: revoking the token must never make the user
@@ -147,7 +155,7 @@ class SessionManager(
         settings.lastConversationId = null
         _state.value = SessionState.LoggedOut(
             settings.serverUrl,
-            "Your session expired. Sign in again.",
+            AppStrings.get(R.string.phone_message_session_expired),
         )
     }
 }
