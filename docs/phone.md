@@ -34,9 +34,9 @@ Success for this slice means:
 
 | Kind | Source | Uploaded | Default retention |
 |---|---|---|---|
-| `calendar` | `CalendarContract.Events` | Title, description, location, start/end, all-day, timezone, RRULE, organiser, status, calendar display name | 730 days |
-| `call` | `CallLog.Calls` | Number, cached name, direction, time, duration, SIM account, new flag | 730 days |
-| `message` | `content://sms` | Thread, address, direction, body, subject, time, read flag | 365 days |
+| `calendar` | `CalendarContract.Events` | Title, description, location, start/end, all-day, timezone, RRULE, EXDATE, organiser, status, calendar display name | 730 days, but a repeating row is kept while it still has occurrences ahead |
+| `call` | `CallLog.Calls` | Number, cached name, direction, time, duration, SIM account, new flag | 0 (everything) |
+| `message` | `content://sms` | Thread, address, direction, body, subject, time, read flag | 0 (everything) |
 | `contact` | `ContactsContract` | Display name, numbers, emails, organisation, starred | snapshot, no expiry |
 | `notification` | `NotificationListenerService` | Package, app label, title, text, category, time, clearable flag | 14 days |
 | `location` | `LocationManager` | One fix every five minutes while the sync loop runs: latitude, longitude, accuracy, altitude, speed, provider; the server adds 省/市/区/具体位置 when reverse geocoding is configured | 30 days |
@@ -51,8 +51,13 @@ Deliberately **not** collected:
 - Per-app usage statistics or foreground-app history.
 - Contact photos.
 
-The last table column is a retention default; it is deployment configuration,
-not a promise about the phone.
+The last table column is retention, and it is deployment configuration rather
+than a promise about the phone: the shipped defaults are 730 days for calendar
+and calls and 365 for SMS, while this instance keeps calls and SMS whole. A
+`calendar` row is the exception in one direction — a repeating event is not
+history, so it survives age-based pruning while its rule still has occurrences
+ahead (a birthday stored with its birth year, a weekly class that started
+months ago).
 
 ## 3. Architecture
 

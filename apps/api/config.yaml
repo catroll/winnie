@@ -369,11 +369,15 @@ phone:
   command_ttl_seconds: 900
   max_commands_per_poll: 10
   # 0 keeps everything. Contacts and apps are snapshots rather than history,
-  # so their windows only prune tombstones.
+  # so their windows only prune tombstones. Calls and SMS are kept whole: the
+  # owner wants the full history, and 13 988 messages were reduced to the last
+  # year's 343 by the old 365-day window. A calendar row that repeats is never
+  # pruned by age while the series still has occurrences ahead; see
+  # PhoneService._purge_calendar_before.
   retention:
     calendar_days: 730
-    call_days: 730
-    message_days: 365
+    call_days: 0
+    message_days: 0
     contact_days: 0
     notification_days: 14
     location_days: 30
