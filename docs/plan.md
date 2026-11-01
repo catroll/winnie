@@ -258,7 +258,11 @@ Open:
   exercised under Robolectric.
 - Foreground service, offline cache, export/share, token refresh, speaker
   labels, certificate pinning.
-- Streaming chat replies; chat attachments and voice input.
+- Streaming chat replies; chat attachments.
+- Voice wake: implemented (on-device keyword spotting, a hands-free turn and a
+  transcription endpoint) but **not measured on a device** — wake rate, false
+  accepts, battery and microphone contention are open, see
+  [voice-wake.md](./voice-wake.md).
 - Measure the 5-second loop's battery cost on a real phone and tune the
   per-scope cadences from the measurement rather than from intuition.
 - Chinese copy review by a native speaker; the parity test only proves coverage.

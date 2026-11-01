@@ -1666,3 +1666,74 @@ silently filter drafts written under a different window. `digest.window_days`
 and `digest.max_items` are set with the deployment, and the three formats are
 rendered from the stored digest so a request costs no rebuild. A per-request
 window is a follow-up that has to travel with the run.
+
+## The wake word is a local model, and the turn after it is a paid call (2026-11-01)
+
+**Decision.** "Winnie" is detected on the phone by a sherpa-onnx keyword-spotting
+model (Apache-2.0) that runs offline in a `microphone` foreground service. The
+utterance after the wake is uploaded to `POST /api/v1/assistant/transcribe` and
+transcribed on the same ASR binding as meeting notes. Wake costs nothing per
+use; the turn does.
+
+**Why this split.** A cloud hotword cannot be zero-cost — it streams all day and
+bills by the hour — and a press-to-talk recognizer is not hands-free. A local
+keyword spotter is the only design that satisfies "say the word for free". The
+follow-up utterance is a few seconds once per turn, so paying for it is
+acceptable and keeps the transcript quality of the existing ASR.
+
+**Why sherpa-onnx.** The keyword is a line of data, not a trained model: the
+open-vocabulary spotter takes CMU phonemes from the model's own `en.phone`
+(`W IH1 N IY0 @WINNIE`), so adding or renaming a phrase needs no training data,
+no vendor account and no per-keyword licence. openWakeWord would have needed a
+training pipeline per phrase; Porcupine is free only for non-commercial use and
+proprietary; Vosk decodes continuously and costs more battery for the same task.
+The bilingual zh-en model also leaves room for a Chinese keyword without a second
+detector.
+
+**Rejected: streaming the wake audio to the server and grepping the transcript.**
+It is the cheapest thing to write, but it is exactly the design that cannot be
+zero-cost and it sends every room sound to the server.
+
+**Rejected: a `specialUse` service at boot that opens the microphone later.**
+Android 15 forbids starting a `microphone` foreground service from
+`BOOT_COMPLETED`. Working around it with a service type that does not describe
+what the service does would hide a hot microphone; the app instead asks the owner
+to open it once after a reboot.
+
+**The AAR is fetched, the model is committed.** `sherpa-onnx-2.0.1.aar` is 47 MB
+and is not on Maven Central, so `make android-kws` downloads it into
+`apps/android/app/libs` (gitignored) and checks its byte count — a truncated
+download still lists as an archive. The keyword model is ~5.3 MB of int8 ONNX and
+is committed under `assets/kws`, so a build never needs the network for the
+model and the exact weights that were validated are the ones in the APK. The
+release tarball's fp32 encoder and test wavs are not committed.
+
+**The pre-roll rides in the intent.** The detector needs ~320 ms of context and
+the activity takes a moment to open, so two seconds of 16 kHz mono (64 KB) are
+taken from a ring buffer and passed as an intent extra. Without it every turn
+would start after the words that followed the wake word. 64 KB is well inside the
+binder transaction limit, which is why the audio is not written to a file and
+handed over by path.
+
+**The service releases the microphone at the wake.** Android gives one capture at
+a time; two `AudioRecord`s would leave one receiving silence. The detector stops
+before the activity records and comes back when the turn ends (`ACTION_RESUME`)
+or after 60 s, so an ignored wake does not silently disable listening.
+
+**The keyword file carries pronunciation variants.** The model matches the exact
+phoneme sequence it decodes, and a real recording of "Winnie the Pooh" decodes as
+`W EH1 N IY0` while the dictionary form is `W IH1 N IY0`: a single-variant file
+never fired for that voice. Four variants cover the measured case and the
+plausible accents, and `numTrailingBlanks = 0` because the default of two blank
+frames waits for a pause that "winnie, what is the weather" does not contain.
+Measured on the desktop with the same sherpa-onnx release: the recording fires,
+and the ten real recordings in the model's `test_wavs` produce no false hit.
+Synthetic `espeak-ng` speech is out of domain — it fails the release's own
+`LIGHT UP` keyword — so it is not a usable test signal.
+
+**Not verified on a phone.** Wake rate, false-accept rate over hours of speech,
+battery, microphone contention with another app and the Android 14/15
+foreground-service behaviour are unmeasured: there is no device or emulator on
+the development machine. The boosting score and threshold are the library
+defaults until that measurement moves them; [docs/voice-wake.md](./voice-wake.md)
+lists the five checks that would make this "validated" rather than "implemented".

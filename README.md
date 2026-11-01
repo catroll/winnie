@@ -11,7 +11,7 @@ infrastructure below it exists to serve the assistant.
 | **Assistant** | Chat, web search, scheduled tasks, long-term memory and opt-in local file/command tools | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **News production** | Seven-stage pipeline from public sources to a reviewed draft and a dated digest, with API, console and assistant access | **Core implemented** |
-| **Android client** | Assistant chat with Markdown, 5-second change-checked phone sync, record with live captions, reminders, remembered sign-in, English/Chinese UI | **MVP implemented** |
+| **Android client** | Assistant chat with Markdown, on-device "winnie" wake word into a hands-free voice turn, 5-second change-checked phone sync, record with live captions, reminders, remembered sign-in, English/Chinese UI | **MVP implemented; wake word not yet measured on a device** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs and drafts, AI providers (suppliers and LLM usage) and gateway routes | **MVP implemented** |
