@@ -146,5 +146,7 @@
   "No active gateway key exists.": "No active gateway key exists.",
   "You have not created a gateway key yet.": "You have not created a gateway key yet.",
   "Owner": "Owner",
-  "Clients reach a route with a Winnie key; create and revoke keys on": "Clients reach a route with a Winnie key; create and revoke keys on"
+  "Clients reach a route with a Winnie key; create and revoke keys on": "Clients reach a route with a Winnie key; create and revoke keys on",
+  "Days of the week": "Days of the week",
+  "The first line is the title; further lines become the note.": "The first line is the title; further lines become the note."
 }

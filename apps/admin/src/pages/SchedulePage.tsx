@@ -3,8 +3,8 @@ import type { FormEvent } from 'react';
 
 import { api } from '../api/client';
 import type {
-  ScheduleDay,
   ScheduleEvent,
+  ScheduleEventInput,
   ScheduleMutation,
   ScheduleWeekPayload,
 } from '../api/types';
@@ -59,20 +59,155 @@ interface Editing {
   time: string;
 }
 
+/**
+ * The only week-level block the editor writes to. Week items are not tied to a
+ * day, so their form lives with that section instead of inside a day tab.
+ */
+const WEEK_ITEM_SECTION = '工作事项';
+
+interface AddEventFormProps {
+  /** The ISO day it files under; the week's Monday for a week-level item. */
+  date: string;
+  weekScope: boolean;
+  busy: boolean;
+  /** Resolves false when the write failed, so the draft is not thrown away. */
+  onAdd: (input: ScheduleEventInput) => Promise<boolean>;
+}
+
+/**
+ * One "add event" form, used by every day tab and by the week-level section.
+ *
+ * The content is a textarea because an event is not one line: the first line is
+ * the title and every following line becomes the note under it, which is what
+ * the file format already supports (`editor._text_lines` indents the rest).
+ */
+function AddEventForm({ date, weekScope, busy, onAdd }: AddEventFormProps) {
+  const [text, setText] = useState('');
+  const [time, setTime] = useState('');
+  const [tag, setTag] = useState('');
+  const [weekdayTag, setWeekdayTag] = useState(false);
+  const [alreadyDone, setAlreadyDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const scope = weekScope ? 'week' : date;
+
+  async function submit(submitEvent: FormEvent<HTMLFormElement>): Promise<void> {
+    submitEvent.preventDefault();
+    if (!text.trim()) {
+      setError(tr('Event text is required.'));
+      return;
+    }
+    setError(null);
+    const saved = await onAdd({
+      date,
+      text: text.trim(),
+      time: time.trim() || null,
+      weekday: !weekScope && weekdayTag,
+      tags: tag.trim() ? [tag.trim()] : [],
+      done: alreadyDone,
+      week_scope: weekScope,
+    });
+    if (saved) {
+      setText('');
+      setTime('');
+      setTag('');
+      setAlreadyDone(false);
+    }
+  }
+
+  return (
+    <form onSubmit={(submitEvent) => void submit(submitEvent)}>
+      <div className="row g-2">
+        <div className="col-12 col-lg-7">
+          <label className="form-label small" htmlFor={`schedule-text-${scope}`}>
+            {tr('Event text')}
+          </label>
+          <textarea
+            id={`schedule-text-${scope}`}
+            className="form-control"
+            rows={3}
+            value={text}
+            onChange={(input) => setText(input.target.value)}
+            placeholder={tr('What needs to happen')}
+          />
+          <div className="form-text">
+            {tr('The first line is the title; further lines become the note.')}
+          </div>
+          {error ? (
+            <div className="text-danger small" role="alert">
+              {error}
+            </div>
+          ) : null}
+        </div>
+        <div className="col-6 col-lg-2">
+          <label className="form-label small" htmlFor={`schedule-time-${scope}`}>
+            {tr('Time')}
+          </label>
+          <input
+            id={`schedule-time-${scope}`}
+            className="form-control"
+            value={time}
+            onChange={(input) => setTime(input.target.value)}
+            placeholder="09:30~10:30"
+          />
+        </div>
+        <div className="col-6 col-lg-3">
+          <label className="form-label small" htmlFor={`schedule-tag-${scope}`}>
+            {tr('Tag')}
+          </label>
+          <input
+            id={`schedule-tag-${scope}`}
+            className="form-control"
+            value={tag}
+            onChange={(input) => setTag(input.target.value)}
+            placeholder="newapi"
+          />
+        </div>
+      </div>
+      <div className="d-flex flex-wrap align-items-center gap-3 mt-3">
+        {weekScope ? null : (
+          <div className="form-check">
+            <input
+              id={`schedule-weekday-${scope}`}
+              type="checkbox"
+              className="form-check-input"
+              checked={weekdayTag}
+              onChange={(input) => setWeekdayTag(input.target.checked)}
+            />
+            <label className="form-check-label small" htmlFor={`schedule-weekday-${scope}`}>
+              {tr('Add the weekday tag')}
+            </label>
+          </div>
+        )}
+        <div className="form-check">
+          <input
+            id={`schedule-done-${scope}`}
+            type="checkbox"
+            className="form-check-input"
+            checked={alreadyDone}
+            onChange={(input) => setAlreadyDone(input.target.checked)}
+          />
+          <label className="form-check-label small" htmlFor={`schedule-done-${scope}`}>
+            {tr('Already done')}
+          </label>
+        </div>
+        <button type="submit" className="btn btn-primary btn-sm ms-auto" disabled={busy}>
+          <i className="bi bi-plus-lg me-1" aria-hidden="true" />
+          {tr('Add')}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function SchedulePage() {
   const [anchor, setAnchor] = useState<string>(todayIso);
   const result = useApi(() => api.scheduleWeek(anchor), [anchor]);
   const [override, setOverride] = useState<ScheduleWeekPayload | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const [text, setText] = useState('');
-  const [time, setTime] = useState('');
-  const [tag, setTag] = useState('');
-  const [day, setDay] = useState(anchor);
-  const [weekdayTag, setWeekdayTag] = useState(false);
-  const [alreadyDone, setAlreadyDone] = useState(false);
-  const [weekScope, setWeekScope] = useState(false);
+  // The day tab the owner clicked, resolved against the loaded week below.
+  const [activeDate, setActiveDate] = useState<string>(todayIso);
 
   const [editing, setEditing] = useState<Editing | null>(null);
 
@@ -85,15 +220,14 @@ export function SchedulePage() {
 
   const data = override ?? (result.status === 'success' ? result.data : null);
 
-  useEffect(() => {
-    if (!data) {
-      return;
-    }
-    const days = data.days.map((candidate) => candidate.date);
-    if (days.length > 0 && !days.includes(day)) {
-      setDay(days.includes(anchor) ? anchor : days[0]);
-    }
-  }, [data, anchor, day]);
+  // A date that is not in the loaded week — after navigating, or before the
+  // first payload — falls back to the anchor day, then to the first day. That
+  // keeps the panel non-empty without a second render pass to fix the state.
+  const activeDay =
+    data?.days.find((entry) => entry.date === activeDate) ??
+    data?.days.find((entry) => entry.date === anchor) ??
+    data?.days[0] ??
+    null;
 
   const openCount = useMemo(() => {
     if (!data) {
@@ -103,7 +237,11 @@ export function SchedulePage() {
     return events.filter((event) => !event.done).length;
   }, [data]);
 
-  async function mutate(action: () => Promise<ScheduleMutation>, done: string): Promise<void> {
+  // Returns whether the change landed, so a form can keep its input on failure.
+  async function mutate(
+    action: () => Promise<ScheduleMutation>,
+    done: string,
+  ): Promise<boolean> {
     setBusy(true);
     setNotice(null);
     try {
@@ -114,38 +252,17 @@ export function SchedulePage() {
         text: response.changed ? done : tr('Nothing changed.'),
       });
       setEditing(null);
+      return true;
     } catch (error) {
       setNotice({ kind: 'danger', text: describeError(error) });
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  async function submitAdd(submitEvent: FormEvent<HTMLFormElement>): Promise<void> {
-    submitEvent.preventDefault();
-    if (!data) {
-      return;
-    }
-    if (!text.trim()) {
-      setNotice({ kind: 'danger', text: tr('Event text is required.') });
-      return;
-    }
-    await mutate(
-      () =>
-        api.createScheduleEvent({
-          date: weekScope ? data.week.monday : day,
-          text: text.trim(),
-          time: time.trim() || null,
-          weekday: weekdayTag,
-          tags: tag.trim() ? [tag.trim()] : [],
-          done: alreadyDone,
-          week_scope: weekScope,
-        }),
-      tr('Event added.'),
-    );
-    setText('');
-    setTime('');
-    setTag('');
+  async function submitAdd(input: ScheduleEventInput): Promise<boolean> {
+    return mutate(() => api.createScheduleEvent(input), tr('Event added.'));
   }
 
   async function toggle(event: ScheduleEvent): Promise<void> {
@@ -299,42 +416,6 @@ export function SchedulePage() {
     );
   }
 
-  function renderDays(days: ScheduleDay[]) {
-    if (days.length === 0) {
-      return (
-        <div className="col-12">
-          <div className="card">
-            <div className="card-body">
-              <EmptyState message="This week has no day sections." />
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return days.map((entry) => (
-      <div className="col-12 col-xl-6" key={entry.date}>
-        <div className={`card h-100${entry.date === data?.today ? ' border-primary' : ''}`}>
-          <div className="card-header d-flex flex-wrap align-items-center gap-2">
-            <span className="fw-semibold">
-              {entry.date.slice(5)} {entry.label}
-            </span>
-            {entry.date === data?.today ? (
-              <span className="badge text-bg-primary">{tr('Today')}</span>
-            ) : null}
-            <span className="ms-auto small text-secondary">
-              {tr('{{count}} events', { count: entry.events.length })}
-            </span>
-          </div>
-          {entry.events.length === 0 ? (
-            <div className="card-body py-3 text-secondary small">{tr('Nothing planned.')}</div>
-          ) : (
-            <ul className="list-group list-group-flush">{entry.events.map(renderEvent)}</ul>
-          )}
-        </div>
-      </div>
-    ));
-  }
-
   return (
     <>
       <PageHeader title="Schedule" />
@@ -425,126 +506,109 @@ export function SchedulePage() {
                 </div>
               ) : null}
 
-              {data.editable ? (
-                <div className="card mb-3">
-                  <div className="card-header fw-semibold">{tr('Add event')}</div>
-                  <div className="card-body">
-                    <form onSubmit={(submitEvent) => void submitAdd(submitEvent)}>
-                      <div className="row g-2">
-                        <div className="col-12 col-lg-5">
-                          <label className="form-label small" htmlFor="schedule-text">
-                            {tr('Event text')}
-                          </label>
-                          <input
-                            id="schedule-text"
-                            className="form-control"
-                            value={text}
-                            onChange={(input) => setText(input.target.value)}
-                            placeholder={tr('What needs to happen')}
-                          />
-                        </div>
-                        <div className="col-6 col-lg-2">
-                          <label className="form-label small" htmlFor="schedule-day">
-                            {tr('Day')}
-                          </label>
-                          <select
-                            id="schedule-day"
-                            className="form-select"
-                            value={day}
-                            onChange={(input) => setDay(input.target.value)}
-                            disabled={weekScope || data.days.length === 0}
-                          >
-                            {data.days.map((entry) => (
-                              <option value={entry.date} key={entry.date}>
-                                {entry.date.slice(5)} {entry.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="col-6 col-lg-2">
-                          <label className="form-label small" htmlFor="schedule-time">
-                            {tr('Time')}
-                          </label>
-                          <input
-                            id="schedule-time"
-                            className="form-control"
-                            value={time}
-                            onChange={(input) => setTime(input.target.value)}
-                            placeholder="09:30~10:30"
-                          />
-                        </div>
-                        <div className="col-6 col-lg-2">
-                          <label className="form-label small" htmlFor="schedule-tag">
-                            {tr('Tag')}
-                          </label>
-                          <input
-                            id="schedule-tag"
-                            className="form-control"
-                            value={tag}
-                            onChange={(input) => setTag(input.target.value)}
-                            placeholder="newapi"
-                          />
-                        </div>
-                      </div>
-                      <div className="d-flex flex-wrap align-items-center gap-3 mt-3">
-                        <div className="form-check">
-                          <input
-                            id="schedule-weekday"
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={weekdayTag}
-                            onChange={(input) => setWeekdayTag(input.target.checked)}
-                          />
-                          <label className="form-check-label small" htmlFor="schedule-weekday">
-                            {tr('Add the weekday tag')}
-                          </label>
-                        </div>
-                        <div className="form-check">
-                          <input
-                            id="schedule-done"
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={alreadyDone}
-                            onChange={(input) => setAlreadyDone(input.target.checked)}
-                          />
-                          <label className="form-check-label small" htmlFor="schedule-done">
-                            {tr('Already done')}
-                          </label>
-                        </div>
-                        <div className="form-check">
-                          <input
-                            id="schedule-week-scope"
-                            type="checkbox"
-                            className="form-check-input"
-                            checked={weekScope}
-                            onChange={(input) => setWeekScope(input.target.checked)}
-                          />
-                          <label className="form-check-label small" htmlFor="schedule-week-scope">
-                            {tr('Week-level item')}
-                          </label>
-                        </div>
-                        <button type="submit" className="btn btn-primary btn-sm ms-auto" disabled={busy}>
-                          <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-                          {tr('Add')}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              ) : null}
-
-              {data.sections
-                .filter((section) => section.events.length > 0)
-                .map((section) => (
+              {data.sections.map((section) => {
+                // The week-level list keeps a form of its own: those items have
+                // no day, so no day tab could host it.
+                const isWeekList = section.title === WEEK_ITEM_SECTION;
+                if (section.events.length === 0 && !(isWeekList && data.editable)) {
+                  return null;
+                }
+                return (
                   <div className="card mb-3" key={section.title}>
                     <div className="card-header fw-semibold">{section.title}</div>
-                    <ul className="list-group list-group-flush">
-                      {section.events.map(renderEvent)}
-                    </ul>
+                    {section.events.length === 0 ? (
+                      <div className="card-body py-3 text-secondary small">
+                        {tr('Nothing planned.')}
+                      </div>
+                    ) : (
+                      <ul className="list-group list-group-flush">
+                        {section.events.map(renderEvent)}
+                      </ul>
+                    )}
+                    {isWeekList && data.editable ? (
+                      <div className="card-body border-top">
+                        <AddEventForm
+                          date={data.week.monday}
+                          weekScope
+                          busy={busy}
+                          onAdd={submitAdd}
+                        />
+                      </div>
+                    ) : null}
                   </div>
-                ))}
+                );
+              })}
 
-              <div className="row g-3">{renderDays(data.days)}</div>
+              {data.days.length === 0 ? (
+                <div className="card">
+                  <div className="card-body">
+                    <EmptyState message="This week has no day sections." />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <ul
+                    className="nav nav-tabs mb-0"
+                    role="tablist"
+                    aria-label={tr('Days of the week')}
+                  >
+                    {data.days.map((entry) => {
+                      const current = entry.date === activeDay?.date;
+                      return (
+                        <li className="nav-item" role="presentation" key={entry.date}>
+                          <button
+                            type="button"
+                            role="tab"
+                            id={`schedule-tab-${entry.date}`}
+                            aria-controls={`schedule-day-${entry.date}`}
+                            aria-selected={current}
+                            className={`nav-link${current ? ' active' : ''}`}
+                            onClick={() => setActiveDate(entry.date)}
+                          >
+                            <span className="font-monospace">{entry.date.slice(5)}</span>{' '}
+                            {entry.label}
+                            {entry.date === data.today ? (
+                              <span className="badge text-bg-primary ms-1">{tr('Today')}</span>
+                            ) : null}
+                            <span className="badge text-bg-secondary ms-1">
+                              {entry.events.length}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="card border-top-0 rounded-top-0 mb-3">
+                    {activeDay ? (
+                      <div
+                        role="tabpanel"
+                        id={`schedule-day-${activeDay.date}`}
+                        aria-labelledby={`schedule-tab-${activeDay.date}`}
+                      >
+                        {activeDay.events.length === 0 ? (
+                          <div className="card-body py-3 text-secondary small">
+                            {tr('Nothing planned.')}
+                          </div>
+                        ) : (
+                          <ul className="list-group list-group-flush">
+                            {activeDay.events.map(renderEvent)}
+                          </ul>
+                        )}
+                        {data.editable ? (
+                          <div className="card-body border-top">
+                            <AddEventForm
+                              date={activeDay.date}
+                              weekScope={false}
+                              busy={busy}
+                              onAdd={submitAdd}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </>
+              )}
             </>
           ) : null}
         </div>

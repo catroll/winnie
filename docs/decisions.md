@@ -1505,3 +1505,34 @@ of `**bold**` on a template line.
 item (skipped when the WLB tree is absent), `test_blank_lines_inside_a_note_stay_paragraph_breaks`
 pins the shape a fixture cannot express, and `test_week_returns_days_and_events`
 asserts the API payload carries `note` and no raw `lines`.
+
+## The schedule page is seven day tabs, and an event is a textarea (2026-11-01)
+
+**Seven days, one tab each.** The week used to be a two-column card grid, with
+one "add event" card above it and a `Day` select inside that card. Which day a
+new event landed on was therefore a second thing to set after deciding what to
+write, and the day grid competed for space with the week-level list. The tabs
+make the day the page's primary axis: the tab *is* the date, so the select is
+gone and the form inherits the day it sits in. The active tab resolves against
+the loaded week (clicked date, then the anchor weekday, then the first day)
+instead of being stored and re-synced, so navigating weeks lands on the same
+weekday with no flash of an empty panel.
+
+**Week-level items keep their own form.** They belong to `## 工作事项`, not to a
+day, so no day tab can host them. Their form stays inside that section's card,
+which is the only section `editor.add_event` writes week items to.
+
+**A new event is a textarea, not an input.** The file format already supports a
+note under an event, and `--note`/`editor._text_lines` indents a multi-line
+value into exactly that block. A single-line input threw that away: the owner
+had to add the first line from the console and then append the rest from a
+terminal. The textarea sends `text` with real newlines, the server turns the
+first line into the title and the rest into the note, and the panel renders the
+note as Markdown. The edit form stays a single-line input on purpose: an update
+rewrites the event's first line, so a newline there would corrupt the line
+instead of adding a note.
+
+**Drafts are not carried across tabs.** Only the active tab is mounted, matching
+the AI providers page, so switching days discards a half-typed draft. Keeping
+seven mounted forms to preserve a draft was rejected: the page's job is to read
+a day, and the write path is quick to retype.
