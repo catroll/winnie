@@ -8,6 +8,8 @@ device syncs, so no separate scheduler is needed for a single-owner instance.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 KINDS = (
@@ -44,18 +46,24 @@ class PhoneRetentionConfig(BaseModel):
 class PhoneGeocodeConfig(BaseModel):
     """Reverse geocoding of location fixes, done on the server.
 
-    Disabled by default, and the key never comes from a config file: turning
-    this on sends the owner's coordinates to a third party, so it is an explicit
-    choice with the credential in the environment.
+    Disabled by default: turning this on sends the owner's coordinates to a
+    third party, so it is an explicit choice. ``photon`` needs no credential at
+    all; ``amap`` reads one from the environment, never from a config file.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    # Only Amap ships today; the port keeps another provider a new class.
-    provider: str = "amap"
-    # Environment variable holding the provider key; empty means "amap" style.
+    # ``photon`` is keyless and answers with the nearest named OSM feature;
+    # ``amap`` resolves postal addresses and needs a key. The name is a Literal
+    # so a typo fails at startup instead of resolving nothing for ever.
+    provider: Literal["amap", "photon"] = "amap"
+    # Environment variable holding the provider key; only ``amap`` reads it.
     key_env: str = "AMAP_API_KEY"
+    # The datum the *phone* reports its fixes in. Android's LocationManager hands
+    # out WGS-84; ``amap`` wants GCJ-02 and the server converts. Set this to
+    # ``gcj02`` only for a client that already reports the offset datum.
+    coordinate_system: Literal["wgs84", "gcj02"] = "wgs84"
     timeout_seconds: float = Field(default=2.5, gt=0, le=10)
     # Minimum gap between two provider calls; a personal key has a low ceiling.
     min_interval_seconds: float = Field(default=1.0, ge=0, le=10)

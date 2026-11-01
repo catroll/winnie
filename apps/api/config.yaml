@@ -409,14 +409,20 @@ phone:
     app_days: 0
 
   # Reverse geocoding turns a fix into 省 + 市 + 区 + 具体位置 on the console and
-  # for the assistant. It is off by default: turning it on sends the owner's
-  # coordinates to Amap, so the key lives in the environment and never here.
-  # Set AMAP_API_KEY and enabled: true to use it; a fix that cannot be resolved
-  # keeps its raw coordinates and the address stays empty.
+  # for the assistant. Turning it on sends the owner's coordinates to a third
+  # party, so it is a deliberate choice; a fix that cannot be resolved keeps its
+  # raw coordinates and the address stays empty.
+  #
+  # provider: photon is keyless and names the nearest OpenStreetMap feature plus
+  # the city and district around it, which is the rough answer. provider: amap
+  # resolves street addresses and needs a key in the environment (AMAP_API_KEY,
+  # never a config file); Amap speaks GCJ-02, so the WGS-84 fix the phone reports
+  # is converted before it is sent.
   geocode:
-    enabled: false
-    provider: amap
+    enabled: true
+    provider: photon
     key_env: AMAP_API_KEY
+    coordinate_system: wgs84
     timeout_seconds: 2.5
     min_interval_seconds: 1.0
     cache_entries: 512

@@ -1632,6 +1632,40 @@ district, township, street, and the nearest POI. A second provider is a class,
 not a rewrite; `NullGeocoder` is the provider that is not configured and returns
 nothing rather than failing.
 
+**Photon is the default, and Amap is the opt-in (2026-11-01, later the same
+day).** Amap gave the best answer and cost a registration: an account, a
+Web-service key, and a coordinate datum to get right. The result was a feature
+that ships switched off, so every location row read "not resolved" and the
+coordinates went unread. komoot's Photon — a hosted index over OpenStreetMap —
+answers the coarser question the owner actually asks ("which city, which
+district, what is this place") with no key, no account and no quota, and the
+console now shows a place by default. The trade is precision: Photon names the
+nearest *named* feature, so a landmark 200 m away can be named while the fix is on
+a road, and it cannot compose a postal address. Amap stays one config line away
+for the street-level answer.
+
+**WGS-84 in, GCJ-02 only where the provider speaks it.** Android reports WGS-84;
+Amap answers in, and wants, GCJ-02, so `wgs84_to_gcj02` shifts the fix before the
+request (measured ~555 m in Beijing, ~588 m in Wuhan). Sending raw WGS-84 to Amap
+is not an error it can report — the coordinate is valid and simply resolves to a
+real address on the wrong street. Photon is WGS-84 like the phone, so it needs no
+shift at all, which is one fewer thing to get wrong. The shift is checked against
+gcoord's independent implementation, and `geocode.coordinate_system` exists only
+for a client that already reports the offset datum.
+
+**A named feature further than 5 km is discarded.** Photon always returns its
+nearest feature, and in open country that is a landuse polygon or a hamlet
+kilometres away. Storing it would describe OpenStreetMap's coverage instead of
+where the owner was, so past `MAX_FEATURE_KM` the fix keeps its coordinates.
+
+**A provider's HTTP 200 is not a resolved address.** Amap rejects a key with
+`{"status":"0","infocode":"10001"}` and HTTP 200, so a wrong key, a JS API key
+sent to a Web service, an exhausted quota and a place nobody named all reached
+the console as the same "not resolved". The provider's `status`/`infocode`/`info`
+now go to the log on every empty answer; `SERVICE_NOT_AVAILABLE` (10002) is what
+a key of the wrong type returns, and without it in the log it is
+indistinguishable from a rural road.
+
 **`city` is filled from `province` when the provider reports none.** A
 municipality (北京/上海/天津/重庆) sends an empty city, and the console's
 "省 · 市 · 区" line must not show a hole where the city belongs.

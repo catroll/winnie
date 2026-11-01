@@ -550,3 +550,39 @@ interval. The regression was in the *composition* — no test asked "does a fact
 owner just asked to remember appear in the very next answer?". That question is
 now four assertions in four files, which is the only form of "read the memory"
 that a future refactor cannot quietly undo.
+
+## An in-process Alembic run disabled every logger in the process (2026-11-01)
+
+**Signal.** A test asserted that a warning carrying the provider's `infocode`
+reaches the log. It passed alone and failed in the full suite with an empty
+message list — the handler was attached to the right logger, at the right level,
+and the record never arrived.
+
+**Cause.** `apps/api/migrations/env.py` called `fileConfig(config.config_file_name)`,
+and `logging.config.fileConfig` defaults to `disable_existing_loggers=True`: it
+sets `disabled = True` on every logger that already exists in the process and
+never restores it. `tests/test_migrations.py` runs Alembic in-process, so every
+logger imported before it — `winnie_phone.geocode` included — was silently muted
+for the rest of the session. Nothing raised: `logger.warning(...)` just stops
+emitting.
+
+**Check.** Ask the logger, do not reason about the handler:
+
+```python
+logging.getLogger("winnie_phone.geocode").disabled   # True here
+getattr(logging.getLogger("winnie_phone.geocode"), "handlers", None)
+logging.root.manager.disable                          # 0: not logging.disable()
+```
+
+**Fix.** `fileConfig(..., disable_existing_loggers=False)` in `env.py`. The
+Alembic CLI runs in its own process, so this never showed up in production — but
+any embedder that migrates at startup, any script, and any test run would lose
+every log line it wrote afterwards, which is exactly the kind of silence that
+makes a later bug undiagnosable.
+
+**Generalisable.** A logging configuration is process-global state with no
+uninstall. Two rules follow: a library or a migration must never reconfigure the
+root logger's existing set (`disable_existing_loggers=False`, or leave it alone),
+and a test that asserts on log output should attach its own handler to the exact
+logger it cares about instead of trusting the root capture — the failure then
+points at the code, not at whatever reconfigured logging earlier in the session.

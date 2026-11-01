@@ -535,10 +535,13 @@ when the query matches its coordinates or provider, not on every query.
 - **Notifications may contain one-time codes.** They are stored and searchable
   by design; the short default retention (14 days) limits the exposure.
 - **Reverse geocoding leaves the server.** With `phone.geocode.enabled`, the
-  coordinates of a new fix are sent to Amap and the answer is stored with the
-  row. That is a third-party disclosure of where the owner is; it is off by
-  default, the key lives in the environment, and the console says
-  "not resolved" rather than implying the phone reported an address.
+  coordinates of a new fix are sent to the configured provider — `photon`
+  (komoot's hosted OpenStreetMap index, keyless) or `amap` — and the answer is
+  stored with the row. That is a third-party disclosure of where the owner is:
+  it is off in the built-in defaults, the shipped `config.yaml` turns it on with
+  the keyless provider so a new deployment shows a place instead of "not
+  resolved", and the console says "not resolved" rather than implying the phone
+  reported an address. An Amap key lives in the environment, never in a file.
 - **The phone is not a trusted code path for writes.** The server validates the
   command payload before queueing it, but the phone is what actually inserts
   the event or sends the message; a modified app can do anything its
@@ -566,21 +569,44 @@ phone:
     notification_days: 14
     location_days: 30
     app_days: 0
-  geocode:                  # reverse geocoding; off unless the owner opts in
-    enabled: false
-    provider: amap
+  geocode:                  # reverse geocoding; off in the built-in defaults
+    enabled: true           # the shipped config turns it on with photon
+    provider: photon        # photon (keyless) | amap (street addresses, key)
     key_env: AMAP_API_KEY   # the key comes from the environment, never this file
+    coordinate_system: wgs84 # the datum the phone reports; amap converts to GCJ-02
     timeout_seconds: 2.5
     min_interval_seconds: 1.0
     cache_entries: 512
     max_per_sync: 5
 ```
 
-`geocode.enabled` is off by default because it sends the owner's coordinates to
-Amap. With a key in `AMAP_API_KEY`, a fix accepted by a sync is resolved once and
-cached by rounded coordinate (~111 m), so a phone that has not moved costs one
-call rather than one per sync. A provider failure never fails the sync: the row
-keeps its coordinates and the address stays empty.
+`geocode.enabled` is off in the built-in defaults because it sends the owner's
+coordinates to a third party. Two providers, and the difference is what the
+owner pays for the answer:
+
+| provider | needs | answers with | datum |
+|---|---|---|---|
+| `photon` | nothing — no account, no quota | the nearest named OSM feature plus city and district | WGS-84, unchanged |
+| `amap` | a free key in `AMAP_API_KEY` | a composed street address (省 市 区 街道 门牌) | GCJ-02, converted server-side |
+
+A fix accepted by a sync is resolved once and cached by rounded coordinate
+(~111 m), so a phone that has not moved costs one call rather than one per sync.
+A provider failure never fails the sync: the row keeps its coordinates and the
+address stays empty. A rejected Amap key is logged with the provider's own
+`infocode` (for example `10002 SERVICE_NOT_AVAILABLE`, which is what a JS API key
+sent to a Web service endpoint returns) instead of looking like a place nobody
+named.
+
+The datum matters. Android hands out WGS-84; Amap answers in GCJ-02 and is only
+asked correctly if the fix is shifted first, which `wgs84_to_gcj02` does
+(~500 m in Beijing, ~590 m in Wuhan). Set `coordinate_system: gcj02` only for a
+client that already reports the offset datum. Photon needs no shift at all,
+which is one reason it is the default.
+
+Photon answers with its nearest *named* feature, so a landmark 200 m away can
+be named even when the owner is on a road. A feature further than 5 km from the
+fix is discarded rather than stored: at that distance the name describes OSM's
+coverage, not where the owner was.
 
 `phone.enabled` is off in the built-in defaults and on in the shipped
 `config.yaml`. A programmatic `Settings()` (tests, embedders) does not create a

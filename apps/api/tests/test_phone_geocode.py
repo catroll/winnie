@@ -1,13 +1,15 @@
 """Reverse geocoding: provider parsing, caching, the sync path and backfill.
 
-The provider is exercised through an ``httpx.MockTransport`` so the assertions are
-about our parsing of Amap's shapes (an empty ``city``, an ``[]`` for a missing
-string, a POI list) rather than about the network. The service tests use a fake
-geocoder so a failure can be injected where it matters.
+Both providers are exercised through an ``httpx.MockTransport`` so the assertions
+are about our parsing of their shapes (Amap's empty ``city`` and ``[]`` for a
+missing string, Photon's optional ``state``/``district``/``name``) rather than
+about the network. The service tests use a fake geocoder so a failure can be
+injected where it matters.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
@@ -16,12 +18,22 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_asyncio
+from pydantic import ValidationError
 
 from winnie_api.main import create_app
 from winnie_api.settings import Settings
 from winnie_core.db import create_all, create_engine, create_session_factory
 from winnie_phone.config import PhoneConfig, PhoneGeocodeConfig
-from winnie_phone.geocode import Address, AmapGeocoder, NullGeocoder, build_geocoder, parse_amap
+from winnie_phone.geocode import (
+    Address,
+    AmapGeocoder,
+    NullGeocoder,
+    PhotonGeocoder,
+    build_geocoder,
+    parse_amap,
+    parse_photon,
+    wgs84_to_gcj02,
+)
 from winnie_phone.schemas import DeviceRegister, SyncRequest
 from winnie_phone.service import PhoneService
 
@@ -45,6 +57,72 @@ AMAP_OK = {
     },
 }
 
+# Captured from photon.komoot.io/reverse. A municipality has no ``state``, a
+# county reports ``county`` instead of ``district``, and a rural road has no
+# ``name`` — the three shapes the parser has to survive.
+PHOTON_BEIJING = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "osm_type": "W",
+                "osm_key": "building",
+                "osm_value": "yes",
+                "type": "house",
+                "name": "11号楼",
+                "street": "阜安东路",
+                "locality": "小望京",
+                "district": "望京街道",
+                "city": "北京市",
+                "country": "中国",
+                "postcode": "100102",
+                "countrycode": "CN",
+            },
+            "geometry": {"type": "Point", "coordinates": [116.4796939, 39.9955736]},
+        }
+    ],
+}
+
+PHOTON_WUHAN = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "type": "house",
+                "name": "横渡长江博物馆",
+                "street": "汉口江滩绿道",
+                "locality": "三阳社区",
+                "district": "一元街道",
+                "city": "武汉市",
+                "state": "湖北省",
+                "country": "中国",
+                "countrycode": "CN",
+            },
+            "geometry": {"type": "Point", "coordinates": [114.3020873, 30.5931567]},
+        }
+    ],
+}
+
+PHOTON_INDIA = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "type": "street",
+                "name": "Becharam Chatterjee Road",
+                "county": "Thakurpukur Maheshtala",
+                "state": "West Bengal",
+                "country": "India",
+                "countrycode": "IN",
+            },
+            "geometry": {"type": "Point", "coordinates": [88.2994079, 22.4990374]},
+        }
+    ],
+}
+
 
 class FakeAmap:
     """Serve the regeo endpoint and count calls per coordinate."""
@@ -56,6 +134,21 @@ class FakeAmap:
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.calls.append((request.url.params.get("location", ""), request.url.params.get("key", "")))
+        return httpx.Response(self.status, json=self.body)
+
+
+class FakePhoton:
+    """Serve the Photon endpoint, keeping the raw params and headers."""
+
+    def __init__(self, body: dict | None = None, status: int = 200) -> None:
+        self.calls: list[dict] = []
+        self.headers: list[httpx.Headers] = []
+        self.body = body if body is not None else PHOTON_WUHAN
+        self.status = status
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.calls.append(dict(request.url.params))
+        self.headers.append(request.headers)
         return httpx.Response(self.status, json=self.body)
 
 
@@ -174,6 +267,99 @@ def test_parse_amap_rejects_anything_unusable(body) -> None:
     assert parse_amap(body) is None
 
 
+def test_parse_photon_fills_a_municipality_from_its_city() -> None:
+    address = parse_photon(PHOTON_BEIJING)
+    assert address is not None
+    # No ``state`` in the body: the city is the province, as in Amap's shape.
+    assert address.province == "北京市"
+    assert address.city == "北京市"
+    assert address.district == "望京街道"
+    assert address.township == "小望京"
+    assert address.street == "阜安东路"
+    assert address.poi == "11号楼"
+    # The city is not repeated, so the line does not read "北京市 北京市".
+    assert address.formatted == "北京市 望京街道 小望京 阜安东路 11号楼"
+    assert address.one_line() == "北京市 望京街道 11号楼"
+    assert address.to_payload()["provider"] == "photon"
+
+
+def test_parse_photon_reads_a_province_and_a_named_place() -> None:
+    address = parse_photon(PHOTON_WUHAN)
+    assert address is not None
+    assert address.province == "湖北省"
+    assert address.city == "武汉市"
+    assert address.district == "一元街道"
+    assert address.township == "三阳社区"
+    assert address.poi == "横渡长江博物馆"
+
+
+def test_parse_photon_uses_county_when_there_is_no_district() -> None:
+    address = parse_photon(PHOTON_INDIA)
+    assert address is not None
+    assert address.province == "West Bengal"
+    assert address.city == ""
+    assert address.district == "Thakurpukur Maheshtala"
+    # The rural road is the feature itself, so its name is the place.
+    assert address.poi == "Becharam Chatterjee Road"
+    assert address.formatted == (
+        "West Bengal Thakurpukur Maheshtala Becharam Chatterjee Road"
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"features": []},
+        {"features": [{}]},
+        {"features": [{"properties": {}}]},
+        {"features": "not-a-list"},
+        "not-json",
+        None,
+    ],
+)
+def test_parse_photon_rejects_anything_unusable(body) -> None:
+    assert parse_photon(body) is None
+
+
+def test_parse_photon_ignores_a_feature_far_from_the_fix() -> None:
+    # The same body 20 km from the fix: OSM's nearest named place is no longer a
+    # description of where the owner was, so the fix keeps its coordinates.
+    assert parse_photon(PHOTON_WUHAN, near=(30.77, 114.30)) is None
+    assert parse_photon(PHOTON_WUHAN, near=(30.593, 114.302)) is not None
+
+
+# --------------------------------------------------------------------------- #
+# The datum shift
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("wgs_lat", "wgs_lon", "gcj_lat", "gcj_lon"),
+    [
+        # Reference values from gcoord 1.0.7 (unpkg.com/gcoord@1.0.7), an
+        # independent implementation of the same published transform. Editing the
+        # constants below without re-deriving these makes the test fail, which is
+        # the point: a wrong datum shift is a valid coordinate on the wrong street.
+        (39.908692, 116.397477, 39.910095, 116.403721),
+        (39.996, 116.48, 39.997284, 116.486093),
+        (30.437588, 114.434242, 30.435241, 114.439735),
+    ],
+)
+def test_wgs84_to_gcj02_matches_a_reference_implementation(
+    wgs_lat, wgs_lon, gcj_lat, gcj_lon
+) -> None:
+    latitude, longitude = wgs84_to_gcj02(wgs_lat, wgs_lon)
+    assert latitude == pytest.approx(gcj_lat, abs=1e-6)
+    assert longitude == pytest.approx(gcj_lon, abs=1e-6)
+
+
+def test_wgs84_to_gcj02_leaves_points_outside_mainland_china_alone() -> None:
+    # GCJ-02 is defined only inside China; shifting a fix abroad would be a wrong
+    # answer invented by us, and Amap has no use for it either.
+    assert wgs84_to_gcj02(48.8566, 2.3522) == (48.8566, 2.3522)
+
+
 # --------------------------------------------------------------------------- #
 # The provider client
 # --------------------------------------------------------------------------- #
@@ -191,8 +377,32 @@ async def test_amap_client_queries_lon_lat_and_caches_nearby_fixes() -> None:
     assert len(fake.calls) == 1
     location, key = fake.calls[0]
     assert key == "secret-key"
-    # Amap wants longitude first.
-    assert location == "116.480100,39.996100"
+    # Amap wants longitude first, and wants GCJ-02 rather than the WGS-84 fix.
+    latitude, longitude = wgs84_to_gcj02(39.9961, 116.4801)
+    assert location == f"{longitude:.6f},{latitude:.6f}"
+    assert location != "116.480100,39.996100"
+
+
+@pytest.mark.asyncio
+async def test_amap_client_passes_a_gcj02_fix_through_unchanged() -> None:
+    fake = FakeAmap()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake)) as http:
+        geocoder = AmapGeocoder(
+            geocode_config(coordinate_system="gcj02"), "secret-key", http
+        )
+        await geocoder.reverse(39.9961, 116.4801)
+    assert fake.calls[0][0] == "116.480100,39.996100"
+
+
+class _Recorder(logging.Handler):
+    """Collect messages straight off a logger, whatever the root handler does."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
 
 
 @pytest.mark.asyncio
@@ -200,9 +410,61 @@ async def test_amap_client_returns_nothing_on_a_provider_error() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(FakeAmap(status=500))) as http:
         geocoder = AmapGeocoder(geocode_config(), "secret-key", http)
         assert await geocoder.reverse(39.9, 116.4) is None
-    async with httpx.AsyncClient(transport=httpx.MockTransport(FakeAmap(body={"status": "0"}))) as http:
-        geocoder = AmapGeocoder(geocode_config(), "secret-key", http)
-        assert await geocoder.reverse(39.8, 116.3) is None
+    # A rejected key answers HTTP 200 with status=0, so the reason lives in the
+    # body; without it in the log a bad key is indistinguishable from a place
+    # nobody named, which is what "not resolved" already means.
+    rejected = {
+        "status": "0",
+        "info": "SERVICE_NOT_AVAILABLE",
+        "infocode": "10002",
+    }
+    recorder = _Recorder()
+    geocode_logger = logging.getLogger("winnie_phone.geocode")
+    previous_level = geocode_logger.level
+    geocode_logger.addHandler(recorder)
+    geocode_logger.setLevel(logging.WARNING)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(FakeAmap(body=rejected))
+        ) as http:
+            geocoder = AmapGeocoder(geocode_config(), "secret-key", http)
+            assert await geocoder.reverse(39.8, 116.3) is None
+    finally:
+        geocode_logger.removeHandler(recorder)
+        geocode_logger.setLevel(previous_level)
+    assert any(
+        "10002" in message and "SERVICE_NOT_AVAILABLE" in message
+        for message in recorder.messages
+    ), recorder.messages
+
+
+@pytest.mark.asyncio
+async def test_photon_client_needs_no_key_and_sends_the_fix_unchanged() -> None:
+    fake = FakePhoton()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(fake)) as http:
+        geocoder = build_geocoder(geocode_config(provider="photon"), key="", http=http)
+        assert isinstance(geocoder, PhotonGeocoder)
+        first = await geocoder.reverse(30.5928, 114.3058)
+        # ~1 m away: the same cache entry, so the provider is not asked again.
+        second = await geocoder.reverse(30.59281, 114.30581)
+    assert first is not None and second is not None
+    assert len(fake.calls) == 1
+    assert fake.calls[0] == {"lat": "30.592800", "lon": "114.305800", "limit": "1"}
+    # OSM is WGS-84, so there is no datum shift to apply or to get wrong.
+    assert "key" not in fake.calls[0]
+    assert "winnie" in fake.headers[0]["user-agent"]
+    assert first.one_line() == "湖北省 武汉市 一元街道 横渡长江博物馆"
+
+
+@pytest.mark.asyncio
+async def test_photon_client_returns_nothing_on_a_provider_error() -> None:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(FakePhoton(status=503))) as http:
+        geocoder = PhotonGeocoder(geocode_config(provider="photon"), http)
+        assert await geocoder.reverse(30.5928, 114.3055) is None
+    empty = {"type": "FeatureCollection", "features": []}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(FakePhoton(body=empty))) as http:
+        geocoder = PhotonGeocoder(geocode_config(provider="photon"), http)
+        assert await geocoder.reverse(30.5928, 114.3055) is None
 
 
 @pytest.mark.asyncio
@@ -214,6 +476,18 @@ async def test_build_geocoder_needs_an_enabled_config_and_a_key() -> None:
         assert isinstance(build_geocoder(geocode_config(), key="", http=http), NullGeocoder)
         assert isinstance(build_geocoder(geocode_config(), key="k", http=None), NullGeocoder)
         assert isinstance(build_geocoder(geocode_config(), key="k", http=http), AmapGeocoder)
+        # Turning geocoding on with the keyless provider must not need a key.
+        assert isinstance(
+            build_geocoder(geocode_config(provider="photon"), key="", http=http),
+            PhotonGeocoder,
+        )
+
+
+def test_a_typo_in_the_provider_name_fails_at_load() -> None:
+    # "amapy" would otherwise be a silent NullGeocoder, and the console would say
+    # "not resolved" for ever with nothing in the log to say why.
+    with pytest.raises(ValidationError):
+        PhoneGeocodeConfig(provider="amapy")
 
 
 # --------------------------------------------------------------------------- #

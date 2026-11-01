@@ -26,7 +26,12 @@ from winnie_api.settings import load_settings
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # fileConfig defaults to disable_existing_loggers=True, which flips
+    # ``disabled`` on every logger created before this line and never restores
+    # it. Run in-process — a test, a script, an embedder — and the whole
+    # application's logging goes silent for the rest of the process, with no
+    # error to show for it: ``logger.warning(...)`` simply stops emitting.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 _api_root = Path(__file__).resolve().parents[1]
 config_path = Path(os.environ.get("WINNIE_CONFIG", _api_root / "config.yaml"))
