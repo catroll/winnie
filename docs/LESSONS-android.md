@@ -218,3 +218,56 @@ missing email column costs an email, not the whole contact.
 clearly has data is a read failure, not an empty dataset — and a full snapshot
 is an authoritative delete list, so "return empty on error" is a data-loss bug,
 not a safe default.
+
+## "The server took too long to respond" is a TCP deadline, not a busy server
+
+**Signal.** One handset (NAM-AL00) failed every "Sync now" with *The server took
+too long to respond*, while the other handset on the same account synced
+normally and the server logged no request at all for the failing device.
+
+**Cause.** That sentence is `friendlyMessage()` for `SocketTimeoutException`
+(`data/Errors.kt`) — the 15 s connect or 60 s read deadline of
+`defaultHttpClient`, not a server-side stall. The APK's baked-in address was
+`http://eqr.hosts.d3v.cn:8000`; its **A record was `192.168.31.31`**, a LAN
+address from a previous network, while the host is `192.168.1.38`. Android took
+the IPv4 path, the SYN went to the default gateway and was silently dropped, and
+the connect deadline produced the message. The AAAA record pointed at the real
+host, which is why the same phone had synced for hours over IPv6 (its access-log
+entries come from the home `/64`) and stopped the moment it picked IPv4.
+
+**Check, in this order.**
+
+```bash
+# 1. What does the client dial, and what does each family say?
+dig +short A    eqr.hosts.d3v.cn     # 192.168.31.31  <- not this host
+dig +short AAAA eqr.hosts.d3v.cn     # the host's global address
+ip -4 addr show scope global | grep inet
+
+# 2. Probe the address the client would pick, with a deadline. A silent hang
+#    reproduces the phone's exception; a refusal would be a different message.
+curl -s -m 8 -o /dev/null -w 'code=%{http_code}\n' http://192.168.31.31:8000/healthz
+# code=000, exit=28  (timeout, no RST, no ICMP)
+
+# 3. Read the access log by device id, not by eye. uvicorn logs a line only
+#    when a response completes, so zero lines means nothing arrived.
+grep -c "5c146cec" .cache/logs/api.log
+```
+
+An external IPv4 checker separates the two failures cleanly:
+`check-host.net/check-tcp?host=<name>:8000` returned *Connection timed out* for
+the name (dead private A) but *Connection refused* for the public address
+`117.152.145.159:8000` (router does not forward the port). "Refused" would have
+shown *Could not connect to the server*; only the silent drop shows the timeout
+sentence.
+
+**Fix.** Publish an A record that is the host (`192.168.1.38`) or set the
+address explicitly on the phone; a LAN URL removes DNS from the path entirely.
+Off the LAN this deployment has no usable IPv4 path at all (the public address
+RSTs 8000), so remote sync depends on inbound IPv6 reaching the host.
+
+**Generalisation.** When a client reports a timeout, resolve the name it dials
+for **both** families and probe the address it actually chooses. A wrong DNS
+record, a stale DHCP lease or a port-forward that was never added all surface as
+"the server is slow" if the only evidence is the sentence the app shows. The
+tell is asymmetry: one device and one address family fine, another silent, with
+no request in the server log.

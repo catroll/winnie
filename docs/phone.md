@@ -147,6 +147,32 @@ Response:
 
 `interval_minutes` is the sync hint the phone applies to its periodic worker.
 
+### What one run costs
+
+A run is one request per kind that has something to send, plus `GET /ids` when a
+snapshot kind exceeds one page and `GET /commands` at the end. Snapshot kinds
+(`device`, `calendar`, `contact`, `app`) are re-uploaded **in full on every
+run** — that is what makes `mode: "full"` an authoritative delete list. Calls
+and messages are cursor-incremental from the last `_ID`, notifications are the
+listener's queue, and location is one fix.
+
+Measured on NAM-AL00's data — 45 calendar events, 81 contacts, 431 apps, 39
+notifications — by replaying those rows through `PhoneService.sync()` against a
+copy of the live database (median of 5):
+
+| | |
+|---|---|
+| upload requests per run | 8 (device, calendar, contact, 3 × app, notification, location) |
+| JSON uploaded per run | ~157 KB |
+| server time per run | ~86 ms |
+
+Every request is one transaction that re-reads that device's rows for its kind
+and then runs retention over seven tables plus command expiry, so both the
+request and the run are O(rows) — negligible at the few thousand rows a phone
+holds, and the first thing to change (a cursor or an unchanged digest) if a
+device accumulates a hundred thousand rows. Uploading an unchanged snapshot
+again is the cost of full-snapshot semantics, not an oversight.
+
 ### Device identity
 
 The app generates a random `device_key` once and keeps it. The server upserts on
