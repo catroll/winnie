@@ -361,6 +361,28 @@ the same route.
 dependency and an injection surface for a personal console whose record is
 already readable; the stored file remains the faithful view.
 
+**Superseded (2026-11-01): the reply is rendered as Markdown.** A file that is
+readable as a record is not readable as a conversation: model replies arrive
+with lists, fenced code, tables and emphasis, and `pre-line` showed all of it as
+punctuation. The chat now passes replies through the same token walker the news
+draft already uses, so there is no second renderer and no new dependency — and
+no new injection surface either, since that design never builds an HTML string
+(a hostile reply's `<script>` and `javascript:` link still render as text).
+Chat adds three things to the shared renderer: `breaks`, so a single newline
+stays a line (a draft is a document; a reply is typed like a message), a GFM
+task-list checkbox, and tables in Bootstrap's `.table-responsive` so a wide
+table scrolls inside the bubble instead of pushing the page sideways. Two more
+rules keep the bubble readable: headings are sized relative to the bubble
+rather than the page, and links and inline code take a colour that clears 4.5:1
+on AdminLTE's `--bs-secondary-bg` bubble, where `--bs-link-color` and
+`--bs-code-color` measure 3.8:1 because Bootstrap sizes them for a white page.
+The owner's own turn is still shown as typed: a leading `#` or `-` there is a
+keystroke, not markup, and reinterpreting it would hide what was sent. Images
+stay dropped (a remote pixel would report the reader's address). No syntax
+highlighter is added: a code block renders as monospace text and scrolls
+horizontally, because a highlighter would be a second parser and a second
+injection surface for content that is already readable.
+
 **AdminLTE's `direct-chat` is reused.** It supplies the bubbles, timestamps,
 avatars and float direction. Its `.direct-chat-messages` is fixed at `250px`
 because that is the height of AdminLTE's own demo, so one additive rule sets a

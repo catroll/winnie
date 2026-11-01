@@ -251,7 +251,9 @@ Working:
 - Chat: a ChatGPT-like conversation with the assistant, plus the full history
   from every channel (console, phone page, API and scheduled task runs),
   filterable by channel. Any transcript can be reopened, including its tool
-  blocks; a task-run record is read-only.
+  blocks; a task-run record is read-only. Replies render Markdown — lists, task
+  items, fenced code, tables, links, quotes and emphasis — while the owner's own
+  turn is shown as typed.
 - Meetings: paginated list; detail with stage, processing error, transcript and
   translations, structured minutes, Markdown/TXT export, minutes regeneration
   and deletion.
@@ -321,6 +323,13 @@ Verified:
   filter, a task-run record with no composer, a transcript with a collapsed
   `web_search` block, light and dark mode, and a 390 px viewport with no
   horizontal overflow.
+- A chat reply containing every Markdown construct was rendered and measured in
+  Firefox against a fake model: heading, lists, task items, fenced code, table
+  with alignment, quote, hard breaks, links, inline code and emphasis; a hostile
+  reply's `<script>`, `onerror=` image and `javascript:` link stayed inert text;
+  computed link and inline-code colours cleared 4.5:1 in both themes; the tool
+  trace stayed a `<pre>`; and the owner's own turn kept its literal `**not
+  bold**`.
 - The AI suppliers page was checked in Firefox against a disposable API and
   registry: a fresh seed left model features unbound; DeepSeek's
   gateway routes were grouped under one supplier; the feature table exposed a
@@ -501,8 +510,9 @@ Open:
   cost are unmeasured.
 - A run executes in the API process; a restart leaves its record `running` and
   the `arq` backend does not move news yet.
-- Markdown is shown as source, not rendered; a sanitised renderer is a
-  follow-up.
+- Rare Markdown (footnote references, embedded HTML blocks) renders as visible
+  text instead of richly; that is the shared renderer's deliberate trade, not a
+  missing sanitizer.
 - Publication is out of scope: the pipeline ends at a reviewed file.
 
 ### 5.11 Phone data — Core done

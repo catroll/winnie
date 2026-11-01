@@ -173,3 +173,60 @@ Array.from(table.querySelectorAll('thead th')).map(h => Math.round(h.getBounding
 The trigger is a `<button aria-expanded>` rather than `<summary>`, and the panel
 is `<tr class="table-light"><td colSpan={11}>`. Do not "fix" this by giving the
 panel a fixed width; any width still competes with the other columns.
+
+## A token renderer draws a type once per position, and `default: null` hides the miss
+
+**Signal.** `- [x] done` in a rendered chat reply showed the text "done" with no
+checkbox, and nothing logged. The GFM checkbox token *was* produced by `marked`
+and the renderer had a `case 'checkbox'`.
+
+**Cause.** The case was only in `inline()`. A task item's tokens are a flat list
+on `list_item.tokens` — `[checkbox, text]` — so the checkbox is walked by
+`blocks()`, whose `block()` switch had no such case and fell through to
+`default: return null`. The marker disappeared silently because dropping an
+unknown block is also the correct behaviour for `space`/`def`.
+
+**Check.** Feed one sample of every token type at each nesting depth it can
+appear at (top level, inside `list_item.tokens`, inside a table cell) and assert
+the rendered element, not the parser output. In the browser the guard is a
+count: `input[type=checkbox]:checked` must be 1 for one `- [x]` item.
+
+**Fix.** One `taskCheckbox()` helper called from both switches, with the reason
+written where the next reader will add a token type.
+
+## `innerText` is empty for anything inside a closed `<details>`
+
+**Signal.** A verification of a tool block asserted its `<pre>` content and got
+`""`, although the same text was visible in the browser after clicking the
+summary.
+
+**Cause.** `innerText` is a *rendered* text value; content hidden by a closed
+`<details>` has no layout box, so it reads as empty. `textContent` returns the
+source text regardless.
+
+**Fix.** Use `textContent` when asserting hidden content, and open the element
+first when the assertion is about what a person sees. A probe that returns
+`""` for text you know is stored is a hiding question, not a data question.
+
+## A page-side probe written as a template literal cannot contain a backtick
+
+**Signal.** A BiDi check of Markdown rendering failed to parse with `SyntaxError:
+missing ) after argument list` at the closing backtick of a browser expression,
+pointing at the last line of the block rather than the offending one.
+
+**Cause.** The probe was passed to `script.evaluate` as a template literal that
+also contained the Markdown sample, including a fenced code block. Its three
+backticks ended the template literal, so the rest of the browser code was parsed
+as module code — and the reported line is wherever the string finally closes.
+
+**Fix.** Do not inline JavaScript into a template literal. Define the probe as an
+ordinary page-side function and pass its source, which is parsed by Node (so an
+error points at the real line), can contain any quoting, and stays readable:
+
+```javascript
+await evaluate(`JSON.stringify((${readBubble})())`);
+```
+
+Keep the function free of module-scope variables — it does not close over the
+Node module it is defined in.
+

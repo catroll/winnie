@@ -9,6 +9,7 @@ import type {
   AssistantStatus,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
+import { Markdown } from '../components/Markdown';
 import { PageHeader } from '../components/PageHeader';
 import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
@@ -79,7 +80,17 @@ function Message({ message }: { message: AssistantMessage }) {
         </span>
       </div>
       <Avatar assistant={!outgoing} />
-      <div className="direct-chat-text winnie-pre-line text-break">{message.text}</div>
+      {outgoing ? (
+        // The owner's own turn is shown as typed. A leading `#` or `-` there is
+        // a keystroke, not markup, and reinterpreting it would hide the text.
+        <div className="direct-chat-text winnie-pre-line text-break">{message.text}</div>
+      ) : (
+        // The reply is model output that arrives as Markdown. `breaks` keeps a
+        // single newline a line, which is how the author typed it.
+        <div className="direct-chat-text text-break">
+          <Markdown source={message.text} breaks />
+        </div>
+      )}
     </div>
   );
 }

@@ -85,6 +85,13 @@ non-streaming: the page shows a thinking indicator and then re-reads the file so
 the recorded tool calls appear. A task-run record is read-only; the API rejects a
 chat turn on it with `409`, and the composer is replaced with a notice.
 
+A reply is rendered as Markdown: headings, lists and task items, fenced code,
+tables, quotes, links and emphasis. The rendering is the console's own — `marked`
+only parses, the tokens become React elements, images are not loaded and a
+`javascript:` link becomes plain text. The owner's own turn is shown as typed, so
+a `#` or `-` at the start of a line stays a keystroke; tool output stays a `<pre>`
+block because it is data, not prose.
+
 When the assistant's local tools are enabled, a `run_command` or an overwrite
 appears in the transcript as a `PENDING` tool block. A non-whitelisted action is
 first sent to the LLM reviewer; a denial appears as `REVIEW DENIED` and nothing

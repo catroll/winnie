@@ -1,19 +1,24 @@
 /**
- * Render a news draft's Markdown without trusting it.
+ * Render Markdown without trusting it.
  *
- * Drafts are model output written from untrusted articles, so the text is
- * treated as data: `marked` only *parses* it, and the resulting tokens are
- * turned into React elements. Nothing is ever inserted with
+ * Drafts and chat replies are model output written from untrusted sources, so
+ * the text is treated as data: `marked` only *parses* it, and the resulting
+ * tokens are turned into React elements. Nothing is ever inserted with
  * `dangerouslySetInnerHTML`, so an injected `<script>` or `onerror=` survives
  * only as visible text.
  *
- * The renderer also drops two things a news draft never needs and an attacker
- * would like: images are not loaded (a remote pixel would report the reader's
- * IP) and link targets are limited to http(s), mailto and relative URLs.
+ * The renderer also drops two things a reply never needs and an attacker would
+ * like: images are not loaded (a remote pixel would report the reader's IP) and
+ * link targets are limited to http(s), mailto and relative URLs.
  *
- * Headings are shifted down two levels because the page owns `h1` and the card
- * title `h2`; a draft's `# title` becomes an `h4`, which keeps its hierarchy
+ * Headings are shifted down two levels because a page owns `h1` and its card
+ * title `h2`; a document's `# title` becomes an `h3`, which keeps its hierarchy
  * without a second page heading.
+ *
+ * `breaks` controls what a single newline means. A news draft is a document,
+ * where a soft wrap is just whitespace, so it is off there. A chat reply is
+ * typed like a message and its author expects each line to stay a line, so the
+ * conversation passes `breaks` and a newline becomes a hard break.
  */
 
 import { useMemo } from 'react';
@@ -32,6 +37,27 @@ function safeHref(value: string | null | undefined): string | null {
     return href;
   }
   return HREF_SCHEME.test(href) ? href : null;
+}
+
+/**
+ * A GFM task item's marker. It is a real (disabled) input so it reads as a
+ * checkbox, not as the literal "[x]" the token carries.
+ *
+ * The token arrives in block position — a sibling of the item's text token
+ * inside `list_item.tokens`, not inside its inline tokens — so both walkers
+ * have to recognise it. Handling only one drops the marker silently.
+ */
+function taskCheckbox(box: Tokens.Checkbox, key: string): ReactNode {
+  return (
+    <input
+      key={key}
+      type="checkbox"
+      className="form-check-input me-1"
+      checked={box.checked}
+      disabled
+      readOnly
+    />
+  );
 }
 
 function inline(tokens: Token[] | undefined, keyPrefix: string): ReactNode {
@@ -58,6 +84,8 @@ function inline(tokens: Token[] | undefined, keyPrefix: string): ReactNode {
             );
           case 'br':
             return <br key={key} />;
+          case 'checkbox':
+            return taskCheckbox(token as Tokens.Checkbox, key);
           case 'link': {
             const link = token as Tokens.Link;
             const label = inline(link.tokens, key) ?? link.text;
@@ -131,6 +159,8 @@ function block(token: Token, key: string): ReactNode {
     }
     case 'paragraph':
       return <p key={key}>{inline((token as Tokens.Paragraph).tokens, key)}</p>;
+    case 'checkbox':
+      return taskCheckbox(token as Tokens.Checkbox, key);
     case 'text':
       return <span key={key}>{inline((token as Tokens.Text).tokens, key)}</span>;
     case 'list': {
@@ -163,28 +193,39 @@ function block(token: Token, key: string): ReactNode {
     case 'table': {
       const table = token as Tokens.Table;
       return (
-        <table key={key} className="table table-sm table-bordered">
-          <thead>
-            <tr>
-              {table.header.map((cell, index) => (
-                <th key={`${key}-h-${index}`} scope="col">
-                  {inline(cell.tokens, `${key}-h-${index}`)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {table.rows.map((row, rowIndex) => (
-              <tr key={`${key}-r-${rowIndex}`}>
-                {row.map((cell, cellIndex) => (
-                  <td key={`${key}-r-${rowIndex}-${cellIndex}`}>
-                    {inline(cell.tokens, `${key}-r-${rowIndex}-${cellIndex}`)}
-                  </td>
+        // Bootstrap's table needs its own scroll box, or a wide table pushes
+        // the page sideways instead of scrolling within the card.
+        <div key={key} className="table-responsive mb-3">
+          <table className="table table-sm table-bordered mb-0">
+            <thead>
+              <tr>
+                {table.header.map((cell, index) => (
+                  <th
+                    key={`${key}-h-${index}`}
+                    scope="col"
+                    style={{ textAlign: cell.align ?? undefined }}
+                  >
+                    {inline(cell.tokens, `${key}-h-${index}`)}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {table.rows.map((row, rowIndex) => (
+                <tr key={`${key}-r-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td
+                      key={`${key}-r-${rowIndex}-${cellIndex}`}
+                      style={{ textAlign: cell.align ?? undefined }}
+                    >
+                      {inline(cell.tokens, `${key}-r-${rowIndex}-${cellIndex}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     }
     case 'html':
@@ -201,14 +242,21 @@ function block(token: Token, key: string): ReactNode {
   }
 }
 
-export function Markdown({ source }: { source: string }) {
+export function Markdown({
+  source,
+  breaks = false,
+}: {
+  source: string;
+  /** Treat a single newline as a hard break. Conversation replies want this. */
+  breaks?: boolean;
+}) {
   const tokens = useMemo(() => {
     try {
-      return marked.lexer(source, { gfm: true, breaks: false });
+      return marked.lexer(source, { gfm: true, breaks });
     } catch {
       return null;
     }
-  }, [source]);
+  }, [source, breaks]);
 
   if (!tokens) {
     return (
@@ -217,5 +265,5 @@ export function Markdown({ source }: { source: string }) {
       </pre>
     );
   }
-  return <div className="news-draft">{blocks(tokens, 'md')}</div>;
+  return <div className="markdown-body">{blocks(tokens, 'md')}</div>;
 }
