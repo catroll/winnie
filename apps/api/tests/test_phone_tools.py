@@ -388,3 +388,109 @@ def test_write_tools_are_not_offered_to_scheduled_turns(toolbox: ToolBox) -> Non
     views = {view.name: view for view in registry.views()}
     assert views["phone"].available is True
     assert views["phone_write"].scheduled_safe is False
+
+
+class BirthdayStub(StubPhone):
+    """Two sources, one person, two dates — the owner's real shape."""
+
+    async def calendar(self, *, since=None, until=None, query="", limit=50):
+        rows = [
+            ("b-1", "圆圆生日", datetime(2026, 12, 20, tzinfo=timezone.utc),
+             "FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12"),
+            ("b-2", "圆圆两岁生日", datetime(2026, 12, 12, tzinfo=timezone.utc), ""),
+            ("b-3", "Dentist", datetime(2026, 11, 2, 1, 0, tzinfo=timezone.utc), ""),
+        ]
+        return [
+            {
+                "id": row[0],
+                "device_name": "Pixel 8",
+                "calendar_name": "Phone",
+                "title": row[1],
+                "description": "",
+                "location": "",
+                "starts_at": row[2],
+                "ends_at": None,
+                "all_day": True,
+                "timezone": "UTC",
+                "recurrence": row[3],
+                "organizer": "",
+                "attendees": [],
+                "status": "",
+            }
+            for row in rows
+        ]
+
+    async def contacts(self, *, query="", limit=50):
+        return [
+            {
+                "id": "c-1",
+                "display_name": "圆圆",
+                "birthdays": [
+                    {"month": 12, "day": 12, "year": 2024, "type": "birthday"}
+                ],
+            },
+            {
+                "id": "c-2",
+                "display_name": "张三",
+                "birthdays": [{"month": 11, "day": 5, "type": "birthday"}],
+            },
+        ]
+
+
+@pytest.mark.asyncio
+async def test_birthdays_merge_calendar_and_contacts() -> None:
+    """The tool lists both sources and flags the person who disagrees with it.
+
+    Calendar rows carry the lunar date already resolved by the read; contacts
+    carry the one a phone never put on a calendar. Neither alone answers the
+    question, and 圆圆 has two dates in the owner's data.
+    """
+    toolbox = ToolBox(
+        search=FakeSearchProvider(),
+        index=None,
+        memory=None,
+        scheduler=None,
+        http=httpx.AsyncClient(),
+        phone=BirthdayStub(),
+        timezone=SHANGHAI,
+        clock=lambda: NOW,
+    )
+
+    text = await call(toolbox, "birthdays", days_ahead=60)
+
+    assert "2026-12-20 Sun" in text
+    assert "2026-12-12 Sat" in text
+    assert "2026-11-05 Thu" in text
+    assert "圆圆" in text
+    assert "张三" in text
+    assert "every year" in text
+    assert "one-off" in text
+    assert "turns 2" in text
+    assert "2 different dates" in text
+    assert "Dentist" not in text
+
+
+@pytest.mark.asyncio
+async def test_birthdays_says_so_when_there_is_none() -> None:
+    class EmptyStub(StubPhone):
+        async def calendar(self, *, since=None, until=None, query="", limit=50):
+            return []
+
+        async def contacts(self, *, query="", limit=50):
+            return []
+
+    toolbox = ToolBox(
+        search=FakeSearchProvider(),
+        index=None,
+        memory=None,
+        scheduler=None,
+        http=httpx.AsyncClient(),
+        phone=EmptyStub(),
+        timezone=SHANGHAI,
+        clock=lambda: NOW,
+    )
+
+    text = await call(toolbox, "birthdays")
+
+    assert "No birthday or anniversary in the next 60 days" in text
+    assert "phone_status" in text

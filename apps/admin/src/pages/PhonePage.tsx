@@ -1396,6 +1396,7 @@ function PhoneTable({ data, commandDeviceName, onOpenMessage }: PhoneTableProps)
                 <th scope="col">{tr('Numbers')}</th>
                 <th scope="col">{tr('Email')}</th>
                 <th scope="col">{tr('Organisation')}</th>
+                <th scope="col">{tr('Birthday')}</th>
                 <th scope="col">{tr('Device')}</th>
               </tr>
             </thead>
@@ -1415,6 +1416,18 @@ function PhoneTable({ data, commandDeviceName, onOpenMessage }: PhoneTableProps)
                     {contact.emails.length === 0 ? '—' : contact.emails.join(', ')}
                   </td>
                   <td>{contact.organization || '—'}</td>
+                  <td className="text-nowrap small">
+                    {contact.birthdays.length === 0
+                      ? '—'
+                      : contact.birthdays
+                          .map(
+                            (birthday) =>
+                              `${String(birthday.month).padStart(2, '0')}-${String(
+                                birthday.day,
+                              ).padStart(2, '0')}${birthday.year ? ` / ${birthday.year}` : ''}`,
+                          )
+                          .join(', ')}
+                  </td>
                   <td className="text-nowrap">{contact.device_name}</td>
                 </tr>
               ))}

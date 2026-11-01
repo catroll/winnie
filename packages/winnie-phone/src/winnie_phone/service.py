@@ -1353,6 +1353,7 @@ class PhoneService:
                     "emails": list(row.emails or []),
                     "organization": row.organization,
                     "starred": row.starred,
+                    "birthdays": list(row.birthdays or []),
                 }
                 for row in rows
             ]
@@ -1739,6 +1740,7 @@ class PhoneService:
                         _join_text(
                             ", ".join(row["numbers"]),
                             row["organization"],
+                            _birthday_text(row["birthdays"]),
                         ),
                         row,
                     )
@@ -2275,6 +2277,16 @@ def _hit(kind: str, at, title: str, text: str, row: dict) -> dict:
 
 def _join_text(*values: str) -> str:
     return " ".join(value for value in values if value)
+
+
+def _birthday_text(birthdays: list[dict]) -> str:
+    """``03-01`` (and ``03-01 1988``) so a search can find a contact by date."""
+    return ", ".join(
+        f"{item.get('month'):02d}-{item.get('day'):02d}"
+        + (f" {item['year']}" if item.get("year") else "")
+        for item in birthdays
+        if item.get("month") and item.get("day")
+    )
 
 
 def _merged_info(current: dict | None, incoming: dict | None) -> dict:

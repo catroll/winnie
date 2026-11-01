@@ -2,6 +2,7 @@ package dev.winnie.app.phone.sources
 
 import android.content.Context
 import android.provider.ContactsContract
+import dev.winnie.app.data.PhoneContactBirthday
 import dev.winnie.app.data.PhoneContactItem
 
 /**
@@ -50,6 +51,7 @@ class ContactsSource(private val context: Context) {
         readNumbers(contacts)
         readEmails(contacts)
         readOrganizations(contacts)
+        readBirthdays(contacts)
 
         return contacts.values.map {
             PhoneContactItem(
@@ -59,6 +61,7 @@ class ContactsSource(private val context: Context) {
                 emails = it.emails.toList(),
                 organization = it.organization,
                 starred = it.starred,
+                birthdays = it.birthdays.toList(),
             )
         }
     }
@@ -154,6 +157,66 @@ class ContactsSource(private val context: Context) {
     }
 
     /**
+     * Birthdays and anniversaries, read from the provider's `Event` rows.
+     *
+     * `Event.START_DATE` is `YYYY-MM-DD`, or `--MM-DD` when the owner never
+     * entered the year; the server stores month/day/year separately, so the
+     * parsing stays next to the provider whose format this is. A provider that
+     * hides its birthday calendar still keeps these rows, which is why they are
+     * worth more than the calendar alone.
+     */
+    private fun readBirthdays(contacts: MutableMap<Long, MutableContact>) {
+        val cursor = try {
+            context.contentResolver.query(
+                ContactsContract.Data.CONTENT_URI,
+                arrayOf(
+                    ContactsContract.Data.CONTACT_ID,
+                    ContactsContract.CommonDataKinds.Event.TYPE,
+                    ContactsContract.CommonDataKinds.Event.START_DATE,
+                ),
+                "${ContactsContract.Data.MIMETYPE} = ?",
+                arrayOf(ContactsContract.CommonDataKinds.Event.CONTENT_ITEM_TYPE),
+                null,
+            )
+        } catch (_: Exception) {
+            return
+        } ?: return
+        cursor.use {
+            val contactId = it.getColumnIndex(ContactsContract.Data.CONTACT_ID)
+            val type = it.getColumnIndex(ContactsContract.CommonDataKinds.Event.TYPE)
+            val start = it.getColumnIndex(ContactsContract.CommonDataKinds.Event.START_DATE)
+            if (contactId < 0 || type < 0 || start < 0) return
+            while (it.moveToNext()) {
+                val target = contacts[it.getLong(contactId)] ?: continue
+                val birthday = parseBirthday(
+                    it.getString(start).orEmpty(),
+                    it.getInt(type),
+                ) ?: continue
+                if (birthday !in target.birthdays) target.birthdays += birthday
+            }
+        }
+    }
+
+    private fun parseBirthday(raw: String, eventType: Int): PhoneContactBirthday? {
+        val parts = raw.trim().split("-")
+        if (parts.size != 3) return null
+        val month = parts[1].toIntOrNull() ?: return null
+        val day = parts[2].toIntOrNull() ?: return null
+        val year = parts[0].takeIf { it.length == 4 && it != "0000" }?.toIntOrNull()
+        if (month !in 1..12 || day !in 1..31) return null
+        return PhoneContactBirthday(
+            month = month,
+            day = day,
+            year = year,
+            type = when (eventType) {
+                ContactsContract.CommonDataKinds.Event.TYPE_BIRTHDAY -> "birthday"
+                ContactsContract.CommonDataKinds.Event.TYPE_ANNIVERSARY -> "anniversary"
+                else -> "other"
+            },
+        )
+    }
+
+    /**
      * A cheap token for "did the contact list change?". `CONTACT_LAST_UPDATED_TIMESTAMP`
      * is bumped by the provider on an edit, so a count plus its maximum catches
      * adds, deletes and edits without reading every contact. A provider without
@@ -195,5 +258,6 @@ class ContactsSource(private val context: Context) {
         val numbers: MutableSet<String> = linkedSetOf(),
         val emails: MutableSet<String> = linkedSetOf(),
         var organization: String = "",
+        val birthdays: MutableList<PhoneContactBirthday> = mutableListOf(),
     )
 }

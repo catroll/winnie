@@ -150,3 +150,16 @@ def test_recall_uses_the_conversation_to_resolve_a_bare_follow_up(tmp_path) -> N
     recalled = memory.recall("那几点？", context=["明天带图图去上课是几点？"])
     assert "图图" in recalled
 
+
+
+def test_the_distiller_is_told_not_to_store_a_failed_lookup() -> None:
+    """A negative result became a fact once; the prompt now rules it out.
+
+    On 2026-11-01 "not found" was distilled from a failed search, and the next
+    birthday question was answered from it without a tool call. This is the
+    executable half of the guard; the other half is the skill instruction that
+    points the model at the data.
+    """
+    from winnie_assistant.memory_builder import SYSTEM_PROMPT
+
+    assert "Never store a failed lookup" in SYSTEM_PROMPT

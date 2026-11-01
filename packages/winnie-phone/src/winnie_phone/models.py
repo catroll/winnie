@@ -251,6 +251,10 @@ class PhoneContact(Base):
     emails: Mapped[list[str]] = mapped_column(JSON, default=list)
     organization: Mapped[str] = mapped_column(String(512), default="")
     starred: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Birthdays and anniversaries the contacts provider stores, as JSON objects
+    # {month, day, year?, type}. They belong to the contact, not to a calendar,
+    # because a provider that hides its birthday calendar still keeps them.
+    birthdays: Mapped[list] = mapped_column(JSON, default=list)
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

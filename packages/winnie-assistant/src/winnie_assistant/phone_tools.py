@@ -15,8 +15,10 @@ output use one time zone and one date format.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -44,6 +46,7 @@ PHONE_READ_TOOLS = frozenset(
         "phone_status",
         "phone_search",
         "phone_calendar",
+        "birthdays",
         "phone_calls",
         "phone_messages",
         "phone_notifications",
@@ -157,6 +160,25 @@ PHONE_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "minimum": 1,
                 "maximum": 100,
                 "description": "Maximum events; default 50.",
+            },
+        },
+        [],
+    ),
+    _schema(
+        "birthdays",
+        (
+            "List the birthdays and anniversaries coming up in the next N days, "
+            "merged from the phone calendar and the contacts. Use this for any "
+            "'who has a birthday soon' question; never answer it from memory. The "
+            "calendar tool's default window is only seven days, so it cannot "
+            "answer this on its own."
+        ),
+        {
+            "days_ahead": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 366,
+                "description": "Days to look ahead; default 60.",
             },
         },
         [],
@@ -452,6 +474,8 @@ class PhoneToolMixin:
             return await self._phone_search(gateway, arguments)
         if name == "phone_calendar":
             return await self._phone_calendar(gateway, arguments)
+        if name == "birthdays":
+            return await self._birthdays(gateway, arguments)
         if name == "phone_calls":
             return await self._phone_calls(gateway, arguments)
         if name == "phone_messages":
@@ -604,6 +628,96 @@ class PhoneToolMixin:
             lines.append(
                 f"- {when} [id {event['id']}] {event.get('title') or '(untitled)'}"
                 f"{location}{calendar}{repeating}"
+            )
+        return "\n".join(lines)
+
+    async def _birthdays(
+        self, gateway: PhoneGateway, arguments: dict[str, Any]
+    ) -> str:
+        """Birthdays and anniversaries ahead, merged from two sources.
+
+        The calendar carries the lunar ones (the provider writes the lunar date
+        into the rule and the read resolves it) and contacts carry the ones a
+        phone never put on a calendar. Neither alone is the answer: the owner's
+        data has both, and one person can appear in each with a different date.
+        """
+        days = _as_int(arguments.get("days_ahead"), default=60, minimum=1, maximum=366)
+        now = self._now()
+        today = now.astimezone(self.timezone).date()
+        horizon = today + timedelta(days=days)
+        events = await gateway.calendar(
+            since=now, until=now + timedelta(days=days), limit=200
+        )
+        contacts = await gateway.contacts(limit=2000)
+
+        found: list[_Birthday] = []
+        for event in events:
+            title = str(event.get("title") or "")
+            calendar = str(event.get("calendar_name") or "")
+            if not _birthday_text_matches(title, calendar):
+                continue
+            when = _parse_datetime(event.get("starts_at"), self.timezone)
+            if when is None:
+                continue
+            on = when.astimezone(self.timezone).date()
+            if not (today <= on <= horizon):
+                continue
+            recurring = bool(event.get("recurrence"))
+            found.append(
+                _Birthday(
+                    name=_person_from_title(title),
+                    on=on,
+                    source=f"calendar「{title}」",
+                    note="every year" if recurring else "one-off",
+                )
+            )
+        for contact in contacts:
+            name = str(contact.get("display_name") or "").strip()
+            for item in contact.get("birthdays") or []:
+                try:
+                    month = int(item.get("month") or 0)
+                    day = int(item.get("day") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if not (1 <= month <= 12 and 1 <= day <= 31):
+                    continue
+                on = _next_date(today, month, day)
+                if on is None or on > horizon:
+                    continue
+                kind = "anniversary" if item.get("type") == "anniversary" else "birthday"
+                note = f"contacts, {kind}"
+                year = item.get("year")
+                if year:
+                    note += f", turns {on.year - int(year)}"
+                found.append(
+                    _Birthday(name=name or "?", on=on, source="contacts", note=note)
+                )
+        if not found:
+            return (
+                f"No birthday or anniversary in the next {days} days. If the owner "
+                "expects one, check that the contact and calendar scopes are enabled "
+                "and synced (phone_status)."
+            )
+
+        found.sort(key=lambda item: (item.on, item.name))
+        lines = [f"Birthdays and anniversaries in the next {days} days:"]
+        for item in found:
+            left = (item.on - today).days
+            when = "today" if left == 0 else "tomorrow" if left == 1 else f"in {left} days"
+            lines.append(
+                f"- {item.on.isoformat()} {_WEEKDAY[item.on.weekday()]} \u00b7 {item.name}"
+                f" \u00b7 {when} \u00b7 {item.source} \u00b7 {item.note}"
+            )
+        dates_by_name: dict[str, set[date]] = {}
+        for item in found:
+            dates_by_name.setdefault(item.name, set()).add(item.on)
+        for name, dates in dates_by_name.items():
+            if len(dates) < 2:
+                continue
+            listed = ", ".join(day.isoformat() for day in sorted(dates))
+            lines.append(
+                f"Note: {name} appears with {len(dates)} different dates ({listed})."
+                " Ask the owner which one is right before recording it."
             )
         return "\n".join(lines)
 
@@ -889,6 +1003,52 @@ class PhoneToolMixin:
         if parsed is None:
             return ""
         return parsed.astimezone(self.timezone).strftime("%Y-%m-%d %H:%M")
+
+
+_WEEKDAY = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_BIRTHDAY_WORDS = re.compile(
+    r"生日|birthday|诞辰|誕辰|纪念日|anniversary|壽|寿", re.IGNORECASE
+)
+_TITLE_NOISE = re.compile(
+    r"(的)?生日|birthday|诞辰|誕辰|纪念日|anniversary"
+    r"|[0-9一二两三四五六七八九十百廿]+岁|\U0001F382|农历|農曆",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class _Birthday:
+    name: str
+    on: date
+    source: str
+    note: str
+
+
+def _birthday_text_matches(title: str, calendar: str) -> bool:
+    """Crude on purpose: a false positive is a line the owner can ignore."""
+    return bool(_BIRTHDAY_WORDS.search(title) or _BIRTHDAY_WORDS.search(calendar))
+
+
+def _person_from_title(title: str) -> str:
+    name = _TITLE_NOISE.sub("", title)
+    name = re.sub(r"[（(][^()（）]*[)）]", "", name)
+    name = name.strip(" \u00b7-|,，。:：[]【】")
+    return " ".join(name.split()) or title.strip() or "?"
+
+
+def _next_date(today: date, month: int, day: int) -> date | None:
+    """The next occurrence on or after ``today``; Feb 29 falls back to Feb 28."""
+    for year in (today.year, today.year + 1):
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            if month == 2 and day == 29:
+                candidate = date(year, 2, 28)
+            else:
+                return None
+        if candidate >= today:
+            return candidate
+    return None
 
 
 def _required(arguments: dict[str, Any], name: str) -> str:

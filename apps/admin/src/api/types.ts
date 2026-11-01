@@ -927,6 +927,13 @@ export interface PhoneMessageSender {
   last_at: string | null;
 }
 
+export interface PhoneContactBirthday {
+  month: number;
+  day: number;
+  year: number | null;
+  type: string;
+}
+
 export interface PhoneContact {
   id: string;
   device_id: string;
@@ -936,6 +943,7 @@ export interface PhoneContact {
   emails: string[];
   organization: string;
   starred: boolean;
+  birthdays: PhoneContactBirthday[];
 }
 
 export interface PhoneNotification {

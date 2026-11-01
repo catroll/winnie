@@ -8,11 +8,11 @@ field name fails at the edge instead of being ignored.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SyncKind = Literal[
     "calendar",
@@ -119,6 +119,32 @@ class MessageItem(BaseModel):
     kind: Literal["sms", "mms"] = "sms"
 
 
+class ContactBirthday(BaseModel):
+    """One birthday or anniversary stored on a contact.
+
+    Android's ``Event`` row holds the date as ``YYYY-MM-DD``, or ``--MM-DD``
+    when the year is unknown. The client splits it, so the server never has to
+    parse that string and a bad month fails at the edge. These are Gregorian
+    dates; a lunar birthday is a calendar row, with the lunar rule the calendar
+    sync already carries.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    month: int = Field(ge=1, le=12)
+    day: int = Field(ge=1, le=31)
+    year: int | None = Field(default=None, ge=1900, le=2100)
+    type: Literal["birthday", "anniversary", "other"] = "birthday"
+
+    @model_validator(mode="after")
+    def _real_date(self) -> "ContactBirthday":
+        try:
+            date(self.year or 2000, self.month, self.day)
+        except ValueError as exc:
+            raise ValueError("birthday is not a real date") from exc
+        return self
+
+
 class ContactItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,6 +154,7 @@ class ContactItem(BaseModel):
     emails: list[str] = Field(default_factory=list)
     organization: str = Field(default="", max_length=512)
     starred: bool = False
+    birthdays: list[ContactBirthday] = Field(default_factory=list)
 
 
 class NotificationItem(BaseModel):
@@ -462,6 +489,7 @@ class ContactRead(BaseModel):
     emails: list[str]
     organization: str
     starred: bool
+    birthdays: list[ContactBirthday] = Field(default_factory=list)
 
 
 class SearchHit(BaseModel):

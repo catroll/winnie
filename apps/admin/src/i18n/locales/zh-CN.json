@@ -268,6 +268,7 @@
   "Balance": "余额",
   "Balances come from the server-side keys of internal integrations. A gateway route forwards the client's own key, so proxied traffic does not appear here.": "余额来自内部集成使用的服务端密钥。网关路由转发客户端自己的密钥，因此经代理的流量不会出现在这里。",
   "Base URL": "基础 URL",
+  "Birthday": "生日",
   "Blocked": "已拦截",
   "Bound features": "已绑定的功能",
   "Breakdown": "明细",

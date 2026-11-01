@@ -1248,3 +1248,58 @@ async def test_calendar_read_expands_a_lunar_birthday(
     assert starts == [
         datetime(2026, 12, 20, tzinfo=timezone.utc)
     ], rows
+
+
+@pytest.mark.asyncio
+async def test_contact_birthdays_round_trip(phone_client: httpx.AsyncClient) -> None:
+    """A birthday stored on a contact reaches the server and comes back.
+
+    Android's Event row is `YYYY-MM-DD` or `--MM-DD`; the client splits it, and
+    the year stays optional because the provider's year is optional.
+    """
+    device = await register(phone_client)
+    result = await sync(
+        phone_client,
+        device["id"],
+        "contact",
+        [
+            {
+                "external_id": "c-1",
+                "display_name": "圆圆",
+                "numbers": ["13800000000"],
+                "birthdays": [
+                    {"month": 12, "day": 12, "year": 2024, "type": "birthday"},
+                    {"month": 5, "day": 20, "type": "anniversary"},
+                ],
+            }
+        ],
+    )
+    assert result.status_code == 200, result.text
+
+    rows = (await phone_client.get("/api/v1/phone/contacts")).json()
+    assert rows[0]["birthdays"] == [
+        {"month": 12, "day": 12, "year": 2024, "type": "birthday"},
+        {"month": 5, "day": 20, "year": None, "type": "anniversary"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_contact_birthday_that_is_not_a_date_is_rejected(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    device = await register(phone_client)
+    result = await sync(
+        phone_client,
+        device["id"],
+        "contact",
+        [
+            {
+                "external_id": "c-1",
+                "display_name": "X",
+                "birthdays": [{"month": 2, "day": 30}],
+            }
+        ],
+    )
+
+    assert result.status_code == 422
+    assert "birthday" in result.text

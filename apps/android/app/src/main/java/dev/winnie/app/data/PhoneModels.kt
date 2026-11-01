@@ -58,6 +58,15 @@ data class PhoneMessageItem(
 )
 
 @Serializable
+data class PhoneContactBirthday(
+    val month: Int,
+    val day: Int,
+    // Null when the provider stored `--MM-DD`: the owner never entered a year.
+    val year: Int? = null,
+    val type: String = "birthday",
+)
+
+@Serializable
 data class PhoneContactItem(
     @SerialName("external_id") val externalId: String,
     @SerialName("display_name") val displayName: String = "",
@@ -65,6 +74,7 @@ data class PhoneContactItem(
     val emails: List<String> = emptyList(),
     val organization: String = "",
     val starred: Boolean = false,
+    val birthdays: List<PhoneContactBirthday> = emptyList(),
 )
 
 @Serializable

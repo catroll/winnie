@@ -37,7 +37,7 @@ Success for this slice means:
 | `calendar` | `CalendarContract.Events` | Title, description, location, start/end, all-day, timezone, RRULE, EXDATE, organiser, status, calendar display name | 730 days, but a repeating row is kept while it still has occurrences ahead |
 | `call` | `CallLog.Calls` | Number, cached name, direction, time, duration, SIM account, new flag | 0 (everything) |
 | `message` | `content://sms` | Thread, address, direction, body, subject, time, read flag | 0 (everything) |
-| `contact` | `ContactsContract` | Display name, numbers, emails, organisation, starred | snapshot, no expiry |
+| `contact` | `ContactsContract` | Display name, numbers, emails, organisation, starred, and the birthdays/anniversaries stored in the provider's `Event` rows | snapshot, no expiry |
 | `notification` | `NotificationListenerService` | Package, app label, title, text, category, time, clearable flag | 14 days |
 | `location` | `LocationManager` | One fix every five minutes while the sync loop runs: latitude, longitude, accuracy, altitude, speed, provider; the server adds 省/市/区/具体位置 when reverse geocoding is configured | 30 days |
 | `app` | `PackageManager` | Package, label, version, version code, system/enabled flags, install/update time | snapshot, no expiry |
@@ -373,12 +373,21 @@ write:
 
 | Skill | Tools | Scheduled turns |
 |---|---|---|
-| `phone` | `phone_status`, `phone_search`, `phone_calendar`, `phone_calls`, `phone_messages`, `phone_notifications`, `phone_location`, `phone_apps` | allowed |
+| `phone` | `phone_status`, `phone_search`, `phone_calendar`, `birthdays`, `phone_calls`, `phone_messages`, `phone_notifications`, `phone_location`, `phone_apps` | allowed |
 | `phone_write` | `phone_calendar_create`, `phone_calendar_update`, `phone_calendar_delete`, `phone_sms_send`, `phone_confirm`, `phone_cancel` | excluded |
 
 Every answer carries the last sync time, and the tool output names the device.
 Phone text is treated like any other untrusted content: an SMS or a
 notification is data written by someone else, never an instruction.
+
+`birthdays` is the one read that merges two kinds. The calendar carries the
+lunar birthdays — a Chinese provider writes the lunar month/day into the
+`RRULE`, and the read decodes it (see `docs/decisions.md`, "A yearly event may
+carry its lunar date") — while contacts carry the ones the phone never put on a
+calendar. A person can appear in both with different dates, so the tool lists
+every candidate, flags the conflict and asks; it never picks one silently. Its
+default horizon is 60 days, because `phone_calendar`'s seven-day default cannot
+see a birthday five weeks out.
 
 The system prompt also carries a compact digest for the current turn: the last
 sync, the next 24 hours of calendar events, unread SMS and today's missed

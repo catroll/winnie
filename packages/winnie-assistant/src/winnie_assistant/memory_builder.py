@@ -41,6 +41,10 @@ Rules:
   decisions with a date) over transient details.
 - Never store greetings, small talk, one-off commands, or the assistant's own
   guesses.
+- Never store a failed lookup or a missing record ("could not find X's
+  birthday", "no contact named Y"). A miss is a property of one query, not a
+  fact about the owner, and recall treats stored text as true. Store only what
+  the owner stated or a tool returned.
 - Write each fact in the language the user used in the conversation.
 - Do not restate facts already present in the existing memory digest.
 - At most {max_facts} facts. If nothing durable was said, return no facts.
