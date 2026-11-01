@@ -54,7 +54,10 @@ WEATHER = SkillManifest(
     ),
     instructions="""\
 Use weather_forecast when the user asks about today's or tomorrow's weather,
-rain or snow, what to wear, or whether to take an umbrella. Report the
+rain or snow, what to wear, or whether to take an umbrella. Pass `location` when
+the user names a place, and also when the long-term memory above records the
+place they want for an unqualified question: without `location` the forecast is
+the deployment's configured default, which is often a different city. Report the
 temperature range, the precipitation probability and any advisory, and say the
 data comes from Open-Meteo. The skill also runs a scheduled check that records a
 notice only when the advice changed; do not claim a notice was sent when it was
@@ -87,9 +90,13 @@ DOCUMENTS = SkillManifest(
     description="Search and read the owner's documents through the local index.",
     instructions="""\
 Use search_documents when the user refers to themselves, to earlier
-conversations, or to anything they wrote or decided before. Cite path:line.
-Use read_document when the snippet is not enough; the index revalidates the
-file before returning it, so the text is current.""",
+conversations, or to anything they wrote or decided before — and before you say
+something was never recorded, because the memory notes above are a subset of what
+the index holds. Cite path:line. A zero-result search is not proof the fact is
+absent: retry with one or two keywords the owner would have used (a name, a
+place, a verb), then say you could not find it rather than that it does not
+exist. Use read_document when the snippet is not enough; the index revalidates
+the file before returning it, so the text is current.""",
     tools=("search_documents", "read_document"),
     permissions=("index:read",),
     scheduled_safe=True,
@@ -102,7 +109,10 @@ MEMORY = SkillManifest(
     instructions="""\
 Use remember only when the user asks you to remember something, or when they
 state a stable preference, identity fact or relationship. Write one
-self-contained sentence.""",
+self-contained sentence. Put rules that change how you answer — a default city, a
+required step, a prohibition — in `procedures` or `constraints`, not in
+`episodes`: identity, preferences, procedures and constraints are in the system
+prompt on every turn, while the other categories are only reachable by search.""",
     tools=("remember",),
     permissions=("memory:write",),
     scheduled_safe=True,

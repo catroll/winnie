@@ -83,3 +83,59 @@ def test_unknown_category_is_rejected(tmp_path) -> None:
     memory = MemoryStore(tmp_path)
     with pytest.raises(ValueError, match="nonsense"):
         memory.append("nonsense", "x", source="chat:1")
+
+
+def test_procedures_is_pinned_even_when_the_file_says_otherwise(tmp_path) -> None:
+    """A file written before the category was pinned must still reach the prompt.
+
+    On 2026-11-01 the owner's default-city rule was written to procedures and
+    the file carried `pinned: false`; honouring that front matter meant the rule
+    was in no prompt at all.
+    """
+    memory = MemoryStore(tmp_path)
+    (tmp_path / "procedures.md").write_text(
+        "---\ncategory: procedures\npinned: false\n---\n"
+        "# Procedures\n- [2026-11-01] 没有指定位置时默认查询武汉。\n",
+        encoding="utf-8",
+    )
+
+    assert "默认查询武汉" in memory.digest()
+    assert memory.files()[0].pinned is True
+
+
+def test_recall_matches_a_paraphrase_of_a_stored_note(tmp_path) -> None:
+    memory = MemoryStore(tmp_path)
+    memory.append(
+        "projects",
+        "Winnie 的天气查询在未指定地点时默认查询武汉的天气。",
+        source="chat:1",
+    )
+
+    recalled = memory.recall("天气默认查哪里？")
+    assert "默认查询武汉" in recalled
+    assert "profile/projects.md" in recalled
+
+
+def test_recall_skips_pinned_entries_because_the_digest_has_them(tmp_path) -> None:
+    memory = MemoryStore(tmp_path)
+    memory.append("preferences", "用户喜欢先看结论。", source="chat:1")
+
+    assert "先看结论" in memory.digest()
+    assert memory.recall("我喜欢先看结论吗？") == ""
+
+
+def test_recall_ignores_a_message_with_nothing_in_common(tmp_path) -> None:
+    memory = MemoryStore(tmp_path)
+    memory.append("people", "孙秀是胡昂的联系人。", source="chat:1")
+
+    assert memory.recall("帮我写个新闻稿") == ""
+
+
+def test_recall_keeps_the_budget(tmp_path) -> None:
+    memory = MemoryStore(tmp_path)
+    for index in range(8):
+        memory.append("people", f"同事 {index} 的联系方式在通讯录里。", source="chat:1")
+
+    recalled = memory.recall("同事的联系方式", limit=3, chars=80)
+    assert len(recalled.splitlines()) <= 3
+    assert len(recalled) <= 80

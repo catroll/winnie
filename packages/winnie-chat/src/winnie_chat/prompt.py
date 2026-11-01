@@ -33,6 +33,15 @@ def build_system_prompt(turn: ChatTurn, skills: list[Skill]) -> str:
             turn.memory_digest or "(empty)",
         ]
     )
+    if turn.recalled_memory:
+        lines.extend(
+            [
+                "",
+                "Memory notes that may bear on this message (matched by wording, so",
+                "some may be unrelated; cite path:line if you use one):",
+                turn.recalled_memory,
+            ]
+        )
     if turn.phone_digest:
         lines.extend(
             [

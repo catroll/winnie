@@ -36,10 +36,23 @@ CATEGORIES = (
 
 # Categories whose entries are always part of the system prompt. They are the
 # stable facts that change how every answer is phrased or what it may not do.
-PINNED_CATEGORIES = frozenset({"identity", "preferences", "constraints"})
+#
+# `procedures` belongs here for the same reason as `constraints`: a rule about
+# *how* to answer ("no location given → use 武汉") is worthless if the only way
+# to reach it is a search the model has to decide to run. On 2026-11-01 such a
+# rule was written to procedures for exactly this request and then answered
+# every weather question from the configured city instead.
+PINNED_CATEGORIES = frozenset({"identity", "preferences", "procedures", "constraints"})
 
 _COMMENT = re.compile(r"<!--\s*source:\s*(?P<source>.*?)\s*-->")
 _DATE_PREFIX = re.compile(r"^\[(?P<date>\d{4}-\d{2}-\d{2})\]\s*")
+_CJK = re.compile(r"[\u3400-\u9fff]+")
+_WORD = re.compile(r"[a-z0-9_]+")
+# Characters that carry grammar, not subject matter. Without this list a note is
+# recalled by "的"/"我"/"了" and every turn gets the same unrelated notes.
+_STOP_CHARS = frozenset(
+    "的了是我你他她它在和就不吗呢吧啊么这那个们会能要把被给对去来为与及或也都还很太更最"
+)
 
 
 @dataclass(frozen=True)
@@ -66,6 +79,22 @@ class MemoryFile:
 
 def normalize(text: str) -> str:
     return collapse_whitespace(text).lower()
+
+
+def _recall_terms(text: str) -> tuple[set[str], set[str], set[str]]:
+    """Overlapping bigrams, content characters and Latin words of a message."""
+    lowered = text.lower()
+    words = {word for word in _WORD.findall(lowered) if len(word) > 1}
+    bigrams: set[str] = set()
+    chars: set[str] = set()
+    for run in _CJK.findall(lowered):
+        if len(run) == 1:
+            if run not in _STOP_CHARS:
+                chars.add(run)
+            continue
+        bigrams.update(run[index : index + 2] for index in range(len(run) - 1))
+        chars.update(char for char in run if char not in _STOP_CHARS)
+    return bigrams, chars, words
 
 
 class MemoryStore:
@@ -148,6 +177,57 @@ class MemoryStore:
                 used += len(line) + 1
         return "\n".join(lines)
 
+    # -- per-turn recall --------------------------------------------------
+
+    def recall(
+        self,
+        text: str,
+        *,
+        limit: int = 6,
+        chars: int = 1200,
+    ) -> str:
+        """Unpinned notes that share wording with ``text``.
+
+        This is the read path that does not go through the index: the notes are
+        already parsed here, so a note written a second ago is visible, and a
+        paraphrase is scored by overlap instead of by FTS phrase adjacency. It
+        is a supplement, not a replacement — pinned memory is in the digest, and
+        the index still answers "find the document that says X".
+
+        Matching is deliberately loose, because Chinese has no spaces and the
+        caller's wording rarely repeats the note's. A shared bigram is worth more
+        than a shared character, and a note needs either one bigram (or Latin
+        word) or three shared characters: two shared common characters is what
+        "帮我写个新闻稿" and "新写入内容" have in common, and that is noise.
+        """
+        self.refresh()
+        bigrams, chars_set, words = _recall_terms(text)
+        if chars <= 0 or not (bigrams or chars_set or words):
+            return ""
+        scored: list[tuple[int, MemoryEntry]] = []
+        for entry in self._entries:
+            if entry.pinned:
+                continue
+            body = normalize(entry.text)
+            bigram_hits = sum(1 for term in bigrams if term in body)
+            word_hits = sum(1 for word in words if word in body)
+            char_hits = sum(1 for term in chars_set if term in body)
+            if not (bigram_hits or word_hits) and char_hits < 3:
+                continue
+            scored.append((2 * bigram_hits + 2 * word_hits + char_hits, entry))
+        if not scored:
+            return ""
+        scored.sort(key=lambda item: (-item[0], item[1].relpath, item[1].line))
+        lines: list[str] = []
+        used = 0
+        for _, entry in scored[:limit]:
+            line = f"- {entry.text}（{entry.relpath}:{entry.line}）"
+            if used + len(line) > chars:
+                break
+            lines.append(line)
+            used += len(line) + 1
+        return "\n".join(lines)
+
     # -- writes -----------------------------------------------------------
 
     def append(
@@ -181,7 +261,12 @@ class MemoryStore:
             header, body = {}, f"# {category.title()}\n"
 
         header["category"] = category
-        header.setdefault("pinned", category in PINNED_CATEGORIES)
+        # Written, not defaulted: a file created before its category was pinned
+        # still says `pinned: false`, and a human reading the note should see
+        # the value the assistant actually uses.
+        header["pinned"] = category in PINNED_CATEGORIES or bool(
+            header.get("pinned", False)
+        )
         header["updated"] = stamp
         if not body.strip():
             body = f"# {category.title()}\n"
@@ -196,9 +281,12 @@ def _parse_file(path: Path, relpath: str) -> tuple[list[MemoryEntry], MemoryFile
     header, body = split_front_matter(text)
     stem = path.stem
     category = str(header.get("category") or stem)
-    # The front matter wins so a manual `pinned: true` or `false` is obeyed;
-    # a file without it falls back to the category default.
-    pinned = bool(header.get("pinned", category in PINNED_CATEGORIES))
+    # A pinned category is the contract: files written before a category was
+    # pinned carry `pinned: false` in their front matter, and honouring that
+    # would leave the new rule out of every prompt — exactly the failure this
+    # set exists to prevent. Front matter can still *add* pinning to an
+    # unpinned category, which is the manual override worth keeping.
+    pinned = category in PINNED_CATEGORIES or bool(header.get("pinned", False))
     title = stem.title()
     entries: list[MemoryEntry] = []
 

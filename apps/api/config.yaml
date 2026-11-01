@@ -171,7 +171,7 @@ assistant:
     limit: 8
   memory:
     enabled: true
-    digest_chars: 2000
+    digest_chars: 3000
     auto_distill: true
     max_facts_per_run: 12
     max_fact_chars: 500

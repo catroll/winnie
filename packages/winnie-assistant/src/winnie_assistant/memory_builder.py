@@ -55,6 +55,9 @@ class DistillResult:
     conversations: int
     facts: int
     empty: int
+    # Memory files this run appended to, so the caller can index them now
+    # instead of waiting for the daemon's five-minute sweep.
+    paths: tuple[str, ...] = ()
 
 
 class MemoryBuilder:
@@ -84,6 +87,7 @@ class MemoryBuilder:
             processed = 0
             added = 0
             empty = 0
+            touched: list[str] = []
             for summary in self.store.list(limit=None):
                 if added >= self.config.memory.max_facts_per_run:
                     break
@@ -112,6 +116,8 @@ class MemoryBuilder:
                         now=self.clock(),
                     ):
                         added += 1
+                        if category not in touched:
+                            touched.append(category)
                 state[conversation.id] = len(messages)
                 self._save_state(state)
                 processed += 1
@@ -119,7 +125,12 @@ class MemoryBuilder:
                     empty += 1
             if processed == 0:
                 logger.info("memory distillation found no new messages")
-            return DistillResult(conversations=processed, facts=added, empty=empty)
+            return DistillResult(
+                conversations=processed,
+                facts=added,
+                empty=empty,
+                paths=tuple(str(self.memory.root / f"{name}.md") for name in touched),
+            )
 
     async def _extract(
         self, transcript: str, conversation_id: str, remaining: int

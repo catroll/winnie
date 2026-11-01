@@ -61,6 +61,9 @@ class ChatTurn:
     now: datetime
     timezone: str
     memory_digest: str = ""
+    # Notes the host matched to this message. Separate from the digest because
+    # the digest is the always-present truth and this is per-turn relevance.
+    recalled_memory: str = ""
     phone_digest: str = ""
     pending: str = ""
     scheduled: bool = False

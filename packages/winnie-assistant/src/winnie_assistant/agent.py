@@ -80,6 +80,16 @@ class AssistantAgent:
             for message in conversation.messages
             if message.role in {"user", "assistant"} and message.text.strip()
         ][-self.max_history_messages :]
+        # The digest is the pinned truth; recall adds the unpinned notes that
+        # share wording with this message. It runs in-process, so a note written
+        # a second ago is already visible — the index would still be five
+        # minutes behind its next sweep.
+        recalled = ""
+        if self.memory is not None:
+            try:
+                recalled = self.memory.recall(text)
+            except Exception:  # noqa: BLE001 - recall must not fail a turn
+                logger.warning("memory recall failed", exc_info=True)
         turn = ChatTurn(
             conversation_id=conversation.id,
             user_message=text,
@@ -87,6 +97,7 @@ class AssistantAgent:
             now=self.clock(),
             timezone=self.timezone.key,
             memory_digest=self.memory.digest() if self.memory is not None else "",
+            recalled_memory=recalled,
             phone_digest=phone_digest,
             pending=self.toolbox.pending_summary(conversation.id),
             scheduled=source == "task",

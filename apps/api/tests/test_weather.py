@@ -302,3 +302,106 @@ async def test_webhook_delivery_and_manual_run_keep_the_schedule(tmp_path) -> No
     assert body["conversation_id"] == run.conversation_id
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["next_run"] == "2026-11-01T06:00:00+08:00"
+
+
+async def test_check_uses_a_per_call_location_and_geocodes_it() -> None:
+    """The memory's default city must reach the forecast, not just the prompt."""
+    seen: list[httpx.Request] = []
+    geocode = {
+        "results": [
+            {
+                "name": "武汉",
+                "latitude": 30.58333,
+                "longitude": 114.26667,
+                "admin1": "湖北",
+                "country": "中国",
+            }
+        ]
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.host == "geocoding-api.open-meteo.com":
+            return httpx.Response(200, json=geocode)
+        return httpx.Response(200, json=FORECAST)
+
+    service = _service(handler)
+    check = await service.check(location="武汉")
+
+    assert seen[0].url.host == "geocoding-api.open-meteo.com"
+    assert seen[0].url.params["name"] == "武汉"
+    assert seen[1].url.params["latitude"] == "30.58333"
+    assert seen[1].url.params["longitude"] == "114.26667"
+    assert check.report.location == "武汉（湖北）"
+
+
+async def test_check_accepts_explicit_coordinates_without_geocoding() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=FORECAST)
+
+    service = _service(handler)
+    check = await service.check(location="公司", latitude=30.5, longitude=114.3)
+
+    assert all(request.url.host != "geocoding-api.open-meteo.com" for request in seen)
+    assert seen[0].url.params["latitude"] == "30.5"
+    assert check.report.location == "公司"
+
+
+async def test_check_without_an_override_keeps_the_configured_place() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=FORECAST)
+
+    service = _service(handler, config=WeatherConfig(location="上海"))
+    check = await service.check()
+
+    assert seen[0].url.params["latitude"] == "31.2304"
+    assert check.report.location == "上海"
+
+
+async def test_unknown_place_is_reported_not_ignored() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "geocoding-api.open-meteo.com":
+            return httpx.Response(200, json={"results": []})
+        return httpx.Response(200, json=FORECAST)
+
+    with pytest.raises(WeatherError, match="no place called"):
+        await _service(handler).check(location="不存在的城市")
+
+
+async def test_weather_tool_passes_the_location_through() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "geocoding-api.open-meteo.com":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "name": "武汉",
+                            "latitude": 30.58333,
+                            "longitude": 114.26667,
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(200, json=FORECAST)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    toolbox = ToolBox(
+        search=FakeSearchProvider(),
+        index=None,
+        memory=None,
+        scheduler=None,
+        http=http,
+        tasks_enabled=False,
+        weather=_service(handler),
+    )
+    output = await toolbox.execute(
+        "weather_forecast", {"location": "武汉"}, conversation_id="c"
+    )
+    assert output.startswith("武汉")

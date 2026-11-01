@@ -44,7 +44,10 @@ class MemoryConfig(BaseModel):
 
     enabled: bool = True
     # Pinned memory is always in the system prompt; this bounds its size.
-    digest_chars: int = Field(default=2000, ge=0, le=20000)
+    # Four categories are pinned (identity, preferences, procedures,
+    # constraints), so the budget covers roughly twenty notes before the
+    # digest starts saying "more pinned memory omitted".
+    digest_chars: int = Field(default=3000, ge=0, le=20000)
     auto_distill: bool = True
     max_facts_per_run: int = Field(default=12, ge=1, le=100)
     max_fact_chars: int = Field(default=500, ge=50, le=2000)

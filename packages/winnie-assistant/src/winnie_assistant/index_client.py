@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -32,6 +33,10 @@ class IndexHit:
     score: float
     mtime: str
     also_at: tuple[str, ...] = ()
+    # The daemon widened the query to an OR of its tokens because the exact
+    # phrasing matched nothing, so the snippet is related wording, not the
+    # wording asked for.
+    loose: bool = False
 
 
 class IndexClient:
@@ -59,7 +64,15 @@ class IndexClient:
         limit: int | None = None,
         roots: list[str] | None = None,
         since: str | None = None,
+        loose: bool = True,
     ) -> list[IndexHit]:
+        """Search the index.
+
+        ``loose`` is on by default here, unlike on the daemon's own API: the
+        assistant turns "nothing found" into a statement to the owner, and a
+        paraphrase of a memory note must not read as "there is no such note".
+        Hits carry ``loose`` so the tool can say the wording was a fallback.
+        """
         payload: dict[str, Any] = {
             "query": query,
             "limit": max(1, min(limit or self.limit, 50)),
@@ -68,6 +81,8 @@ class IndexClient:
             payload["roots"] = roots
         if since:
             payload["since"] = since
+        if loose:
+            payload["loose"] = True
         data = await self._request("POST", "/search", json=payload)
         results = data.get("results")
         if not isinstance(results, list):
@@ -87,6 +102,7 @@ class IndexClient:
                     score=float(item.get("score") or 0.0),
                     mtime=str(item.get("mtime") or ""),
                     also_at=tuple(str(path) for path in item.get("also_at") or []),
+                    loose=bool(item.get("loose")),
                 )
             )
         return hits
@@ -105,6 +121,20 @@ class IndexClient:
 
     async def status(self) -> dict[str, Any]:
         return await self._request("GET", "/status")
+
+    async def reindex(self, path: str | Path) -> dict[str, Any]:
+        """Index one file now, instead of waiting for the daemon's next sweep.
+
+        The sweep runs every ``scan.interval_seconds`` (five minutes by
+        default), so a memory note written by ``remember`` would otherwise be
+        unfindable for up to that long — which is exactly how the owner's rule
+        got lost on 2026-11-01. The daemon refuses a path outside its roots, an
+        unindexed file type and an oversized file, and those refusals surface as
+        ``IndexUnavailable`` like any other daemon error.
+        """
+        return await self._request(
+            "POST", "/admin/index", json={"path": str(path)}
+        )
 
     # -- transport -------------------------------------------------------
 

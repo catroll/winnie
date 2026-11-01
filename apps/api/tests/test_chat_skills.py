@@ -318,3 +318,30 @@ async def test_skills_api_lists_toggles_and_affects_chat(
         message for message in detail.json()["messages"] if message["role"] == "tool"
     ]
     assert tool_blocks and "https://example.com/fake" in tool_blocks[0]["text"]
+
+
+def test_prompt_puts_recalled_memory_beside_the_pinned_digest() -> None:
+    from winnie_chat import build_system_prompt
+
+    prompt = build_system_prompt(
+        ChatTurn(
+            conversation_id="conv",
+            user_message="天气默认查哪里？",
+            history=[],
+            now=datetime(2026, 11, 1, 3, 0, tzinfo=timezone.utc),
+            timezone="UTC",
+            memory_digest="### procedures\n- 没有指定位置时默认查询武汉。",
+            recalled_memory="- 武汉天气的提醒设置（profile/projects.md:4）",
+        ),
+        [],
+    )
+    assert "默认查询武汉" in prompt
+    assert "profile/projects.md:4" in prompt
+    assert "matched by wording" in prompt
+
+
+def test_prompt_omits_the_recall_section_when_nothing_matched() -> None:
+    from winnie_chat import build_system_prompt
+
+    prompt = build_system_prompt(_turn(), [])
+    assert "matched by wording" not in prompt

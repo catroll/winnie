@@ -171,7 +171,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "Store one durable fact in long-term memory (a Markdown file the "
                 "owner can edit). Use it when the user asks you to remember "
                 "something, or states a stable preference, identity fact or "
-                "relationship."
+                "relationship. A rule about how to answer belongs in "
+                "procedures or constraints: those, plus identity and "
+                "preferences, are in the system prompt every turn, while the "
+                "other categories are only found by searching."
             ),
             "parameters": {
                 "type": "object",
@@ -190,6 +193,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                             "episodes",
                             "unsorted",
                         ],
+                        "description": (
+                            "identity/preferences/procedures/constraints are "
+                            "always in the prompt; the rest are search-only."
+                        ),
                     },
                     "text": {
                         "type": "string",
@@ -504,14 +511,33 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "weather_forecast",
             "description": (
-                "Read the configured location's forecast for today and tomorrow: "
-                "rain or snow, precipitation probability, the temperature trend "
-                "and any umbrella or clothing advice. Use it when the user asks "
-                "about the weather, whether to take an umbrella, or what to wear."
+                "Read a forecast for today and tomorrow: rain or snow, "
+                "precipitation probability, the temperature trend and any "
+                "umbrella or clothing advice. Use it when the user asks about "
+                "the weather, whether to take an umbrella, or what to wear. "
+                "Pass `location` whenever the user names a place (including a "
+                "place they have asked you to remember): without it the "
+                "configured default is used, which may be a different city."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {},
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": (
+                            "Place name to forecast for, e.g. 武汉 or 上海. "
+                            "Omit to use the configured default."
+                        ),
+                    },
+                    "latitude": {
+                        "type": "number",
+                        "description": "Latitude, when the owner gave coordinates.",
+                    },
+                    "longitude": {
+                        "type": "number",
+                        "description": "Longitude, when the owner gave coordinates.",
+                    },
+                },
                 "additionalProperties": False,
             },
         },
@@ -698,7 +724,7 @@ class ToolBox(PhoneToolMixin):
             elif name == "fetch_page":
                 output = await self._fetch_page(arguments)
             elif name == "weather_forecast":
-                output = await self._weather_forecast()
+                output = await self._weather_forecast(arguments)
             elif name == "gold_price":
                 output = await self._gold_price()
             elif name == "search_documents":
@@ -706,7 +732,7 @@ class ToolBox(PhoneToolMixin):
             elif name == "read_document":
                 output = await self._read_document(arguments)
             elif name == "remember":
-                output = self._remember(arguments, conversation_id)
+                output = await self._remember(arguments, conversation_id)
             elif name == "schedule_task":
                 output = await self._schedule_task(arguments)
             elif name == "list_tasks":
@@ -768,11 +794,16 @@ class ToolBox(PhoneToolMixin):
             raise ToolError(run.error or "gold is disabled")
         return run.message
 
-    async def _weather_forecast(self) -> str:
+    async def _weather_forecast(self, arguments: dict[str, Any]) -> str:
         if self.weather is None:
             raise ToolError("weather is disabled")
+        location = str(arguments.get("location") or "").strip()
         try:
-            check = await self.weather.check()
+            check = await self.weather.check(
+                location=location,
+                latitude=_as_float(arguments.get("latitude")),
+                longitude=_as_float(arguments.get("longitude")),
+            )
         except WeatherError as exc:
             raise ToolError(str(exc)) from exc
         return check.message
@@ -831,8 +862,23 @@ class ToolBox(PhoneToolMixin):
         except IndexUnavailable as exc:
             raise ToolError(str(exc)) from exc
         if not hits:
-            return "No local document matched that query."
+            # "Not found" and "does not exist" are different claims, and the
+            # owner's memory is not exhaustive. Say so here, where the model
+            # reads it, because a bare "no match" becomes "there is no such
+            # fact" in the reply.
+            return (
+                "No local document matched that query. That is not evidence the "
+                "fact does not exist: the note may use different words. Try one "
+                "or two keywords the owner would have used (a name, a place, a "
+                "verb), and if nothing matches, say you could not find it rather "
+                "than that it was never recorded."
+            )
         lines: list[str] = []
+        if any(hit.loose for hit in hits):
+            lines.append(
+                "(no document repeated the exact wording; these are keyword "
+                "matches, so a snippet may be about something else)"
+            )
         for index, hit in enumerate(hits, start=1):
             heading = f" — {hit.heading}" if hit.heading else ""
             lines.append(
@@ -948,7 +994,7 @@ class ToolBox(PhoneToolMixin):
 
     # -- memory ----------------------------------------------------------
 
-    def _remember(self, arguments: dict[str, Any], conversation_id: str) -> str:
+    async def _remember(self, arguments: dict[str, Any], conversation_id: str) -> str:
         if self.memory is None:
             raise ToolError("memory is disabled")
         category = str(arguments.get("category") or "").strip()
@@ -958,7 +1004,22 @@ class ToolBox(PhoneToolMixin):
         added = self.memory.append(
             category, text, source=f"chat:{conversation_id}"
         )
+        if added:
+            # Index the note now: the daemon sweeps every five minutes, and the
+            # next question arrives sooner than that. A failure here must not
+            # undo the write — the sweep will pick it up.
+            await self._reindex_memory(category)
         return "Remembered." if added else "That fact is already in memory."
+
+    async def _reindex_memory(self, *categories: str) -> None:
+        if self.index is None or self.memory is None:
+            return
+        for category in categories:
+            path = self.memory.root / f"{category}.md"
+            try:
+                await self.index.reindex(path)
+            except Exception:  # noqa: BLE001 - the sweep is the backstop
+                logger.warning("reindexing %s failed", path, exc_info=True)
 
     # -- scheduled tasks -------------------------------------------------
 
@@ -1139,6 +1200,16 @@ def _as_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(minimum, min(maximum, number))
+
+
+def _as_float(value: Any) -> float | None:
+    """Optional float argument; None means "not given"."""
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _truncate(text: str, limit: int) -> str:

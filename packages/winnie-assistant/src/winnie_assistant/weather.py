@@ -32,6 +32,7 @@ from winnie_assistant.scheduler import Schedule, parse_schedule
 logger = logging.getLogger(__name__)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 SOURCE_NAME = "Open-Meteo"
 
 # WMO weather interpretation codes.
@@ -129,8 +130,30 @@ class WeatherService:
         self.http = http
         self.timezone = timezone
 
-    async def check(self) -> WeatherCheck:
-        report = await self._fetch()
+    async def check(
+        self,
+        *,
+        location: str = "",
+        latitude: float | None = None,
+        longitude: float | None = None,
+    ) -> WeatherCheck:
+        """One forecast.
+
+        ``location``/``latitude``/``longitude`` override the configured place
+        for this call. Without one the configured location is used, so the
+        scheduled watcher is unchanged. The override is what lets a stored
+        preference ("no location given → 武汉") actually reach the forecast
+        instead of being displayed and then ignored.
+        """
+        if location.strip() or latitude is not None or longitude is not None:
+            label, lat, lon = await self._resolve(location, latitude, longitude)
+        else:
+            label, lat, lon = (
+                self.config.location,
+                self.config.latitude,
+                self.config.longitude,
+            )
+        report = await self._fetch(lat, lon, label)
         advisories = self.evaluate(report)
         message = self.render(report, advisories)
         fingerprint = _fingerprint(report, advisories)
@@ -141,12 +164,70 @@ class WeatherService:
             fingerprint=fingerprint,
         )
 
+    async def _resolve(
+        self,
+        location: str,
+        latitude: float | None,
+        longitude: float | None,
+    ) -> tuple[str, float, float]:
+        """Coordinates for a per-call place, geocoding a name when needed."""
+        wanted = location.strip()
+        if latitude is not None and longitude is not None:
+            return (wanted or f"{latitude:.4f},{longitude:.4f}", latitude, longitude)
+        if not wanted:
+            raise WeatherError("a location name or both latitude and longitude are required")
+        found = await self.geocode(wanted)
+        return found
+
+    async def geocode(self, name: str) -> tuple[str, float, float]:
+        """Look a place name up with Open-Meteo's keyless geocoder.
+
+        Same provider as the forecast, so one outage does not split the feature
+        across two vendors. The returned label is the matched place name, which
+        is what the owner should see in the report.
+        """
+        params = {"name": name, "count": 1, "language": "zh", "format": "json"}
+        try:
+            response = await self.http.get(
+                GEOCODE_URL,
+                params=params,
+                timeout=self.config.timeout_seconds,
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            raise WeatherError(
+                f"geocoding {name!r} failed: {type(exc).__name__}"
+            ) from exc
+        if response.status_code >= 400:
+            raise WeatherError(
+                f"geocoding {name!r} returned HTTP {response.status_code}"
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise WeatherError("geocoding response was not JSON") from exc
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list) or not results:
+            raise WeatherError(f"no place called {name!r} was found")
+        first = results[0]
+        if not isinstance(first, dict):
+            raise WeatherError(f"no place called {name!r} was found")
+        try:
+            latitude = float(first["latitude"])
+            longitude = float(first["longitude"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WeatherError(f"geocoding {name!r} returned no coordinates") from exc
+        label = str(first.get("name") or name)
+        admin = str(first.get("admin1") or "")
+        if admin and admin not in label:
+            label = f"{label}（{admin}）"
+        return label, latitude, longitude
+
     # -- data ------------------------------------------------------------
 
-    async def _fetch(self) -> WeatherReport:
+    async def _fetch(self, latitude: float, longitude: float, location: str) -> WeatherReport:
         params = {
-            "latitude": self.config.latitude,
-            "longitude": self.config.longitude,
+            "latitude": latitude,
+            "longitude": longitude,
             "daily": (
                 "weather_code,temperature_2m_max,temperature_2m_min,"
                 "precipitation_sum,precipitation_probability_max,"
@@ -172,7 +253,7 @@ class WeatherService:
             payload = response.json()
         except ValueError as exc:
             raise WeatherError("weather response was not JSON") from exc
-        return parse_open_meteo(payload, self.config.location, self.timezone)
+        return parse_open_meteo(payload, location, self.timezone)
 
     # -- rules -----------------------------------------------------------
 

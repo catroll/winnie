@@ -200,7 +200,19 @@ class AssistantService:
     async def distill(self) -> DistillResult:
         if self.builder is None:
             raise RuntimeError("memory is disabled")
-        return await self.builder.run()
+        result = await self.builder.run()
+        await self.reindex_memory(result.paths)
+        return result
+
+    async def reindex_memory(self, paths: tuple[str, ...] | list[str]) -> None:
+        """Index memory files now; a failure is logged and left to the sweep."""
+        if self.index is None:
+            return
+        for path in paths:
+            try:
+                await self.index.reindex(path)
+            except Exception:  # noqa: BLE001 - the sweep is the backstop
+                logger.warning("reindexing %s failed", path, exc_info=True)
 
     def _schedule_distill(self) -> None:
         if self.builder is None:
@@ -219,6 +231,7 @@ class AssistantService:
         except Exception:  # noqa: BLE001 - memory is best effort
             logger.exception("background memory distillation failed")
             return
+        await self.reindex_memory(result.paths)
         logger.info(
             "memory distilled: conversations=%s facts=%s empty=%s",
             result.conversations,

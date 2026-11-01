@@ -44,12 +44,66 @@ async def test_search_sends_the_query_and_parses_hits() -> None:
     finally:
         await http.aclose()
 
-    assert json.loads(seen[0].content) == {"query": "部署", "limit": 3}
+    assert json.loads(seen[0].content) == {"query": "部署", "limit": 3, "loose": True}
     assert seen[0].url.path == "/search"
     assert hits[0].path == "Winnie/profile/preferences.md"
     assert hits[0].heading == "Preferences"
     assert hits[0].start_line == 3
     assert hits[0].also_at == ("Winnie/old.md",)
+
+
+async def test_search_can_be_strict_and_reports_loose_hits() -> None:
+    """The assistant asks for the fallback, and must see when it was used."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {"query": "天气", "limit": 8}
+        return httpx.Response(
+            200,
+            json={
+                "query": "天气",
+                "results": [
+                    {
+                        "path": "Winnie/profile/procedures.md",
+                        "root": "Documents/Mine",
+                        "start_line": 9,
+                        "end_line": 9,
+                        "snippet": "……否则默认查询武汉的天气。",
+                        "loose": True,
+                    }
+                ],
+            },
+        )
+
+    client, http = _client(handler)
+    try:
+        hits = await client.search("天气", loose=False)
+    finally:
+        await http.aclose()
+
+    assert hits[0].loose is True
+
+
+async def test_reindex_posts_the_path() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json={"indexed": {"path": "Winnie/profile/procedures.md", "chunks": 1}},
+        )
+
+    client, http = _client(handler)
+    try:
+        result = await client.reindex("/home/owner/Documents/Mine/Winnie/profile/procedures.md")
+    finally:
+        await http.aclose()
+
+    assert seen[0].url.path == "/admin/index"
+    assert json.loads(seen[0].content) == {
+        "path": "/home/owner/Documents/Mine/Winnie/profile/procedures.md"
+    }
+    assert result["indexed"]["chunks"] == 1
 
 
 async def test_token_from_the_environment_is_sent(monkeypatch) -> None:
