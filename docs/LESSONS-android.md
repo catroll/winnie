@@ -485,3 +485,15 @@ command succeeded (`Created event 5320 in 278895860@qq.com`) and the event came
 back through the next sync. So: a write that fails for "nothing to write to"
 on a phone whose reads are also thin is one diagnosis, not two, and the fix is
 the system setting rather than the query.
+
+**The send is gated by a dialog the app cannot see.** With `SEND_SMS` granted,
+the first `sms.send` still triggered EMUI's own confirmation ("allow Winnie to
+send an SMS"), and the `sendTextMessage` call sat there until the owner tapped
+it. The command then reported `Submitted the SMS to 15827082940. Delivery is not
+confirmed by the app.` and the message arrived — twenty seconds after approval,
+which looked like a slow carrier and was the dialog.
+Two consequences worth keeping: the command's success means *the platform let
+the send leave the app*, not that anything was delivered, and the delay is the
+owner's tap, not the transport. Verify a send from the receiving handset; the
+app's own message list cannot show it, because `SmsManager` never writes the
+sent row into `content://sms` (`WRITE_SMS` is system-only).

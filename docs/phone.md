@@ -439,7 +439,9 @@ local tokens, and only a changed scope is uploaded, incrementally.
   not as expanded `Instances`. This keeps the id used for update/delete equal to
   the id the assistant sees, at the cost of not listing every occurrence.
 - SMS sending is fire-and-forget after `SEND_SMS`: the result means "submitted
-  to the carrier".
+  to the carrier". A vendor ROM may interpose its own confirmation dialog before
+  the send; the app waits for it, so the reported result already includes the
+  owner's tap, and a denial surfaces as a failed command.
 
 ### UI
 
@@ -552,12 +554,16 @@ phone database unless it asks for one.
   `calendar.create` and `calendar.delete` are confirmed on TAS-AL00: a proposed
   event executed on the phone (`Created event 5320 in 278895860@qq.com`), came
   back through the next sync, and a proposed delete removed it on both sides.
-  `sms.send` is confirmed as far as the app can see: TAS-AL00 answered
-  `Submitted the SMS to 15827082940. Delivery is not confirmed by the app.`
-  Delivery itself stays outside the app's knowledge — `SmsManager` does not
-  write the sent message into `content://sms` (that needs `WRITE_SMS`, which is
-  system-only and not grantable to a third-party app), and there is no delivery
-  report, so the synced message list cannot show an outgoing send either.
+  `sms.send` is confirmed end to end on TAS-AL00: the command answered
+  `Submitted the SMS to 15827082940. Delivery is not confirmed by the app.` and
+  the message arrived on the phone. The first send was gated by the ROM: EMUI
+  put up its own confirmation, the `sendTextMessage` call waited for it, and the
+  command only reported success after the owner tapped allow. So a command's
+  "submitted" means the platform let the send leave the app — not that the
+  carrier delivered it. Between the two, `SmsManager` does not write the sent
+  message into `content://sms` (that needs `WRITE_SMS`, system-only), so an
+  outgoing send never appears in the synced message list either; check the
+  receiving handset.
   The earlier "No writable calendar is available on this phone" was the same
   system app guard that blanked the reads — with `Calendars` answering zero rows
   there was no writable calendar to find.
