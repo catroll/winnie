@@ -1116,3 +1116,41 @@ export interface ScheduleEventUpdate {
   note?: string;
   move_to?: string;
 }
+
+export interface ProactiveChannelAttempt {
+  name: string;
+  at?: string;
+  receipt?: string;
+  error?: string;
+}
+
+export interface ProactiveItem {
+  id: string;
+  kind: string;
+  subject_key: string;
+  occurrence_key: string;
+  stage: string;
+  priority: number;
+  title: string;
+  body: string;
+  actions: Array<Record<string, unknown>>;
+  evidence: Array<Record<string, unknown>>;
+  due_at: string | null;
+  planned_at: string;
+  status: string;
+  channels: ProactiveChannelAttempt[];
+  acked_at: string | null;
+  acked_via: string;
+  feedback: string;
+  created_at: string;
+}
+
+export interface ProactiveStatus {
+  enabled: boolean;
+  owner: string;
+  channels: string[];
+  counts: Record<string, number>;
+  last_scan_at: string;
+  last_error: string;
+  latest_update: string;
+}

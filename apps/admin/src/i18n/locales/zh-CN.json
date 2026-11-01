@@ -928,5 +928,16 @@
   "The microphone could not be opened.": "无法打开麦克风。",
   "Speech recognition is not available right now.": "语音识别当前不可用。",
   "The recording could not be transcribed.": "录音转写失败。",
-  "The reply could not be spoken aloud.": "无法朗读这条回复。"
+  "The reply could not be spoken aloud.": "无法朗读这条回复。",
+  "Birthdays and work items appear here when the engine thinks they deserve your attention.": "当引擎判断生日或工作事项值得提醒时，会出现在这里。",
+  "Channels": "通道",
+  "Loading the inbox…": "正在加载收件箱…",
+  "Mute": "静音",
+  "Nothing needs you right now": "现在没有需要你处理的事",
+  "Scan now": "立即扫描",
+  "Snooze 1h": "稍后 1 小时",
+  "Stage": "阶段",
+  "What": "内容",
+  "last scan": "上次扫描",
+  "no channel is configured": "没有配置通道"
 }

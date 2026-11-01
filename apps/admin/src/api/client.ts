@@ -44,6 +44,8 @@ import type {
   PhoneSearchResponse,
   PhoneGeocodeResult,
   PhoneSummary,
+  ProactiveItem,
+  ProactiveStatus,
   ScheduleEventInput,
   ScheduleEventUpdate,
   ScheduleMutation,
@@ -808,6 +810,44 @@ export const api = {
   },
 
   // -- phone data ------------------------------------------------------
+
+  proactiveItems(
+    params: { status?: string; kind?: string; limit?: number } = {},
+  ): Promise<ProactiveItem[]> {
+    return request(
+      `/api/v1/proactive/items${queryString({
+        status: params.status,
+        kind: params.kind,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  proactiveStatus(): Promise<ProactiveStatus> {
+    return request('/api/v1/proactive/status');
+  },
+
+  proactiveScan(): Promise<{ created: number }> {
+    return request('/api/v1/proactive/scan', { method: 'POST' });
+  },
+
+  proactiveAck(id: string): Promise<ProactiveItem> {
+    return request(`/api/v1/proactive/items/${id}/ack`, {
+      method: 'POST',
+      body: { via: 'console' },
+    });
+  },
+
+  proactiveSnooze(id: string, minutes = 60): Promise<ProactiveItem> {
+    return request(`/api/v1/proactive/items/${id}/snooze`, {
+      method: 'POST',
+      body: { minutes },
+    });
+  },
+
+  proactiveMute(id: string): Promise<ProactiveItem> {
+    return request(`/api/v1/proactive/items/${id}/mute`, { method: 'POST' });
+  },
 
   phoneSummary(): Promise<PhoneSummary> {
     return request<PhoneSummary>('/api/v1/phone/summary');

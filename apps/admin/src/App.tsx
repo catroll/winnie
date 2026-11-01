@@ -8,6 +8,7 @@ import { AccountPage } from './pages/AccountPage';
 import { AIPage } from './pages/AIPage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { InboxPage } from './pages/InboxPage';
 import { IndexPage } from './pages/IndexPage';
 import { KeysPage } from './pages/KeysPage';
 import { LoginPage } from './pages/LoginPage';
@@ -42,6 +43,7 @@ export function App() {
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>
             <Route index element={<HomeRoute />} />
+            <Route path="/inbox" element={<InboxPage />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/chat/:conversationId" element={<ChatPage />} />
             <Route path="/phone" element={<PhonePage />} />

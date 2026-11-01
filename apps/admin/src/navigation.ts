@@ -20,6 +20,7 @@ export const NAVIGATION_GROUPS: ReadonlyArray<{
 ];
 
 export const NAVIGATION: readonly NavigationItem[] = [
+  { to: '/inbox', label: 'Inbox', icon: 'bi-inbox', end: false, group: 'workspace', adminOnly: false },
   { to: '/chat', label: 'Chat', icon: 'bi-chat-dots', end: false, group: 'workspace', adminOnly: false },
   { to: '/meetings', label: 'Meetings', icon: 'bi-camera-video', end: false, group: 'workspace', adminOnly: false },
   { to: '/phone', label: 'Phone data', icon: 'bi-phone', end: false, group: 'workspace', adminOnly: false },
