@@ -348,7 +348,7 @@ class PhoneSyncEngine(
         // delete the server copy from the phone-data screen first, which clears
         // this counter, then sync.
         val previous = prefs.lastUploadCount(kind)
-        if (items.isEmpty() && previous > 0) {
+        if (refusesEmptySnapshot(items.size, previous)) {
             throw EmptySnapshotRead(
                 kind = kind,
                 previous = previous,
@@ -529,6 +529,19 @@ internal fun stopsRun(error: Throwable): Boolean = when (error) {
     is IOException -> true
     else -> false
 }
+
+/**
+ * Whether a snapshot upload must be refused because the read came back empty
+ * although this device had rows of that kind before.
+ *
+ * The counts come from the last successful upload of the same kind, so a phone
+ * that has never synced that kind (previous = 0) still sends its first empty
+ * snapshot. The refusal is a data-loss guard: a full snapshot is an
+ * authoritative delete list, and a provider that answers "no rows" without
+ * failing is a far more common cause than the owner deleting everything.
+ */
+internal fun refusesEmptySnapshot(items: Int, previous: Int): Boolean =
+    items == 0 && previous > 0
 
 /**
  * A full snapshot read came back empty although this device had uploaded rows

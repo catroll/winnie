@@ -63,4 +63,24 @@ class PhoneSyncPolicyTest {
         // scopes that did read, or one blanked provider would stall the phone.
         assertFalse(stopsRun(EmptySnapshotRead("contact", 1215, "read 0 rows")))
     }
+
+    @Test
+    fun anEmptyReadAfterANonEmptyUploadIsRefused() {
+        // 2026-11-01: TAS-AL00's ROM kept the grant and answered zero rows for
+        // contacts, calendar, calls and SMS. A full snapshot is a delete list,
+        // so sending that would have erased a working device copy.
+        assertTrue(refusesEmptySnapshot(items = 0, previous = 601))
+        assertTrue(refusesEmptySnapshot(items = 0, previous = 17))
+    }
+
+    @Test
+    fun theGuardDoesNotBlockAFirstSyncOrARealDeletion() {
+        // Never synced this kind: an empty snapshot is the truth, not a blank.
+        assertFalse(refusesEmptySnapshot(items = 0, previous = 0))
+        // Rows arrived: send them, whatever the previous count was.
+        assertFalse(refusesEmptySnapshot(items = 5, previous = 0))
+        // The owner wiped the server copy, which clears the counter, and the
+        // phone really has nothing left: this is the deliberate path.
+        assertFalse(refusesEmptySnapshot(items = 0, previous = 0))
+    }
 }
