@@ -68,8 +68,8 @@ not this feature:
 1. **a fact** Winnie found by itself, with the row or file it came from;
 2. **a decision** that it matters *now* — and if it does not, silence or a
    digest;
-3. **one concrete action** the owner can take, or Winnie can take after a
-   confirmation;
+3. **one concrete action** the owner can take, or Winnie can take
+   directly where §6 grants standing approval;
 4. **a delivery that is tracked** until the owner acknowledges it, escalates, or
    it expires.
 
@@ -78,8 +78,13 @@ What it is not:
 - not a chatty daily essay nobody reads;
 - not an LLM loop over the calendar every fifteen minutes;
 - not a second notification for everything Winnie already said in chat;
-- not permission to message other people, buy things, or change the owner's
-  calendar without a confirmation.
+- not permission to message other people, buy things, or take an irreversible
+  action without a confirmation.
+
+The owner has granted **standing approval for reminder actions**: Winnie may
+create and change its own calendar reminders and alarms without asking per
+item. That approval is scoped in §6 and does not extend to outward messages
+or irreversible actions.
 
 ### Design rules
 
@@ -113,7 +118,7 @@ phone SMS / notifications ───┘         signals, promises)
                                     composer: template, then optional model
                                             │
                                             ▼
-                  channel registry ──► push | console inbox | email | webhook | calendar alarm
+                  channel registry ──► push | console | ntfy | email | calendar alarm
                                             │
                                             ▼
                                     ack ledger ──► escalate | digest | expire
@@ -224,6 +229,35 @@ answers "圆圆生日是什么时候" too.
 - A collapsed catch-up: if the server was down across several stages, send one
   message that names what was missed, not four stale ones.
 
+### Standing approval, and where the gate stays
+
+The owner decided (2026-11-01) that Winnie may act without asking for each
+reminder. The approval is written down here because "the owner said so in
+conversation" is not a boundary a later change can check against.
+
+**Allowed without confirmation:**
+
+- create, update and cancel **its own** calendar reminders and OS alarms, in a
+  dedicated `winnie` calendar, capped at `alarms.max_per_day: 2`, for P0/P1
+  items only;
+- send a notification to the owner on any configured channel;
+- ack, snooze, mute and re-plan its own items;
+- append a marked item to the weekly schedule (`[winnie]` prefix), since
+  `winnie-schedule` only splices the target line and Git makes the change
+  visible and revertible.
+
+**Still needs one confirmation, and the reason is not caution but
+irreversibility:**
+
+- a message to another person (SMS or any future channel): a wrong recipient or
+  a wrong tone cannot be recalled. Winnie drafts it, the owner sends or approves
+  it. If the owner later wants this opened too, it is one explicit switch, not a
+  side effect of "you may do anything";
+- purchases, deletions, and local commands, which keep their existing gates.
+
+The distinction is deliberate: approve the reversible and the in-account
+actions generously, and keep one gate on what leaves the account.
+
 ### Why not just prompt a scheduled task?
 
 A task is a prompt on a timer. To make one work here it would still need the
@@ -257,18 +291,25 @@ each rung.
 |---|---|---|---|
 | Console inbox | any browser with a session | item opened | server up |
 | Android push (self-hosted WS) | the phone, seconds | WS cursor (received) | the app process |
+| ntfy | the phone or a desktop, seconds | HTTP `200` | the ntfy server |
 | Email (SMTP) | any mail client | SMTP `250`; signed ack link | always |
-| Webhook (`wecom` / `ntfy` / `bark` payload) | phone or desktop app | HTTP/code 0 | a third party, with the content |
-| Phone calendar alarm (opt-in) | the phone's OS | OS alarm; no ack | reboot, app kill |
+| Phone calendar alarm (standing approval) | the phone's OS | OS alarm; no ack | reboot, app kill |
+
+The owner chose (2026-11-01) to run **all three** of push, ntfy and email: the
+app for the rich item, ntfy for a fast bare notification, email as the durable
+rung. ntfy can be the public `ntfy.sh` or a self-hosted instance; a self-hosted
+one keeps the content on the owner's own infrastructure, which is the reason
+the project exists. A generic webhook adapter can be added later so `wecom`
+and `bark` are a config choice rather than a rewrite; it is not one of the
+three chosen rungs.
 
 Ladder for a P1 item:
 
 ```
 t+0      push (normal)
-t+20m    push (loud) — same text, high-importance channel
-t+60m    email   — with [已收到] and [稍后提醒] links
-t+180m   webhook — if configured
-next     digest  — and it stays in the inbox until ack or expiry
+t+20m    ntfy   — a few words and a link, for when the app is dead
+t+60m    email  — with [已收到] and [稍后提醒] links
+t+180m   digest — and it stays in the inbox until ack or expiry
 ```
 
 At most three escalations after the first send, each configured, each bounded. A
@@ -285,8 +326,8 @@ the digest is still not lost, and the owner is not chased all day.
   today; the notification only opens the app.
 - **Console:** opening an item marks it seen; the same buttons are on the item.
 - **Email:** the ack link carries a signed token, so no session is needed.
-- **Webhook:** a 2xx is receipt, not reading; the ladder continues unless
-  another channel acks.
+- **ntfy:** carries the same signed link as its `click` action; a tap is a
+  receipt, and the ntfy server's `200` is delivery, not reading.
 
 ### The honest guarantee
 
@@ -295,8 +336,8 @@ foreground service is best effort and [push](./push.md) §10 says so. The
 guarantee this design offers is narrower and true: **an item is never silently
 dropped — it is retried on a configured ladder, and what remains unacknowledged
 appears in the next digest.** The only OS-level guarantee on this hardware is a
-calendar event with an alarm, which is why it is on the list as an opt-in rather
-than as the default.
+calendar event with an alarm; with the owner's standing approval it is a real
+rung, not an opt-in.
 
 ## 9. A birthday, end to end
 
@@ -337,7 +378,7 @@ others:
 - it imports no sibling capability and not the host;
 - it declares small ports — `CalendarPort`, `ContactsPort`, `SchedulePort`,
   `ComposerPort`, `ChannelPort`, `Notifier` — and `apps/api` wires the
-  adapters (phone service, assistant model, push, SMTP, webhook);
+  adapters (phone service, assistant model, push, ntfy, SMTP);
 - the recurrence and lunar fix stays in `winnie-phone`, where the bug is;
 - the assistant gains a `proactive` skill (`proactive_upcoming`,
   `birthdays`, `proactive_ack`, `proactive_snooze`, `proactive_mute`) and the
@@ -351,9 +392,10 @@ Rejected: one watcher per kind, like weather and gold. Two bespoke watchers
 were fine; eight would duplicate dedupe, quiet hours, escalation and ack eight
 times. Weather and gold can later be expressed as detectors on the same engine.
 
-## 11. First slice: the birthday path
+## 11. First slice: birthdays and the work week
 
-Ordered, each step verifiable on its own.
+Ordered, each step verifiable on its own. The owner asked for both halves in the
+first version, so the schedule source is in the slice, not deferred.
 
 1. **Fix the lunar expansion** (`winnie-phone/recurrence.py`). Classify a rule:
    if `(BYMONTH, BYMONTHDAY)` equals the event's local start date, it is
@@ -374,10 +416,17 @@ Ordered, each step verifiable on its own.
    dispatcher, policy, the birthday detector, the console inbox, and push
    delivery through the existing `Notifier`.
 6. **Ack and escalation.** `POST /proactive/items/{id}/ack`, the Android action,
-   the email channel, the ladder, quiet hours, the digest.
+   ntfy and email channels, the ladder, quiet hours, the digest.
+7. **The work week.** A `SchedulePort` over `winnie-schedule` (the package
+   already parses and edits the file), then three detectors: `leave_by` for a
+   timed item, `overdue` for unchecked items from earlier days, and `week_plan`
+   on Monday morning. Write-back is limited to appending a `[winnie]` line,
+   which the editor already does byte-safely.
 
-Steps 1–4 fix the question that started this. Steps 5–6 are the first real
-intervention.
+Steps 1–4 fix the question that started this, steps 5–6 are the first real
+intervention, and step 7 is the work half the owner asked for in the same
+version. The escalation ladder and the schedule can be built in parallel once
+step 5 lands.
 
 ## 12. Configuration sketch
 
@@ -400,33 +449,43 @@ proactive:
   channels:
     console: {enabled: true}
     push: {enabled: true}
+    ntfy:
+      enabled: true
+      # Self-hosted keeps the content on the owner's infrastructure; ntfy.sh
+      # works the same way but is a third party.
+      server: "https://ntfy.sh"
+      topic: ""
+      token_env: WINNIE_NTFY_TOKEN
     email:
-      enabled: false
+      enabled: true
       to: ""
       from: ""
       smtp_host: ""
       smtp_port: 465
       username_env: WINNIE_SMTP_USER
       password_env: WINNIE_SMTP_PASSWORD
-    webhook:
-      enabled: false
-      url: ""
-      format: wecom        # wecom | ntfy | bark | generic
   escalation:
     - {after_minutes: 0, channel: push}
-    - {after_minutes: 20, channel: email}
-    - {after_minutes: 180, channel: webhook}
+    - {after_minutes: 20, channel: ntfy}
+    - {after_minutes: 60, channel: email}
   kinds:
     birthday: {lead_days: [14, 7, 2, 0], priority: 1}
     event_soon: {lead_minutes: 30, priority: 0}
     work_item: {priority: 1}
-  allow_calendar_alarm: false
+  # The owner's standing approval, scoped in §6: Winnie may write its own
+  # reminders into a dedicated calendar without per-item confirmation.
+  alarms:
+    enabled: true
+    calendar_name: "winnie"
+    max_per_day: 2
 ```
 
 Secrets come from the environment, never this file, per the project rule. The
-block ships enabled with the console and push only; email and webhook stay off
-until an address or a receiver exists, because a configured-but-unreachable
-channel is worse than no channel: it makes the ladder look longer than it is.
+channels are the owner's choice: push, ntfy and email are all on, and the
+console inbox is always available. A channel with its address or topic missing
+disables itself at startup with a warning instead of pretending to be a rung —
+a configured-but-unreachable channel is worse than no channel, because it makes
+the ladder look longer than it is.
 
 ## 13. Verification
 
@@ -448,7 +507,7 @@ cd apps/api && .venv/bin/python -m pytest \
   occurrence;
 - quiet hours hold a P1 and release it at 07:30; the fifth P1 of a day becomes a
   digest entry; a P0 same-day item bypasses;
-- an unacked send escalates on schedule and stops at the ack; a webhook 2xx
+- an unacked send escalates on schedule and stops at the ack; an ntfy `200`
   does not count as an ack;
 - the digest lists what is unacked and nothing twice.
 
@@ -469,7 +528,7 @@ Live:
 | **Noise.** The dominant failure mode: a correct alert sent too often. | Digest by default, four interrupts a day, per-subject mute, feedback that changes the lead time. |
 | **Wrong dates.** Lunar vs Gregorian, one-off vs yearly, a renamed person. | Classification + tests on real rows; ask once when ambiguous; the override file is read by chat too. |
 | **Hallucinated guidance.** | Template fallback; dates only from evidence; the model's sentence is labelled as a suggestion. |
-| **Privacy.** Bodies on a lock screen; email and webhook leave the machine. | Per-channel content policy, short bodies, opt-in for anything off-device, location use off by default. |
+| **Privacy.** Bodies on a lock screen; email and ntfy leave the machine. | Per-channel content policy, short bodies, a self-hosted ntfy if the content must not leave, location use off by default. |
 | **Cost.** A model call per item. | Compose once per item, cache, cap per day, no model in the detector or the dispatcher. |
 | **Reliability.** The API process must run for a send. | Durable item rows, catch-up collapse, digest as the backstop. |
 
@@ -481,19 +540,28 @@ Live:
 - Medical, legal or financial advice: Winnie points at the owner's own data and
   at a professional, it does not decide.
 
-## 16. Open decisions
+## 16. Decisions taken
 
-1. **Which channel is allowed to carry the content off the machine?** Options:
-   self-hosted only (push + console, no guarantee after a force-stop), email to
-   an existing address, a WeCom/ntfy/Bark webhook. Recommendation: email as the
-   durable rung, the webhook behind a generic adapter so the receiver is a
-   config choice.
-2. **May Winnie create OS-level alarms without a per-item confirmation?** It is
-   the only delivery path that survives a killed app. Recommendation: off
-   initially; if enabled, only P0/P1 items, at most two a day, into a dedicated
-   `winnie` calendar, so a mistaken write is visible and deletable.
-3. **First-slice scope.** Recommendation: birthdays only, end to end (steps
-   1–6), because it exercises every part of the pipeline and fixes a real miss.
-   The work schedule is the next slice.
-4. **Interrupt budget and quiet hours** as proposed in §12, or tuned from the
-   first two weeks of the inbox history.
+Answered by the owner on 2026-11-01:
+
+1. **Channels: push, ntfy and email, all three.** The app carries the rich item
+   and the conversation; ntfy is the fast bare notification for when the app
+   process is dead; email is the durable rung that survives everything. Which
+   ntfy server (public or self-hosted) and which mailbox are configuration, not
+   design — a self-hosted ntfy keeps the content on the owner's infrastructure
+   and is the option this project would prefer.
+2. **Standing approval for reminders, no per-item confirmation.** Winnie may
+   create its own calendar reminders and alarms (dedicated `winnie` calendar, at
+   most two a day, P0/P1 only). The gate stays on outward messages and
+   irreversible actions — see §6 for the scope and the reason.
+3. **First version: birthdays and the work week.** The lunar fix, contact
+   birthdays, the chat answer and the memory guard land first; the engine,
+   channels and schedule source follow in the same slice.
+
+Still open, and they do not block step 1:
+
+- the ntfy server and topic, the mailbox and its app password (configuration);
+- the interrupt budget and quiet hours from §12 — start with them and tune from
+  two weeks of inbox history;
+- whether Winnie may ever send a message to another person without a
+  confirmation; today the answer is no, and one explicit switch would change it.

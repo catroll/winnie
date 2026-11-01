@@ -168,8 +168,11 @@ handset has not run them yet.
 
 ## P1 — proactive assistance
 
-Design and evidence are in [proactive.md](./proactive.md). The order matters:
-the first four fix the question that started it, and each is testable alone.
+Design and evidence are in [proactive.md](./proactive.md). The owner chose
+push + ntfy + email, standing approval for Winnie's own reminders (dedicated
+calendar, two a day), and birthdays plus the work week in the first version.
+The order matters: the first four fix the question that started it, and each is
+testable alone.
 
 - [ ] Decode a lunar yearly rule instead of trusting `dateutil`: a rule whose
       `BYMONTH`/`BYMONTHDAY` equal the event's lunar date is expanded in the
@@ -182,10 +185,13 @@ the first four fix the question that started it, and each is testable alone.
       `people.md` line that says 圆圆的生日 could not be found.
 - [ ] Build `winnie-proactive`: item store, planner, dispatcher, policy and the
       birthday detector, with push and a console inbox.
-- [ ] Add acknowledgement (Android action, console, signed email link) and the
-      escalation ladder with quiet hours and a digest.
+- [ ] Add acknowledgement (Android action, console, signed email and ntfy link)
+      and the escalation ladder with quiet hours and a digest.
+- [ ] Add the `winnie` calendar write path: Winnie creates and cancels its own
+      reminders and alarms without a per-item confirmation, capped at two a day.
 - [ ] Wire the weekly schedule (`winnie-schedule`) as a source: leave-by
-      reminders, overdue items, Monday review.
+      reminders, overdue items, Monday review; write-back only appends a
+      `[winnie]` line.
 
 ## P2 — accounts and security
 

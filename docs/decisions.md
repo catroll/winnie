@@ -88,11 +88,13 @@ dispatch loop must run when no model is configured. Small ports (`CalendarPort`,
 `SchedulePort`, `ComposerPort`, `ChannelPort`) keep the boundary the other
 capabilities already follow.
 
-**Open.** Which channel carries content off the machine (email, webhook), and
-whether the phone's own calendar alarm may be used without a per-item
-confirmation, are owner decisions recorded in
-[proactive.md](./proactive.md) §16, not defaults to invent here.
-
+**Decided by the owner the same day.** Three channels — the self-hosted push,
+ntfy and email — and standing approval for Winnie's own reminder actions: it
+may create its own calendar reminders and alarms without per-item confirmation,
+in a dedicated calendar, at most two a day, for P0/P1 items. The confirmation
+gate stays on messages to other people and on irreversible actions, because a
+wrong recipient or a deletion cannot be recalled; the scope and the reason are
+in [proactive.md](./proactive.md) §6, the choices in §16.
 
 ## Four independent gates decide whether a memory reaches an answer (2026-11-01)
 
