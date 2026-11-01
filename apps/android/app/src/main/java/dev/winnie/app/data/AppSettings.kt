@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import dev.winnie.app.BuildConfig
 
-/** Non-secret client settings: the Winnie server address. */
+/** Non-secret client settings: the Winnie server address and the open chat. */
 class AppSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -16,9 +16,27 @@ class AppSettings(context: Context) {
             prefs.edit { putString(KEY_SERVER_URL, normalizeServerUrl(value)) }
         }
 
+    /**
+     * The conversation the chat tab last showed. Reopening the app resumes it
+     * instead of starting from an empty screen; the transcript itself stays on
+     * the server, this is only the id.
+     */
+    var lastConversationId: String?
+        get() = prefs.getString(KEY_LAST_CONVERSATION, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            prefs.edit {
+                if (value.isNullOrBlank()) {
+                    remove(KEY_LAST_CONVERSATION)
+                } else {
+                    putString(KEY_LAST_CONVERSATION, value)
+                }
+            }
+        }
+
     private companion object {
         const val PREFS_NAME = "winnie_settings"
         const val KEY_SERVER_URL = "server_url"
+        const val KEY_LAST_CONVERSATION = "last_conversation_id"
     }
 }
 

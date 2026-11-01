@@ -4,6 +4,8 @@ import android.content.Context
 import dev.winnie.app.audio.AudioRecorder
 import dev.winnie.app.audio.WavAudioRecorder
 import dev.winnie.app.data.AppSettings
+import dev.winnie.app.data.CredentialStore
+import dev.winnie.app.data.KeystoreSecretBox
 import dev.winnie.app.data.SessionManager
 import dev.winnie.app.data.TokenStore
 import dev.winnie.app.data.WinnieApi
@@ -20,8 +22,13 @@ class AppContainer(context: Context) {
     private val appContext = context.applicationContext
 
     val settings = AppSettings(appContext)
-    val tokenStore = TokenStore(appContext)
-    val sessions = SessionManager(tokenStore, settings)
+
+    // One Keystore box for every saved secret, so the token and the remembered
+    // credentials share one key rather than creating a second Keystore alias.
+    private val secretBox = KeystoreSecretBox()
+    val tokenStore = TokenStore(appContext, secretBox)
+    val credentials = CredentialStore(appContext, secretBox)
+    val sessions = SessionManager(tokenStore, settings, credentials)
     val phonePrefs = PhonePrefs(appContext)
     val pushPrefs = PushPrefs(appContext)
 

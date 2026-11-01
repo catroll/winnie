@@ -24,6 +24,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -40,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +50,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.winnie.app.AppContainer
+import dev.winnie.app.R
 import dev.winnie.app.phone.PhonePermissions
 import dev.winnie.app.phone.PhoneScope
 
@@ -62,7 +66,7 @@ import dev.winnie.app.phone.PhoneScope
 @Composable
 fun PhoneDataScreen(
     container: AppContainer,
-    onBack: () -> Unit,
+    bottomBar: @Composable () -> Unit,
 ) {
     val appContext = LocalContext.current.applicationContext
     val viewModel: PhoneDataViewModel = viewModel(
@@ -91,15 +95,25 @@ fun PhoneDataScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Phone data") },
-                navigationIcon = {
-                    TextButton(onClick = onBack) { Text("Back") }
+                title = {
+                    Text(
+                        text = "Phone data",
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
                 actions = {
-                    TextButton(onClick = viewModel::refresh) { Text("Refresh") }
+                    IconButton(onClick = viewModel::refresh) {
+                        Icon(
+                            painterResource(R.drawable.ic_refresh),
+                            contentDescription = "Refresh",
+                        )
+                    }
                 },
             )
         },
+        bottomBar = bottomBar,
     ) { padding ->
         LazyColumn(
             modifier = Modifier

@@ -1,15 +1,11 @@
 package dev.winnie.app.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -18,16 +14,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.winnie.app.AppContainer
-import dev.winnie.app.data.Session
 import dev.winnie.app.data.SessionState
-import dev.winnie.app.ui.home.HomeScreen
+import dev.winnie.app.push.PushController
 import dev.winnie.app.ui.login.LoginScreen
 import dev.winnie.app.ui.login.SessionViewModel
-import dev.winnie.app.ui.meeting.MeetingScreen
-import dev.winnie.app.push.PushController
-import dev.winnie.app.ui.phone.PhoneDataScreen
-import dev.winnie.app.ui.push.PushSettingsScreen
-import dev.winnie.app.ui.record.RecordScreen
 
 @Composable
 fun WinnieRoot(container: AppContainer) {
@@ -35,7 +25,7 @@ fun WinnieRoot(container: AppContainer) {
     val sessionViewModel: SessionViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                SessionViewModel(container.sessions, container.settings)
+                SessionViewModel(container.sessions, container.settings, container.credentials)
             }
         },
     )
@@ -54,6 +44,9 @@ fun WinnieRoot(container: AppContainer) {
                 notice = state.message,
                 onServerUrlChange = sessionViewModel::setServerUrl,
                 onRegisterModeChange = sessionViewModel::setRegisterMode,
+                onUsernameChange = sessionViewModel::setUsername,
+                onPasswordChange = sessionViewModel::setPassword,
+                onRememberChange = sessionViewModel::setRemember,
                 onSubmit = sessionViewModel::submit,
             )
         }
@@ -65,67 +58,6 @@ fun WinnieRoot(container: AppContainer) {
                 PushController.stop(appContext)
                 sessionViewModel.signOut()
             },
-        )
-    }
-}
-
-@Composable
-private fun SignedInFlow(
-    container: AppContainer,
-    session: Session,
-    onSignOut: () -> Unit,
-) {
-    var openMeetingId by rememberSaveable { mutableStateOf<String?>(null) }
-    var showRecorder by rememberSaveable { mutableStateOf(false) }
-    var showPhoneData by rememberSaveable { mutableStateOf(false) }
-    var showPushSettings by rememberSaveable { mutableStateOf(false) }
-
-    BackHandler(
-        enabled = showPushSettings || showPhoneData || showRecorder || openMeetingId != null,
-    ) {
-        when {
-            showPushSettings -> showPushSettings = false
-            showPhoneData -> showPhoneData = false
-            showRecorder -> showRecorder = false
-            else -> openMeetingId = null
-        }
-    }
-
-    val meetingId = openMeetingId
-    when {
-        showPushSettings -> PushSettingsScreen(
-            container = container,
-            onBack = { showPushSettings = false },
-        )
-
-        showPhoneData -> PhoneDataScreen(
-            container = container,
-            onBack = { showPhoneData = false },
-        )
-
-        showRecorder -> RecordScreen(
-            container = container,
-            onClose = { showRecorder = false },
-            onFinished = { createdId ->
-                showRecorder = false
-                openMeetingId = createdId
-            },
-        )
-
-        meetingId != null -> MeetingScreen(
-            container = container,
-            meetingId = meetingId,
-            onBack = { openMeetingId = null },
-        )
-
-        else -> HomeScreen(
-            container = container,
-            user = session.user,
-            onOpenMeeting = { openMeetingId = it },
-            onRecord = { showRecorder = true },
-            onOpenPhoneData = { showPhoneData = true },
-            onOpenPushSettings = { showPushSettings = true },
-            onSignOut = onSignOut,
         )
     }
 }

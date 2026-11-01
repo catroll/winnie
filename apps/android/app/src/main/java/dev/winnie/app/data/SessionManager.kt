@@ -1,11 +1,13 @@
 package dev.winnie.app.data
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 data class Session(
     val serverUrl: String,
@@ -29,6 +31,7 @@ sealed interface SessionState {
 class SessionManager(
     private val tokenStore: TokenStore,
     private val settings: AppSettings,
+    private val credentials: CredentialStore,
 ) {
     private val _state = MutableStateFlow<SessionState>(SessionState.Restoring)
     val state: StateFlow<SessionState> = _state.asStateFlow()
@@ -39,7 +42,8 @@ class SessionManager(
     suspend fun restore() {
         restoreLock.withLock {
             if (_state.value !is SessionState.Restoring) return
-            val token = tokenStore.read()
+            // Reading the token decrypts it with the Keystore key.
+            val token = withContext(Dispatchers.IO) { tokenStore.read() }
             val serverUrl = settings.serverUrl
             if (token == null) {
                 _state.value = SessionState.LoggedOut(serverUrl)
@@ -72,19 +76,22 @@ class SessionManager(
         serverUrl: String,
         username: String,
         password: String,
-    ): Result<Unit> = authenticate(serverUrl, username, password, register = false)
+        remember: Boolean = true,
+    ): Result<Unit> = authenticate(serverUrl, username, password, register = false, remember = remember)
 
     suspend fun register(
         serverUrl: String,
         username: String,
         password: String,
-    ): Result<Unit> = authenticate(serverUrl, username, password, register = true)
+        remember: Boolean = true,
+    ): Result<Unit> = authenticate(serverUrl, username, password, register = true, remember = remember)
 
     private suspend fun authenticate(
         serverUrl: String,
         username: String,
         password: String,
         register: Boolean,
+        remember: Boolean,
     ): Result<Unit> {
         val normalized = normalizeServerUrl(serverUrl)
         val client = WinnieApi(normalized)
@@ -94,7 +101,17 @@ class SessionManager(
             } else {
                 client.login(username, password)
             }
-            tokenStore.save(token.accessToken)
+            // Saving and remembering both seal with the Keystore key.
+            withContext(Dispatchers.IO) {
+                tokenStore.save(token.accessToken)
+                // Only a successful sign-in is remembered: a typo must not
+                // replace the credentials that used to work.
+                if (remember) {
+                    credentials.save(username, password)
+                } else {
+                    credentials.clear()
+                }
+            }
             settings.serverUrl = normalized
             api = WinnieApi(normalized, token.accessToken)
             _state.value = SessionState.LoggedIn(Session(normalized, token.user))
@@ -115,6 +132,10 @@ class SessionManager(
         // wait on an unreachable server.
         tokenStore.clear()
         api = null
+        // The open conversation belongs to this session. Another account can
+        // sign in on the same phone, and the server keeps one history, so a
+        // stale id would show that account the previous owner's transcript.
+        settings.lastConversationId = null
         _state.value = SessionState.LoggedOut(settings.serverUrl)
         runCatching { client?.logout() }
     }
@@ -123,6 +144,7 @@ class SessionManager(
     fun onUnauthorized() {
         tokenStore.clear()
         api = null
+        settings.lastConversationId = null
         _state.value = SessionState.LoggedOut(
             settings.serverUrl,
             "Your session expired. Sign in again.",

@@ -75,6 +75,9 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    // Assistant replies are Markdown; render them as native Compose UI.
+    implementation(libs.compose.markdown)
+    implementation(libs.compose.markdown.m3)
     debugImplementation(libs.compose.ui.tooling)
 
     implementation(libs.okhttp)

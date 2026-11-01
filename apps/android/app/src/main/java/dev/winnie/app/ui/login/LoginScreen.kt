@@ -1,7 +1,9 @@
 package dev.winnie.app.ui.login
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,10 +12,14 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -22,15 +28,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.winnie.app.R
 import dev.winnie.app.data.DEFAULT_SERVER_URL
 
 @Composable
@@ -39,11 +48,14 @@ fun LoginScreen(
     notice: String?,
     onServerUrlChange: (String) -> Unit,
     onRegisterModeChange: (Boolean) -> Unit,
-    onSubmit: (username: String, password: String) -> Unit,
+    onUsernameChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onRememberChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
 ) {
-    var username by rememberSaveable { mutableStateOf("") }
-    // Not saveable: the password should not be written to instance state.
-    var password by remember { mutableStateOf("") }
+    // Visibility is transient: it must not survive the screen, but remembering
+    // it through a rotation is what every other password field does.
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
 
     Scaffold { padding ->
         Column(
@@ -61,7 +73,7 @@ fun LoginScreen(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Record a meeting, then read its transcript and minutes.",
+                text = "Your assistant, your meetings, your data.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -86,25 +98,83 @@ fun LoginScreen(
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
+                value = ui.username,
+                onValueChange = onUsernameChange,
                 label = { Text("Username") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Next,
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("username"),
             )
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
+                value = ui.password,
+                onValueChange = onPasswordChange,
                 label = { Text("Password") },
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                visualTransformation = if (passwordVisible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { onSubmit() }),
+                trailingIcon = {
+                    IconButton(
+                        onClick = { passwordVisible = !passwordVisible },
+                        modifier = Modifier.testTag("passwordToggle"),
+                    ) {
+                        Icon(
+                            painter = painterResource(
+                                if (passwordVisible) {
+                                    R.drawable.ic_visibility_off
+                                } else {
+                                    R.drawable.ic_visibility
+                                },
+                            ),
+                            contentDescription = if (passwordVisible) {
+                                "Hide password"
+                            } else {
+                                "Show password"
+                            },
+                        )
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("password"),
+            )
+
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onRememberChange(!ui.remember) }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = ui.remember,
+                    onCheckedChange = onRememberChange,
+                    modifier = Modifier.testTag("remember"),
+                )
+                Text(
+                    text = "Remember username and password",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Text(
+                text = "Saved encrypted on this phone; turn it off to forget them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp),
             )
 
             val error = ui.error ?: notice
@@ -119,7 +189,7 @@ fun LoginScreen(
 
             Spacer(Modifier.height(24.dp))
             Button(
-                onClick = { onSubmit(username, password) },
+                onClick = onSubmit,
                 enabled = !ui.submitting,
                 modifier = Modifier
                     .fillMaxWidth()

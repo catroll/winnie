@@ -232,6 +232,86 @@ class WinnieApiTest {
         )
     }
 
+    @Test
+    fun assistantChatContinuesTheConversationAndReportsTools() = runBlocking {
+        respond = {
+            StubResponse(
+                200,
+                """
+                {
+                  "conversation_id": "20261101T021500Z-3f9a",
+                  "reply": "The weather is mild.",
+                  "tools_used": ["weather"],
+                  "usage_tokens": 42.5
+                }
+                """.trimIndent(),
+            )
+        }
+
+        val reply = api(token = "abc").assistantChat(
+            message = "What is the weather?",
+            conversationId = "20261101T021500Z-3f9a",
+        )
+
+        assertEquals("20261101T021500Z-3f9a", reply.conversationId)
+        assertEquals("The weather is mild.", reply.reply)
+        assertEquals(listOf("weather"), reply.toolsUsed)
+        val request = received.single()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/assistant/chat", request.path)
+        assertTrue(request.body.contains("\"channel\":\"api\""))
+        assertTrue(
+            request.body.contains("\"conversation_id\":\"20261101T021500Z-3f9a\""),
+        )
+    }
+
+    @Test
+    fun aNewAssistantChatOmitsTheConversationId() = runBlocking {
+        respond = {
+            StubResponse(
+                200,
+                """{"conversation_id":"c2","reply":"Hi","tools_used":[]}""",
+            )
+        }
+
+        api(token = "abc").assistantChat(message = "Hello", conversationId = null)
+
+        // explicitNulls = false: the server must see no conversation_id at all,
+        // not a JSON null it would have to special-case.
+        assertTrue(!received.single().body.contains("conversation_id"))
+    }
+
+    @Test
+    fun assistantConversationKeepsToolMessages() = runBlocking {
+        respond = {
+            StubResponse(
+                200,
+                """
+                {
+                  "id": "c1",
+                  "title": "Schedule",
+                  "created_at": "2026-11-01T02:15:00",
+                  "source": "user",
+                  "channel": "api",
+                  "messages": [
+                    {"role": "user", "name": "", "text": "What is today?", "at": "2026-11-01T02:15:00"},
+                    {"role": "tool", "name": "weather", "text": "sunny", "at": "2026-11-01T02:15:01"},
+                    {"role": "assistant", "name": "", "text": "**Sunny.**", "at": "2026-11-01T02:15:02"}
+                  ]
+                }
+                """.trimIndent(),
+            )
+        }
+
+        val conversation = api(token = "abc").assistantConversation("c1")
+
+        assertEquals("Schedule", conversation.title)
+        assertEquals(3, conversation.messages.size)
+        assertEquals("weather", conversation.messages[1].name)
+        assertEquals("**Sunny.**", conversation.messages[2].text)
+        assertEquals("/api/v1/assistant/conversations/c1", received.single().path)
+    }
+
     private fun api(token: String? = null): WinnieApi =
         WinnieApi("http://127.0.0.1:${server.address.port}", token)
 

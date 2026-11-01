@@ -55,6 +55,17 @@ class WinnieApi(
             .build()
     }
 
+    /**
+     * A model turn runs tools before it answers, so the default 60 s read
+     * timeout is too short; the server itself bounds the loop.
+     */
+    private val chatClient: OkHttpClient by lazy {
+        client.newBuilder()
+            .readTimeout(5, TimeUnit.MINUTES)
+            .callTimeout(6, TimeUnit.MINUTES)
+            .build()
+    }
+
     suspend fun login(username: String, password: String): TokenResponse =
         postJson(
             path = "/api/v1/auth/login",
@@ -150,6 +161,32 @@ class WinnieApi(
     suspend fun logout() {
         execute(request("/api/v1/auth/logout").post(EMPTY_BODY).build())
     }
+
+    // -- assistant -------------------------------------------------------
+
+    /**
+     * Sends one turn. A null [conversationId] starts a new conversation and the
+     * reply carries the id to continue it.
+     */
+    suspend fun assistantChat(message: String, conversationId: String?): AssistantChatReply {
+        val body = json.encodeToString(
+            AssistantChatRequest(message, conversationId, channel = "api"),
+        )
+        return decode(
+            execute(
+                request("/api/v1/assistant/chat")
+                    .post(body.toRequestBody(JSON_MEDIA_TYPE))
+                    .build(),
+                chatClient,
+            ),
+        )
+    }
+
+    suspend fun assistantConversations(limit: Int = 50): AssistantConversationList =
+        getJson("/api/v1/assistant/conversations?limit=${limit.coerceIn(1, 200)}")
+
+    suspend fun assistantConversation(conversationId: String): AssistantConversation =
+        getJson("/api/v1/assistant/conversations/${encodePath(conversationId)}")
 
     // -- phone data ------------------------------------------------------
 
@@ -290,6 +327,10 @@ class WinnieApi(
     }
 
     private inline fun <reified T> decode(text: String): T = json.decodeFromString(text)
+
+    /** Encodes one path segment; a `+` would mean a space in a query, not a path. */
+    private fun encodePath(value: String): String =
+        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
 
     private fun errorDetail(body: String): String {
         if (body.isBlank()) return "request failed"

@@ -30,7 +30,7 @@ class PhoneDataScreenTest {
 
         compose.setContent {
             WinnieTheme {
-                PhoneDataScreen(container = app.container, onBack = {})
+                PhoneDataScreen(container = app.container, bottomBar = {})
             }
         }
 

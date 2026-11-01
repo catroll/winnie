@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -33,12 +35,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.winnie.app.AppContainer
+import dev.winnie.app.R
 
 /**
  * Alerts and the background connection.
@@ -74,10 +79,26 @@ fun PushSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Alerts & background") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                title = {
+                    Text(
+                        text = "Alerts & background",
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(painterResource(R.drawable.ic_back), contentDescription = "Back")
+                    }
+                },
                 actions = {
-                    TextButton(onClick = viewModel::refresh) { Text("Refresh") }
+                    IconButton(onClick = viewModel::refresh) {
+                        Icon(
+                            painterResource(R.drawable.ic_refresh),
+                            contentDescription = "Refresh",
+                        )
+                    }
                 },
             )
         },
