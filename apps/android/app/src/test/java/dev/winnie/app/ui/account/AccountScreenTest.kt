@@ -42,6 +42,8 @@ class AccountScreenTest {
                     savedPassword = savedPassword,
                     onForgetPassword = { forgot++ },
                     onOpenAlerts = { alerts++ },
+                    wakeEnabled = false,
+                    onWakeChange = {},
                     onSignOut = { signedOut++ },
                     bottomBar = {},
                 )

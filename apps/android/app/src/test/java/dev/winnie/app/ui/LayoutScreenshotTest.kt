@@ -112,6 +112,9 @@ class LayoutScreenshotTest {
                     onNewChat = {},
                     onOpenHistory = {},
                     onDismissError = {},
+                    onStartVoice = {},
+                    onCancelVoice = {},
+                    onDismissVoiceFailure = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -130,6 +133,9 @@ class LayoutScreenshotTest {
                     onNewChat = {},
                     onOpenHistory = {},
                     onDismissError = {},
+                    onStartVoice = {},
+                    onCancelVoice = {},
+                    onDismissVoiceFailure = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -152,6 +158,9 @@ class LayoutScreenshotTest {
                     onNewChat = {},
                     onOpenHistory = {},
                     onDismissError = {},
+                    onStartVoice = {},
+                    onCancelVoice = {},
+                    onDismissVoiceFailure = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -182,6 +191,9 @@ class LayoutScreenshotTest {
                     onNewChat = {},
                     onOpenHistory = {},
                     onDismissError = {},
+                    onStartVoice = {},
+                    onCancelVoice = {},
+                    onDismissVoiceFailure = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -257,6 +269,8 @@ class LayoutScreenshotTest {
                     savedPassword = true,
                     onForgetPassword = {},
                     onOpenAlerts = {},
+                    wakeEnabled = false,
+                    onWakeChange = {},
                     onSignOut = {},
                     bottomBar = { navBar(SignedInTab.Account) },
                 )
@@ -302,6 +316,9 @@ class LayoutScreenshotTest {
                     onNewChat = {},
                     onOpenHistory = {},
                     onDismissError = {},
+                    onStartVoice = {},
+                    onCancelVoice = {},
+                    onDismissVoiceFailure = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -352,6 +369,8 @@ class LayoutScreenshotTest {
                     savedPassword = true,
                     onForgetPassword = {},
                     onOpenAlerts = {},
+                    wakeEnabled = false,
+                    onWakeChange = {},
                     onSignOut = {},
                     bottomBar = { navBar(SignedInTab.Account) },
                 )
@@ -375,6 +394,8 @@ class LayoutScreenshotTest {
                     savedPassword = true,
                     onForgetPassword = {},
                     onOpenAlerts = {},
+                    wakeEnabled = false,
+                    onWakeChange = {},
                     onSignOut = {},
                     bottomBar = { navBar(SignedInTab.Account) },
                 )

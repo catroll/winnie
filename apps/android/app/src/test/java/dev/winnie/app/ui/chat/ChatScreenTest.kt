@@ -36,6 +36,9 @@ class ChatScreenTest {
     private var dismissed = 0
     private var openedHistory = 0
     private var newChats = 0
+    private var voiceStarts = 0
+    private var voiceCancels = 0
+    private var voiceDismissals = 0
 
     private fun render() {
         compose.setContent {
@@ -47,6 +50,9 @@ class ChatScreenTest {
                     onNewChat = { newChats++ },
                     onOpenHistory = { openedHistory++ },
                     onDismissError = { dismissed++ },
+                    onStartVoice = { voiceStarts++ },
+                    onCancelVoice = { voiceCancels++ },
+                    onDismissVoiceFailure = { voiceDismissals++ },
                     bottomBar = {},
                 )
             }
@@ -169,5 +175,33 @@ class ChatScreenTest {
 
         compose.onNodeWithText("New chat").performClick()
         assertEquals(1, newChats)
+    }
+
+    @Test
+    fun aVoiceTurnReplacesTheComposerAndOffersCancel() {
+        state = ChatUiState(voice = VoiceState.Listening)
+        render()
+
+        compose.onNodeWithTag("voiceState").assertIsDisplayed()
+        compose.onNodeWithTag("voiceCancel").performClick()
+        assertEquals(1, voiceCancels)
+    }
+
+    @Test
+    fun theMicrophoneButtonStartsAVoiceTurn() {
+        render()
+
+        compose.onNodeWithTag("chatVoice").performClick()
+        assertEquals(1, voiceStarts)
+    }
+
+    @Test
+    fun aFailedVoiceTurnShowsTheReasonAndDismisses() {
+        state = ChatUiState(voice = VoiceState.Failed("no speech"))
+        render()
+
+        compose.onNodeWithTag("voiceError").assertIsDisplayed()
+        compose.onNodeWithTag("voiceDismiss").performClick()
+        assertEquals(1, voiceDismissals)
     }
 }

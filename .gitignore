@@ -37,3 +37,7 @@ apps/android/.kotlin/
 apps/android/build/
 apps/android/app/build/
 apps/android/app/release/
+# The sherpa-onnx AAR is a 47 MB third-party release artifact. It is fetched by
+# `make android-kws` and never committed; the keyword model under app/src/main/
+# assets/kws is small and committed, so a build never downloads the model.
+apps/android/app/libs/

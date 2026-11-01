@@ -38,6 +38,13 @@
     -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!--
+      The wake word needs the microphone in a foreground service. Android 14
+      rejects that service unless it is started while the app is visible, and
+      Android 15 forbids starting it from BOOT_COMPLETED; see
+      docs/voice-wake.md for what that means for "always listening".
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -62,6 +69,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -83,6 +91,16 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="self-hosted assistant notification stream" />
         </service>
+
+        <!--
+          Holds the microphone to listen for "winnie". The type is microphone,
+          so the system shows the privacy indicator and the owner can always see
+          why the microphone is in use.
+        -->
+        <service
+            android:name=".audio.WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <receiver
             android:name=".push.BootReceiver"

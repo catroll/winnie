@@ -292,4 +292,22 @@
     <string name="account_forget_title">Forget the saved password?</string>
     <string name="account_forget_body">The next sign-in asks for the username and password again.</string>
 
+    <!-- Wake word and voice turns -->
+    <string name="wake_channel_service">Wake word</string>
+    <string name="wake_channel_service_description">Shown while Winnie holds the microphone to listen for the wake word.</string>
+    <string name="wake_service_title">Listening for the wake word</string>
+    <string name="wake_service_text">The microphone is on so Winnie can hear “%1$s”. The privacy indicator stays visible.</string>
+    <string name="wake_service_stop">Stop</string>
+    <string name="wake_channel_alert">Wake word detected</string>
+    <string name="wake_channel_alert_description">A short alert when Winnie hears the wake word.</string>
+    <string name="wake_alert_title">Winnie is listening</string>
+    <string name="wake_alert_text">“%1$s” was heard. Tap to speak.</string>
+    <string name="account_wake">Wake word</string>
+    <string name="account_wake_subtitle">Say “winnie” to start a hands-free turn. Holds the microphone while the phone is on.</string>
+    <string name="voice_listening">Listening… speak now.</string>
+    <string name="voice_transcribing">Transcribing your turn…</string>
+    <string name="voice_cancel">Cancel</string>
+    <string name="voice_dismiss">Dismiss</string>
+    <string name="voice_no_speech">Nothing was recognized. Try again.</string>
+    <string name="chat_voice_description">Voice input</string>
 </resources>

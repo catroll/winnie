@@ -29,6 +29,14 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         buildConfigField("String", "DEFAULT_SERVER_URL", buildConfigString(defaultServerUrl))
+
+        // The wake word needs the native libraries, and the AAR ships four ABIs
+        // at ~27 MB each. This is a personal phone build, not a store release:
+        // keep the two ABIs that can run it (a 64-bit phone and an x86_64
+        // emulator) and drop the 32-bit pair.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildFeatures {
@@ -61,6 +69,14 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // Only the JNI wrapper is used; the C and C++ API shared libraries
+            // exist for other language bindings and would add ~5 MB per ABI.
+            excludes += setOf(
+                "**/libsherpa-onnx-c-api.so",
+                "**/libsherpa-onnx-cxx-api.so",
+            )
+        }
     }
 }
 
@@ -80,6 +96,15 @@ dependencies {
     implementation(libs.compose.markdown.m3)
     debugImplementation(libs.compose.ui.tooling)
 
+    // sherpa-onnx keyword spotting (Apache-2.0). The wake word is detected on
+    // the phone, so it costs nothing per wake and no audio leaves the device
+    // until a turn follows. The AAR is not on Maven Central and is ~47 MB, so it
+    // lives in app/libs (gitignored) and is fetched by `make android-kws`.
+    implementation(
+        files(
+            layout.projectDirectory.file("libs/sherpa-onnx.aar"),
+        ),
+    )
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)

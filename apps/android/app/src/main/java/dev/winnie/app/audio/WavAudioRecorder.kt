@@ -20,8 +20,17 @@ import kotlinx.coroutines.withContext
 
 /** Records microphone audio to a WAV file the backend can transcribe. */
 interface AudioRecorder {
-    /** [onChunk] receives each raw PCM block before it is written to the WAV. */
-    fun start(onChunk: ((ByteArray, Int) -> Unit)? = null)
+    /**
+     * [preRoll] is written before the first captured block. A voice turn that
+     * starts from a wake word appends the detector's last two seconds, so the
+     * words spoken right after "winnie" are not lost to the detection latency.
+     *
+     * [onChunk] receives each raw PCM block before it is written to the WAV.
+     */
+    fun start(
+        preRoll: ByteArray? = null,
+        onChunk: ((ByteArray, Int) -> Unit)? = null,
+    )
     suspend fun stop(): File
     fun cancel()
 }
@@ -40,7 +49,10 @@ class WavAudioRecorder(context: Context) : AudioRecorder {
 
     private var active: Active? = null
 
-    override fun start(onChunk: ((ByteArray, Int) -> Unit)?) {
+    override fun start(
+        preRoll: ByteArray?,
+        onChunk: ((ByteArray, Int) -> Unit)?,
+    ) {
         check(active == null) { "a recording is already in progress" }
 
         val directory = File(appContext.cacheDir, RECORDINGS_DIR).apply { mkdirs() }
@@ -75,6 +87,9 @@ class WavAudioRecorder(context: Context) : AudioRecorder {
             channels = 1,
             bitsPerSample = 16,
         )
+        if (preRoll != null && preRoll.isNotEmpty()) {
+            writer.append(preRoll)
+        }
 
         try {
             record.startRecording()

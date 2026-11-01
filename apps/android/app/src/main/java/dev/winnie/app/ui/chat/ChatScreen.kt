@@ -78,6 +78,9 @@ fun ChatScreen(
     onNewChat: () -> Unit,
     onOpenHistory: () -> Unit,
     onDismissError: () -> Unit,
+    onStartVoice: () -> Unit,
+    onCancelVoice: () -> Unit,
+    onDismissVoiceFailure: () -> Unit,
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -165,12 +168,32 @@ fun ChatScreen(
             if (ui.readOnly) {
                 ReadOnlyNotice(onNewChat = onNewChat)
             } else {
-                Composer(
-                    input = ui.input,
-                    enabled = !ui.sending && !ui.loading,
-                    onInputChange = onInputChange,
-                    onSend = onSend,
-                )
+                when (val voice = ui.voice) {
+                    VoiceState.Idle -> Composer(
+                        input = ui.input,
+                        enabled = !ui.sending && !ui.loading,
+                        onInputChange = onInputChange,
+                        onSend = onSend,
+                        onStartVoice = onStartVoice,
+                    )
+
+                    VoiceState.Listening -> VoiceBar(
+                        text = stringResource(R.string.voice_listening),
+                        busy = true,
+                        onCancel = onCancelVoice,
+                    )
+
+                    VoiceState.Transcribing -> VoiceBar(
+                        text = stringResource(R.string.voice_transcribing),
+                        busy = true,
+                        onCancel = onCancelVoice,
+                    )
+
+                    is VoiceState.Failed -> VoiceFailureBar(
+                        message = voice.message,
+                        onDismiss = onDismissVoiceFailure,
+                    )
+                }
             }
         }
     }
@@ -474,6 +497,7 @@ private fun Composer(
     enabled: Boolean,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
+    onStartVoice: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp) {
         Row(
@@ -497,6 +521,19 @@ private fun Composer(
                 ),
             )
             Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = onStartVoice,
+                enabled = enabled,
+                modifier = Modifier
+                    .padding(bottom = 4.dp)
+                    .testTag("chatVoice"),
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_mic),
+                    contentDescription = stringResource(R.string.chat_voice_description),
+                )
+            }
+            Spacer(Modifier.width(4.dp))
             FilledIconButton(
                 onClick = onSend,
                 enabled = enabled && input.isNotBlank(),
@@ -508,6 +545,77 @@ private fun Composer(
                     painterResource(R.drawable.ic_send),
                     contentDescription = stringResource(R.string.common_send),
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Replaces the composer while a hands-free turn runs.
+ *
+ * It is a bar rather than a modal sheet on purpose: the turn is short, the
+ * conversation must stay readable behind it, and the cancel action has to be in
+ * the same place where the send button was.
+ */
+@Composable
+private fun VoiceBar(
+    text: String,
+    busy: Boolean,
+    onCancel: () -> Unit,
+) {
+    Surface(tonalElevation = 3.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(12.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("voiceState"),
+            )
+            TextButton(
+                onClick = onCancel,
+                modifier = Modifier.testTag("voiceCancel"),
+            ) {
+                Text(stringResource(R.string.voice_cancel))
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceFailureBar(message: String, onDismiss: () -> Unit) {
+    Surface(tonalElevation = 3.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("voiceError"),
+            )
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("voiceDismiss"),
+            ) {
+                Text(stringResource(R.string.voice_dismiss))
             }
         }
     }

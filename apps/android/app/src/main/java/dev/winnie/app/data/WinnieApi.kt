@@ -188,6 +188,27 @@ class WinnieApi(
     suspend fun assistantConversation(conversationId: String): AssistantConversation =
         getJson("/api/v1/assistant/conversations/${encodePath(conversationId)}")
 
+    /**
+     * Uploads one recorded utterance and returns its text.
+     *
+     * This is the paid step of a voice turn: the server sends the audio to the
+     * ASR bound to `meetings.transcribe`. The wake word itself never leaves the
+     * phone. The chat client's longer timeout is used because a cold vendor
+     * call plus a short upload can exceed the default read timeout.
+     */
+    suspend fun transcribeVoice(audio: File): VoiceTranscript {
+        val body = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", audio.name, audio.asRequestBody(WAV_MEDIA_TYPE))
+            .build()
+        return decode(
+            execute(
+                request("/api/v1/assistant/transcribe").post(body).build(),
+                chatClient,
+            ),
+        )
+    }
+
     // -- phone data ------------------------------------------------------
 
     suspend fun registerPhoneDevice(payload: PhoneDevicePayload): PhoneDevice =
@@ -343,6 +364,8 @@ class WinnieApi(
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         private val EMPTY_BODY: RequestBody = ByteArray(0).toRequestBody(null)
         private const val AUDIO_WAV = "audio/wav"
+
+        private val WAV_MEDIA_TYPE = "audio/wav".toMediaType()
 
         val json: Json = Json {
             ignoreUnknownKeys = true

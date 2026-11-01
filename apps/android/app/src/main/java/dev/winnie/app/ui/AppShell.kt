@@ -1,6 +1,11 @@
 package dev.winnie.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -15,8 +20,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -25,12 +32,14 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.winnie.app.AppContainer
 import dev.winnie.app.R
+import dev.winnie.app.audio.WakeWordController
 import dev.winnie.app.data.Session
 import dev.winnie.app.ui.account.AccountScreen
 import dev.winnie.app.ui.account.AccountViewModel
 import dev.winnie.app.ui.chat.ChatHistoryScreen
 import dev.winnie.app.ui.chat.ChatScreen
 import dev.winnie.app.ui.chat.ChatViewModel
+import dev.winnie.app.ui.chat.VoiceState
 import dev.winnie.app.ui.home.HomeScreen
 import dev.winnie.app.ui.meeting.MeetingScreen
 import dev.winnie.app.ui.phone.PhoneDataScreen
@@ -61,13 +70,20 @@ fun SignedInFlow(
     var showRecorder by rememberSaveable { mutableStateOf(false) }
     var showAlerts by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var wakeEnabled by remember { mutableStateOf(container.wakePrefs.enabled) }
 
     // A conversation must not be shared with another account on the same
     // phone, so the view models are keyed by the signed-in user.
     val chatViewModel: ChatViewModel = viewModel(
         key = "chat:" + session.user.id,
         factory = viewModelFactory {
-            initializer { ChatViewModel(container.sessions, container.settings) }
+            initializer {
+                ChatViewModel(
+                    sessions = container.sessions,
+                    settings = container.settings,
+                    newRecorder = container::newRecorder,
+                )
+            }
         },
     )
     val chatUi by chatViewModel.ui.collectAsStateWithLifecycle()
@@ -79,11 +95,56 @@ fun SignedInFlow(
         },
     )
     val accountUi by accountViewModel.ui.collectAsStateWithLifecycle()
+    val voiceRequest by container.voiceRequests.collectAsStateWithLifecycle()
+    val appContext = LocalContext.current.applicationContext
+
+    // Opening the app is the one moment Android allows this service to start,
+    // so a listening owner gets it back after a reboot or a process death.
+    LaunchedEffect(session.user.id) {
+        WakeWordController.start(appContext)
+    }
+
+    val recordPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        wakeEnabled = granted
+        if (granted) WakeWordController.setEnabled(appContext, true)
+    }
+
+    // A wake opens the chat and starts the turn. The request is consumed before
+    // it is used so a recomposition cannot start a second recording.
+    LaunchedEffect(voiceRequest?.id) {
+        val request = voiceRequest ?: return@LaunchedEffect
+        container.consumeVoiceTurn()
+        tab = SignedInTab.Chat
+        openMeetingId = null
+        showRecorder = false
+        showHistory = false
+        showAlerts = false
+        chatViewModel.startVoiceTurn(request.preRoll)
+    }
+
+    // Only a turn that has finished gives the microphone back to the service.
+    // Resuming on the initial Idle would race the recording that is about to
+    // start, and the two recorders would leave one of them with silence.
+    var previousVoice by remember { mutableStateOf<VoiceState>(VoiceState.Idle) }
+    LaunchedEffect(chatUi.voice) {
+        val previous = previousVoice
+        previousVoice = chatUi.voice
+        if (previous != VoiceState.Idle && chatUi.voice == VoiceState.Idle) {
+            WakeWordController.resume(appContext)
+        }
+    }
 
     // Entering the account tab is where the saved-password state is shown; read
     // it again instead of trusting what it was when the shell first composed.
     LaunchedEffect(tab) {
-        if (tab == SignedInTab.Account) accountViewModel.refresh()
+        if (tab == SignedInTab.Account) {
+            accountViewModel.refresh()
+            // The service switches this off when the permission is gone or the
+            // engine failed to load; re-read it instead of trusting the switch.
+            wakeEnabled = container.wakePrefs.enabled
+        }
     }
 
     BackHandler(
@@ -151,6 +212,9 @@ fun SignedInFlow(
                         chatViewModel.loadHistory()
                     },
                     onDismissError = chatViewModel::dismissError,
+                    onStartVoice = { chatViewModel.startVoiceTurn() },
+                    onCancelVoice = chatViewModel::cancelVoiceTurn,
+                    onDismissVoiceFailure = chatViewModel::dismissVoiceFailure,
                     // With the keyboard open the navigation bar would sit
                     // between the composer and the cursor; hide it while typing.
                     bottomBar = { if (!WindowInsets.isImeVisible) navBar() },
@@ -174,6 +238,26 @@ fun SignedInFlow(
                     savedPassword = accountUi.savedPassword,
                     onForgetPassword = accountViewModel::forgetSavedPassword,
                     onOpenAlerts = { showAlerts = true },
+                    wakeEnabled = wakeEnabled,
+                    onWakeChange = { enabled ->
+                        if (!enabled) {
+                            wakeEnabled = false
+                            WakeWordController.setEnabled(appContext, false)
+                        } else if (
+                            ContextCompat.checkSelfPermission(
+                                appContext,
+                                Manifest.permission.RECORD_AUDIO,
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            wakeEnabled = true
+                            WakeWordController.setEnabled(appContext, true)
+                        } else {
+                            // The microphone permission is requested from a
+                            // visible screen, which is also the only state in
+                            // which the service may start.
+                            recordPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
                     onSignOut = onSignOut,
                     bottomBar = navBar,
                 )

@@ -29,9 +29,12 @@ logic: the FastAPI `/api/v1` contract is the source of truth.
   opt-in; confirmed calendar and SMS writes from the assistant
 - Reminders from the server: a foreground service holds the push WebSocket,
   posts alerts, and wakes the phone to run a confirmed command immediately
+- Wake word: say "winnie" and the chat opens a hands-free turn. The keyword is
+  detected on the phone by an offline model; only the utterance after the wake
+  is uploaded for transcription. See [docs/voice-wake.md](../../docs/voice-wake.md)
 
 Not implemented yet: streaming assistant replies (one response per turn),
-attachments or voice input in chat, foreground-service recording (a backgrounded
+attachments in chat, foreground-service recording (a backgrounded
 app can be killed, and that also stops the live-caption stream), MMS and
 attachments, SMS delivery receipts, a command poll separate from the data sync,
 offline cache, export/share, speaker labels, certificate pinning, and automatic
@@ -206,9 +209,18 @@ Gradle caches kept inside the checkout (see
 [`docs/LESSONS-android.md`](../../docs/LESSONS-android.md)):
 
 ```bash
+make android-kws   # once: the 47 MB sherpa-onnx AAR for the wake word
 make android
 # apps/android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+`make android` stops with a clear message when the AAR is missing. The AAR is a
+GitHub release asset rather than a Maven Central dependency, so it is fetched
+once into `apps/android/app/libs` and gitignored; the keyword model under
+`app/src/main/assets/kws` is committed, so nothing else is downloaded. The
+build keeps two ABIs (arm64-v8a, x86_64) and drops the C and C++ API shared
+libraries the app does not call, which is what keeps the debug APK near 73 MB
+instead of 139 MB.
 
 The default server address is baked into the APK from `WINNIE_PUBLIC_URL`.
 `make android` sources it from `apps/api/.env`; when unset, the build falls back

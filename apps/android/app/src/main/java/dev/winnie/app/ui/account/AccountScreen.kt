@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -60,6 +61,8 @@ fun AccountScreen(
     savedPassword: Boolean,
     onForgetPassword: () -> Unit,
     onOpenAlerts: () -> Unit,
+    wakeEnabled: Boolean,
+    onWakeChange: (Boolean) -> Unit,
     onSignOut: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -99,6 +102,8 @@ fun AccountScreen(
                         icon = R.drawable.ic_alerts,
                         onClick = onOpenAlerts,
                     )
+                    HorizontalDivider()
+                    WakeRow(enabled = wakeEnabled, onChange = onWakeChange)
                     HorizontalDivider()
                     Row(
                         modifier = Modifier
@@ -273,6 +278,42 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(horizontal = 16.dp)) { content() }
         }
+    }
+}
+
+/**
+ * The wake word switch.
+ *
+ * It sits next to the alerts switch because both keep something running on the
+ * phone, and both are device-local choices. Unlike the alert connection, this
+ * one holds the microphone, so the summary says that in one sentence instead of
+ * hiding the cost in documentation.
+ */
+@Composable
+private fun WakeRow(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.account_wake),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Text(
+                text = stringResource(R.string.account_wake_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(
+            checked = enabled,
+            onCheckedChange = onChange,
+            modifier = Modifier.testTag("wakeSwitch"),
+        )
     }
 }
 

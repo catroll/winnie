@@ -70,3 +70,7 @@ internal data class AssistantChatRequest(
      */
     val channel: String,
 )
+
+/** The transcript of one recorded voice turn. */
+@Serializable
+data class VoiceTranscript(val text: String = "")

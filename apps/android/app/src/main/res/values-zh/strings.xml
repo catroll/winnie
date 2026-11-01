@@ -288,4 +288,22 @@
     <string name="account_forget_title">清除已保存的密码？</string>
     <string name="account_forget_body">下次登录时需要重新输入用户名和密码。</string>
 
+    <!-- 唤醒词与语音回合 -->
+    <string name="wake_channel_service">唤醒词</string>
+    <string name="wake_channel_service_description">Winnie 占用麦克风聆听唤醒词时显示。</string>
+    <string name="wake_service_title">正在听唤醒词</string>
+    <string name="wake_service_text">麦克风已开启，Winnie 正在聆听“%1$s”。隐私指示点会一直显示。</string>
+    <string name="wake_service_stop">停止</string>
+    <string name="wake_channel_alert">检测到唤醒词</string>
+    <string name="wake_channel_alert_description">听到唤醒词时的短提示。</string>
+    <string name="wake_alert_title">Winnie 正在聆听</string>
+    <string name="wake_alert_text">听到“%1$s”，点击说话。</string>
+    <string name="account_wake">唤醒词</string>
+    <string name="account_wake_subtitle">说“winnie”即可开始免提交互。开启期间会占用麦克风。</string>
+    <string name="voice_listening">正在聆听…请说话</string>
+    <string name="voice_transcribing">正在转写…</string>
+    <string name="voice_cancel">取消</string>
+    <string name="voice_dismiss">关闭</string>
+    <string name="voice_no_speech">没有识别到语音，请再试一次。</string>
+    <string name="chat_voice_description">语音输入</string>
 </resources>

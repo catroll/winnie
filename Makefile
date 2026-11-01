@@ -36,12 +36,19 @@ UV_CACHE_DIR ?= $(ROOT)/.cache/uv
 # under $HOME is not writable in this environment; see docs/LESSONS-android.md.
 BUILD_HOME ?= $(ROOT)/.home
 GRADLE_USER_HOME ?= $(ROOT)/.gradle-home
+# The sherpa-onnx AAR is a 47 MB release asset, not a Maven Central artifact, so
+# it lives in the Android project and is gitignored. `make android-kws` fetches
+# it; the byte count is checked because a truncated download still looks like an
+# archive.
+KWS_AAR ?= $(ROOT)/apps/android/app/libs/sherpa-onnx.aar
+KWS_AAR_BYTES ?= 49441341
+KWS_AAR_URL ?= https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar
 ANDROID_HOME ?= $(ROOT)/.android-sdk
 ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test schedule schedule-test schedule-skill
+.PHONY: help api android android-kws admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test schedule schedule-test schedule-skill
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -112,8 +119,23 @@ admin-build: ## Build the admin console into apps/admin/dist
 	}
 	@cd '$(ADMIN_DIR)' && npm run build
 
+android-kws: ## Fetch the sherpa-onnx AAR the wake word needs (47 MB, gitignored)
+	@mkdir -p "$(dir $(KWS_AAR))"
+	@if [ -f '$(KWS_AAR)' ] && [ "$$(stat -c%s '$(KWS_AAR)')" = '$(KWS_AAR_BYTES)' ]; then \
+		printf 'sherpa-onnx AAR already present: %s\n' '$(KWS_AAR)'; \
+	else \
+		printf 'downloading %s\n' '$(KWS_AAR_URL)'; \
+		curl -fL --retry 3 --retry-delay 2 -o '$(KWS_AAR)' '$(KWS_AAR_URL)' || exit 1; \
+		if [ "$$(stat -c%s '$(KWS_AAR)')" != '$(KWS_AAR_BYTES)' ]; then \
+			printf 'error: %s is %s bytes, expected %s\n' '$(KWS_AAR)' "$$(stat -c%s '$(KWS_AAR)')" '$(KWS_AAR_BYTES)' >&2; \
+			printf '       the download is truncated; remove it and retry\n' >&2; \
+			exit 1; \
+		fi; \
+	fi
+
 android: ## Build the debug APK at apps/android/app/build/outputs/apk/debug/
 	@test -d '$(JAVA_HOME)' || { printf 'error: JAVA_HOME not found: %s\n' '$(JAVA_HOME)' >&2; exit 1; }
+	@test -f '$(KWS_AAR)' || { printf 'error: the wake-word library is missing\n       run: make android-kws\n' >&2; exit 1; }
 	@test -d '$(ANDROID_HOME)' || { printf 'error: Android SDK not found: %s\n' '$(ANDROID_HOME)' >&2; printf '       set ANDROID_HOME or install the SDK\n' >&2; exit 1; }
 	@mkdir -p '$(BUILD_HOME)' '$(GRADLE_USER_HOME)' '$(ANDROID_USER_HOME)'
 	@if [ ! -f '$(ANDROID_DIR)/local.properties' ]; then \
