@@ -45,19 +45,29 @@ follows the same rule, with one deliberate split:
 | Run history | `tasks/runs.jsonl` | nothing |
 | How recall works | — | the `winnie-index` catalog |
 
-Retrieval is **not** implemented inside the assistant. `winnie-index` already
-tokenises mixed Chinese/English text, chunks by heading, keeps the catalog in
-step with the filesystem and revalidates a document before returning it. A
-second, in-process lexical index would duplicate that work and drift from it,
-so the assistant queries the index service and only keeps the small pinned
-digest in process.
+Full-text retrieval is **not** implemented inside the assistant. `winnie-index`
+already tokenises mixed Chinese/English text, chunks by heading, keeps the
+catalog in step with the filesystem and revalidates a document before returning
+it. A second, in-process lexical index would duplicate that work and drift from
+it, so the assistant queries the index service for documents and citations.
+
+Memory has one deliberate exception: `MemoryStore.recall` scores the
+already-parsed notes against the incoming message and puts the top few in the
+prompt. It does not chunk, rank or cite documents — `path:line` still comes from
+the index — and it exists because two failures are worse than a duplicate
+matcher:
+
+- a note is only visible if the model decides to search, and a paraphrase of the
+  owner's wording does not have to trigger that decision;
+- the index can be up to `scan.interval_seconds` behind a write.
 
 Consequences that matter:
 
 - The assistant can be rebuilt from the files; the index is rebuildable from
   the same files.
-- The owner can edit or delete a memory by editing a file. The next index sweep
-  obeys it, and the pinned digest obeys it immediately.
+- The owner can edit or delete a memory by editing a file. The pinned digest
+  obeys it on the next refresh, and the index obeys it on the next sweep or on
+  the immediate reindex that a memory write triggers.
 - Every answer can cite `path:line` because the index returns it, not because
   the assistant reconstructs it.
 
@@ -199,13 +209,17 @@ updated: 2026-11-01
 - [2026-11-01] 回答先给结论，再展开。 <!-- source: chat:20261101T021500Z-3f9a -->
 ```
 
-- `pinned: true` files are always included in the system prompt, bounded by
-  `memory.digest_chars`. Everything else is reached through the index.
+- Four categories are always in the system prompt: `identity`, `preferences`,
+  `procedures` and `constraints`, bounded by `memory.digest_chars`. The rest are
+  reached through search and through the per-turn recall described below.
+  `procedures` is pinned because a rule about *how* to answer is worthless if the
+  only route to it is a search the model has to decide to run.
 - The source comment makes a fact attributable and strippable: it is removed
   from the text shown to the model and returned by the memory API.
-- A hand edit is legal: change the text, delete a line, or set `pinned` to
-  `false`. The pinned digest obeys it on the next refresh, and the index obeys
-  it on its next sweep.
+- A hand edit is legal: change the text or delete a line. Front matter can pin a
+  normally-unpinned category (`pinned: true`), but it cannot unpin a pinned one —
+  the category set is the contract, and a stale `pinned: false` in an older file
+  would otherwise silently remove the rule from every prompt.
 
 ## 5. Long-term memory
 
@@ -245,14 +259,27 @@ conversation files (messages after the watermark)
 the file against the catalog first, so the text is never stale even when the
 sweep is behind.
 
-Freshness is split on purpose:
+Three read paths reach a turn, and they are not redundant:
 
-- **Pinned profile facts** are read from disk every turn and are in the system
-  prompt immediately.
-- **Everything else** becomes searchable on the index's next sweep
-  (`scan.interval_seconds`, 300 s by default) or on an explicit build. A fact
-  written seconds ago may therefore not be searchable yet; the conversation it
-  came from is still in the model's short-term history.
+- **Pinned profile facts** (`identity`, `preferences`, `procedures`,
+  `constraints`) are read from disk every turn and are in the system prompt
+  immediately.
+- **Per-turn recall** scores the unpinned notes against the message and puts at
+  most six of them in the prompt with their `path:line`. It reads the parsed
+  notes in process, so it sees a note written a second ago.
+- **Search** is the model's own call when it needs the wider corpus. A note
+  written by `remember` is reindexed immediately through the daemon's
+  `POST /admin/index`; everything else (a hand edit, a note from another
+  writer) becomes searchable on the next sweep (`scan.interval_seconds`, 300 s
+  by default). Recall covers the gap for notes.
+
+A search that matches nothing strictly is retried by the daemon as an OR of the
+query's tokens, and such hits are returned with `loose: true` so the tool can
+say so. The strict behaviour is the default of the daemon API; the assistant
+opts in, because it is the component that turns "nothing found" into a statement
+to the owner. The tool text says explicitly that a miss is not proof a fact does
+not exist, and the skill instructions forbid answering "it was never recorded"
+from a single zero-result search.
 
 The assistant does not filter search results to its own directory. The owner's
 notes and the assistant's memory share one corpus, which is the point: a
@@ -273,7 +300,8 @@ conversation, records the user/tool/assistant messages and stores the reply.
 One turn is:
 
 1. The assistant appends the user message and gives `winnie-chat` the history,
-   time, memory digest and any pending confirmation.
+   time, memory digest, the notes recalled for this message and any pending
+   confirmation.
 2. The chat engine asks the `SkillRegistry` for the skills enabled for this
    turn (and allowed in a scheduled run), then builds the system prompt and the
    tool schemas from those skills.
@@ -304,7 +332,7 @@ Tools and their inputs:
 |---|---|---|---|
 | web | `web_search` | `query`, `limit?` | numbered title / URL / snippet list |
 | web | `fetch_page` | `url` | readable text, truncated |
-| weather | `weather_forecast` | — | today/tomorrow forecast with umbrella, clothing, heat, wind and severe-weather advice |
+| weather | `weather_forecast` | `location?`, `latitude?`, `longitude?` | today/tomorrow forecast with umbrella, clothing, heat, wind and severe-weather advice |
 | gold | `gold_price` | — | current gold price, window/day changes and the alert rules |
 | documents | `search_documents` | `query`, `limit?` | `path:line-range`, heading, snippet, mtime |
 | documents | `read_document` | `path`, `from_line?`, `lines?` | the current text with a line header |
@@ -471,9 +499,16 @@ conversation, not the code.
 
 The Skills page is the feature list. The weather row shows its title,
 description, tool, `network` permission and availability; disabling it removes
-the tool from the model and makes the watcher skip its next due check. The
-location, schedule and thresholds are deployment configuration, not per-turn
-settings; a wrong city is a `config.yaml` change, not a chat command.
+the tool from the model and makes the watcher skip its next due check.
+
+`weather_forecast` takes an optional `location` (or explicit coordinates) for the
+call. Without one it uses the configured location, and the scheduled watcher
+always uses it. The parameter exists because the memory rule "no location given
+→ 武汉" could otherwise be displayed in the prompt and then ignored: on
+2026-11-01 the assistant read that rule, said so in its reply, and still
+forecast 上海. The configured location remains the deployment default and the
+watcher's subject; per-answer overrides are the caller's to supply and are not
+persisted.
 
 ### Data source and limits
 
@@ -651,7 +686,7 @@ assistant:
     limit: 8
   memory:
     enabled: true
-    digest_chars: 2000
+    digest_chars: 3000
     auto_distill: true
     max_facts_per_run: 12
     max_fact_chars: 500
@@ -763,7 +798,11 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
   token. The instance is single-user, so the token is access control, not a
   tenancy boundary. The UI stores it in `localStorage` and sends it as a header.
 - **Index boundary.** The index binds loopback only. Its `/search` and `/doc`
-  endpoints are read-only; the assistant never writes through it.
+  endpoints are read-only. The one write the assistant makes is
+  `POST /admin/index` with a single absolute path under a configured root, used
+  to publish a memory note immediately after writing it; the daemon still
+  decides what is indexable and refuses anything outside its roots or above
+  `index.max_file_mb`.
 - **SSRF.** `fetch_page` accepts only `http`/`https`, resolves the host and
   rejects loopback, private, link-local and reserved addresses; redirects are
   followed manually with the same check per hop.

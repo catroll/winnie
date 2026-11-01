@@ -520,3 +520,33 @@ producing plausible answers that look like they ignored the prompt.
    audio*, not a failure. An adapter must translate that vocabulary into a small
    typed set the host can map onto status codes, or every vendor condition above
    the success code becomes an opaque 500 at the edge.
+
+**Fixed (2026-11-01).** All four checks above now exist, and the gates they guard
+are closed:
+
+- `PINNED_CATEGORIES` gained `procedures`, and the category decides pinning —
+  a stale `pinned: false` in an older file can no longer remove a rule from every
+  prompt (`test_procedures_is_pinned_even_when_the_file_says_otherwise`).
+- `MemoryStore.recall` matches the unpinned notes to the incoming message and puts
+  the top six in the turn's prompt, so a paraphrase no longer depends on the model
+  choosing to search (`test_recall_matches_a_paraphrase_of_a_stored_note`,
+  `test_the_agent_feeds_recalled_memory_into_the_turn`).
+- `remember` and the distiller post the file they wrote to the daemon's new
+  `POST /admin/index` (`test_reindex_path_indexes_one_file_without_a_sweep`,
+  `test_remember_indexes_the_note_immediately`). The sweep remains the backstop,
+  and `scan.watch` is still inert — do not trust it.
+- A strict miss is retried as an OR and labelled (`loose: true`), and the tool
+  text says a miss is not proof of absence, so "nothing matched" can no longer
+  become "it was never recorded" (`test_a_paraphrase_misses_strictly_and_hits_
+  when_loose`, `test_a_miss_says_it_is_not_proof_of_absence`).
+- `weather_forecast` takes `location`/`latitude`/`longitude`
+  (`test_weather_tool_passes_the_location_through`, plus a live check that
+  `check(location="武汉")` forecasts 武汉 while `check()` forecasts 上海).
+
+**Lesson worth keeping after the fix.** Each gate was individually reasonable and
+each had a test: pinned-vs-unpinned was the documented contract, the phrase
+behaviour was the documented tokenizer, the sweep lag was the documented
+interval. The regression was in the *composition* — no test asked "does a fact the
+owner just asked to remember appear in the very next answer?". That question is
+now four assertions in four files, which is the only form of "read the memory"
+that a future refactor cannot quietly undo.

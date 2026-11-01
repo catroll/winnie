@@ -3,6 +3,71 @@
 Architecture and dependency choices that are not obvious from the code. Each
 entry records the alternative that was rejected and why.
 
+## Four independent gates decide whether a memory reaches an answer (2026-11-01)
+
+**Decision.** Five changes, each closing a gate that a wording-independent test
+now pins:
+
+1. `procedures` is pinned alongside `identity`, `preferences` and `constraints`,
+   and the category — not the file's front matter — decides whether a category is
+   pinned. Front matter can still add pinning to an unpinned category.
+2. `MemoryStore.recall` scores the unpinned notes against the incoming message
+   and adds the top six, with `path:line`, to the prompt for that turn.
+3. `remember` and the distiller reindex the files they wrote through the
+   daemon's new `POST /admin/index`, instead of waiting for the five-minute
+   sweep. The sweep stays the backstop for hand edits and other writers.
+4. A zero-result strict search is retried by the daemon as an OR of the query
+   tokens (`{"loose": true}`, hits carry `"loose": true`). The assistant opts in;
+   the daemon's default stays strict.
+5. `weather_forecast` accepts `location`/`latitude`/`longitude`, geocoding a name
+   with the same provider as the forecast; the configured location remains the
+   default and the watcher's subject.
+
+**Why.** On 2026-11-01 the owner asked for a default weather city to be
+remembered, then asked twice for tomorrow's weather. Both answers came from the
+configured 上海. The note had been written correctly — the reply had even said
+"已记到本地记忆（procedures）" — so the write path was innocent. Each gate failed
+on its own:
+
+- only three of ten categories were in the prompt, and the rule was in a fourth;
+- the only other read path was a search the model had to choose to run, whose
+  CJK query is an adjacency phrase, so the owner's paraphrase returned "No local
+  document matched that query" and the assistant reported there was no record;
+- the index was up to 300 s behind the write, and the per-root `watch: true` was
+  persisted but never read (there is no inotify code);
+- and the tool being steered by the memory had no input for the place, so even
+  the turn that read the rule forecast 上海 and said so.
+
+**Rejected: pin every category.** The digest is a fixed budget in every prompt;
+pinning `episodes` and `people` would spend it on facts that matter to a handful
+of questions and starve the rules that matter to all of them. Recall is the
+cheaper way to widen the always-present set, and it costs one recent-message
+match per turn instead of a bigger constant.
+
+**Rejected: make the daemon's search loose by default.** `search()` is a public
+contract used by the console, the MCP surface and tests; a query for text that
+was removed must keep returning nothing (`test_a_rename_never_lands_on_a_
+tombstoned_path`). The fallback is opt-in and labelled, so "related wording"
+cannot be mistaken for "the document says this".
+
+**Rejected: raise `scan.interval_seconds` to seconds instead of adding
+`/admin/index`.** A shorter sweep still races the next question and pays the
+whole metadata walk every interval; a writer that knows the path can say so for
+free. `watch: true` in the config was left in place but is documented here as
+inert until an inotify implementation exists — a configurability that does
+nothing is a trap, and a comment claiming "inotify acceleration" is worse.
+
+**Rejected: geocode inside the tool.** `WeatherService.geocode` keeps the
+vendor call next to the forecast it feeds, so the assistant never learns a
+geocoding URL and a future provider change is one module.
+
+**Verified.** The daemon's `POST /admin/index` indexed a note written after its
+last sweep and a paraphrase then found it as a loose hit, while a strict query
+still returned nothing; `check(location="武汉")` returned a 武汉 forecast from the
+live Open-Meteo while `check()` returned 上海; the assembled prompt for "明天有雨
+么？" contains "默认查询武汉" and the itinerary note. `make index-test`
+(92 passed, 1 skipped) and the API suite (385 passed) cover all five gates.
+
 ## One module for every model vendor, keys in its own `.env` (2026-11-01)
 
 **Decision.** `packages/winnie-llm` owns every vendor call — OpenAI-compatible
