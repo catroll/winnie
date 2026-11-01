@@ -47,8 +47,12 @@ cuts them to a window and a count, and renders them.
   four sections 国内要闻 / 国际要闻 / 财经科技 / 体育文娱, rendered as standard
   sections, a morning/evening one-liner list or a Markdown table.
 
-Both contracts began as editor plugins and are enforced in code, not only in the
-prompt; [docs/news.md](../../docs/news.md) records which rule lives where.
+Both contracts are the owner's editor plugins, quoted verbatim into the prompts:
+the vendored `SKILL.md` files ship under `src/winnie_news/prompts/` and their
+sha256 hashes are pinned by a test, so a retold rule fails instead of drifting.
+Every rule with a mechanical consequence is also enforced in code;
+[docs/news.md](../../docs/news.md) records which rule is a plugin rule and which
+is a pipeline rule.
 
 ## Running
 

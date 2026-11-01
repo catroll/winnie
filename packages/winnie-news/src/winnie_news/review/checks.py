@@ -1,15 +1,17 @@
 """Deterministic review checks that run before the model reviews the draft.
 
-These checks are the floor. A model review can be kind, distracted or
-unavailable; a rule that finds a number in the draft that appears nowhere in the
-material finds it every time. Each rule names what it checked and where, so the
-writer gets a concrete instruction rather than "improve accuracy".
+Every rule here is traceable to one of two sources, and says which:
 
-The rules follow the two prompt contracts: the drafting contract (about 200
-characters, a headline, paragraphs of plain prose, tags, no source apparatus)
-and the digest contract (one of four sections, a brief that fits a morning
-list). The model-owned judgement — is the fact true, is the position well
-argued — is left to the reviewer prompt; anything mechanical is decided here.
+* a quoted editor-plugin rule — the detail names the rule and repeats its own
+  numbers ("内容规则 1", "标签规则 9"), so the writer gets the owner's wording
+  back rather than a reviewer's reinterpretation;
+* a pipeline rule that pre-dates the plugins and is labelled as such: headline
+  length, the sources trace, the number-versus-material check, clickbait and
+  boilerplate lists.
+
+Nothing else is invented. Where a plugin says "约200字" or "尽量不超过40字", the
+check uses that wording (a soft note), not a stricter threshold chosen here. The
+model review then applies the same quoted skills.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ from winnie_news.search.models import SearchHit
 from .models import ReviewProblem
 
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
+# Pipeline style rules that pre-date the editor plugins.
 _CLICKBAIT = (
     "震惊",
     "惊呆",
@@ -52,23 +55,23 @@ _BOILERPLATE = (
     "it is worth noting",
     "in today's fast-paced world",
 )
-# A link in the publishable text is forbidden outright: sources live in the
-# draft JSON, not in the article.
+# 来源与引用规则 1: the output never carries a link.
 _LINK_RE = re.compile(r"(?:https?://|www\.)", re.IGNORECASE)
 _MD_LINK_RE = re.compile(r"!?\[[^\]\n]*\]\([^)\n]*\)")
-# Markdown structure at the start of a line: heading, list item, quote, fence.
-_MD_BLOCK_RE = re.compile(
-    r"^[ \t]{0,3}(?:#{1,6}[ \t]|[-*+][ \t]|\d+[.)][ \t]|>[ \t]|```)",
-    re.MULTILINE,
-)
-# A named outlet citation. "据报道" and "尚待核实" stay allowed: the digest
-# contract asks for exactly those markers on unverified facts.
+# 来源与引用规则 5: a named outlet citation is source information, not a fact.
+# "据报道" and "尚待核实" stay allowed: they are the required markers on an
+# unverified claim (内容规则 4).
 _CITATION_RE = re.compile(
     r"据[\u4e00-\u9fffA-Za-z]{2,12}(?:报道|消息)"
     r"|^[ \t]*(?:来源|出处|参考资料)[ \t]*[:：]",
     re.MULTILINE,
 )
-# Chinese state leaders are never tags, and "中国" must not stand in for one.
+# 输出规则: plain text, no Markdown structure.
+_MD_BLOCK_RE = re.compile(
+    r"^[ \t]{0,3}(?:#{1,6}[ \t]|[-*+][ \t]|\d+[.)][ \t]|>[ \t]|```)",
+    re.MULTILINE,
+)
+# 标签规则 9 names these leaders and extends to "历任党政领导人".
 _LEADER_NAMES = (
     "习近平",
     "李强",
@@ -86,17 +89,15 @@ _LEADER_NAMES = (
     "温家宝",
     "李克强",
 )
+# 标签规则 11: never the whole story as one of these.
 _GENERIC_TAGS = {"中国", "法律", "经济", "时事"}
+# 立场与表达规则 2 and 3 name these hedges verbatim.
 _FALSE_BALANCE = (
     "有人认为",
     "也有人认为",
-    "有分析认为",
+    "获得部分网友评价",
     "被一些人视为",
-    "部分网友",
     "引发讨论",
-    "引发热议",
-    "sparked discussion",
-    "some say",
 )
 
 
@@ -119,6 +120,8 @@ def rule_problems(
 
 def _format(draft: Draft, requirements: WritingRequirements) -> list[ReviewProblem]:
     problems: list[ReviewProblem] = []
+    # Pipeline rule: a headline that does not fit one line is unreadable in the
+    # console and in the digest. The plugin only says "简洁".
     title_limit = 40 if requirements.language == "zh" else 120
     if not draft.title.strip():
         problems.append(
@@ -132,21 +135,15 @@ def _format(draft: Draft, requirements: WritingRequirements) -> list[ReviewProbl
                 type="format",
                 severity="medium",
                 origin="rule",
-                detail=f"title is {len(draft.title)} characters; limit is {title_limit}",
+                detail=f"title is {len(draft.title)} characters; the pipeline cap is {title_limit}",
             )
         )
 
     content = draft.content.strip()
-    if len(content) < 120:
+    if not content:
         problems.append(
             ReviewProblem(
-                type="format",
-                severity="high",
-                origin="rule",
-                detail=(
-                    f"content is only {len(content)} characters; nothing useful "
-                    "can stand on that"
-                ),
+                type="format", severity="high", origin="rule", detail="draft has no content"
             )
         )
     elif len(content) > requirements.max_chars:
@@ -156,12 +153,13 @@ def _format(draft: Draft, requirements: WritingRequirements) -> list[ReviewProbl
                 severity="medium",
                 origin="rule",
                 detail=(
-                    f"content is {len(content)} characters; the budget is "
-                    f"{requirements.max_chars} (about {requirements.target_chars})"
+                    f"content is {len(content)} characters; news-drafting 内容规则 1 "
+                    f"allows about {requirements.target_chars}, extendable to "
+                    f"{requirements.max_chars}"
                 ),
             )
         )
-    elif len(content) < requirements.min_chars:
+    elif len(content) < requirements.target_chars:
         problems.append(
             ReviewProblem(
                 type="format",
@@ -169,20 +167,27 @@ def _format(draft: Draft, requirements: WritingRequirements) -> list[ReviewProbl
                 origin="rule",
                 detail=(
                     f"content is {len(content)} characters, under the "
-                    f"~{requirements.target_chars} target; fine only when the "
-                    "material is thin"
+                    f"~{requirements.target_chars} of 内容规则 1; 内容规则 8 allows "
+                    "a shorter draft when the material cannot support more"
                 ),
             )
         )
 
-    paragraphs = [part for part in re.split(r"\n[ \t]*\n", content) if part.strip()]
-    if len(paragraphs) < 2 and len(content) >= requirements.min_chars:
+    # 内容规则 9 and 10: semantic paragraphs, one blank line between them. Checked
+    # at the plugin's own target length, where a single block is no longer a
+    # deliberate short piece.
+    if len(content) >= requirements.target_chars and not re.search(
+        r"\n[ \t]*\n", content
+    ):
         problems.append(
             ReviewProblem(
                 type="format",
                 severity="medium",
                 origin="rule",
-                detail="the article is one block; split it where the subject changes",
+                detail=(
+                    "content is one block; 内容规则 9/10 require paragraphs "
+                    "separated by one blank line"
+                ),
             )
         )
 
@@ -195,6 +200,7 @@ def _format(draft: Draft, requirements: WritingRequirements) -> list[ReviewProbl
                 detail=(
                     f"category {draft.category!r} is not one of "
                     + ", ".join(CATEGORIES)
+                    + " (hot-news 整理规则 分类)"
                 ),
             )
         )
@@ -205,7 +211,7 @@ def _format(draft: Draft, requirements: WritingRequirements) -> list[ReviewProbl
                 type="format",
                 severity="low",
                 origin="rule",
-                detail="the draft has no brief for the digest",
+                detail="the draft has no brief; hot-news 晨报/晚报 expects a 一句话速览",
             )
         )
     elif len(brief) > BRIEF_LIMIT:
@@ -215,19 +221,21 @@ def _format(draft: Draft, requirements: WritingRequirements) -> list[ReviewProbl
                 severity="low",
                 origin="rule",
                 detail=(
-                    f"brief is {len(brief)} characters; the one-line form aims "
-                    f"at {BRIEF_LIMIT}"
+                    f"brief is {len(brief)} characters; hot-news says "
+                    f"尽量不超过{BRIEF_LIMIT}字"
                 ),
             )
         )
 
+    # Pipeline rule: the sources trace. It is not part of the 成稿 (来源与引用规则
+    # 1 forbids that), so it is checked in the metadata.
     if not draft.sources:
         problems.append(
             ReviewProblem(
                 type="format",
                 severity="high",
                 origin="rule",
-                detail="draft lists no sources",
+                detail="draft lists no sources; the pipeline cannot trace the text",
             )
         )
     for source in draft.sources:
@@ -252,26 +260,29 @@ def _tags(draft: Draft) -> list[ReviewProblem]:
                 type="format",
                 severity="high",
                 origin="rule",
-                detail="the draft carries no tags",
+                detail="the draft carries no tags; 输出规则 requires a tags line",
             )
         )
         return problems
-    if len(tags) < TAG_MIN:
-        problems.append(
-            ReviewProblem(
-                type="format",
-                severity="low",
-                origin="rule",
-                detail=f"only {len(tags)} tag; two or three at least",
-            )
-        )
-    elif len(tags) > TAG_LIMIT:
+    if len(tags) > TAG_LIMIT:
         problems.append(
             ReviewProblem(
                 type="format",
                 severity="medium",
                 origin="rule",
-                detail=f"{len(tags)} tags; the limit is {TAG_LIMIT}",
+                detail=f"{len(tags)} tags; 标签规则 1 allows at most {TAG_LIMIT}",
+            )
+        )
+    elif len(tags) < TAG_MIN:
+        problems.append(
+            ReviewProblem(
+                type="format",
+                severity="low",
+                origin="rule",
+                detail=(
+                    f"only {len(tags)} tag; 标签规则 1 says about five, or two or "
+                    "three when the story has only one or two sides"
+                ),
             )
         )
     for tag in tags:
@@ -281,7 +292,7 @@ def _tags(draft: Draft) -> list[ReviewProblem]:
                     type="style",
                     severity="medium",
                     origin="rule",
-                    detail=f"tag {tag!r}: write AI, never 人工智能",
+                    detail=f"tag {tag!r}: 标签规则 5 says write AI, never 人工智能",
                 )
             )
         if any(name in tag for name in _LEADER_NAMES):
@@ -291,8 +302,8 @@ def _tags(draft: Draft) -> list[ReviewProblem]:
                     severity="high",
                     origin="rule",
                     detail=(
-                        f"tag {tag!r} carries a Chinese state leader's name; "
-                        "leaders are never tags"
+                        f"tag {tag!r}: 标签规则 9 keeps a Chinese state leader's "
+                        "name out of tags"
                     ),
                 )
             )
@@ -303,8 +314,8 @@ def _tags(draft: Draft) -> list[ReviewProblem]:
                     severity="low",
                     origin="rule",
                     detail=(
-                        f"tag {tag!r} is too generic; name the place or the "
-                        "subject instead"
+                        f"tag {tag!r}: 标签规则 11 allows it only when the article "
+                        "is really about that subject"
                     ),
                 )
             )
@@ -316,18 +327,17 @@ def _tags(draft: Draft) -> list[ReviewProblem]:
                         type="style",
                         severity="low",
                         origin="rule",
-                        detail=f"tags {tag!r} and {other!r} repeat the same subject",
+                        detail=(
+                            f"tags {tag!r} and {other!r} repeat the same subject; "
+                            "标签规则 4 forbids synonym stacking"
+                        ),
                     )
                 )
     return problems
 
 
 def _text_hygiene(draft: Draft) -> list[ReviewProblem]:
-    """The publishable text carries no link and no named source.
-
-    Numbers and names are checked against the material elsewhere; this rule is
-    about the *shape* of the output the drafting contract promises.
-    """
+    """The 成稿 carries no link and no named source (来源与引用规则 1-5)."""
     problems: list[ReviewProblem] = []
     text = "\n".join([draft.title, draft.content, draft.brief, *draft.tags])
     if _LINK_RE.search(text) or _MD_LINK_RE.search(text):
@@ -337,8 +347,8 @@ def _text_hygiene(draft: Draft) -> list[ReviewProblem]:
                 severity="high",
                 origin="rule",
                 detail=(
-                    "the publishable text contains a link; sources belong in "
-                    "the draft metadata"
+                    "the 成稿 contains a link; 来源与引用规则 1 allows no link in "
+                    "the output"
                 ),
             )
         )
@@ -348,7 +358,10 @@ def _text_hygiene(draft: Draft) -> list[ReviewProblem]:
                 type="format",
                 severity="medium",
                 origin="rule",
-                detail=f"source attribution in the publishable text: {match.group(0).strip()!r}",
+                detail=(
+                    "source attribution in the 成稿: "
+                    f"{match.group(0).strip()!r} (来源与引用规则 5)"
+                ),
             )
         )
     if _MD_BLOCK_RE.search(draft.content):
@@ -357,7 +370,7 @@ def _text_hygiene(draft: Draft) -> list[ReviewProblem]:
                 type="format",
                 severity="medium",
                 origin="rule",
-                detail="the content contains Markdown structure; plain prose only",
+                detail="content contains Markdown structure; 输出规则 requires plain text",
             )
         )
     return problems
@@ -366,15 +379,14 @@ def _text_hygiene(draft: Draft) -> list[ReviewProblem]:
 def _facts(
     draft: Draft, event: Event, hits: list[SearchHit]
 ) -> list[ReviewProblem]:
-    """Flag numbers in the prose that appear nowhere in the material.
+    """Pipeline rule: flag numbers in the prose that appear nowhere in the material.
 
     The headline and the brief are published too — the brief reaches the digest
-    — so they are scanned with the article. Tags are excluded on purpose: a tag
-    is a label, not a claim, and a tag like "2级地震" would otherwise fail a
-    fact check for a shape that the tag rules already reject. This cannot prove
-    a sentence is true; it can prove a number was not in the input, which is the
-    one check that catches a model computing a total, converting a currency or
-    inventing a figure.
+    — so they are scanned with the article. Tags are excluded: a tag is a label,
+    not a claim, and a tag like "2级地震" would otherwise fail for a shape the tag
+    rules already reject. This cannot prove a sentence is true; it can prove a
+    number was not in the input, which is the one check that catches a model
+    computing a total, converting a currency or inventing a figure.
     """
     corpus = _material_numbers(event, hits)
     published = "\n".join([draft.title, draft.content, draft.brief])
@@ -505,7 +517,7 @@ def _style(draft: Draft, requirements: WritingRequirements) -> list[ReviewProble
                         origin="rule",
                         detail=(
                             f"a position is set but the text hedges with {phrase!r}; "
-                            "present it plainly"
+                            "立场与表达规则 2/3 name this as the false balance to avoid"
                         ),
                     )
                 )

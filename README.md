@@ -135,9 +135,9 @@ formats) without another model call. A run, its stage progress, every draft and
 the digest (JSON and Markdown) live under `data/news`; the console's News page
 and the assistant's `news` skill operate the same service, and the three model
 purposes resolve through the AI providers page. The draft contract — about 200
-characters, tags, a position kept intact, no source apparatus in the text — came
-from the owner's editor plugins and is enforced in code, not only in the prompt.
-It was verified end to end against real RSS sources with the deterministic fake
+characters, tags, a position kept intact, no source apparatus in the text — is
+the owner's editor plugin, quoted verbatim into the prompts and enforced in code
+as well. It was verified end to end against real RSS sources with the fake
 model; a real writing model on a full batch is still unmeasured. Design,
 contracts and limits are in [docs/news.md](./docs/news.md).
 

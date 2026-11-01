@@ -1576,10 +1576,25 @@ drafting plugin (about 200 characters, extendable to 300, `title` / `content` /
 (2 days, 30 items, four sections, three formats) describe what the owner wants
 out of `winnie-news`. Shipping them as an assistant skill would have left two
 writers disagreeing about the same batch. The rules therefore live in the writer
-and reviewer prompts, and every rule with a mechanical consequence is enforced
-in code — the generator owns the shape, the review rules own the taste, the
-digest stage owns the batch view. [docs/news.md](./news.md) maps rule to owner;
-a prompt edit alone can no longer relax the contract.
+and reviewer prompts — quoted verbatim from the plugin `SKILL.md` files — and
+every rule with a mechanical consequence is enforced in code: the generator owns
+the shape, the review rules own the taste, the digest stage owns the batch view.
+[docs/news.md](./news.md) maps rule to owner; a prompt edit alone can no longer
+relax the contract.
+
+**A quoted rule is the only rule.** The first cut of this change retold the two
+plugins in English and added thresholds they do not contain — a 120-character
+floor that belonged to nobody, and a 40-character headline limit presented as the
+plugin's. That is how a contract drifts: every retelling adds an interpretation,
+and the owner's own wording is lost. The prompts now load
+`winnie_news/prompts/news_drafting.md` and `hot_news.md`, byte-identical copies
+of the plugin files including their frontmatter, and `tests/test_skills.py` pins
+both sha256 hashes so editing a quoted rule fails the suite. A constraint that
+genuinely is not in a plugin — the 40-character headline cap, the
+number-versus-material check, the sources trace — is labelled a pipeline rule in
+code and docs, and never appears inside the quoted block. The prompt's only
+additions are the JSON envelope, the field mapping and the batch settings; each
+is introduced as pipeline integration, not as editorial guidance.
 
 **The publishable text and the audit trail are different documents.** The
 drafting contract forbids a source list or a link in the finished article. The
@@ -1597,11 +1612,12 @@ gets (aliases, `#`, duplicate tags, the cap of seven) because those are shape
 rules; the review keeps the judgement rules (`AI` not `人工智能`, no leader
 names, no event-name tags) so the writer receives feedback it can act on.
 
-**The length floor is 120 characters, not the 200 target.** The drafting
-contract says a thin story may be written short rather than padded. A rule that
-fails anything under 200 would force padding, so review calls under 120
-unusable, 120–149 thin but acceptable when the material is small, and over 300
-over budget. The prompt says the same thing in the writer's own terms.
+**The plugin's numbers are the only numbers.** 内容规则 1 says 约200字,
+extendable to 300字左右, and 内容规则 8 allows a shorter draft when the material
+cannot support more. Review therefore notes a body under 200 and flags one over
+300, quoting the rule's own wording in the detail; there is no floor invented
+between them. The generator keeps its pre-existing 80-character sanity check so
+nothing empty reaches review, and that check is labelled a pipeline rule.
 
 **Only a passed review reaches the digest, and a short batch says so.** A
 digest is what gets read; including a `needs_human` draft because it was recent

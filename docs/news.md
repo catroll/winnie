@@ -52,55 +52,69 @@ production model is unmeasured.
 
 ## Prompt contracts
 
-The writer and reviewer prompts are the merged contract of two editor plugins:
-a drafting skill (one article of about 200 characters, a headline, tags, a
-position kept intact, no source apparatus) and a hot-news skill (a dated,
-sectioned briefing with a scannable one-line form). Keeping the rules only in
-prose would let a prompt edit silently relax them, so each rule is enforced
-where it can be checked:
+The writer and reviewer prompts **quote the owner's two editor plugins verbatim**.
+`packages/winnie-news/src/winnie_news/prompts/news_drafting.md` and `hot_news.md`
+are byte-for-byte copies of the plugins' `SKILL.md` files — including their YAML
+frontmatter — with the provenance and sha256 recorded in
+[`prompts/README.md`](../packages/winnie-news/src/winnie_news/prompts/README.md).
+`winnie_news.skills.quoted_skills()` embeds them under a `<skill name="...">`
+envelope; nothing inside is rewritten.
 
-| Rule | Enforced by |
+A paraphrase is not a requirement. Retyping a rule in English is where a
+requirement quietly changes, and the first version of this prompt did exactly
+that: it turned "约200字" into a 120-character hard floor, invented a 40-character
+headline limit attributed to the plugin, and restated rules the owner had already
+written. The plugin files are therefore the single source, and
+`tests/test_skills.py` pins both hashes so an edit to a quoted rule fails the
+suite instead of shipping.
+
+The prompt adds only what a plugin cannot state, and labels it as pipeline
+integration:
+
+- the JSON envelope and the field names the pipeline parses;
+- the field mapping: `title` / `content` / `tags` are the drafting skill's 成稿,
+  `category` / `brief` are the hot-news skill's 分类 and 一句话速览, and
+  `sources` / `uncertainties` are pipeline metadata that never enter the 成稿;
+- this batch's settings: language, style, reader, the owner's position, and
+  whether commentary is on.
+
+The brief is the standard format's 条目说明 too, because the plugin defines no
+second field for that line; the prompt says so, and the brief has to carry the
+core fact, the people, the place and the latest progress the standard format
+asks for. The hot-news 检索要求 is not a writer instruction: the material and
+search stages perform the retrieval, and the prompt states that the material is
+its result so the model does not try to browse.
+
+The mechanical checks quote a plugin rule by name and number whenever they
+enforce one, and are labelled as pipeline rules when they are not:
+
+| Check | Source |
 |---|---|
-| title / content / tags shape | `generate.build_draft`, `test_generate.py` |
-| about 200, extendable to 300 characters | `writing.min_chars/target_chars/max_chars`, review `format` |
-| paragraphs with one blank line | review `format` |
-| no links, no named-outlet citation, no source list in the text | review `format` via `_text_hygiene` |
-| a position kept intact, or neutral reporting | `writing.stance`, writer prompt, review `style` |
-| tags: 2–7, `AI`, no leader names, no generic or event tags | generator normalises the shape; review `_tags` judges |
-| one of the four digest sections | `categories.py`, review `format` |
-| one-line brief of at most 40 characters | writer prompt, review `format`, digest |
-| only verified facts, unverified marked | writer and reviewer prompts, review `fact` |
+| 正文原则上约200字、可扩展到300字左右 | 内容规则 1 (`writing.target_chars` / `max_chars`) |
+| 素材不足时可以写短稿 | 内容规则 8 (a short draft is a note, never an error) |
+| 按语义分段、段间一个空行 | 内容规则 9/10 (checked at the 200-character target) |
+| 成稿无链接、无具名引用、无来源字段 | 来源与引用规则 1–5 |
+| 标签最多7个、AI 不用人工智能、党政领导人、泛化标签、同义堆叠 | 标签规则 1、4、5、9、11 |
+| 四个分类之一 | hot-news 整理规则 分类 |
+| 一句话尽量不超过40字 | hot-news 晨报/晚报 |
+| 纯文本、无 Markdown | 输出规则 |
+| 立场不被两面讨好稀释 | 立场与表达规则 2/3 |
+| 数字必须出现在素材里 | pipeline rule, predates the plugins |
+| 标题不超过40字 | pipeline rule, predates the plugins |
+| 来源 URL 可用 | pipeline rule, traceability |
 
-The drafting contract:
+Anything not in that table is left to the model review, which receives the same
+two quoted files and is told to quote the rule it applies in every problem.
 
-- `title`, `content` and `tags` are the publishable text. The article is about
-  200 characters and may reach 300 to explain background; padding is a review
-  problem, not a length to hit.
-- Plain prose, one blank line between paragraphs, no Markdown, no URL, no
-  outlet name and no "据...报道" citation. The articles used are listed in
-  `sources` in the draft JSON, which is metadata and never part of the text.
-  "据报道" and "尚待核实" are required markers on an unverified fact, so they are
-  allowed by design.
-- `writing.stance` is the owner's position. When set, the writer presents it
-  plainly and the review flags "有人认为 / 也有人认为 / 引发讨论" hedging; when
-  empty, the text is neutral and disagreement is attributed, not resolved.
-- Tags are canonical subject, place or industry names, 2–7 of them, `AI` never
-  `人工智能`, no Chinese state leader's name, no `#`, no one-off event name, no
-  synonym stack, and a place is never folded into `中国`.
-- The headline is at most 40 characters, and `brief` is one scannable clause of
-  at most 40 that the digest reuses.
+The digest contract is the hot-news skill's own wording:
 
-The digest contract:
-
-- The window is the last 2 calendar days and the cap is 30 items, newest first;
-  both are configuration, not per-request.
-- The four sections are fixed: 国内要闻, 国际要闻, 财经科技, 体育文娱. The writer
-  picks one, `categories.normalize_category` maps an alias, and a missing
-  category falls back to the event type and a country-level location.
-- The same data renders as standard sections, a 晨报/晚报 one-liner list, or a
-  Markdown table.
-- A draft whose review did not pass is never in the digest, and a batch smaller
-  than the configured count says so instead of being padded.
+- 默认最近2天、30条; 按事件时间从近到远; four fixed sections (国内要闻, 国际要闻,
+  财经科技, 体育文娱); 各分类独立编号.
+- 同一事件不重复计数 is the aggregate stage's merge, not a second title-based
+  dedupe in the digest; a duplicate in the digest means aggregation missed the
+  merge, and that is information rather than something to hide.
+- 不为了凑足条数加入不具备热点性的新闻, so only drafts whose review passed are
+  eligible and a shortfall is stated with the real number.
 
 ## Stages
 
@@ -188,15 +202,15 @@ None of the three contains a source list or a link.
 
 Rule checks:
 
-- **Format:** title length, the content length bands (under 120 is unusable,
-  under `min_chars` is thin, over `max_chars` is over budget), at least two
-  paragraphs once the article is long enough, a valid category, a brief present
-  and within its limit, a tag list of the right shape, and at least one source
-  with an `http(s)` URL for traceability.
+- **Format:** title length, content above/below the plugin's 约200字 and
+  300字左右, a paragraph break at that target length, a valid category, a brief
+  present and 尽量不超过40字, a tag list of the right shape, and at least one
+  source with an `http(s)` URL for traceability.
 - **Text hygiene:** a URL, a Markdown link, a named-outlet citation or a source
   line in the publishable text, and Markdown structure in the content.
-- **Tags:** `人工智能`, a Chinese state leader's name, a generic tag
-  (`中国`, `法律`, `经济`, `时事`) and two tags that repeat the same subject.
+- **Tags:** 标签规则 5 (`人工智能`), 标签规则 9 (a Chinese state leader's
+  name), 标签规则 11 (a generic `中国`/`法律`/`经济`/`时事` tag) and 标签规则 4
+  (two tags that repeat the same subject).
 - **Fact:** every number in the title, content or brief appears somewhere in
   the material. This cannot prove a sentence true; it does prove a figure was
   invented, converted or computed. Tags are excluded because a tag is a label,
@@ -228,11 +242,18 @@ configured count adds a note naming the real number. An empty section is shown
 as `（本期无条目）` rather than dropped, so a reader can tell "no sports today"
 from a rendering bug.
 
-`render(digest, fmt)` produces the standard sections, the 晨报/晚报 one-liner
-list (`📰 早安/晚安…`), or a Markdown table. The run saves `digest.json` and
-`digest.md` in `digest.format`; the API can render the other two from the JSON
-without rebuilding anything. Regenerating one draft rebuilds the digest, so the
-briefing never contradicts a rewritten draft.
+`render(digest, fmt)` produces the three formats the plugin shows:
+
+- standard: the header `以下为 **YYYY年MM月DD日—MM月DD日** 近N天的 M 条热点新闻（…）：`,
+  then `### 一、国内要闻` … with `1. **标题**：日期；说明`, numbered per section;
+- brief: `📰 早安/晚安，以下是今日要闻速览（YYYY年MM月DD日）：`, then `【国内】` …
+  with `1. 一句话速览` (the greeting is chosen by local hour, since the pipeline
+  has no user to ask for 晨报 or 晚报);
+- table: the plugin's `| 序号 | 日期 | 分类 | 新闻标题 | 核心要点 |`.
+
+The run saves `digest.json` and `digest.md` in `digest.format`; the API can
+render the other two from the JSON without rebuilding anything. Regenerating one
+draft rebuilds the digest, so the briefing never contradicts a rewritten draft.
 
 ## Run lifecycle
 
@@ -326,9 +347,8 @@ the briefing never contradicts a rewritten article. A running batch is refused
 | `aggregate.window_days` | `7` | Fallback time window per event type |
 | `search.queries_per_event` | `3` | Search budget |
 | `search.results_per_query` | `5` | Results per query |
-| `writing.target_chars` | `200` | Requested content length |
-| `writing.min_chars` | `150` | Below this the review calls the draft thin |
-| `writing.max_chars` | `300` | Above this the review calls it over budget |
+| `writing.target_chars` | `200` | 内容规则 1's 约200字 |
+| `writing.max_chars` | `300` | 内容规则 1's 可扩展到300字左右 |
 | `writing.stance` | `""` | The position to present; empty means neutral |
 | `digest.window_days` | `2` | Calendar days ending today; `0` disables the window |
 | `digest.max_items` | `30` | Most items in one digest |
@@ -419,6 +439,9 @@ title `h2`.
 - Duplicate items in a digest mean the aggregate stage did not merge two reports
   of one event. The digest does not deduplicate by title: doing so would hide an
   aggregation miss that a reader should see.
+- The standard format's 条目说明 is the same `brief` the one-line format uses.
+  The plugin defines no separate field for it, so the brief is written to serve
+  both; a long standard entry is not produced.
 - The shipped RSS list enables only the six `chinanews.com.cn` feeds. The BBC,
   NYT, Washington Post, FeedX and Google News entries are present but
   `enabled: false`: every one of them timed out from this network (curl exit 28)

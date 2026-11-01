@@ -83,18 +83,17 @@ class Draft(BaseModel):
 class WritingRequirements(BaseModel):
     """What the writer is asked for, and what review measures it against.
 
-    The two plugin contracts this merges set the defaults: a Chinese article of
-    about 200 characters, extendable to 300 to explain background, and an
-    explicit position only when the owner gave one.
+    The defaults are the quoted plugin's 内容规则 1: about 200 characters,
+    extendable to 300 to explain background. There is no invented lower bound —
+    the same rule's 内容规则 8 allows a shorter draft when the material cannot
+    support more, so a short draft is a note, not a threshold this class sets.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     language: str = "zh"
-    # The requested length in characters, the floor below which a draft is
-    # called thin, and the ceiling a draft is never allowed to exceed.
+    # 内容规则 1's two numbers, passed to review so it can quote them.
     target_chars: int = 200
-    min_chars: int = 150
     max_chars: int = 300
     audience: str = "general readers"
     style: str = "plain news report"
@@ -105,8 +104,8 @@ class WritingRequirements(BaseModel):
 
     @model_validator(mode="after")
     def _ordered_limits(self) -> "WritingRequirements":
-        if not (0 < self.min_chars <= self.target_chars <= self.max_chars):
+        if not (0 < self.target_chars <= self.max_chars):
             raise ValueError(
-                "writing limits must satisfy 0 < min_chars <= target_chars <= max_chars"
+                "writing limits must satisfy 0 < target_chars <= max_chars"
             )
         return self

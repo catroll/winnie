@@ -10,7 +10,7 @@ from winnie_news.aggregate.store import EventStore
 from winnie_news.clean.models import CleanItem
 from winnie_news.generate.models import Draft, DraftSource, WritingRequirements
 from winnie_news.review.checks import rule_problems
-from winnie_news.review.reviewer import review_draft
+from winnie_news.review.reviewer import build_messages, review_draft
 
 CARD = {
     "event_type": "disaster.earthquake",
@@ -131,7 +131,7 @@ def test_rules_reject_tag_hygiene_failures() -> None:
     problems = problems_of(tags=["人工智能", "习近平", "中国", "地震", "地震新闻"])
     assert any(problem.type == "compliance" and problem.severity == "high" for problem in problems)
     assert any("人工智能" in problem.detail for problem in problems)
-    assert any("too generic" in problem.detail for problem in problems)
+    assert any("标签规则 11" in problem.detail for problem in problems)
     assert any("repeat the same subject" in problem.detail for problem in problems)
 
 
@@ -159,7 +159,13 @@ def test_rules_flag_markdown_structure() -> None:
 
 def test_rules_flag_content_over_the_budget() -> None:
     problems = problems_of(content=GOOD_BODY + "补充说明。" * 40)
-    assert any("budget is 300" in problem.detail for problem in problems)
+    assert any("extendable to 300" in problem.detail for problem in problems)
+
+
+def test_rules_note_a_draft_under_the_target_length() -> None:
+    content = "10月21日，四川雅安发生6.2级地震，已造成12人受伤。\n\n当地已启动应急响应。"
+    problems = problems_of(content=content)
+    assert any("under the ~200" in problem.detail for problem in problems)
 
 
 def test_rules_flag_false_balance_when_a_stance_is_set() -> None:
@@ -170,6 +176,17 @@ def test_rules_flag_false_balance_when_a_stance_is_set() -> None:
         requirements=WritingRequirements(language="zh", stance="支持开源技术"),
     )
     assert any("hedges" in problem.detail for problem in problems)
+
+
+def test_the_reviewer_prompt_quotes_both_skills() -> None:
+    messages = build_messages(
+        a_draft(), an_event(), [], requirements=WritingRequirements(language="zh")
+    )
+    system = messages[0]["content"]
+    assert "# 新闻稿整理" in system
+    assert "正文原则上约200字" in system
+    assert "# 热点新闻汇总" in system
+    assert "默认最近2天、30条" in system
 
 
 @pytest.mark.asyncio

@@ -318,10 +318,9 @@ news:
     min_snippet_chars: 20
   writing:
     language: zh
-    # About 200 characters; a draft may extend to 300 to explain background.
-    # Review flags anything over max_chars and calls content under 120 unusable.
+    # The plugin's 内容规则 1: about 200 characters, extendable to 300 to explain
+    # background. Review quotes these numbers; it adds no threshold of its own.
     target_chars: 200
-    min_chars: 150
     max_chars: 300
     audience: general readers
     style: plain news report

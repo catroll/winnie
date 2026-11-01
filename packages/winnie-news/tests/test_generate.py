@@ -13,6 +13,7 @@ from winnie_news.generate.generator import (
     draft_to_markdown,
     draft_to_text,
     generate_draft,
+    system_prompt,
 )
 from winnie_news.generate.models import Draft, WritingRequirements
 from winnie_news.ports import LLMError
@@ -247,6 +248,14 @@ async def test_the_plain_text_form_is_title_content_tags() -> None:
     assert labels == ["title", "content", "tags"]
 
 
+def test_the_writer_prompt_quotes_both_skills() -> None:
+    text = system_prompt(WritingRequirements(language="zh"))
+    assert "# 新闻稿整理" in text
+    assert "正文原则上约200字" in text
+    assert "# 热点新闻汇总" in text
+    assert "默认最近2天、30条" in text
+
+
 def test_writing_requirements_reject_inverted_limits() -> None:
     with pytest.raises(ValueError, match="writing limits"):
-        WritingRequirements(min_chars=300, target_chars=200)
+        WritingRequirements(target_chars=400, max_chars=300)

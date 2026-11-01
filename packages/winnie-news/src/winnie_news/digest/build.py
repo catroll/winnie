@@ -282,7 +282,7 @@ def _intro(digest: Digest) -> str:
         window = f"**{_cn_date(digest.end_date)}**"
         span = ""
     else:
-        window = f"**{_cn_date(digest.start_date)}—{_month_day(digest.end_date)}**"
+        window = f"**{_cn_date(digest.start_date)}—{_cn_month_day(digest.end_date)}**"
         span = f"近{digest.window_days}天的 "
     return (
         f"以下为 {window} {span}{digest.count} 条热点新闻"
@@ -306,6 +306,14 @@ def _month_day(value: str) -> str:
     if parsed is None:
         return value
     return f"{parsed.month:02d}/{parsed.day:02d}"
+
+
+def _cn_month_day(value: str) -> str:
+    """The hot-news standard header's end date: MM月DD日, no year."""
+    parsed = _parse_date(value)
+    if parsed is None:
+        return value
+    return f"{parsed.month}月{parsed.day:02d}日"
 
 
 def _cell(value: str) -> str:

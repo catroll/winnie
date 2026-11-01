@@ -177,7 +177,7 @@ def test_the_standard_format_has_the_contract_header_and_numbering() -> None:
         now_dt=NOW,
     )
     text = render(digest)
-    assert text.startswith("以下为 **2026年10月31日—11/01** 近2天的 2 条热点新闻")
+    assert text.startswith("以下为 **2026年10月31日—11月01日** 近2天的 2 条热点新闻")
     assert "按时间线整理" in text
     assert "### 一、国内要闻" in text
     assert "1. **四川雅安发生6.2级地震**：10/31；四川雅安6.2级地震已致12人受伤" in text

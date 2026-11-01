@@ -139,9 +139,8 @@ class FakeNewsLLM:
                         "published_at": article.get("published_at"),
                     }
                 )
-        # The contract asks for about 200 characters and the review rejects
-        # anything under 120, so the fake repeats the material and then cuts at a
-        # sentence end rather than mid-word.
+        # 内容规则 1 asks for about 200 characters, so the fake repeats the
+        # material to reach it and cuts at a sentence end rather than mid-word.
         source = "\n\n".join(parts) or f"{title}（fake draft）"
         content = source
         while len(content) < 180:
