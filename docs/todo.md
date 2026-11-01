@@ -361,8 +361,18 @@ handset has not run them yet.
 
 - [ ] Run a real `news.write` model over a full batch and compare it with the
       fake drafts on the same material: factual misses, invented numbers,
-      clickbait, length and cost. Record the measurement in
+      clickbait, whether the merged contract is met (about 200 characters,
+      paragraphs, 2–7 tags, one of four categories, a brief, no source
+      apparatus), length and cost. Record the measurement in
       [docs/news.md](./news.md) before tuning prompts.
+- [ ] Surface the digest in the console (a formats selector over the stored
+      `digest.json`) and as one assistant tool that returns the rendered text.
+      The API route exists; until then the briefing is readable only by fetching
+      it.
+- [ ] Let a run choose its digest window and sections (今天, 本周, one category).
+      `digest.window_days` is deployment configuration today, and a per-request
+      window has to be stored on the run record so the digest and the drafts
+      agree on what "recent" meant.
 - [ ] Move a run into the arq worker. Today it executes in the API process, so a
       restart loses it and leaves its record `running`; add a startup sweep that
       marks abandoned runs `failed`.

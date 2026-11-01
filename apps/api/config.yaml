@@ -265,10 +265,11 @@ assistant:
 
 # News production pipeline (packages/winnie-news). A run collects material,
 # cleans and extracts it, groups reports of one event, searches for missing
-# coverage, writes one draft per event and reviews it. The model bindings are
-# news.extract / news.write / news.review on the AI providers page; a fresh
-# registry binds them to the deterministic fake, so a first run works offline.
-# Disabling this hides /api/v1/news and leaves the data under root untouched.
+# coverage, writes one draft per event, reviews it, and assembles the drafts
+# that passed into a dated digest. The model bindings are news.extract /
+# news.write / news.review on the AI providers page; a fresh registry binds them
+# to the deterministic fake, so a first run works offline. Disabling this hides
+# /api/v1/news and leaves the data under root untouched.
 news:
   enabled: true
   # Runs, drafts, reviews and the long-lived events.json live here.
@@ -317,10 +318,27 @@ news:
     min_snippet_chars: 20
   writing:
     language: zh
-    target_chars: 800
+    # About 200 characters; a draft may extend to 300 to explain background.
+    # Review flags anything over max_chars and calls content under 120 unusable.
+    target_chars: 200
+    min_chars: 150
+    max_chars: 300
     audience: general readers
-    style: neutral wire-service report
+    style: plain news report
+    # A position the text must present plainly when it is set. Empty means
+    # neutral reporting.
+    stance: ""
     allow_commentary: false
+  digest:
+    # The batch briefing assembled from the drafts that passed review.
+    # Calendar days ending today: 2 means today and yesterday; 0 disables it.
+    window_days: 2
+    # The most items one digest carries; the newest win.
+    max_items: 30
+    # The format saved as digest.md; the API renders the others on request.
+    format: standard
+    # A draft that did not pass review stays out unless this is true.
+    include_needs_review: false
   # A failed review returns feedback to the writer at most this many times;
   # after that the draft is marked needs_human.
   max_review_retries: 2

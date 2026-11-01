@@ -2,7 +2,9 @@
 
 The console and the assistant both operate the same service object. Starting a
 run returns immediately with a run id; the console polls the run for stage
-progress, and a draft is readable as JSON or as the Markdown a person edits.
+progress. A draft is readable as JSON, as the Markdown a person edits, and as
+the plain-text publish form; a run's digest is readable in any of its three
+formats without rebuilding it.
 """
 
 from __future__ import annotations
@@ -14,7 +16,13 @@ from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from winnie_core.auth.dependencies import admin_required
-from winnie_news.service import NewsService, NewsUnavailable, RunBusy, RunNotFound
+from winnie_news.service import (
+    NewsError,
+    NewsService,
+    NewsUnavailable,
+    RunBusy,
+    RunNotFound,
+)
 from winnie_news.store import RunRecord
 
 router = APIRouter(
@@ -138,6 +146,34 @@ async def get_draft_markdown(
     except RunNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
+
+
+@router.get("/runs/{run_id}/drafts/{event_id}/text", response_class=PlainTextResponse)
+async def get_draft_text(
+    run_id: str,
+    event_id: str,
+    service: NewsService = Depends(get_service),
+) -> PlainTextResponse:
+    try:
+        text = service.draft_text(run_id, event_id)
+    except RunNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/runs/{run_id}/digest")
+async def get_digest(
+    run_id: str,
+    fmt: str = Query(default="", alias="format", pattern="^(standard|brief|table)?$"),
+    service: NewsService = Depends(get_service),
+) -> dict[str, Any]:
+    try:
+        digest, chosen, text = service.digest(run_id, fmt=fmt)
+    except RunNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NewsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"digest": digest.as_document(), "format": chosen, "text": text}
 
 
 @router.get("/sources")

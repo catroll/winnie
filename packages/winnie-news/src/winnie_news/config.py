@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from winnie_news.aggregate.store import AggregateConfig
 from winnie_news.clean.cleaner import CleanConfig
+from winnie_news.digest.models import DigestConfig
 from winnie_news.generate.models import WritingRequirements
 from winnie_news.review.reviewer import MAX_RETRIES
 from winnie_news.search.search import SearchConfig
@@ -45,6 +46,8 @@ class NewsConfig(BaseModel):
     aggregate: AggregateConfig = Field(default_factory=AggregateConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     writing: WritingRequirements = Field(default_factory=WritingRequirements)
+    # The batch briefing assembled from the drafts that passed review.
+    digest: DigestConfig = Field(default_factory=DigestConfig)
     max_review_retries: int = MAX_RETRIES
     # Older runs are pruned after a successful run.
     keep_runs: int = 50

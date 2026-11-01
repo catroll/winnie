@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -14,17 +15,27 @@ from winnie_assistant.config import AssistantConfig, SearchConfig as AssistantSe
 from winnie_api.settings import AIConfig, Settings
 from winnie_gateway.config import RouteConfig
 from winnie_news.config import NewsConfig
+from winnie_news.common.timeutil import now as news_now
+
+# The digest keeps the last two calendar days, so the fixtures are dated
+# yesterday rather than on a fixed day.
+_FIXTURE_DAY = news_now().date() - timedelta(days=1)
+
+
+def _at(hour: int) -> str:
+    return f"{_FIXTURE_DAY.isoformat()}T{hour:02d}:00:00+08:00"
+
 
 FIXTURES = [
     {
         "title": "四川雅安发生6.2级地震 已致12人受伤",
         "content": (
-            "10月21日凌晨3时12分，四川雅安市芦山县发生6.2级地震，震源深度10公里，"
+            "当天凌晨3时12分，四川雅安市芦山县发生6.2级地震，震源深度10公里，"
             "已造成12人受伤，部分房屋受损。当地已启动应急响应。"
         ),
         "source": "中新网",
         "url": "https://example.com/a1",
-        "published_at": "2026-10-21T05:00:00+08:00",
+        "published_at": _at(5),
         "rank": 1,
     },
     {
@@ -35,7 +46,7 @@ FIXTURES = [
         ),
         "source": "财经网",
         "url": "https://example.com/b1",
-        "published_at": "2026-10-21T09:00:00+08:00",
+        "published_at": _at(9),
         "rank": 2,
     },
 ]
@@ -160,6 +171,7 @@ async def test_status_and_a_full_run(tmp_path: Path) -> None:
             "search",
             "generate",
             "review",
+            "digest",
         }
 
         drafts = (await client.get(f"/api/v1/news/runs/{run['id']}/drafts")).json()
@@ -177,7 +189,33 @@ async def test_status_and_a_full_run(tmp_path: Path) -> None:
         )
         assert markdown.status_code == 200
         assert markdown.text.startswith("# ")
-        assert "## Sources" in markdown.text
+        assert "tags: " in markdown.text
+        assert "example.com" not in markdown.text
+
+        text = await client.get(
+            f"/api/v1/news/runs/{run['id']}/drafts/{event_id}/text"
+        )
+        assert text.status_code == 200
+        assert text.headers["content-type"].startswith("text/plain")
+        assert text.text.startswith("title\n")
+
+        digest = (
+            await client.get(f"/api/v1/news/runs/{run['id']}/digest")
+        ).json()
+        assert digest["format"] == "standard"
+        assert digest["digest"]["schema"] == "winnie.news.digest/v1"
+        assert digest["digest"]["count"] == current["stats"]["digest_items"]
+        assert "以下为" in digest["text"]
+
+        brief = (
+            await client.get(f"/api/v1/news/runs/{run['id']}/digest?format=brief")
+        ).json()
+        assert brief["format"] == "brief"
+        assert brief["text"].startswith("📰 ")
+
+        assert (
+            await client.get(f"/api/v1/news/runs/{run['id']}/digest?format=podcast")
+        ).status_code == 422
 
         events = (await client.get("/api/v1/news/events")).json()["events"]
         assert len(events) == current["stats"]["events"]
@@ -308,6 +346,9 @@ async def test_source_health_and_draft_regeneration(tmp_path: Path) -> None:
         after = (await client.get(f"/api/v1/news/runs/{run['id']}/drafts")).json()
         entry = next(item for item in after["drafts"] if item["event_id"] == event_id)
         assert entry["revision"] == 2
+        # The digest is refreshed from the rewritten draft.
+        digest = (await client.get(f"/api/v1/news/runs/{run['id']}/digest")).json()
+        assert digest["digest"]["count"] == current["stats"]["digest_items"]
 
 
 async def test_regeneration_of_a_missing_draft_is_404(tmp_path: Path) -> None:

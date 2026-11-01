@@ -12,6 +12,7 @@ long-lived event store::
     <root>/runs/<run_id>/events.json   # this run's event batch
     <root>/runs/<run_id>/drafts/<event_id>.json + .md
     <root>/runs/<run_id>/reviews/<event_id>.json
+    <root>/runs/<run_id>/digest.json + .md
 
 JSON is the machine format and Markdown is the human one. The draft Markdown is
 the artifact a person reads, edits and publishes; it is a derived render of the
@@ -31,6 +32,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from winnie_news.common.timeutil import now_iso
+from winnie_news.digest.build import render as render_digest
+from winnie_news.digest.models import Digest
 from winnie_news.generate.generator import draft_to_markdown
 from winnie_news.generate.models import Draft
 
@@ -194,28 +197,35 @@ class NewsStore:
             raise FileNotFoundError(f"no draft markdown for {event_id!r}")
         return path.read_text(encoding="utf-8")
 
-    def list_drafts(self, run_id: str) -> list[dict[str, Any]]:
+    def load_drafts(self, run_id: str) -> list[Draft]:
+        """Every readable draft of a run, in event id order."""
         directory = self.run_dir(run_id) / "drafts"
         if not directory.is_dir():
             return []
-        drafts: list[dict[str, Any]] = []
+        drafts: list[Draft] = []
         for path in sorted(directory.glob("*.json")):
             try:
-                draft = Draft.model_validate(json.loads(path.read_text(encoding="utf-8")))
-            except Exception as exc:  # noqa: BLE001
+                drafts.append(
+                    Draft.model_validate(json.loads(path.read_text(encoding="utf-8")))
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad draft must not hide others
                 logger.warning("skipping unreadable draft %s: %s", path, exc)
-                continue
-            drafts.append(
-                {
-                    "event_id": draft.event_id,
-                    "title": draft.title,
-                    "revision": draft.revision,
-                    "sources": len(draft.sources),
-                    "uncertainties": len(draft.uncertainties),
-                    "generated_at": draft.generated_at,
-                }
-            )
         return drafts
+
+    def list_drafts(self, run_id: str) -> list[dict[str, Any]]:
+        return [
+            {
+                "event_id": draft.event_id,
+                "title": draft.title,
+                "category": draft.category,
+                "revision": draft.revision,
+                "tags": list(draft.tags),
+                "sources": len(draft.sources),
+                "uncertainties": len(draft.uncertainties),
+                "generated_at": draft.generated_at,
+            }
+            for draft in self.load_drafts(run_id)
+        ]
 
     def save_review(self, run_id: str, review: Any) -> None:
         directory = self.run_dir(run_id) / "reviews"
@@ -242,6 +252,23 @@ class NewsStore:
             except (OSError, json.JSONDecodeError):
                 continue
         return reviews
+
+    # ------------------------------------------------------------ digest
+
+    def save_digest(self, run_id: str, digest: Digest, *, fmt: str = "") -> Path:
+        """Write the digest JSON and render its Markdown in ``fmt``."""
+        directory = self.run_dir(run_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        _write_json(directory / "digest.json", digest.as_document())
+        path = directory / "digest.md"
+        _write_text(path, render_digest(digest, fmt))
+        return path
+
+    def load_digest(self, run_id: str) -> Digest:
+        path = self.run_dir(run_id) / "digest.json"
+        if not path.is_file():
+            raise FileNotFoundError(f"run {run_id!r} has no digest")
+        return Digest.model_validate(json.loads(path.read_text(encoding="utf-8")))
 
     def prune(self, *, keep: int) -> list[str]:
         """Delete all but the newest ``keep`` runs; returns the removed ids."""

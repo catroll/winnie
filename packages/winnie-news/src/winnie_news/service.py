@@ -22,6 +22,10 @@ from winnie_news.aggregate.models import Event
 from winnie_news.aggregate.store import EventStore
 from winnie_news.common.timeutil import now_iso
 from winnie_news.config import NewsConfig
+from winnie_news.digest.build import build_digest_from_store
+from winnie_news.digest.build import render as render_digest
+from winnie_news.digest.models import Digest
+from winnie_news.generate.generator import draft_to_text
 from winnie_news.generate.models import Draft
 from winnie_news.material.fetcher import get_all_materials
 from winnie_news.pipeline import STAGES, run_pipeline, write_and_review_event
@@ -335,7 +339,7 @@ class NewsService:
         write/review loop and not a new collection. A running batch is refused:
         both paths write the event store and the drafts directory.
         """
-        self.get_run(run_id)
+        record = self.get_run(run_id)
         if self._active is not None:
             raise RunBusy(f"run {self._active} is already in progress")
         event = self.event_store.events.get(event_id)
@@ -363,6 +367,11 @@ class NewsService:
         self.store.save_review(run_id, review)
         event.status = "ready" if review.passed else "needs_review"
         self.event_store.save(self.store.events_path)
+        # The digest is a render of this run's drafts, so a rewritten draft that
+        # is not reflected there would make the briefing quietly wrong.
+        refreshed = self._refresh_digest(run_id)
+        record.stats["digest_items"] = refreshed.count
+        self.store.save_run(record)
         return draft, review
 
     def _run_hits(self, run_id: str, event_id: str) -> list:
@@ -383,6 +392,45 @@ class NewsService:
             raise RunNotFound(
                 f"no draft for event {event_id!r} in run {run_id!r}"
             ) from exc
+
+    def draft_text(self, run_id: str, event_id: str) -> str:
+        """The plain-text publish form of one draft: title, content, tags."""
+        self.get_run(run_id)
+        try:
+            draft = self.store.load_draft(run_id, event_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise RunNotFound(
+                f"no draft for event {event_id!r} in run {run_id!r}"
+            ) from exc
+        return draft_to_text(draft)
+
+    def digest(self, run_id: str, *, fmt: str = "") -> tuple[Digest, str, str]:
+        """Return the stored digest, the effective format and its text.
+
+        The digest is stored as data, so a request may ask for a format other
+        than the one the run rendered to disk without rebuilding anything.
+        """
+        self.get_run(run_id)
+        try:
+            digest = self.store.load_digest(run_id)
+        except (FileNotFoundError, ValueError) as exc:
+            raise RunNotFound(f"run {run_id!r} has no digest") from exc
+        chosen = (fmt or digest.format).strip().lower()
+        try:
+            text = render_digest(digest, chosen)
+        except ValueError as exc:
+            raise NewsError(str(exc)) from exc
+        return digest, chosen, text
+
+    def _refresh_digest(self, run_id: str) -> Digest:
+        digest = build_digest_from_store(
+            self.store,
+            self.event_store.events,
+            run_id,
+            config=self.config.digest,
+        )
+        self.store.save_digest(run_id, digest, fmt=self.config.digest.format)
+        return digest
 
     # ------------------------------------------------------------ events
 

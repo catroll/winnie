@@ -3,36 +3,47 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import pytest
 
+from winnie_news.common.timeutil import now as news_now
 from winnie_news.config import NewsConfig
 from winnie_news.fake import FakeNewsLLM
 from winnie_news.material.fetcher import get_all_materials
 from winnie_news.service import NewsService, RunBusy
 from winnie_news.store import NewsStore
 
+# The digest keeps the last two calendar days, so the fixtures have to be recent
+# for the batch to produce one. The prose stays dateless for that reason.
+_FIXTURE_DAY = news_now().date() - timedelta(days=1)
+
+
+def _at(hour: int) -> str:
+    return f"{_FIXTURE_DAY.isoformat()}T{hour:02d}:00:00+08:00"
+
+
 FIXTURES = [
     {
         "title": "四川雅安发生6.2级地震 已致12人受伤",
         "content": (
-            "10月21日凌晨3时12分，四川雅安市芦山县发生6.2级地震，震源深度10公里，"
+            "当天凌晨3时12分，四川雅安市芦山县发生6.2级地震，震源深度10公里，"
             "已造成12人受伤。当地已启动应急响应。"
         ),
         "source": "中新网",
         "url": "https://example.com/a1",
-        "published_at": "2026-10-21T05:00:00+08:00",
+        "published_at": _at(5),
         "rank": 1,
     },
     {
         "title": "雅安芦山6.2级地震：救援力量赶赴震中",
         "content": (
-            "10月21日凌晨，四川雅安芦山县发生6.2级地震。消防救援队伍已赶赴震中，"
+            "当天凌晨，四川雅安芦山县发生6.2级地震。消防救援队伍已赶赴震中，"
             "目前报告12人受伤，部分房屋受损。"
         ),
         "source": "新华社",
         "url": "https://example.com/a2",
-        "published_at": "2026-10-21T06:30:00+08:00",
+        "published_at": _at(6),
         "rank": 2,
     },
     {
@@ -43,7 +54,7 @@ FIXTURES = [
         ),
         "source": "财经网",
         "url": "https://example.com/b1",
-        "published_at": "2026-10-21T09:00:00+08:00",
+        "published_at": _at(9),
         "rank": 3,
     },
     {
@@ -51,7 +62,7 @@ FIXTURES = [
         "content": "",
         "source": "广告",
         "url": "https://example.com/ad",
-        "published_at": "2026-10-21T09:00:00+08:00",
+        "published_at": _at(9),
     },
 ]
 
@@ -87,7 +98,7 @@ def build_service(tmp_path, *, keep_runs: int = 50) -> NewsService:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_produces_drafts_and_reviews(tmp_path) -> None:
+async def test_pipeline_produces_drafts_reviews_and_a_digest(tmp_path) -> None:
     service = build_service(tmp_path)
     await service.startup()
     run = await service.run_now()
@@ -100,6 +111,7 @@ async def test_pipeline_produces_drafts_and_reviews(tmp_path) -> None:
         "search",
         "generate",
         "review",
+        "digest",
     }
     assert all(stage.status in ("ok", "skipped") for stage in run.stages)
     assert run.stats["materials"] == 4
@@ -111,7 +123,25 @@ async def test_pipeline_produces_drafts_and_reviews(tmp_path) -> None:
     for entry in drafts:
         markdown = service.draft_markdown(run.id, entry["event_id"])
         assert markdown.startswith("# ")
-        assert "## Sources" in markdown
+        assert "tags: " in markdown
+        assert "example.com" not in markdown
+        text = service.draft_text(run.id, entry["event_id"])
+        assert text.startswith("title\n")
+
+    digest, fmt, text = service.digest(run.id)
+    assert fmt == "standard"
+    assert digest.count == run.stats["drafts"]
+    assert run.stats["digest_items"] == digest.count
+    assert "以下为" in text
+    assert "### 一、国内要闻" in text
+    assert (tmp_path / "runs" / run.id / "digest.json").is_file()
+    assert (tmp_path / "runs" / run.id / "digest.md").is_file()
+
+    brief = service.digest(run.id, fmt="brief")[2]
+    assert brief.startswith("📰 ")
+    assert "【国内】" in brief
+    table = service.digest(run.id, fmt="table")[2]
+    assert "| 序号 | 日期 | 分类 | 新闻标题 | 核心要点 |" in table
 
     saved = json.loads((tmp_path / "events.json").read_text(encoding="utf-8"))
     assert saved["schema"] == "winnie.news.event/v1"
@@ -133,6 +163,7 @@ async def test_a_second_run_does_not_attach_the_same_articles(tmp_path) -> None:
     aggregate = next(stage for stage in second.stages if stage.name == "aggregate")
     assert aggregate.count == 0
     assert second.stats["drafts"] == 0
+    assert second.stats["digest_items"] == 0
     assert first.id != second.id
 
 

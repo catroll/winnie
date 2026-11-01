@@ -681,7 +681,9 @@ export interface NewsStatus {
 export interface NewsDraftSummary {
   event_id: string;
   title: string;
+  category: string;
   revision: number;
+  tags: string[];
   sources: number;
   uncertainties: number;
   generated_at: string;
@@ -718,8 +720,10 @@ export interface NewsDraft {
   schema: string;
   event_id: string;
   title: string;
-  subtitle: string | null;
-  body: string;
+  category: string;
+  brief: string;
+  content: string;
+  tags: string[];
   sources: NewsDraftSource[];
   uncertainties: string[];
   language: string;

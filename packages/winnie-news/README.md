@@ -1,14 +1,16 @@
 # winnie-news
 
-**A six-stage pipeline that turns many news sources into a traceable draft.**
+**A seven-stage pipeline that turns many news sources into a traceable draft
+and a dated digest.**
 
 `winnie-news` is the news capability of [Winnie](../../README.md). It collects
 reports from RSS, Tencent News and tophub-style hot lists, cleans and extracts
 them, groups reports of the same real-world event, searches for missing
-coverage, writes one draft per event, and reviews that draft before it can be
-published. Every stage emits a versioned JSON document and keeps the URL, source
-and fetch time of every fact, so a published sentence can be traced back to the
-article it came from.
+coverage, writes one draft per event, reviews that draft before it can be
+published, and assembles the drafts that passed into a briefing. Every stage
+emits a versioned JSON document and keeps the URL, source and fetch time of
+every fact, so a published sentence can be traced back to the article it came
+from.
 
 The module is usable as a library, from its stage command-line entry points, and
 through the Winnie API and console.
@@ -23,12 +25,30 @@ through the Winnie API and console.
 | 4 Search | `search/` | event cards | `winnie.news.search/v1` | Implemented |
 | 5 Generate | `generate/` | event coverage, search leads | `winnie.news.draft/v1` | Implemented |
 | 6 Review | `review/` | draft, event material | `winnie.news.review/v1` | Implemented |
+| 7 Digest | `digest/` | reviewed drafts | `winnie.news.digest/v1` | Implemented |
 
 Stage 4 is not a serial blocker: with no search provider configured the
 pipeline records that and drafts from the material alone. Stages 5 and 6 form
 the only loop — a failed review returns concrete feedback to the writer, twice
 by default, and then the draft is marked `needs_human` instead of being
-published.
+published. Stage 7 adds no model call: it keeps the drafts whose review passed,
+cuts them to a window and a count, and renders them.
+
+## Output contracts
+
+- **Draft:** `title`, `content` and `tags` are the publishable text — about 200
+  Chinese characters, plain prose in paragraphs, no link, no outlet name and no
+  source list. `brief` and `category` feed the digest; `sources` and
+  `uncertainties` are the audit trail and never appear in the text.
+- **Review:** rule checks (length, paragraphing, tag hygiene, category, text
+  hygiene, invented numbers) plus one model review against the same contract;
+  only a draft that passes both is digest-eligible.
+- **Digest:** the last two calendar days, at most 30 items newest first, in the
+  four sections 国内要闻 / 国际要闻 / 财经科技 / 体育文娱, rendered as standard
+  sections, a morning/evening one-liner list or a Markdown table.
+
+Both contracts began as editor plugins and are enforced in code, not only in the
+prompt; [docs/news.md](../../docs/news.md) records which rule lives where.
 
 ## Running
 
@@ -77,6 +97,10 @@ run = await service.run_now()
 - **Numbers are checked mechanically.** The review stage flags any number in the
   draft that appears nowhere in the material — the one fact check that cannot be
   talked around.
+- **The text carries no source apparatus; the JSON does.** A URL in the
+  publishable text fails review, while the same URL in `sources` is what makes
+  the sentence traceable. The two requirements are not in conflict because they
+  apply to different documents.
 - **Article text is untrusted.** Prompts pass it as JSON in an envelope and tell
   the model to ignore instructions inside it; every model reply is parsed as
   JSON and validated against a schema.
@@ -96,4 +120,7 @@ The repository-level design, contracts and operating notes are in
 - The tophub daily digest currently answers "the endpoint returned no data";
   the failure is isolated per source.
 - Aggregation quality depends on the extractor model; a cheap model that returns
-  few actors or places produces more separate events.
+  few actors or places produces more separate events, and a digest can then show
+  two items about one event.
+- The digest's window and count are configuration; there is no per-request
+  window yet. The digest covers one run, not the whole event store.

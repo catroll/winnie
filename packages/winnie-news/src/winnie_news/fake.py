@@ -1,9 +1,9 @@
 """Deterministic offline model for tests and demos.
 
 The AI registry's ``fake`` integration is not a silent fallback for a missing
-key; it is an explicit choice. This model answers the pipeline's four purposes
-with deterministic JSON built from the input, so the whole six-stage pipeline can
-be exercised — and a demo can run — without a vendor.
+key; it is an explicit choice. This model answers the pipeline's purposes
+with deterministic JSON built from the input, so the whole seven-stage pipeline
+can be exercised — and a demo can run — without a vendor.
 """
 
 from __future__ import annotations
@@ -17,8 +17,9 @@ from winnie_llm import LLMCompletion
 
 from .aggregate.cards import heuristic_card
 from .aggregate.models import normalize_event_type
+from .categories import derive_category
 from .clean.models import CleanItem
-from .generate.models import Draft
+from .generate.models import TAG_MIN, Draft
 
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _WORD_RE = re.compile(r"[\w\u4e00-\u9fff]{2,}")
@@ -36,16 +37,19 @@ class FakeNewsLLM:
     ) -> LLMCompletion:
         system = str(messages[0].get("content") or "")
         user = str(messages[-1].get("content") or "")
+        # Write and review are separate purposes, so they are dispatched by
+        # purpose: both prompts open with the same role sentence, and matching
+        # on prompt text would make a rewrite of that sentence a silent break.
+        if purpose == "news.write":
+            return _text(self._draft(user))
+        if purpose == "news.review":
+            return _text(self._review())
         if "fact extractor" in system:
             return _text(self._clean(user))
         if "extract an event card" in system:
             return _text(self._card(user))
         if "deduplication reviewer" in system:
             return _text(self._verify(user))
-        if "careful news writer" in system:
-            return _text(self._draft(user))
-        if "editor of a news service" in system:
-            return _text(self._review())
         return _text({"note": f"fake provider has no answer for purpose {purpose!r}"})
 
     # ------------------------------------------------------------ purposes
@@ -124,7 +128,7 @@ class FakeNewsLLM:
         sources: list[dict[str, Any]] = []
         for article in articles:
             excerpt = str(article.get("excerpt") or article.get("summary") or "").strip()
-            if excerpt:
+            if excerpt and excerpt not in parts:
                 parts.append(excerpt)
             if article.get("url"):
                 sources.append(
@@ -135,16 +139,20 @@ class FakeNewsLLM:
                         "published_at": article.get("published_at"),
                     }
                 )
-        body = "\n\n".join(parts) or f"{title}（fake draft）"
-        # The review stage rejects a body under 200 characters; repeat the
-        # material until the fake draft is long enough to exercise that path.
-        source = body
-        while len(body) < 260:
-            body += "\n\n" + source
+        # The contract asks for about 200 characters and the review rejects
+        # anything under 120, so the fake repeats the material and then cuts at a
+        # sentence end rather than mid-word.
+        source = "\n\n".join(parts) or f"{title}（fake draft）"
+        content = source
+        while len(content) < 180:
+            content += "\n\n" + source
+        content = _trim(content, 280)
         return {
             "title": title[:40],
-            "subtitle": None,
-            "body": body,
+            "category": derive_category(str(event.get("type") or "")),
+            "brief": _first_sentence(content),
+            "content": content,
+            "tags": _tags(event, title),
             "sources": sources,
             "uncertainties": ["offline fake provider produced this draft"],
         }
@@ -200,6 +208,58 @@ def _to_item(payload: dict[str, Any]) -> dict[str, Any]:
         "topic_keywords": list(payload.get("topic_keywords") or []),
         "quality": {"keep": True, "score": 0.7, "reason": "fake extractor"},
     }
+
+
+def _first_sentence(text: str) -> str:
+    """One line for the digest, cut at a boundary rather than mid-word."""
+    flat = " ".join(text.split())
+    for separator in ("。", "！", "？"):
+        index = flat.find(separator)
+        if 0 < index < 40:
+            return flat[:index]
+    if len(flat) <= 40:
+        return flat.rstrip("，,、；;")
+    head = flat[:40]
+    for separator in ("，", "；", "、", ",", ";"):
+        index = head.rfind(separator)
+        if index >= 12:
+            return head[:index]
+    return head
+
+
+def _trim(text: str, limit: int) -> str:
+    """Cut at the last sentence end before ``limit``, not mid-sentence."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    for separator in ("。", "！", "？"):
+        index = head.rfind(separator)
+        if index >= 120:
+            return head[: index + 1]
+    return head.rstrip()
+
+
+def _tags(event: dict[str, Any], title: str) -> list[str]:
+    candidates: list[str] = [str(value) for value in event.get("keywords") or []]
+    candidates.extend(
+        str(actor.get("name") or "")
+        for actor in event.get("actors") or []
+        if isinstance(actor, dict)
+    )
+    candidates.append(title[:12])
+    tags: list[str] = []
+    for candidate in candidates:
+        value = candidate.strip()
+        if not value or value in tags:
+            continue
+        tags.append(value)
+        if len(tags) >= 4:
+            break
+    while len(tags) < TAG_MIN:
+        # The fake review passes, but a draft with no tags is a high-severity
+        # rule failure; the offline demo must still exercise a clean run.
+        tags.append("新闻" if len(tags) == 0 else "事件")
+    return tags
 
 
 def _numbers(text: str) -> list[str]:

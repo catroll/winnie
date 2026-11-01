@@ -10,7 +10,7 @@ infrastructure below it exists to serve the assistant.
 |-------|-------------------|--------|
 | **Assistant** | Chat, web search, scheduled tasks, long-term memory and opt-in local file/command tools | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
-| **News production** | Six-stage pipeline from public sources to a sourced, reviewed draft, with console and assistant access | **Core implemented** |
+| **News production** | Seven-stage pipeline from public sources to a reviewed draft and a dated digest, with API, console and assistant access | **Core implemented** |
 | **Android client** | Assistant chat with Markdown, 5-second change-checked phone sync, record with live captions, reminders, remembered sign-in, English/Chinese UI | **MVP implemented** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
@@ -129,11 +129,15 @@ some battery use. Design, protocol, privacy and limits are in
 The news pipeline in `packages/winnie-news` collects RSS, Tencent and tophub
 material, cleans and extracts it, groups reports of one event, searches for
 missing coverage, writes one draft per event and reviews it — returning concrete
-feedback to the writer at most twice before marking a draft for a person. A run,
-its stage progress and every draft (JSON and Markdown) live under `data/news`;
-the console's News page and the assistant's `news` skill operate the same
-service, and the three model purposes resolve through the AI providers page. It
-was verified end to end against real RSS sources with the deterministic fake
+feedback to the writer at most twice before marking a draft for a person. The
+drafts that pass are then assembled into a dated briefing (four sections, three
+formats) without another model call. A run, its stage progress, every draft and
+the digest (JSON and Markdown) live under `data/news`; the console's News page
+and the assistant's `news` skill operate the same service, and the three model
+purposes resolve through the AI providers page. The draft contract — about 200
+characters, tags, a position kept intact, no source apparatus in the text — came
+from the owner's editor plugins and is enforced in code, not only in the prompt.
+It was verified end to end against real RSS sources with the deterministic fake
 model; a real writing model on a full batch is still unmeasured. Design,
 contracts and limits are in [docs/news.md](./docs/news.md).
 
@@ -217,9 +221,10 @@ and endpoint list are in [docs/meetings.md](./docs/meetings.md).
 3. **Assistant capabilities** — first slice done: chat, web search, memory and
    scheduled tasks. Streaming, task creation from chat, vector retrieval and a
    worker for 24/7 task execution remain.
-4. **News production** — first slice done: material to reviewed draft, console
-   page and assistant skill. A worker-backed run, per-draft regeneration,
-   sanitised Markdown rendering and a real-model quality comparison remain.
+4. **News production** — first slice done: material to reviewed draft and a
+   dated digest, console page and assistant skill. A worker-backed run, a digest
+   surface in the console and the assistant, a per-request digest window and a
+   real-model quality comparison remain.
 5. **Phone data** — first slice done: sync, query, assistant tools and the
    confirmed write path. A device run, a console page, a command poll separate
    from the data sync and SMS delivery receipts remain.

@@ -2,10 +2,10 @@
 
 Last updated: 2026-11-01.
 
-`packages/winnie-news` turns many news sources into a reviewed draft. This
-document records what the pipeline promises, how the stages are wired, and what
-is deliberately not done yet. The package [README](../packages/winnie-news/README.md)
-covers the module itself.
+`packages/winnie-news` turns many news sources into a reviewed draft and a
+dated digest. This document records what the pipeline promises, how the stages
+are wired, and what is deliberately not done yet. The package
+[README](../packages/winnie-news/README.md) covers the module itself.
 
 ## Status
 
@@ -15,14 +15,17 @@ covers the module itself.
 | 2 Clean | `winnie.news.clean/v1` | Done: rules, LLM extraction, second filter |
 | 3 Aggregate | `winnie.news.event/v1` | Done: cards, inverted recall, scoring, gray-zone review |
 | 4 Search | `winnie.news.search/v1` | Done: query construction, dedupe, classification |
-| 5 Generate | `winnie.news.draft/v1` | Done: sourced draft, JSON and Markdown |
+| 5 Generate | `winnie.news.draft/v1` | Done: title/content/tags, brief, category, sourced draft |
 | 6 Review | `winnie.news.review/v1` | Done: rules plus one model review, bounded retry |
+| 7 Digest | `winnie.news.digest/v1` | Done: window, sections, standard/brief/table render |
 
 Verified end to end against real sources with a test-only fake supplier: RSS
 feeds with 60 material items, cleaned items, events, drafts and reviews; a
 deliberate failure (unbound model) left a `failed` run; source health recorded
-`ok` and `error` per feed; a draft regenerated from revision 1 to 2. The console
-and the assistant skill operate the same service.
+`ok` and `error` per feed; a draft regenerated from revision 1 to 2; a digest
+rendered in all three formats, with a shortfall stated when the batch was
+smaller than the configured count. The console and the assistant skill operate
+the same service.
 
 Not verified: a real (non-fake) writing model on a full batch. Provider calls
 are exercised by the existing integration tests, but draft quality with a
@@ -37,8 +40,8 @@ production model is unmeasured.
    model. Models extract, judge gray zones and write; they never compare every
    pair.
 3. **Traceable to the article.** Every decision keeps the material id, source,
-   URL, publication time and the card it was based on. A draft cites only URLs
-   that existed in its input.
+   URL, publication time and the card it was based on. A draft's metadata cites
+   only URLs that existed in its input; the publishable text carries none.
 4. **Bounded retries.** Generate and review form the only loop. It stops after
    `news.max_review_retries` and marks the draft `needs_human`.
 5. **Article text is untrusted input.** Prompts embed it as JSON in a
@@ -46,6 +49,58 @@ production model is unmeasured.
    data; every reply is parsed as JSON and validated by a schema.
 6. **A file is the database.** The event store and each run are readable JSON
    plus Markdown under `data/news`.
+
+## Prompt contracts
+
+The writer and reviewer prompts are the merged contract of two editor plugins:
+a drafting skill (one article of about 200 characters, a headline, tags, a
+position kept intact, no source apparatus) and a hot-news skill (a dated,
+sectioned briefing with a scannable one-line form). Keeping the rules only in
+prose would let a prompt edit silently relax them, so each rule is enforced
+where it can be checked:
+
+| Rule | Enforced by |
+|---|---|
+| title / content / tags shape | `generate.build_draft`, `test_generate.py` |
+| about 200, extendable to 300 characters | `writing.min_chars/target_chars/max_chars`, review `format` |
+| paragraphs with one blank line | review `format` |
+| no links, no named-outlet citation, no source list in the text | review `format` via `_text_hygiene` |
+| a position kept intact, or neutral reporting | `writing.stance`, writer prompt, review `style` |
+| tags: 2–7, `AI`, no leader names, no generic or event tags | generator normalises the shape; review `_tags` judges |
+| one of the four digest sections | `categories.py`, review `format` |
+| one-line brief of at most 40 characters | writer prompt, review `format`, digest |
+| only verified facts, unverified marked | writer and reviewer prompts, review `fact` |
+
+The drafting contract:
+
+- `title`, `content` and `tags` are the publishable text. The article is about
+  200 characters and may reach 300 to explain background; padding is a review
+  problem, not a length to hit.
+- Plain prose, one blank line between paragraphs, no Markdown, no URL, no
+  outlet name and no "据...报道" citation. The articles used are listed in
+  `sources` in the draft JSON, which is metadata and never part of the text.
+  "据报道" and "尚待核实" are required markers on an unverified fact, so they are
+  allowed by design.
+- `writing.stance` is the owner's position. When set, the writer presents it
+  plainly and the review flags "有人认为 / 也有人认为 / 引发讨论" hedging; when
+  empty, the text is neutral and disagreement is attributed, not resolved.
+- Tags are canonical subject, place or industry names, 2–7 of them, `AI` never
+  `人工智能`, no Chinese state leader's name, no `#`, no one-off event name, no
+  synonym stack, and a place is never folded into `中国`.
+- The headline is at most 40 characters, and `brief` is one scannable clause of
+  at most 40 that the digest reuses.
+
+The digest contract:
+
+- The window is the last 2 calendar days and the cap is 30 items, newest first;
+  both are configuration, not per-request.
+- The four sections are fixed: 国内要闻, 国际要闻, 财经科技, 体育文娱. The writer
+  picks one, `categories.normalize_category` maps an alias, and a missing
+  category falls back to the event type and a country-level location.
+- The same data renders as standard sections, a 晨报/晚报 one-liner list, or a
+  Markdown table.
+- A draft whose review did not pass is never in the digest, and a batch smaller
+  than the configured count says so instead of being padded.
 
 ## Stages
 
@@ -112,32 +167,72 @@ at all is recorded as a skipped stage rather than a failed run.
 
 The writer receives the event card, every article (title, source, URL, time,
 summary, excerpt, key numbers) and the search leads as leads, never as facts. It
-returns title, subtitle, body, sources and uncertainties as JSON.
+returns title, category, brief, content, tags, sources and uncertainties as
+JSON; the prompt carries the drafting contract above.
 
-The generator filters sources against URLs that existed in the input; invented
-links are removed and reported as an uncertainty. If the model attributes
-nothing, the draft keeps the event's own articles as sources and says so.
-An empty title or a body under 80 characters is a stage error, because nothing
-useful can be reviewed.
+The generator owns the output shape. It normalises the category through
+`categories.normalize_category` (falling back to the event type), trims and
+deduplicates tags, caps them at 7, and takes the brief from the reply or the
+headline. The article is accepted from `content` or the older `body` field, so a
+model that has seen an older prompt still works. Sources are filtered against
+URLs that existed in the input; invented links are removed and reported as an
+uncertainty. If the model attributes nothing, the draft keeps the event's own
+articles as sources and says so. An empty title or content under 80 characters
+is a stage error, because nothing useful can be reviewed.
+
+The draft renders three ways: JSON for machines, Markdown for a person reading
+the console, and a plain-text `title` / `content` / `tags` form for publishing.
+None of the three contains a source list or a link.
 
 ### 6 Review (`winnie_news.review`)
 
 Rule checks:
 
-- **Format:** title length, body at least 200 characters, at least one source
-  with an `http(s)` URL.
-- **Fact:** every number in the body appears somewhere in the material. This
-  cannot prove a sentence true; it does prove a figure was invented, converted
-  or computed.
+- **Format:** title length, the content length bands (under 120 is unusable,
+  under `min_chars` is thin, over `max_chars` is over budget), at least two
+  paragraphs once the article is long enough, a valid category, a brief present
+  and within its limit, a tag list of the right shape, and at least one source
+  with an `http(s)` URL for traceability.
+- **Text hygiene:** a URL, a Markdown link, a named-outlet citation or a source
+  line in the publishable text, and Markdown structure in the content.
+- **Tags:** `人工智能`, a Chinese state leader's name, a generic tag
+  (`中国`, `法律`, `经济`, `时事`) and two tags that repeat the same subject.
+- **Fact:** every number in the title, content or brief appears somewhere in
+  the material. This cannot prove a sentence true; it does prove a figure was
+  invented, converted or computed. Tags are excluded because a tag is a label,
+  not a claim.
 - **Completeness:** a single-source event with no uncertainty note, or one
   cited source when the event has several.
 - **Style:** clickbait phrases, an exclamation mark in the headline, formulaic
-  prose, first-person opinion when commentary is off.
+  prose, first-person opinion when commentary is off, and false-balance hedging
+  when a position is set.
 
-Then one model review returns problems and feedback. A draft passes only when
-the model passed it **and** no high-severity rule problem exists. A failed
-review returns concrete feedback to the writer; after the retry budget it
-becomes `needs_human` and nothing is published.
+Then one model review returns problems and feedback, checked against the same
+contract: length, paragraphing, headline, brief, tags, category, the absence of
+source apparatus, and whether the requested position (or neutral reporting) was
+delivered. A draft passes only when the model passed it **and** no high-severity
+rule problem exists. A failed review returns concrete feedback to the writer;
+after the retry budget it becomes `needs_human` and nothing is published.
+
+### 7 Digest (`winnie_news.digest`)
+
+The digest is a read of what the run already wrote, not another model call. It
+takes the drafts whose review `passed`, dates each item from the event (falling
+back to the draft's write time), keeps the last `digest.window_days` calendar
+days ending today, sorts newest first, cuts to `digest.max_items`, and groups the
+result into the four sections.
+
+Every draft that stays out is counted by reason in `excluded`
+(`needs_review`, `out_of_window`, `over_limit`), and a batch smaller than the
+configured count adds a note naming the real number. An empty section is shown
+as `（本期无条目）` rather than dropped, so a reader can tell "no sports today"
+from a rendering bug.
+
+`render(digest, fmt)` produces the standard sections, the 晨报/晚报 one-liner
+list (`📰 早安/晚安…`), or a Markdown table. The run saves `digest.json` and
+`digest.md` in `digest.format`; the API can render the other two from the JSON
+without rebuilding anything. Regenerating one draft rebuilds the digest, so the
+briefing never contradicts a rewritten draft.
 
 ## Run lifecycle
 
@@ -152,6 +247,8 @@ search.json              # step 4
 drafts/<event_id>.json   # step 5, machine format
 drafts/<event_id>.md     # step 5, the text a person edits
 reviews/<event_id>.json  # step 6
+digest.json              # step 7, items, sections, exclusion counts, notes
+digest.md                # step 7, rendered in news.digest.format
 ```
 
 The long-lived `data/news/events.json` holds events across runs; its indexes are
@@ -200,9 +297,10 @@ record survives runs and restarts.
 
 `POST /api/v1/news/runs/{run_id}/drafts/{event_id}/regenerate` repeats only the
 write/review loop for one event, reusing the run's stored search results and
-event. The new draft's revision is the previous revision plus one, and both the
-JSON and the Markdown are replaced. A running batch is refused (409): both paths
-write the event store and the drafts directory.
+event. The new draft's revision is the previous revision plus one, the JSON and
+the Markdown are replaced, and the run's digest is rebuilt from all its drafts so
+the briefing never contradicts a rewritten article. A running batch is refused
+(409): both paths write the event store and the drafts directory.
 
 ## Configuration
 
@@ -228,7 +326,14 @@ write the event store and the drafts directory.
 | `aggregate.window_days` | `7` | Fallback time window per event type |
 | `search.queries_per_event` | `3` | Search budget |
 | `search.results_per_query` | `5` | Results per query |
-| `writing.target_chars` | `800` | Requested body length |
+| `writing.target_chars` | `200` | Requested content length |
+| `writing.min_chars` | `150` | Below this the review calls the draft thin |
+| `writing.max_chars` | `300` | Above this the review calls it over budget |
+| `writing.stance` | `""` | The position to present; empty means neutral |
+| `digest.window_days` | `2` | Calendar days ending today; `0` disables the window |
+| `digest.max_items` | `30` | Most items in one digest |
+| `digest.format` | `standard` | Format saved as `digest.md` |
+| `digest.include_needs_review` | `false` | Include drafts that did not pass review |
 | `max_review_retries` | `2` | Feedback rounds before `needs_human` |
 | `keep_runs` | `50` | Older runs pruned after a successful run |
 
@@ -271,6 +376,8 @@ All routes require the bearer token when accounts are enabled.
 | GET | `/api/v1/news/runs/{id}/drafts` | Draft summaries and reviews |
 | GET | `/api/v1/news/runs/{id}/drafts/{event_id}` | Draft JSON and review |
 | GET | `/api/v1/news/runs/{id}/drafts/{event_id}/markdown` | The Markdown draft |
+| GET | `/api/v1/news/runs/{id}/drafts/{event_id}/text` | The plain-text `title`/`content`/`tags` form |
+| GET | `/api/v1/news/runs/{id}/digest?format=` | The digest JSON and its rendered text |
 | GET | `/api/v1/news/sources` | Per-source health across runs |
 | POST | `/api/v1/news/runs/{id}/drafts/{event_id}/regenerate` | Rewrite and re-review one draft |
 | GET | `/api/v1/news/events` | Stored events with coverage |
@@ -285,7 +392,10 @@ reporting a draft as published and require the run id and event id.
 
 The console page `/news` shows the four counters, the run list, one run's stage
 badges and drafts, and the selected draft with its review. It polls while a run
-is running. The draft is rendered as Markdown, safely: `marked` parses it and
+is running. The digest and the plain-text draft are API-only for now: the page
+renders the draft Markdown, and the digest is fetched from
+`/api/v1/news/runs/{id}/digest`. The draft is rendered as Markdown, safely:
+`marked` parses it and
 the tokens become React elements, so nothing is inserted as HTML. Raw HTML in a
 draft is shown as text, images are not loaded (a remote pixel would report the
 reader's IP), and link targets are limited to http(s), mailto and relative URLs.
@@ -298,7 +408,17 @@ title `h2`.
   then marks its record `failed` rather than leaving it `running`, but the work
   is gone. The `arq` backend does not yet move news into the worker.
 - Draft quality depends on `news.write`; the fake provider produces a
-  deterministic, repetitive draft for demos only.
+  deterministic, repetitive draft for demos only. Its tags are title fragments,
+  so a demo digest shows the contract's shape, not editor-quality tags.
+- The digest is assembled from one run's drafts, not from the whole event store.
+  Two runs on the same day produce two digests; a cross-run briefing would need
+  to reconcile their reviews.
+- The digest's window and count are configuration. A per-request window (今天,
+  本周) and a per-request category filter would have to travel with the run
+  record, and are not exposed.
+- Duplicate items in a digest mean the aggregate stage did not merge two reports
+  of one event. The digest does not deduplicate by title: doing so would hide an
+  aggregation miss that a reader should see.
 - The shipped RSS list enables only the six `chinanews.com.cn` feeds. The BBC,
   NYT, Washington Post, FeedX and Google News entries are present but
   `enabled: false`: every one of them timed out from this network (curl exit 28)
@@ -319,4 +439,5 @@ title `h2`.
 ## Follow-ups
 
 Tracked in [todo.md](./todo.md): a worker-backed run, a real-model quality
-comparison over the same batch, and a publication hand-off.
+comparison over the same batch, a digest surface in the console and the
+assistant, and a publication hand-off.

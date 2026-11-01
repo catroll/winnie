@@ -1567,3 +1567,57 @@ call on the assistant's query path and on every console refresh; instead
 console exposes it only on the location tab. The alternative — silently
 geocoding a year of history when the feature is switched on — spends the owner's
 quota without being asked.
+
+## The editor plugins became the news pipeline's prompts (2026-11-01)
+
+**Two ChatGPT editor plugins are a contract, not a prompt to paste.** The
+drafting plugin (about 200 characters, extendable to 300, `title` / `content` /
+`tags`, a position kept intact, no source apparatus) and the hot-news plugin
+(2 days, 30 items, four sections, three formats) describe what the owner wants
+out of `winnie-news`. Shipping them as an assistant skill would have left two
+writers disagreeing about the same batch. The rules therefore live in the writer
+and reviewer prompts, and every rule with a mechanical consequence is enforced
+in code — the generator owns the shape, the review rules own the taste, the
+digest stage owns the batch view. [docs/news.md](./news.md) maps rule to owner;
+a prompt edit alone can no longer relax the contract.
+
+**The publishable text and the audit trail are different documents.** The
+drafting contract forbids a source list or a link in the finished article. The
+pipeline's whole value is that every sentence can be traced to an article. Both
+are true because `sources` and `uncertainties` moved out of the text and into
+the draft JSON, which review still requires to be complete and URL-valid. The
+Markdown and the plain-text `title` / `content` / `tags` form carry no link at
+all; a link in either fails review.
+
+**Tags, category and brief come from the writer, not from a second call.** A
+digest needs one section and one scannable line per event, and the writer is
+already reading the material with the tag taxonomy in front of it. Asking for
+three more fields costs tokens, not a call. The generator normalises what it
+gets (aliases, `#`, duplicate tags, the cap of seven) because those are shape
+rules; the review keeps the judgement rules (`AI` not `人工智能`, no leader
+names, no event-name tags) so the writer receives feedback it can act on.
+
+**The length floor is 120 characters, not the 200 target.** The drafting
+contract says a thin story may be written short rather than padded. A rule that
+fails anything under 200 would force padding, so review calls under 120
+unusable, 120–149 thin but acceptable when the material is small, and over 300
+over budget. The prompt says the same thing in the writer's own terms.
+
+**Only a passed review reaches the digest, and a short batch says so.** A
+digest is what gets read; including a `needs_human` draft because it was recent
+would bypass the review loop. Every excluded draft is counted by reason
+(`needs_review`, `out_of_window`, `over_limit`) and the note states the real
+count, because a silent shortfall looks like a broken source.
+
+**The digest does not deduplicate by title.** Two items about one event mean the
+aggregate stage failed to merge them, and that is information the owner should
+see. A title-based dedupe in the renderer would hide an aggregation miss behind
+a cleaner-looking briefing, and the fix belongs in the stage that owns the
+comparison.
+
+**The digest window is configuration, not a request parameter.** The run record
+already carries what was fetched; a per-request window would either refetch or
+silently filter drafts written under a different window. `digest.window_days`
+and `digest.max_items` are set with the deployment, and the three formats are
+rendered from the stored digest so a request costs no rebuild. A per-request
+window is a follow-up that has to travel with the run.

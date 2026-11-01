@@ -1,9 +1,9 @@
 """News production pipeline for Winnie.
 
-The pipeline turns many news sources into a publishable, traceable draft in six
+The pipeline turns many news sources into a reviewed draft and a digest in seven
 stages:
 
-    material -> clean -> aggregate -> search -> generate -> review
+    material -> clean -> aggregate -> search -> generate -> review -> digest
                                                    ^          |
                                                    +- retry --+
 
@@ -24,9 +24,11 @@ EVENT_SCHEMA = "winnie.news.event/v1"
 SEARCH_SCHEMA = "winnie.news.search/v1"
 DRAFT_SCHEMA = "winnie.news.draft/v1"
 REVIEW_SCHEMA = "winnie.news.review/v1"
+DIGEST_SCHEMA = "winnie.news.digest/v1"
 
 __all__ = [
     "CLEAN_SCHEMA",
+    "DIGEST_SCHEMA",
     "DRAFT_SCHEMA",
     "EVENT_SCHEMA",
     "MATERIAL_SCHEMA",

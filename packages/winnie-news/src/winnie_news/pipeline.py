@@ -1,4 +1,4 @@
-"""The six-stage pipeline.
+"""The seven-stage pipeline.
 
 This module only sequences: it calls the stages, persists each stage's document,
 records stage status on the run, and implements the one loop the design allows —
@@ -8,6 +8,10 @@ modules; there is no news logic here.
 One event failing does not fail the run. Its draft or review is kept, the event
 is marked ``needs_review`` and the run finishes as ``partial`` so a person can
 see exactly which stories need attention.
+
+The digest stage is a read of what the earlier stages wrote: it assembles the
+drafts that passed review, so it adds no model call and cannot introduce a fact
+the drafts did not contain.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from winnie_news.aggregate.store import EventStore
 from winnie_news.clean.cleaner import clean_materials
 from winnie_news.common.timeutil import now_iso
 from winnie_news.config import NewsConfig
+from winnie_news.digest.build import build_digest_from_store
 from winnie_news.generate.generator import generate_draft
 from winnie_news.ports import LLMPort, SearchPort
 from winnie_news.review.reviewer import review_draft
@@ -28,7 +33,7 @@ from winnie_news.store import NewsStore, RunRecord
 
 logger = logging.getLogger(__name__)
 
-STAGES = ("material", "clean", "aggregate", "search", "generate", "review")
+STAGES = ("material", "clean", "aggregate", "search", "generate", "review", "digest")
 
 
 async def run_pipeline(
@@ -79,6 +84,8 @@ async def run_pipeline(
     )
     event_store.save(store.events_path)
 
+    digest = _digest(run, store, events, config, on_update)
+
     run.stats.update(
         {
             "materials": len(items),
@@ -92,6 +99,7 @@ async def run_pipeline(
                 1 for review in reviews if review.status == "needs_human"
             ),
             "failed_events": failures,
+            "digest_items": digest.count,
         }
     )
     status = "partial" if (failures or any(not review.passed for review in reviews)) else "done"
@@ -241,6 +249,32 @@ async def _write_and_review(
     )
     _save(store, run, on_update)
     return drafts, reviews, failures
+
+
+def _digest(
+    run: RunRecord,
+    store: NewsStore,
+    events: list,
+    config: NewsConfig,
+    on_update: Callable[[RunRecord], None] | None,
+):
+    """Assemble the run's passed drafts into the dated briefing."""
+    run.set_stage("digest", "running")
+    _save(store, run, on_update)
+    digest = build_digest_from_store(
+        store,
+        {event.id: event for event in events},
+        run.id,
+        config=config.digest,
+    )
+    store.save_digest(run.id, digest, fmt=config.digest.format)
+    excluded = sum(digest.excluded.values())
+    detail = f"{len(events)} event(s)"
+    if excluded:
+        detail += f", {excluded} draft(s) left out"
+    run.set_stage("digest", "ok", count=digest.count, detail=detail)
+    _save(store, run, on_update)
+    return digest
 
 
 async def write_and_review_event(
