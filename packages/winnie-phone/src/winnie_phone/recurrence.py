@@ -10,16 +10,23 @@ inside the ±window the sync uploads.
 Expansion happens at read time, in the caller's window, so the stored row stays
 the authoritative series. A rule that cannot be parsed never hides the event:
 the base occurrence is returned instead and the failure is logged.
+
+A yearly rule written by a Chinese calendar provider may carry a **lunar**
+month and day in ``BYMONTH``/``BYMONTHDAY``; :mod:`winnie_phone.lunar` detects
+that shape and expands it in the lunar calendar. Without that step a lunar
+birthday is silently a month early.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.rrule import rrulestr
+
+from winnie_phone import lunar
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +86,23 @@ def expand(
     tz = zone(timezone)
     local_start = _local(starts_at, tz)
     duration = (ends_at - starts_at) if ends_at is not None else None
+
+    # A Chinese provider writes a lunar birthday's month/day into the rule and
+    # dateutil would read them as Gregorian, silently a month out. Decode that
+    # shape before falling back to RFC 5545.
+    lunar_rule = lunar.detect(rrule, local_start)
+    if lunar_rule is not None:
+        return _expand_lunar(
+            lunar_rule,
+            local_start,
+            duration,
+            tz,
+            since,
+            until,
+            exdate,
+            max_occurrences,
+        )
+
     rule, naive = _parse_rule(rrule, local_start)
     if rule is None:
         return [base] if _inside(base.starts_at, since, until) else []
@@ -199,6 +223,44 @@ def _utc(moment: datetime) -> datetime:
     """Back to the naive-UTC form the rows use."""
     return moment.astimezone(UTC).replace(tzinfo=None)
 
+
+def _expand_lunar(
+    rule: lunar.LunarYearly,
+    local_start: datetime,
+    duration: timedelta | None,
+    tz: ZoneInfo,
+    since: datetime,
+    until: datetime,
+    exdate: str,
+    max_occurrences: int,
+) -> list[Occurrence]:
+    """Occurrences of a lunar yearly rule inside the read window."""
+    excluded = _parse_exdates(exdate, tz)
+    result: list[Occurrence] = []
+    for moment in lunar.series(rule, local_start):
+        aware = moment.astimezone(UTC)
+        utc_start = aware.replace(tzinfo=None)
+        if utc_start > until:
+            break
+        if utc_start < since or aware in excluded:
+            continue
+        result.append(
+            Occurrence(
+                starts_at=utc_start,
+                ends_at=(utc_start + duration) if duration is not None else None,
+            )
+        )
+        if len(result) >= max_occurrences:
+            logger.warning(
+                "lunar rrule produced more than %d occurrences in the window; "
+                "truncating: %r",
+                max_occurrences,
+                rule,
+            )
+            break
+    return result
+
+
 def last_occurrence(
     *,
     starts_at: datetime | None,
@@ -222,7 +284,18 @@ def last_occurrence(
     if "UNTIL=" not in upper and "COUNT=" not in upper:
         return None
     tz = zone(timezone)
-    rule, naive = _parse_rule(rrule, _local(starts_at, tz))
+    local_start = _local(starts_at, tz)
+
+    lunar_rule = lunar.detect(rrule, local_start)
+    if lunar_rule is not None:
+        last_lunar: datetime | None = None
+        for index, moment in enumerate(lunar.series(lunar_rule, local_start)):
+            if index >= limit:
+                return None
+            last_lunar = _utc(moment)
+        return last_lunar
+
+    rule, naive = _parse_rule(rrule, local_start)
     if rule is None:
         return None
     last: datetime | None = None

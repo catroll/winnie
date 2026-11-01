@@ -46,10 +46,20 @@ lunar.** `琪琪的生日` proves a Gregorian yearly birthday exists in the same
 database. The classification needs both comparisons and a fallback, not a
 heuristic on "mismatch".
 
+**Library.** `borax` 4.1.3 (MIT, pure Python, no dependencies, released
+2025-04) supplies both directions: `solar -> lunar` for the classifier and
+`lunar -> solar` for the expansion. Rejected: `lunardate` and `zhdate`, both GPL
+and therefore incompatible with this Apache-2.0 project; `cnlunar`, maintained
+and MIT but solar-to-lunar only; `sxtwl`, accurate and BSD but a compiled wheel
+whose manylinux builds are x86_64/i686 only, so an ARM deployment would need a
+C++ toolchain. The conversion table covers 1900–2100, which is the whole domain
+here.
+
 **Consequence.** `phone_calendar`, the console calendar view and any future
 detector get the right occurrence from one fix. The eleven real rows are the
-regression test. The library only has to cover 1900–2100, which the candidate
-pure-Python implementations do.
+regression test, and their expected dates were derived with borax directly and
+cross-checked against `lunardate`, so the test is not the implementation
+asserting itself.
 
 ## Proactive interventions are detected deterministically and delivered with a receipt (2026-11-01)
 

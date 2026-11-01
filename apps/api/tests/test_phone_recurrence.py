@@ -396,3 +396,246 @@ async def test_retention_keeps_a_live_series_and_drops_a_finished_one(
             assert "Finished" not in titles
             assert "Old one-off" not in titles
     await http.aclose()
+
+
+# -- Lunar yearly rules ------------------------------------------------------
+#
+# A Chinese calendar provider writes a lunar birthday as a Gregorian DTSTART for
+# one occurrence plus an RRULE whose BYMONTH/BYMONTHDAY are the *lunar* month
+# and day. The rows below are the real ones from data/winnie.db; the expected
+# instants were derived with borax directly (LunarDate(y, month, day) ->
+# to_solar_date(), no winnie code) and cross-checked against lunardate, so this
+# table is not the implementation asserting itself.
+
+LUNAR_WINDOW_SINCE = datetime(2026, 11, 1, 0, 0)
+LUNAR_WINDOW_UNTIL = datetime(2027, 12, 31, 0, 0)
+
+LUNAR_ROWS = [
+    # title, stored DTSTART (naive UTC), zone, RRULE, occurrences in the window
+    (
+        "圆圆生日",
+        datetime(2024, 12, 12),
+        "UTC",
+        "FREQ=YEARLY;INTERVAL=1;WKST=MO;BYMONTHDAY=12;BYMONTH=11",
+        [datetime(2026, 12, 20), datetime(2027, 12, 9)],
+    ),
+    (
+        "老婆生日",
+        datetime(2010, 10, 17, 22, 0),
+        "Asia/Shanghai",
+        "FREQ=YEARLY;INTERVAL=1;BYMONTHDAY=11;BYMONTH=9",
+        [datetime(2027, 10, 9, 22, 0)],
+    ),
+    (
+        "自己的生日",
+        datetime(2011, 9, 14, 2, 0),
+        "Asia/Shanghai",
+        "FREQ=YEARLY;INTERVAL=1;BYMONTHDAY=17;BYMONTH=8",
+        [datetime(2027, 9, 17, 2, 0)],
+    ),
+    (
+        "舅舅生日",
+        datetime(2012, 1, 14, 12, 0),
+        "Asia/Shanghai",
+        "FREQ=YEARLY;INTERVAL=1;BYMONTHDAY=21;BYMONTH=12",
+        [datetime(2027, 1, 28, 12, 0)],
+    ),
+    (
+        "张文庆生日",
+        datetime(2012, 8, 26, 3, 0),
+        "Asia/Shanghai",
+        "FREQ=YEARLY;INTERVAL=1;BYMONTHDAY=10;BYMONTH=7",
+        [datetime(2027, 8, 11, 3, 0)],
+    ),
+    (
+        "外婆生日",
+        datetime(2013, 3, 26, 22, 0),
+        "Asia/Shanghai",
+        "FREQ=YEARLY;INTERVAL=1;BYMONTHDAY=16;BYMONTH=2",
+        [datetime(2027, 3, 22, 22, 0)],
+    ),
+    (
+        "爸爸生日",
+        datetime(2013, 5, 2, 23, 0),
+        "Asia/Shanghai",
+        "FREQ=YEARLY;INTERVAL=1;BYMONTHDAY=24;BYMONTH=3",
+        [datetime(2027, 4, 29, 23, 0)],
+    ),
+    (
+        # The Gregorian row in the same database: the rule matches its solar
+        # date, so dateutil's expansion is already correct.
+        "琪琪的生日",
+        datetime(2023, 10, 31),
+        "UTC",
+        "FREQ=YEARLY;INTERVAL=1;BYMONTHDAY=31;BYMONTH=10",
+        [datetime(2027, 10, 31)],
+    ),
+    (
+        "农历新年",
+        datetime(2026, 2, 17),
+        "UTC",
+        "FREQ=YEARLY;INTERVAL=1;WKST=MO;BYMONTHDAY=1;BYMONTH=1",
+        [datetime(2027, 2, 6)],
+    ),
+    (
+        "农历小年",
+        datetime(2027, 1, 31),
+        "UTC",
+        "FREQ=YEARLY;INTERVAL=1;WKST=MO;BYMONTHDAY=24;BYMONTH=12",
+        [datetime(2027, 1, 31)],
+    ),
+    (
+        "农历月半（元宵节）",
+        datetime(2027, 2, 20),
+        "UTC",
+        "FREQ=YEARLY;INTERVAL=1;WKST=MO;BYMONTHDAY=15;BYMONTH=1",
+        [datetime(2027, 2, 20)],
+    ),
+]
+
+
+@pytest.mark.parametrize("title,starts_at,zone_name,rrule,expected", LUNAR_ROWS)
+def test_lunar_yearly_rows_expand_to_the_real_dates(
+    title: str,
+    starts_at: datetime,
+    zone_name: str,
+    rrule: str,
+    expected: list[datetime],
+) -> None:
+    occurrences = expand(
+        starts_at=starts_at,
+        ends_at=None,
+        timezone=zone_name,
+        rrule=rrule,
+        since=LUNAR_WINDOW_SINCE,
+        until=LUNAR_WINDOW_UNTIL,
+    )
+
+    assert [row.starts_at for row in occurrences] == expected, title
+
+
+def test_a_lunar_rule_is_not_expanded_as_gregorian() -> None:
+    """The old answer: 圆圆 on 2026-11-12, five weeks before the real date."""
+    occurrences = expand(
+        starts_at=datetime(2024, 12, 12),
+        ends_at=None,
+        timezone="UTC",
+        rrule="FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12",
+        since=LUNAR_WINDOW_SINCE,
+        until=LUNAR_WINDOW_UNTIL,
+    )
+
+    assert datetime(2026, 11, 12) not in [row.starts_at for row in occurrences]
+    assert occurrences[0].starts_at == datetime(2026, 12, 20)
+
+
+def test_only_a_rule_that_matches_its_lunar_date_is_decoded() -> None:
+    from winnie_phone.lunar import detect
+
+    decoded = detect("FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12", datetime(2024, 12, 12))
+    assert decoded is not None
+    assert (decoded.month, decoded.day) == (11, 12)
+
+    # Gregorian: the rule matches the start's solar date.
+    assert detect("FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=31", datetime(2023, 10, 31)) is None
+    # Not a yearly month/day rule.
+    assert detect("FREQ=WEEKLY;BYDAY=FR", datetime(2024, 12, 12)) is None
+    # Extra selectors mean a shape this decoder does not claim.
+    assert (
+        detect("FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12;BYDAY=MO", datetime(2024, 12, 12))
+        is None
+    )
+    # A rule that matches neither reading is left to RFC 5545.
+    assert detect("FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=3", datetime(2024, 12, 12)) is None
+
+
+def test_lunar_occurrence_keeps_the_event_duration() -> None:
+    occurrences = expand(
+        starts_at=datetime(2024, 12, 12),
+        ends_at=datetime(2024, 12, 13),
+        timezone="UTC",
+        rrule="FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12",
+        since=LUNAR_WINDOW_SINCE,
+        until=LUNAR_WINDOW_UNTIL,
+    )
+
+    assert occurrences[0].starts_at == datetime(2026, 12, 20)
+    assert occurrences[0].ends_at == datetime(2026, 12, 21)
+
+
+def test_lunar_rule_until_stops_the_series() -> None:
+    occurrences = expand(
+        starts_at=datetime(2024, 12, 12),
+        ends_at=None,
+        timezone="UTC",
+        rrule="FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12;UNTIL=20261220T000000Z",
+        since=LUNAR_WINDOW_SINCE,
+        until=LUNAR_WINDOW_UNTIL,
+    )
+
+    assert [row.starts_at for row in occurrences] == [datetime(2026, 12, 20)]
+
+
+def test_lunar_rule_count_counts_from_the_series_start() -> None:
+    # Three occurrences: 2024-12-12, 2025-12-01, 2026-12-20. Only the last is
+    # inside the window, which is also what makes the count semantics visible.
+    occurrences = expand(
+        starts_at=datetime(2024, 12, 12),
+        ends_at=None,
+        timezone="UTC",
+        rrule="FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12;COUNT=3",
+        since=LUNAR_WINDOW_SINCE,
+        until=LUNAR_WINDOW_UNTIL,
+    )
+
+    assert [row.starts_at for row in occurrences] == [datetime(2026, 12, 20)]
+
+
+def test_lunar_rule_expands_with_exdate() -> None:
+    occurrences = expand(
+        starts_at=datetime(2024, 12, 12),
+        ends_at=None,
+        timezone="UTC",
+        rrule="FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12",
+        exdate="20261220T000000Z",
+        since=LUNAR_WINDOW_SINCE,
+        until=LUNAR_WINDOW_UNTIL,
+    )
+
+    assert [row.starts_at for row in occurrences] == [datetime(2027, 12, 9)]
+
+
+def test_a_thirtieth_birthday_falls_back_to_the_twenty_ninth() -> None:
+    """A lunar month has 29 or 30 days; the 30th does not occur every year.
+
+    lunar 2025-10-30 is 2025-12-19, and lunar 2029 has no 10-30, so the 2029
+    occurrence is 2029-10-29 = 2029-12-04. Dropping the year would mean a
+    birthday the owner is never told about.
+    """
+    occurrences = expand(
+        starts_at=datetime(2025, 12, 19),
+        ends_at=None,
+        timezone="UTC",
+        rrule="FREQ=YEARLY;BYMONTH=10;BYMONTHDAY=30",
+        since=datetime(2029, 1, 1),
+        until=datetime(2029, 12, 31),
+    )
+
+    assert [row.starts_at for row in occurrences] == [datetime(2029, 12, 4)]
+
+
+def test_last_occurrence_of_a_bounded_lunar_rule() -> None:
+    assert last_occurrence(
+        starts_at=datetime(2024, 12, 12),
+        timezone="UTC",
+        rrule="FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12;UNTIL=20271231T000000Z",
+    ) == datetime(2027, 12, 9)
+    # An unbounded lunar series never ends, so retention keeps the row.
+    assert (
+        last_occurrence(
+            starts_at=datetime(2024, 12, 12),
+            timezone="UTC",
+            rrule="FREQ=YEARLY;BYMONTH=11;BYMONTHDAY=12",
+        )
+        is None
+    )

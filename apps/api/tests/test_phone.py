@@ -1203,3 +1203,48 @@ async def test_search_keeps_locations_out_of_text_matches(
         )
     ).json()
     assert [hit["kind"] for hit in by_coordinates["hits"]] == ["location"]
+
+
+@pytest.mark.asyncio
+async def test_calendar_read_expands_a_lunar_birthday(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    """The read path, not just the recurrence helper, must resolve the lun date.
+
+    The row is the owner's real one: a yearly rule whose BYMONTH/BYMONTHDAY are
+    lunar (冬月十二), with a Gregorian DTSTART for 2024. Read as Gregorian it
+    would be 2026-11-12; the phone shows it on 2026-12-20.
+    """
+    device = await register(phone_client)
+    result = await sync(
+        phone_client,
+        device["id"],
+        "calendar",
+        [
+            {
+                "external_id": "lunar-1",
+                "title": "圆圆生日",
+                "starts_at": "2024-12-12T00:00:00+00:00",
+                "ends_at": "2024-12-13T00:00:00+00:00",
+                "all_day": True,
+                "timezone": "UTC",
+                "recurrence": "FREQ=YEARLY;INTERVAL=1;WKST=MO;BYMONTHDAY=12;BYMONTH=11",
+            }
+        ],
+    )
+    assert result.status_code == 200, result.text
+
+    rows = (
+        await phone_client.get(
+            "/api/v1/phone/calendar",
+            params={
+                "since": "2026-11-01T00:00:00Z",
+                "until": "2027-01-01T00:00:00Z",
+            },
+        )
+    ).json()
+
+    starts = [datetime.fromisoformat(row["starts_at"]) for row in rows]
+    assert starts == [
+        datetime(2026, 12, 20, tzinfo=timezone.utc)
+    ], rows

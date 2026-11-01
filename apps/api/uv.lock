@@ -213,6 +213,14 @@ wheels = [
 ]
 
 [[package]]
+name = "borax"
+version = "4.1.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/44/69f323a20604735f0d24f25715a69b2bfbc030018cfc595b9ac7a8e39f8c/borax-4.1.3-py3-none-any.whl", hash = "sha256:bdba9abe1c3be4ba1b6a014b3b4a97a7ba254a08c7f40cd4428a13b84db02558", size = 65095, upload-time = "2025-04-01T13:33:34.732Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -1777,6 +1785,7 @@ name = "winnie-phone"
 version = "0.1.0"
 source = { editable = "../../packages/winnie-phone" }
 dependencies = [
+    { name = "borax" },
     { name = "pydantic" },
     { name = "python-dateutil" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -1785,6 +1794,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "borax", specifier = ">=4.1.3" },
     { name = "pydantic", specifier = ">=2.13.0" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.1.6" },

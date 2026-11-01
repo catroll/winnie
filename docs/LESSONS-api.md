@@ -641,9 +641,9 @@ sqlite3 -header -column data/winnie.db \
 ```
 
 ```python
-from lunardate import LunarDate
-from datetime import date
-ld = LunarDate.from_solar_date(2024, 12, 12)   # (11, 12) -> the rule's BYMONTH/BYMONTHDAY
+from borax.calendars.lunardate import LunarDate
+ld = LunarDate.from_solar_date(2024, 12, 12)  # LunarDate(2024, 11, 12, 0)
+# (11, 12) is the rule's BYMONTH/BYMONTHDAY -> the rule is lunar.
 ```
 
 If `(BYMONTH, BYMONTHDAY)` equals the lunar pair, the rule is lunar; if it equals
