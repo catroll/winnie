@@ -69,6 +69,10 @@ class PhoneGeocodeConfig(BaseModel):
     min_interval_seconds: float = Field(default=1.0, ge=0, le=10)
     # Cached coordinates (rounded to ~111 m) kept in memory.
     cache_entries: int = Field(default=512, ge=0, le=10000)
+    # An address already stored for the same place is reused while it is younger
+    # than this, so a restart or a second process does not buy it again. 0 turns
+    # the reuse off and every fix pays for its own lookup.
+    reuse_days: int = Field(default=30, ge=0, le=3650)
     # Fixes geocoded per sync; a normal sync carries one, a backfill many.
     max_per_sync: int = Field(default=5, ge=0, le=50)
 

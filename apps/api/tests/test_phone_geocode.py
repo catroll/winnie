@@ -35,7 +35,7 @@ from winnie_phone.geocode import (
     wgs84_to_gcj02,
 )
 from winnie_phone.schemas import DeviceRegister, SyncRequest
-from winnie_phone.service import PhoneService
+from winnie_phone.service import PhoneService, shared_address
 
 NOW = datetime.now(timezone.utc)
 KEY_ENV = "TEST_AMAP_KEY"
@@ -206,11 +206,13 @@ def geocode_config(**overrides) -> PhoneGeocodeConfig:
     return PhoneGeocodeConfig(**settings)
 
 
-async def service_for(tmp_path: Path, config: PhoneConfig, geocoder=None):
+async def service_for(tmp_path: Path, config: PhoneConfig, geocoder=None, clock=None):
     engine = create_engine(f"sqlite+aiosqlite:///{tmp_path / 'geocode.db'}")
     await create_all(engine)
     session_factory = create_session_factory(engine)
-    service = PhoneService(config, session_factory=session_factory, geocoder=geocoder)
+    service = PhoneService(
+        config, session_factory=session_factory, geocoder=geocoder, clock=clock
+    )
     device = await service.register_device(
         "local", DeviceRegister(device_key="geocode-device-1", name="Pixel")
     )
@@ -788,6 +790,103 @@ async def test_the_backfill_reuses_a_neighbour_it_just_resolved(tmp_path: Path) 
     assert result == {"configured": True, "geocoded": 2, "remaining": 0}
     assert len(geocoder.calls) == 1
     assert all(row["address"] for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_an_answer_older_than_the_reuse_window_is_bought_again(
+    tmp_path: Path,
+) -> None:
+    """The window is 30 days: inside it the answer is reused, outside it is expired."""
+    config = PhoneConfig(enabled=True, geocode=geocode_config())
+    geocoder = FakeGeocoder()
+    now = [NOW]
+    engine, service, device = await service_for(
+        tmp_path, config, geocoder, clock=lambda: now[0]
+    )
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(kind="location", items=[fix("fix-1", 39.9960, 116.4800)]),
+        )
+        assert len(geocoder.calls) == 1
+        # 29 days after it was resolved, the stored answer still counts.
+        now[0] = NOW + timedelta(days=29)
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(kind="location", items=[fix("fix-2", 39.9961, 116.4801)]),
+        )
+        assert len(geocoder.calls) == 1
+        # 31 days after it was resolved, the answer is expired even though the
+        # row that carries it is only two days old: the address's own ``at`` is
+        # the clock, so a reuse cannot extend an address's life.
+        now[0] = NOW + timedelta(days=31)
+        await service.sync(
+            "local",
+            device_id,
+            SyncRequest(kind="location", items=[fix("fix-3", 39.9962, 116.4802)]),
+        )
+        assert len(geocoder.calls) == 2
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_reuse_days_zero_turns_the_reuse_off(tmp_path: Path) -> None:
+    config = PhoneConfig(enabled=True, geocode=geocode_config(reuse_days=0))
+    geocoder = FakeGeocoder()
+    engine, service, device = await service_for(tmp_path, config, geocoder)
+    device_id = uuid.UUID(str(device["id"]))
+    try:
+        for index, (latitude, longitude) in enumerate(
+            [(39.9960, 116.4800), (39.9961, 116.4801)]
+        ):
+            await service.sync(
+                "local",
+                device_id,
+                SyncRequest(
+                    kind="location", items=[fix(f"fix-{index}", latitude, longitude)]
+                ),
+            )
+    finally:
+        await engine.dispose()
+    assert len(geocoder.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "resolved_at",
+    [
+        None,
+        "",
+        "yesterday-ish",
+        # 40 days is past the default window.
+        (NOW - timedelta(days=40)).isoformat(),
+    ],
+)
+def test_shared_address_needs_an_answer_of_provable_recent_age(resolved_at) -> None:
+    payload = {
+        "latitude": 39.996,
+        "longitude": 116.48,
+        "address": {"formatted": "x", "provider": "amap", "at": resolved_at},
+    }
+    assert shared_address([payload], 39.996, 116.48, "amap", within_days=30) is None
+
+
+def test_shared_address_accepts_an_answer_inside_the_window() -> None:
+    payload = {
+        "latitude": 39.996,
+        "longitude": 116.48,
+        "address": {
+            "formatted": "x",
+            "provider": "amap",
+            "at": (NOW - timedelta(days=1)).isoformat(),
+        },
+    }
+    shared = shared_address([payload], 39.9961, 116.4801, "amap", within_days=30)
+    assert shared is not None
+    assert shared["formatted"] == "x"
 
 
 # --------------------------------------------------------------------------- #

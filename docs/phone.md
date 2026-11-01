@@ -577,6 +577,7 @@ phone:
     timeout_seconds: 2.5
     min_interval_seconds: 1.0
     cache_entries: 512
+    reuse_days: 30          # how long a stored address stays usable
     max_per_sync: 5
 ```
 
@@ -596,8 +597,15 @@ Two layers, and the second is the one that survives a restart:
    entries). A phone that has not moved stops calling the provider at all.
 2. **In the database** a new fix reuses the address already stored for a fix
    within 150 m, when that address came from the *currently configured*
-   provider. Nothing is written for the reused row beyond the address it gets,
-   and a restart, a redeploy or a separate backfill run reuses instead of paying.
+   provider **and is younger than `geocode.reuse_days` (30 by default)**. Nothing
+   is written for the reused row beyond the address it gets, and a restart, a
+   redeploy or a separate backfill run reuses instead of paying.
+
+   The window is time, not a row count: an answer resolved 29 days ago is as
+   good as one resolved a minute ago, and one from 31 days ago is not reused
+   even when it is the newest row. Age is read off the address's own `at`, not
+   the row's timestamps, because a reused answer copies that timestamp — so a
+   chain of reuses cannot keep an address alive for ever.
 
 The 150 m window is deliberately wider than the 111 m cache cell: a fix that
 rounds into the neighbouring cell is the same place. An answer from another

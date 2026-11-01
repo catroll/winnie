@@ -86,9 +86,11 @@ RECORD_SPECS: dict[str, RecordSpec] = {
 # is wider than the provider cache's ~111 m rounding cell so a fix that rounds
 # into the neighbouring cell still finds the answer.
 REUSE_RADIUS_M = 150.0
-# How many recent fixes a sync looks through for a reusable answer. At one fix
-# per sync interval this is days of history, and retention bounds it anyway.
-REUSE_ROWS = 200
+# Not a cache policy, only a safety valve: the validity window is
+# ``geocode.reuse_days`` and retention already bounds the rows inside it. This
+# caps the memory one sync can pull, so a device that syncs every minute cannot
+# make a single query unbounded.
+REUSE_ROW_CEILING = 5000
 
 SIGNAL_KINDS = frozenset({"notification", "location", "app"})
 # Kinds whose "full" batch is a complete current view, so the server can mark
@@ -122,13 +124,25 @@ def shared_address(
     latitude: float,
     longitude: float,
     provider: str,
+    *,
+    within_days: int,
+    now: datetime | None = None,
 ) -> dict[str, Any] | None:
     """An address already stored for this place, or ``None``.
 
     Only an answer from the *configured* provider counts: after a provider
     switch the stored rows still carry the old provider's addresses, and reusing
     one would quietly answer with the thing that was replaced.
+
+    An answer is valid for ``within_days`` from when it was *resolved*, read off
+    the address's own ``at`` rather than the row's timestamps — a reused answer
+    copies that timestamp, so chaining reuses cannot extend an address's life
+    indefinitely. An address with no readable ``at`` has no provable age and is
+    not reused.
     """
+    if within_days <= 0:
+        return None
+    cutoff = (as_utc(now) or utcnow()) - timedelta(days=within_days)
     for payload in payloads:
         address = payload.get("address")
         if not isinstance(address, dict):
@@ -137,10 +151,23 @@ def shared_address(
             continue
         if not address_fields(payload)["address"]:
             continue
+        resolved_at = as_utc(_parsed_time(address.get("at")))
+        if resolved_at is None or resolved_at < cutoff:
+            continue
         if not _same_place(payload, latitude, longitude):
             continue
         return dict(address)
     return None
+
+
+def _parsed_time(value: Any) -> datetime | None:
+    """An ISO timestamp from a payload, or ``None``."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _same_place(
@@ -1377,7 +1404,14 @@ class PhoneService:
         known = await self._stored_payloads(user_id)
         resolved: dict[str, dict] = {}
         for item in items[: self.config.geocode.max_per_sync]:
-            shared = shared_address(known, item.latitude, item.longitude, provider)
+            shared = shared_address(
+                known,
+                item.latitude,
+                item.longitude,
+                provider,
+                within_days=self.config.geocode.reuse_days,
+                now=self._now(),
+            )
             if shared is not None:
                 logger.debug("reused a stored address for a location fix")
                 resolved[item.external_id] = shared
@@ -1398,7 +1432,16 @@ class PhoneService:
         return resolved
 
     async def _stored_payloads(self, user_id: str) -> list[dict[str, Any]]:
-        """Recent location payloads, newest first, as reuse candidates."""
+        """Location payloads whose address is still inside the reuse window.
+
+        The window is time, not a row count: an address resolved 29 days ago is
+        as good as one resolved a minute ago, and one from 31 days ago is not
+        reused even if it is the newest row.
+        """
+        days = self.config.geocode.reuse_days
+        if days <= 0:
+            return []
+        since = self._now() - timedelta(days=days)
         async with self._session() as session:
             payloads = await session.scalars(
                 select(PhoneSignal.payload)
@@ -1406,9 +1449,10 @@ class PhoneService:
                     PhoneSignal.user_id == user_id,
                     PhoneSignal.kind == "location",
                     PhoneSignal.deleted_at.is_(None),
+                    PhoneSignal.created_at >= since,
                 )
                 .order_by(PhoneSignal.occurred_at.desc())
-                .limit(REUSE_ROWS)
+                .limit(REUSE_ROW_CEILING)
             )
             return [dict(payload) for payload in payloads if isinstance(payload, dict)]
 
@@ -1469,7 +1513,14 @@ class PhoneService:
                     continue
                 latitude = float(payload.get("latitude") or 0.0)
                 longitude = float(payload.get("longitude") or 0.0)
-                shared = shared_address(known, latitude, longitude, provider)
+                shared = shared_address(
+                    known,
+                    latitude,
+                    longitude,
+                    provider,
+                    within_days=self.config.geocode.reuse_days,
+                    now=self._now(),
+                )
                 if shared is not None:
                     row.payload = {**payload, "address": shared}
                     known.append(row.payload)

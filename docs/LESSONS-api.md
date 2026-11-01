@@ -671,3 +671,28 @@ against an independent derivation before it reaches a user. And a "not found"
 must never be persisted as a fact: the next reader cannot tell it apart from a
 verified negative, and the recall path is built to trust what is stored.
 
+
+## `--reload` watches `apps/api`, so a change under `packages/` is not live (2026-11-01)
+
+**Signal.** A behaviour changed in `packages/winnie-phone` kept the old result in
+the running server while the same call in a one-off script did the new thing.
+
+**Cause.** `uvicorn --reload` watches the working directory it was started in
+(`apps/api`); the editable packages live in `packages/` and are outside it. The
+reloader also keeps the parent environment, so a `.env` edit is equally invisible
+until a real restart. `make status` reports `healthy` in both cases — a listening
+port is not evidence that the code serving it is current.
+
+**Check.** Compare the server child's start time with the file it should have
+loaded:
+
+```bash
+ps -o pid,lstart,args -p "$(ss -ltnp | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)"
+stat -c '%y' packages/winnie-phone/src/winnie_phone/service.py
+```
+
+If the file is newer than the process, the process is not running that file.
+
+**Fix.** `make restart SERVICES=api` after any change under `packages/`, or after
+editing `apps/api/.env`. Restarting one service keeps the admin and index
+processes alone.

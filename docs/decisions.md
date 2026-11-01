@@ -1779,6 +1779,18 @@ they hold the coordinate, the address and its provider — and retention already
 prunes them, so the extra table would add a schema, a migration and a second
 source of truth for the same facts.
 
+**The reuse window is 30 days of validity, not the newest N rows.** The first cut
+looked at the most recent 200 fixes, which is a row count pretending to be a cache
+policy: the same phone that syncs every five minutes would push a valid answer out
+of the window in a day, while a phone that is idle for two months would keep an
+answer far past any sensible life. `geocode.reuse_days` (30, matching the default
+location retention) is the rule, and a row cap survives only as a memory safety
+valve. Age is taken from the address's own `at` rather than the row's
+`created_at`, because a reused answer copies that timestamp: measuring on the row
+would let a chain of reuses reset the clock for ever, and the test asserts that an
+address resolved 31 days ago is bought again even though the row carrying it is
+two days old.
+
 **`city` is filled from `province` when the provider reports none.** A
 municipality (北京/上海/天津/重庆) sends an empty city, and the console's
 "省 · 市 · 区" line must not show a hole where the city belongs.

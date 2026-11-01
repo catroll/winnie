@@ -426,6 +426,10 @@ phone:
     timeout_seconds: 2.5
     min_interval_seconds: 1.0
     cache_entries: 512
+    # How long a stored address stays usable for the same place (~150 m). The
+    # provider is metered, so a restart must not buy the same answer again. 0
+    # turns the reuse off.
+    reuse_days: 30
     max_per_sync: 5
 
 # Push notifications to the Android client. The server writes each event to the
