@@ -616,3 +616,58 @@ field" indistinguishable from "I read production", and a fixture that overrides
 *most* of a config object is the usual shape of that mistake. A cached answer is
 also a very effective detector: it makes the leftover state visible, because the
 second run stops doing the work the first one recorded.
+
+## A stored RRULE can be a private dialect, and a failed lookup becomes a fact (2026-11-01)
+
+**Signal 1.** A calendar read with a window wide enough to reach December reports
+`圆圆生日` on 2026-11-12. The event is on the phone on 2026-12-20. Nothing errors;
+the row parses, the expansion returns one date, and that date is simply not the
+event's date.
+
+**Cause.** A Chinese calendar provider stores a lunar birthday as a Gregorian
+`DTSTART` plus an RRULE whose `BYMONTH`/`BYMONTHDAY` are the **lunar** month and
+day — a private convention layered on a standard field. `dateutil.rrule` reads
+it as Gregorian, as it must. Confirmed on ten of the eleven yearly birthday rows
+in `data/winnie.db`; `琪琪的生日` is genuinely Gregorian, so the rule cannot be
+"mismatch means lunar".
+
+**Check.** Compare both candidates for the start date before trusting the
+expansion:
+
+```bash
+sqlite3 -header -column data/winnie.db \
+  "select title, starts_at, timezone, recurrence from phone_calendar_events
+   where recurrence != '' and title like '%生日%';"
+```
+
+```python
+from lunardate import LunarDate
+from datetime import date
+ld = LunarDate.from_solar_date(2024, 12, 12)   # (11, 12) -> the rule's BYMONTH/BYMONTHDAY
+```
+
+If `(BYMONTH, BYMONTHDAY)` equals the lunar pair, the rule is lunar; if it equals
+the solar pair, it is Gregorian. A test table with the eleven real rows is the
+only form of this check that survives a refactor.
+
+**Signal 2.** The same day, the owner asked "圆圆生日是什么时候？" and the answer
+was "手机通讯录、短信、日历里也没有匹配到这个名字". The turn contains **no tool
+call**. The reply restated `profile/people.md`, where an earlier failed search
+had been distilled into a fact.
+
+**Cause.** Distillation treats a conversation sentence as knowledge, including
+"the assistant could not find X". That negative then arrives through recall —
+which is designed to be trusted — and pre-empts the search that would have
+contradicted it. The memory is not stale; it was never a fact.
+
+**Fix.** Never distill a negative lookup. Store what the owner stated or a tool
+returned with a citation; a miss is a property of one query, not of the world.
+The existing line about 圆圆 is removed, and the distillation prompt names the
+case.
+
+**Generalisable.** Two rules. A standard field can carry a private dialect, so a
+value that parses is not a value that means what the parser thinks — compare it
+against an independent derivation before it reaches a user. And a "not found"
+must never be persisted as a fact: the next reader cannot tell it apart from a
+verified negative, and the recall path is built to trust what is stored.
+

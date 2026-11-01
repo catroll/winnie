@@ -166,6 +166,27 @@ handset has not run them yet.
 - [ ] An end-to-end test that runs the Android service against a real server on
       an emulator once KVM is available.
 
+## P1 — proactive assistance
+
+Design and evidence are in [proactive.md](./proactive.md). The order matters:
+the first four fix the question that started it, and each is testable alone.
+
+- [ ] Decode a lunar yearly rule instead of trusting `dateutil`: a rule whose
+      `BYMONTH`/`BYMONTHDAY` equal the event's lunar date is expanded in the
+      lunar calendar. Ten of the eleven yearly birthday rows need it; add all
+      eleven as a table-driven test with their expected dates.
+- [ ] Sync contact birthdays and anniversaries (`ContactsContract` Event rows)
+      and expose them through a `birthdays(days_ahead)` tool that merges
+      calendar, contacts and the owner's overrides.
+- [ ] Stop distilling a failed lookup into memory, and remove the existing
+      `people.md` line that says 圆圆的生日 could not be found.
+- [ ] Build `winnie-proactive`: item store, planner, dispatcher, policy and the
+      birthday detector, with push and a console inbox.
+- [ ] Add acknowledgement (Android action, console, signed email link) and the
+      escalation ladder with quiet hours and a digest.
+- [ ] Wire the weekly schedule (`winnie-schedule`) as a source: leave-by
+      reminders, overdue items, Monday review.
+
 ## P2 — accounts and security
 
 - [x] Add login rate limiting: failures are counted per username, the account

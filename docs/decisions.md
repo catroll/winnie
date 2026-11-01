@@ -3,6 +3,97 @@
 Architecture and dependency choices that are not obvious from the code. Each
 entry records the alternative that was rejected and why.
 
+## A yearly event may carry its lunar date in the RRULE (2026-11-01)
+
+**Decision.** `winnie_phone.recurrence` classifies a yearly rule before
+expanding it. If `(BYMONTH, BYMONTHDAY)` equals the event's local start date,
+the rule is Gregorian and `dateutil.rrule` expands it. If those fields equal the
+**lunar** date of that start, the rule is a Chinese-calendar provider's private
+encoding and is expanded through a lunar calendar. Anything else falls back to
+RFC 5545 with a warning. Expansion is no longer "whatever `rrulestr` returns".
+
+**Why.** The owner's phone stores lunar birthdays this way. Six of the ten lunar
+rows came from an imported QQ calendar and four from the local provider, so it
+is the convention of the ecosystem, not one app's bug. Read as Gregorian it is
+silently wrong by up to five weeks:
+
+| Event | `dateutil` | Truth |
+|---|---|---|
+| `圆圆生日` | 2026-11-12 | 2026-12-20 |
+| `舅舅生日` | 2026-12-21 | 2027-01-28 |
+| `老婆生日` | 2027-09-10 | 2027-10-10 |
+| `农历月半（元宵节）` | 2028-01-15 | 2027-02-20 |
+
+An RRULE that parses is not an RRULE that means what the parser thinks, and the
+failure has no error path: the read returns a plausible date, the assistant
+quotes it, and the owner acts on it.
+
+**Rejected: display the provider's `Instances` instead of expanding.** The
+phone can expand its own rules correctly, but a read would then depend on the
+phone being online, and the same rows are read by the console, the export and
+the proactive planner. The convention is decodable on the server and belongs
+where the other date logic lives.
+
+**Rejected: store the next occurrence as a column at sync time.** The phone's
+`Events` row has no expanded occurrence; inventing one at sync would freeze a
+horizon and go stale for a series longer than it.
+
+**Rejected: ask the model to convert the date.** The date has to be right
+without a model bound, and this is exactly the arithmetic models are worst at.
+
+**Rejected: treat every yearly event whose rule does not match its start as
+lunar.** `琪琪的生日` proves a Gregorian yearly birthday exists in the same
+database. The classification needs both comparisons and a fallback, not a
+heuristic on "mismatch".
+
+**Consequence.** `phone_calendar`, the console calendar view and any future
+detector get the right occurrence from one fix. The eleven real rows are the
+regression test. The library only has to cover 1900–2100, which the candidate
+pure-Python implementations do.
+
+## Proactive interventions are detected deterministically and delivered with a receipt (2026-11-01)
+
+**Decision.** A new capability, `winnie-proactive`, owns detection, policy,
+composition and delivery tracking. Detection is SQL and date arithmetic over
+data the server already holds; the model is optional and only rewrites the
+message. Delivery is an item whose lifecycle (`planned → sent → acked`, or
+escalated into a digest) is stored, not a fire-and-forget push. The full design
+is [proactive.md](./proactive.md).
+
+**Why.** On 2026-11-01 the owner asked when 圆圆's birthday was, and the answer
+was "not found" while the calendar held `圆圆生日` (lunar, 2026-12-20) and
+`圆圆两岁生日` (2026-12-12). Three independent failures: no component looks at
+birthdays at all; the answer was generated from a distilled memory of an earlier
+failed lookup, with no tool call in the turn; and the one read that could have
+found the row would have expanded it to 2026-11-12. A prompt cannot fix a
+missing trigger, a negative result stored as knowledge, and a wrong recurrence
+rule at once.
+
+**Rejected: a scheduled task per birthday.** The task would still need the
+horizon, the lunar expansion, the source merge, dedupe, quiet hours, escalation
+and acknowledgement — everything except the sentence. It also spends a model
+call to decide whether to speak, which is the part that must be reproducible.
+
+**Rejected: let the model decide whether to interrupt.** The decision has to be
+auditable ("why did you tell me this?") and cheap; a daily budget cannot be
+enforced by a prompt. The composer may choose words; the policy chooses silence.
+
+**Rejected: one watcher per kind, like weather and gold.** Two bespoke watchers
+were affordable. Eight would reimplement dedupe, quiet hours, escalation and ack
+eight times, and they would each need their own push wiring.
+
+**Rejected: fold it into `winnie-assistant`.** The assistant package is already
+the largest, the detectors concern the owner's data rather than chat, and the
+dispatch loop must run when no model is configured. Small ports (`CalendarPort`,
+`SchedulePort`, `ComposerPort`, `ChannelPort`) keep the boundary the other
+capabilities already follow.
+
+**Open.** Which channel carries content off the machine (email, webhook), and
+whether the phone's own calendar alarm may be used without a per-item
+confirmation, are owner decisions recorded in
+[proactive.md](./proactive.md) §16, not defaults to invent here.
+
+
 ## Four independent gates decide whether a memory reaches an answer (2026-11-01)
 
 **Decision.** Five changes, each closing a gate that a wording-independent test
