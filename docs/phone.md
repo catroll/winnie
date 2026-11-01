@@ -532,12 +532,13 @@ phone database unless it asks for one.
 ## 11. Verification
 
 ```bash
-# Server: sync, queries, retention, commands, isolation, migrations, tools
+# Server: sync, queries, retention, commands, isolation, migrations, tools,
+# reverse geocoding (provider parsing, cache, backfill)
 cd apps/api && .venv/bin/python -m pytest tests/test_phone.py \
-  tests/test_phone_tools.py tests/test_migrations.py -q
+  tests/test_phone_tools.py tests/test_phone_geocode.py tests/test_migrations.py -q
 
 # Android: wire contract, cursor mapping, preferences, notification buffer,
-# and a Robolectric render of the consent screen
+# the device profile, and a Robolectric render of the consent screen
 cd apps/android && ./gradlew :app:testDebugUnitTest
 
 # The APK
