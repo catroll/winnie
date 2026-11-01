@@ -811,7 +811,9 @@ export function AIPage() {
                                           </>
                                         ) : (
                                           <span className="small text-secondary">
-                                            {tr('No supplier API; add one with Add route/API.')}
+                                            {tr(
+                                              'No supplier API. Add it with Add route/API and switch Gateway route off; model sync needs the supplier endpoint.',
+                                            )}
                                           </span>
                                         )}
                                         <button

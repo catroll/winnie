@@ -210,3 +210,54 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
    layers must map their failures to a client-visible 4xx. The inner layer has
    no idea it is behind HTTP, so the route owns the mapping; leaving it out
    turns a one-field typo into an opaque crash.
+
+## A key is not a supplier API: model sync needs the internal endpoint (2026-11-01)
+
+**Signal.** `DASHSCOPE_API_KEY` is set in `packages/winnie-llm/.env` and works
+against the vendor (`GET https://dashscope.aliyuncs.com/compatible-mode/v1/models`
+returns `200` with 184 entries), yet the Qwen supplier in the console has
+`models: []` and the card reads `No supplier API; add one with Add route/API.`
+There is no **Sync models** button to press, so nothing reports a failure.
+
+**Cause.** Sync resolves its endpoint through
+`ProviderRegistry._internal_integration(state, vendor_id, ("openai",))`, which
+skips every integration with `gateway: true`. The seeded Qwen records
+(`qwen-openai`, `qwen-anthropic`) are both **gateway routes**, so the call can
+only raise:
+
+```
+AIProviderError: supplier 'Qwen' has no OpenAI-compatible API endpoint
+```
+
+The console never shows that message: `_vendor_view` projects `kind` from the
+internal endpoint, so without one `vendor.kind` is `''`, and AIPage renders the
+sync button only for `vendor.kind === 'openai'`. A missing record therefore
+removes the affordance instead of failing it.
+
+**Why it keeps happening.** `BLANK_FORM.gateway` is `true`, and `formForKind`
+preserves that for `openai`/`anthropic`. A user who clicks **Add route/API**,
+picks OpenAI and pastes the DashScope base URL creates one more *gateway route* —
+the exact record sync ignores — and the card still says "No supplier API".
+
+**Check.** Reproduce without HTTP, on a copy of the state file:
+
+```bash
+cp data/ai.yaml .tmp/qwen-sync-check/ai.yaml
+apps/api/.venv/bin/python - <<'PY'
+from pathlib import Path
+from winnie_llm.keys import ApiKeys
+from winnie_llm.registry import ProviderRegistry
+reg = ProviderRegistry(Path(".tmp/qwen-sync-check/ai.yaml"), keys=ApiKeys.load())
+print([(i.name, i.gateway) for i in reg.state().integrations if i.vendor == "qwen"])
+PY
+```
+
+Then add the internal endpoint (`gateway=False`, kind `openai`, base_url
+`https://dashscope.aliyuncs.com/compatible-mode/v1`) and `sync_models("qwen")`
+returns 184 models on the same key.
+
+**Lesson.** A credential answers "may I call", not "where do I call". Both are
+separate records here, and the one that carries the URL is the one the UI
+silently withholds an action for. When a capability is *absent* rather than
+failing, look for a projection (`vendor.kind`) that gates its affordance and ask
+which record fills that field.

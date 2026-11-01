@@ -53,6 +53,18 @@ A **model** belongs to the supplier:
 a binding or an endpoint default is kept if the supplier temporarily omits it.
 **Models** is the manual fallback for ASR and custom endpoints.
 
+A key on its own is not enough: sync reads its base URL from the supplier's
+**internal endpoint** (an integration with `gateway: false`). A gateway route is
+a public proxy path and is ignored here, so a supplier that has only gateway
+routes has no **Sync models** button, and its card tells you to add the API and
+switch **Gateway route** off. Add the endpoint first — for Qwen that is kind
+`openai` and base URL `https://dashscope.aliyuncs.com/compatible-mode/v1` (a
+bare `.../compatible-mode` also works; `/v1` is appended once). The catalog
+mirrors whatever the supplier lists, so DashScope's resold third-party models
+(`antdigital/...`, `kimi/...`) arrive with Qwen's; prune them with **Models** if
+the selector becomes noisy. A key or endpoint edited after the API process
+started needs a restart before a retry.
+
 A **feature binding** selects a supplier and a model:
 
 | Feature | Uses |

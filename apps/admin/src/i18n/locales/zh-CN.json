@@ -514,7 +514,7 @@
   "No scheduled tasks yet. Ask the assistant in chat to create one, then refresh this page.": "还没有定时任务。在聊天中让助手创建一个，然后刷新本页面。",
   "No source has been fetched yet. Start a run to record their health.": "还没有抓取任何来源。启动一次运行以记录它们的健康状态。",
   "No summary was produced.": "未生成摘要。",
-  "No supplier API; add one with Add route/API.": "没有供应商 API；请使用“添加路由/API”添加一个。",
+  "No supplier API. Add it with Add route/API and switch Gateway route off; model sync needs the supplier endpoint.": "没有供应商 API。请通过“添加路由/API”添加，并关闭“网关路由”；同步模型需要的是供应商接口。",
   "No suppliers yet. Add one, its endpoints and models, then bind a feature below.": "还没有供应商。请添加一个供应商及其接口和模型，然后在下方绑定功能。",
   "No task runs recorded yet. A task that fires, or a manual run through the API, appends a line here.": "还没有任何任务运行记录。任务触发或通过 API 手动运行后，这里会追加一行。",
   "No tools; prompt instructions only.": "无工具；仅包含提示说明。",
