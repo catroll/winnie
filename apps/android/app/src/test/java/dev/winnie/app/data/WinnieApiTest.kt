@@ -312,6 +312,30 @@ class WinnieApiTest {
         assertEquals("/api/v1/assistant/conversations/c1", received.single().path)
     }
 
+    @Test
+    fun ackProactivePostsTheItemIdWithTheSession() = runBlocking {
+        respond = { StubResponse(200, "{}") }
+
+        api(token = "abc").ackProactive("item-1")
+
+        val request = received.single()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/proactive/items/item-1/ack", request.path)
+        assertEquals("Bearer abc", request.headers["Authorization"])
+        assertTrue(request.body.contains("\"via\":\"app\""))
+    }
+
+    @Test
+    fun snoozeProactiveSendsTheMinutes() = runBlocking {
+        respond = { StubResponse(200, "{}") }
+
+        api(token = "abc").snoozeProactive("item-1", 60)
+
+        val request = received.single()
+        assertEquals("/api/v1/proactive/items/item-1/snooze", request.path)
+        assertTrue(request.body.contains("\"minutes\":60"))
+    }
+
     private fun api(token: String? = null): WinnieApi =
         WinnieApi("http://127.0.0.1:${server.address.port}", token)
 

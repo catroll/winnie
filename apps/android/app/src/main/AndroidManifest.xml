@@ -102,6 +102,11 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- The notification actions that acknowledge a proactive item. -->
+        <receiver
+            android:name=".push.ProactiveAckReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".push.BootReceiver"
             android:exported="true">

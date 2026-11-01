@@ -318,6 +318,30 @@ class WinnieApi(
     private suspend inline fun <reified T> getJson(path: String): T =
         decode(execute(request(path).get().build()))
 
+    /**
+     * Acknowledge one proactive item, from the notification action.
+     *
+     * The item id comes from the push payload; the token is the stored account
+     * session, so the receiver works without the UI process.
+     */
+    suspend fun ackProactive(itemId: String) {
+        postUnit(
+            "/api/v1/proactive/items/${encodePath(itemId)}/ack",
+            """{"via":"app"}""",
+        )
+    }
+
+    suspend fun snoozeProactive(itemId: String, minutes: Int = 60) {
+        postUnit(
+            "/api/v1/proactive/items/${encodePath(itemId)}/snooze",
+            """{"minutes":$minutes}""",
+        )
+    }
+
+    private suspend fun postUnit(path: String, body: String = "{}") {
+        execute(request(path).post(body.toRequestBody(JSON_MEDIA_TYPE)).build())
+    }
+
     private suspend inline fun <reified T> postJson(path: String, body: String): T =
         decode(
             execute(

@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import dev.winnie.app.MainActivity
 import dev.winnie.app.R
 import dev.winnie.app.data.PushEvent
@@ -71,8 +73,9 @@ object PushNotifications {
     fun show(context: Context, event: PushEvent) {
         if (!notificationsAllowed(context)) return
         val title = event.title.ifBlank { context.getString(R.string.notif_default_title) }
+        val notificationId = event.seq.toInt().coerceAtLeast(1)
         val open = openApp(context, event.seq.toInt())
-        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL)
+        val builder = NotificationCompat.Builder(context, ALERT_CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)
             .setContentTitle(title)
             .setContentText(event.body)
@@ -81,10 +84,27 @@ object PushNotifications {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .build()
+        // A proactive item can be acknowledged without opening the app; every
+        // other notification keeps the single tap action it had.
+        val itemId = event.data["item_id"]?.jsonPrimitive?.contentOrNull
+        if (!itemId.isNullOrBlank()) {
+            builder.addAction(
+                0,
+                context.getString(R.string.proactive_ack),
+                ProactiveAckReceiver.intent(
+                    context, itemId, ProactiveAckReceiver.ACTION_ACK, notificationId,
+                ),
+            )
+            builder.addAction(
+                0,
+                context.getString(R.string.proactive_snooze),
+                ProactiveAckReceiver.intent(
+                    context, itemId, ProactiveAckReceiver.ACTION_SNOOZE, notificationId,
+                ),
+            )
+        }
         runCatching {
-            NotificationManagerCompat.from(context)
-                .notify(event.seq.toInt().coerceAtLeast(1), notification)
+            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         }
     }
 

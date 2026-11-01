@@ -187,8 +187,10 @@ testable alone.
       birthday detector, with push and a console inbox.
 - [x] Add acknowledgement (console, signed email and ntfy link) and the
       escalation ladder with quiet hours and a digest.
-- [ ] Add the Android side of acknowledgement: a `收到`/`稍后` action, the item
-      in the notification payload, and a tap that opens its conversation.
+- [x] Add the Android side of acknowledgement: a `收到`/`一小时后` action and the
+      item in the notification payload.
+- [ ] Open the item's conversation from the notification instead of the app
+      home (a deep link).
 - [ ] Add the `winnie` calendar write path: Winnie creates and cancels its own
       reminders and alarms without a per-item confirmation, capped at two a day.
 - [ ] Wire the rest of the weekly schedule (`winnie-schedule`) as a source: the

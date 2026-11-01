@@ -3,9 +3,10 @@
 Status: **core implemented and running**, 2026-11-02. Done: the lunar fix,
 contact birthdays, the chat lookup, the memory guard, the engine
 (`winnie-proactive`) with planning, policy, ntfy/email channels, the ladder, the
-digest, the console Inbox and the acknowledgement endpoints. Open: the Android
-notification action and deep link, the model composer, the `winnie` calendar
-alarm path (§6), and a physical-device run. Last updated: 2026-11-02.
+digest, the console Inbox, the acknowledgement endpoints and the Android notification
+actions. Open: the model composer, the `winnie` calendar alarm path (§6), a
+deep link into the conversation, and a physical-device run. Last updated:
+2026-11-02.
 
 Winnie today answers when asked and pushes only what a watch was already told to
 watch (weather, gold, scheduled-task results). This document plans the other
@@ -325,9 +326,10 @@ the digest is still not lost, and the owner is not chased all day.
 
 ### Acknowledgement
 
-- **Android:** add a `收到` action (and `稍后`), a `data` payload with `item_id`
-  and `conversation_id`, and a tap that opens that conversation. Neither exists
-  today; the notification only opens the app.
+- **Android:** a `收到` and a `一小时后` action on any alert whose payload has an
+  `item_id`; the receiver posts the ack with the stored session and clears the
+  notification. Tapping still opens the app — the deep link into the item's
+  conversation is the remaining piece.
 - **Console:** opening an item marks it seen; the same buttons are on the item.
 - **Email:** the ack link carries a signed token, so no session is needed.
 - **ntfy:** carries the same signed link as its `click` action; a tap is a

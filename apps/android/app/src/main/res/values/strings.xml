@@ -310,4 +310,6 @@
     <string name="voice_dismiss">Dismiss</string>
     <string name="voice_no_speech">Nothing was recognized. Try again.</string>
     <string name="chat_voice_description">Voice input</string>
+    <string name="proactive_ack">Received</string>
+    <string name="proactive_snooze">In 1 hour</string>
 </resources>

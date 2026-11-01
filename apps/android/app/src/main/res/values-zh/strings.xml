@@ -306,4 +306,6 @@
     <string name="voice_dismiss">关闭</string>
     <string name="voice_no_speech">没有识别到语音，请再试一次。</string>
     <string name="chat_voice_description">语音输入</string>
+    <string name="proactive_ack">收到</string>
+    <string name="proactive_snooze">一小时后</string>
 </resources>
