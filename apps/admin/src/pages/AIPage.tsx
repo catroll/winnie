@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { api, ApiError } from '../api/client';
 import type {
@@ -17,8 +18,19 @@ import { PageHeader } from '../components/PageHeader';
 import { tr } from '../i18n';
 import { VendorIcon } from '../lib/vendorIcons';
 import { useApi } from '../lib/hooks';
+import { UsagePanel } from './UsagePanel';
 
 type Message = { kind: 'success' | 'danger'; text: string } | null;
+
+// Supplying models and paying for them are one concern, so the usage report
+// lives here instead of on a page of its own. The tab is part of the URL so
+// the old /usage bookmark (and any link to it) can land on the right section.
+const TABS = [
+  { key: 'suppliers', label: 'Suppliers', icon: 'bi-hdd-network' },
+  { key: 'usage', label: 'LLM usage', icon: 'bi-graph-up-arrow' },
+] as const;
+
+type TabKey = (typeof TABS)[number]['key'];
 
 type OptionValue = string | number;
 
@@ -139,6 +151,7 @@ function toInput(form: FormState, vendor: string): AIIntegrationInput {
 
 export function AIPage() {
   const result = useApi(() => api.aiConfig(), []);
+  const [searchParams, setSearchParams] = useSearchParams();
   const [message, setMessage] = useState<Message>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -147,6 +160,19 @@ export function AIPage() {
   const [deleteTarget, setDeleteTarget] = useState<AIIntegration | null>(null);
   const [bindings, setBindings] = useState<Record<string, BindingState>>({});
   const [runtimeDraft, setRuntimeDraft] = useState<ModelRuntime | null>(null);
+
+  const tab: TabKey = searchParams.get('tab') === 'usage' ? 'usage' : 'suppliers';
+  const selectTab = (next: TabKey) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === 'suppliers') {
+      params.delete('tab');
+    } else {
+      params.set('tab', next);
+    }
+    // A tab is view state, not a page: replacing the history entry keeps Back
+    // pointing at whatever page the user came from.
+    setSearchParams(params, { replace: true });
+  };
 
   const data: AIProviderConfig | null =
     result.status === 'success' ? result.data : null;
@@ -414,627 +440,666 @@ export function AIPage() {
 
   return (
     <>
-      <PageHeader title="AI suppliers" />
+      <PageHeader title="AI providers" />
       <div className="app-content">
         <div className="container-fluid">
-          {message ? (
-            <div className={`alert alert-${message.kind}`} role="alert">
-              {message.text}
+          <ul
+            className="nav nav-tabs mb-3"
+            role="tablist"
+            aria-label={tr('AI provider sections')}
+          >
+            {TABS.map((item) => (
+              <li className="nav-item" role="presentation" key={item.key}>
+                <button
+                  type="button"
+                  role="tab"
+                  id={`ai-tab-${item.key}`}
+                  aria-controls={`ai-panel-${item.key}`}
+                  aria-selected={tab === item.key}
+                  className={`nav-link${tab === item.key ? ' active' : ''}`}
+                  onClick={() => selectTab(item.key)}
+                >
+                  <i className={`bi ${item.icon} me-1`} aria-hidden="true" />
+                  {tr(item.label)}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {tab === 'usage' ? (
+            <div
+              role="tabpanel"
+              id="ai-panel-usage"
+              aria-labelledby="ai-tab-usage"
+            >
+              <UsagePanel />
             </div>
-          ) : null}
+          ) : (
+            <div
+              role="tabpanel"
+              id="ai-panel-suppliers"
+              aria-labelledby="ai-tab-suppliers"
+            >
+              {message ? (
+                <div className={`alert alert-${message.kind}`} role="alert">
+                  {message.text}
+                </div>
+              ) : null}
 
-          {result.status === 'loading' ? (
-            <LoadingBlock label="Loading AI suppliers…" />
-          ) : result.status === 'error' ? (
-            <>
-              <ErrorBlock error={result.error} onRetry={result.reload} />
-              <div className="alert alert-secondary" role="note">
-                {tr('The AI provider registry is available when')}{' '}
-                <code>ai.enabled</code> {tr('is true in')}{' '}
-                <code>apps/api/config.yaml</code>
-                {tr(
-                  '. With it disabled, model features have no model and ASR keeps its YAML default; enable it to choose a model here.',
-                )}
-              </div>
-            </>
-          ) : data ? (
-            <>
-              <div className="alert alert-info" role="note">
-                <i className="bi bi-cpu-fill me-2" aria-hidden="true" />
-                {tr(
-                  'Suppliers group endpoints and models; feature bindings and model runtime are stored in',
-                )}{' '}
-                <code>{data.path}</code>
-                {tr(
-                  '. Changes take effect on the next model call without restarting the API. This registry is the only model choice:',
-                )}{' '}
-                <code>config.yaml</code> {tr('has no')} <code>llm</code>{' '}
-                {tr('block. API keys are')} <strong>{tr('not')}</strong>{' '}
-                {tr('stored here:')} <code>winnie-llm</code>{' '}
-                {tr('reads them from')} <code>{data.env_path}</code>{' '}
-                {tr('and derives the variable from the supplier id.')}
-              </div>
+              {result.status === 'loading' ? (
+                <LoadingBlock label="Loading AI suppliers…" />
+              ) : result.status === 'error' ? (
+                <>
+                  <ErrorBlock error={result.error} onRetry={result.reload} />
+                  <div className="alert alert-secondary" role="note">
+                    {tr('The AI provider registry is available when')}{' '}
+                    <code>ai.enabled</code> {tr('is true in')}{' '}
+                    <code>apps/api/config.yaml</code>
+                    {tr(
+                      '. With it disabled, model features have no model and ASR keeps its YAML default; enable it to choose a model here.',
+                    )}
+                  </div>
+                </>
+              ) : data ? (
+                <>
+                  <div className="alert alert-info" role="note">
+                    <i className="bi bi-cpu-fill me-2" aria-hidden="true" />
+                    {tr(
+                      'Suppliers group endpoints and models; feature bindings and model runtime are stored in',
+                    )}{' '}
+                    <code>{data.path}</code>
+                    {tr(
+                      '. Changes take effect on the next model call without restarting the API. This registry is the only model choice:',
+                    )}{' '}
+                    <code>config.yaml</code> {tr('has no')} <code>llm</code>{' '}
+                    {tr('block. API keys are')} <strong>{tr('not')}</strong>{' '}
+                    {tr('stored here:')} <code>winnie-llm</code>{' '}
+                    {tr('reads them from')} <code>{data.env_path}</code>{' '}
+                    {tr('and derives the variable from the supplier id.')}
+                  </div>
 
-              <div className="row g-3 mb-3">
-                <div className="col-6 col-lg-3">
-                  <div className="small-box text-bg-primary">
-                    <div className="inner">
-                      <h3>{vendorGroups.length}</h3>
-                      <p>{tr('Suppliers')}</p>
+                  <div className="row g-3 mb-3">
+                    <div className="col-6 col-lg-3">
+                      <div className="small-box text-bg-primary">
+                        <div className="inner">
+                          <h3>{vendorGroups.length}</h3>
+                          <p>{tr('Suppliers')}</p>
+                        </div>
+                        <i className="small-box-icon bi bi-hdd-network" aria-hidden="true" />
+                        <span className="small-box-footer">
+                          {tr('{{endpoints}} endpoints · {{enabled}} enabled', {
+                            endpoints: integrations.length,
+                            enabled: integrations.filter((item) => item.enabled)
+                              .length,
+                          })}
+                        </span>
+                      </div>
                     </div>
-                    <i className="small-box-icon bi bi-hdd-network" aria-hidden="true" />
-                    <span className="small-box-footer">
-                      {tr('{{endpoints}} endpoints · {{enabled}} enabled', {
-                        endpoints: integrations.length,
-                        enabled: integrations.filter((item) => item.enabled)
-                          .length,
-                      })}
-                    </span>
-                  </div>
-                </div>
-                <div className="col-6 col-lg-3">
-                  <div className="small-box text-bg-success">
-                    <div className="inner">
-                      <h3>{gatewayRoutes}</h3>
-                      <p>{tr('Gateway routes')}</p>
+                    <div className="col-6 col-lg-3">
+                      <div className="small-box text-bg-success">
+                        <div className="inner">
+                          <h3>{gatewayRoutes}</h3>
+                          <p>{tr('Gateway routes')}</p>
+                        </div>
+                        <i className="small-box-icon bi bi-signpost-split" aria-hidden="true" />
+                        <span className="small-box-footer">
+                          {tr('OpenAI and Anthropic providers')}
+                        </span>
+                      </div>
                     </div>
-                    <i className="small-box-icon bi bi-signpost-split" aria-hidden="true" />
-                    <span className="small-box-footer">
-                      {tr('OpenAI and Anthropic providers')}
-                    </span>
-                  </div>
-                </div>
-                <div className="col-6 col-lg-3">
-                  <div className="small-box text-bg-info">
-                    <div className="inner">
-                      <h3>
-                        {configured}/{features.length}
-                      </h3>
-                      <p>{tr('Bound features')}</p>
+                    <div className="col-6 col-lg-3">
+                      <div className="small-box text-bg-info">
+                        <div className="inner">
+                          <h3>
+                            {configured}/{features.length}
+                          </h3>
+                          <p>{tr('Bound features')}</p>
+                        </div>
+                        <i className="small-box-icon bi bi-diagram-3" aria-hidden="true" />
+                        <span className="small-box-footer">
+                          {features.length === 0
+                            ? tr('No AI features are registered')
+                            : configured === features.length
+                              ? tr('Every feature has an explicit provider')
+                              : tr('{{count}} need a provider', {
+                                  count: features.length - configured,
+                                })}
+                        </span>
+                      </div>
                     </div>
-                    <i className="small-box-icon bi bi-diagram-3" aria-hidden="true" />
-                    <span className="small-box-footer">
-                      {features.length === 0
-                        ? tr('No AI features are registered')
-                        : configured === features.length
-                          ? tr('Every feature has an explicit provider')
-                          : tr('{{count}} need a provider', {
-                              count: features.length - configured,
-                            })}
-                    </span>
-                  </div>
-                </div>
-                <div className="col-6 col-lg-3">
-                  <div
-                    className={`small-box ${
-                      keysPresent.length < keyed.length
-                        ? 'text-bg-warning'
-                        : 'text-bg-secondary'
-                    }`}
-                  >
-                    <div className="inner">
-                      <h3>
-                        {keyed.length === 0
-                          ? '0'
-                          : `${keysPresent.length}/${keyed.length}`}
-                      </h3>
-                      <p>{tr('Keys configured')}</p>
+                    <div className="col-6 col-lg-3">
+                      <div
+                        className={`small-box ${
+                          keysPresent.length < keyed.length
+                            ? 'text-bg-warning'
+                            : 'text-bg-secondary'
+                        }`}
+                      >
+                        <div className="inner">
+                          <h3>
+                            {keyed.length === 0
+                              ? '0'
+                              : `${keysPresent.length}/${keyed.length}`}
+                          </h3>
+                          <p>{tr('Keys configured')}</p>
+                        </div>
+                        <i className="small-box-icon bi bi-key" aria-hidden="true" />
+                        <span className="small-box-footer">
+                          {keyed.length === 0
+                            ? tr('No provider reads a server-side key')
+                            : tr(
+                                '{{present}} of {{total}} internal endpoints have a key in winnie-llm/.env',
+                                {
+                                  present: keysPresent.length,
+                                  total: keyed.length,
+                                },
+                              )}
+                        </span>
+                      </div>
                     </div>
-                    <i className="small-box-icon bi bi-key" aria-hidden="true" />
-                    <span className="small-box-footer">
-                      {keyed.length === 0
-                        ? tr('No provider reads a server-side key')
-                        : tr(
-                            '{{present}} of {{total}} internal endpoints have a key in winnie-llm/.env',
-                            {
-                              present: keysPresent.length,
-                              total: keyed.length,
-                            },
-                          )}
-                    </span>
                   </div>
-                </div>
-              </div>
 
-              <div className="card mb-3">
-                <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                  <h3 className="card-title mb-0">{tr('Suppliers')}</h3>
-                  <div className="ms-auto d-flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary"
-                      onClick={result.reload}
-                      disabled={disabled}
-                    >
-                      <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
-                      {tr('Refresh')}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary"
-                      onClick={openCreate}
-                      disabled={disabled}
-                    >
-                      <i className="bi bi-plus-lg me-1" aria-hidden="true" />
-                      {tr('Add route/API')}
-                    </button>
-                  </div>
-                </div>
-                <div className="card-body p-0">
-                  {integrations.length === 0 ? (
-                    <div className="p-3">
-                      <EmptyState message="No suppliers yet. Add one, its endpoints and models, then bind a feature below." />
+                  <div className="card mb-3">
+                    <div className="card-header d-flex flex-wrap align-items-center gap-2">
+                      <h3 className="card-title mb-0">{tr('Suppliers')}</h3>
+                      <div className="ms-auto d-flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={result.reload}
+                          disabled={disabled}
+                        >
+                          <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
+                          {tr('Refresh')}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={openCreate}
+                          disabled={disabled}
+                        >
+                          <i className="bi bi-plus-lg me-1" aria-hidden="true" />
+                          {tr('Add route/API')}
+                        </button>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="table-responsive">
-                      <table className="table table-striped align-middle mb-0">
-                        <thead>
-                          <tr>
-                            <th scope="col">{tr('Gateway route')}</th>
-                            <th scope="col">{tr('Base URL')}</th>
-                            <th scope="col">{tr('API key')}</th>
-                            <th scope="col">{tr('Used by')}</th>
-                            <th scope="col">{tr('Gateway')}</th>
-                            <th scope="col">{tr('State')}</th>
-                            <th scope="col" className="text-end">
-                              {tr('Actions')}
-                            </th>
-                          </tr>
-                        </thead>
-                        {vendorGroups.map(({ vendor, gatewayEndpoints }) => (
-                          <tbody key={vendor.id}>
-                            <tr className="table-light">
-                              <td colSpan={7} className="py-3">
-                                <div className="d-flex flex-wrap align-items-center gap-2">
-                                  <VendorIcon id={vendor.id} label={vendor.label} />
-                                  <strong>{vendor.label}</strong>
-                                  <code className="small text-secondary">
-                                    {vendor.id}
-                                  </code>
-                                  <span className="badge text-bg-secondary">
-                                    {vendor.gateway_count === 1
-                                      ? tr('{{count}} gateway route', {
-                                          count: vendor.gateway_count,
-                                        })
-                                      : tr('{{count}} gateway routes', {
-                                          count: vendor.gateway_count,
-                                        })}
-                                  </span>
-                                  {vendor.base_url ? (
-                                    <code className="small text-secondary">
-                                      {vendor.base_url}
-                                    </code>
-                                  ) : (
-                                    <span className="small text-warning">
-                                      {tr('no API endpoint')}
-                                    </span>
-                                  )}
-                                  {vendor.api_key_env ? (
-                                    <span
-                                      className={`badge ${
-                                        vendor.api_key_present
-                                          ? 'text-bg-success'
-                                          : 'text-bg-warning'
-                                      }`}
-                                    >
-                                      {vendor.api_key_present
-                                        ? vendor.api_key_env
-                                        : tr('{{env}} missing', {
-                                            env: vendor.api_key_env,
-                                          })}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
-                                  {vendor.models.length === 0 ? (
-                                    <span className="small text-secondary">
-                                      {tr('No models yet; sync them from the supplier.')}
-                                    </span>
-                                  ) : (
-                                    vendor.models.slice(0, 5).map((model) => (
-                                      <span
-                                        className="badge text-bg-light border"
-                                        key={model.id}
-                                      >
-                                        {model.id}
+                    <div className="card-body p-0">
+                      {integrations.length === 0 ? (
+                        <div className="p-3">
+                          <EmptyState message="No suppliers yet. Add one, its endpoints and models, then bind a feature below." />
+                        </div>
+                      ) : (
+                        <div className="table-responsive">
+                          <table className="table table-striped align-middle mb-0">
+                            <thead>
+                              <tr>
+                                <th scope="col">{tr('Gateway route')}</th>
+                                <th scope="col">{tr('Base URL')}</th>
+                                <th scope="col">{tr('API key')}</th>
+                                <th scope="col">{tr('Used by')}</th>
+                                <th scope="col">{tr('Gateway')}</th>
+                                <th scope="col">{tr('State')}</th>
+                                <th scope="col" className="text-end">
+                                  {tr('Actions')}
+                                </th>
+                              </tr>
+                            </thead>
+                            {vendorGroups.map(({ vendor, gatewayEndpoints }) => (
+                              <tbody key={vendor.id}>
+                                <tr className="table-light">
+                                  <td colSpan={7} className="py-3">
+                                    <div className="d-flex flex-wrap align-items-center gap-2">
+                                      <VendorIcon id={vendor.id} label={vendor.label} />
+                                      <strong>{vendor.label}</strong>
+                                      <code className="small text-secondary">
+                                        {vendor.id}
+                                      </code>
+                                      <span className="badge text-bg-secondary">
+                                        {vendor.gateway_count === 1
+                                          ? tr('{{count}} gateway route', {
+                                              count: vendor.gateway_count,
+                                            })
+                                          : tr('{{count}} gateway routes', {
+                                              count: vendor.gateway_count,
+                                            })}
                                       </span>
-                                    ))
-                                  )}
-                                  {vendor.models.length > 5 ? (
-                                    <span className="small text-secondary">
-                                      +{vendor.models.length - 5}
-                                    </span>
-                                  ) : null}
-                                  <div className="ms-auto d-flex flex-wrap gap-2">
-                                    {vendor.internal_integration_id ? (
-                                      <>
+                                      {vendor.base_url ? (
+                                        <code className="small text-secondary">
+                                          {vendor.base_url}
+                                        </code>
+                                      ) : (
+                                        <span className="small text-warning">
+                                          {tr('no API endpoint')}
+                                        </span>
+                                      )}
+                                      {vendor.api_key_env ? (
+                                        <span
+                                          className={`badge ${
+                                            vendor.api_key_present
+                                              ? 'text-bg-success'
+                                              : 'text-bg-warning'
+                                          }`}
+                                        >
+                                          {vendor.api_key_present
+                                            ? vendor.api_key_env
+                                            : tr('{{env}} missing', {
+                                                env: vendor.api_key_env,
+                                              })}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
+                                      {vendor.models.length === 0 ? (
+                                        <span className="small text-secondary">
+                                          {tr('No models yet; sync them from the supplier.')}
+                                        </span>
+                                      ) : (
+                                        vendor.models.slice(0, 5).map((model) => (
+                                          <span
+                                            className="badge text-bg-light border"
+                                            key={model.id}
+                                          >
+                                            {model.id}
+                                          </span>
+                                        ))
+                                      )}
+                                      {vendor.models.length > 5 ? (
+                                        <span className="small text-secondary">
+                                          +{vendor.models.length - 5}
+                                        </span>
+                                      ) : null}
+                                      <div className="ms-auto d-flex flex-wrap gap-2">
+                                        {vendor.internal_integration_id ? (
+                                          <>
+                                            <button
+                                              type="button"
+                                              className="btn btn-sm btn-outline-secondary"
+                                              onClick={() => {
+                                                const internal = integrations.find(
+                                                  (item) =>
+                                                    item.id ===
+                                                    vendor.internal_integration_id,
+                                                );
+                                                if (internal) {
+                                                  openEdit(internal);
+                                                }
+                                              }}
+                                              disabled={disabled}
+                                              title={tr('Edit the supplier API endpoint')}
+                                            >
+                                              <i
+                                                className="bi bi-plug me-1"
+                                                aria-hidden="true"
+                                              />
+                                              API
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn btn-sm btn-outline-danger"
+                                              onClick={() => {
+                                                const internal = integrations.find(
+                                                  (item) =>
+                                                    item.id ===
+                                                    vendor.internal_integration_id,
+                                                );
+                                                if (internal) {
+                                                  setMessage(null);
+                                                  setDeleteTarget(internal);
+                                                }
+                                              }}
+                                              disabled={disabled}
+                                              title={tr('Remove the supplier API endpoint')}
+                                            >
+                                              <i
+                                                className="bi bi-trash me-1"
+                                                aria-hidden="true"
+                                              />
+                                              {tr('Remove API')}
+                                            </button>
+                                            {vendor.kind === 'openai' ? (
+                                              <button
+                                                type="button"
+                                                className="btn btn-sm btn-outline-secondary"
+                                                onClick={() => syncVendor(vendor)}
+                                                disabled={disabled}
+                                                title={tr(
+                                                  'Fetch the model list from the supplier /models API',
+                                                )}
+                                              >
+                                                {busy === `sync:${vendor.id}` ? (
+                                                  <>
+                                                    <span
+                                                      className="spinner-border spinner-border-sm me-1"
+                                                      aria-hidden="true"
+                                                    />
+                                                    {tr('Syncing…')}
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <i
+                                                      className="bi bi-arrow-repeat me-1"
+                                                      aria-hidden="true"
+                                                    />
+                                                    {tr('Sync models')}
+                                                  </>
+                                                )}
+                                              </button>
+                                            ) : null}
+                                          </>
+                                        ) : (
+                                          <span className="small text-secondary">
+                                            {tr('No supplier API; add one with Add route/API.')}
+                                          </span>
+                                        )}
                                         <button
                                           type="button"
                                           className="btn btn-sm btn-outline-secondary"
                                           onClick={() => {
-                                            const internal = integrations.find(
-                                              (item) =>
-                                                item.id ===
-                                                vendor.internal_integration_id,
-                                            );
-                                            if (internal) {
-                                              openEdit(internal);
-                                            }
+                                            setMessage(null);
+                                            setModelsError('');
+                                            setModelsEditor(vendor);
                                           }}
                                           disabled={disabled}
-                                          title={tr('Edit the supplier API endpoint')}
                                         >
                                           <i
-                                            className="bi bi-plug me-1"
+                                            className="bi bi-sliders me-1"
                                             aria-hidden="true"
                                           />
-                                          API
+                                          {tr('Models')}
                                         </button>
-                                        <button
-                                          type="button"
-                                          className="btn btn-sm btn-outline-danger"
-                                          onClick={() => {
-                                            const internal = integrations.find(
-                                              (item) =>
-                                                item.id ===
-                                                vendor.internal_integration_id,
-                                            );
-                                            if (internal) {
-                                              setMessage(null);
-                                              setDeleteTarget(internal);
-                                            }
-                                          }}
-                                          disabled={disabled}
-                                          title={tr('Remove the supplier API endpoint')}
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                                {gatewayEndpoints.map((integration) => (
+                                  <tr key={integration.id}>
+                                    <td style={{ minWidth: '12rem' }}>
+                                      <div className="fw-semibold">
+                                        {tr('Gateway route · {{kind}}', {
+                                          kind: integration.kind_label,
+                                        })}
+                                      </div>
+                                      <div className="small text-secondary">
+                                        <code>{integration.name}</code>
+                                      </div>
+                                      <span className="badge text-bg-light border mt-1">
+                                        {integration.kind_label}
+                                      </span>
+                                    </td>
+                                    <td style={{ minWidth: '11rem' }}>
+                                      <div className="text-break">
+                                        <code>{integration.base_url}</code>
+                                      </div>
+                                    </td>
+                                    <td style={{ minWidth: '8rem' }}>
+                                      <span className="text-secondary">
+                                        {tr('client supplies the key')}
+                                      </span>
+                                    </td>
+                                    <td style={{ minWidth: '8rem' }}>
+                                      <span className="text-secondary">—</span>
+                                    </td>
+                                    <td style={{ minWidth: '9rem' }}>
+                                      {integration.gateway_paths.map((path) => (
+                                        <code className="d-block small" key={path}>
+                                          {path}
+                                        </code>
+                                      ))}
+                                    </td>
+                                    <td>
+                                      {integration.enabled ? (
+                                        <span className="badge text-bg-success">
+                                          {tr('Enabled')}
+                                        </span>
+                                      ) : (
+                                        <span className="badge text-bg-secondary">
+                                          {tr('Disabled')}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="text-end text-nowrap">
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-secondary me-1"
+                                        onClick={() => openEdit(integration)}
+                                        disabled={disabled}
+                                      >
+                                        {tr('Edit')}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-outline-danger"
+                                        onClick={() => {
+                                          setMessage(null);
+                                          setDeleteTarget(integration);
+                                        }}
+                                        disabled={disabled}
+                                      >
+                                        {tr('Delete')}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            ))}
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                    <div className="card-footer small text-secondary">
+                      {tr(
+                        "A supplier owns its API endpoint, the models it offers and any public gateway routes. Feature bindings select a model, not an endpoint. The API button edits the supplier's server-side endpoint;",
+                      )}{' '}
+                      <strong>{tr('Sync models')}</strong> {tr('reads its')}{' '}
+                      <code>/models</code>{' '}
+                      {tr("API. Gateway routes forward the client's own vendor key at")}{' '}
+                      <code>/{'{name}'}/v1/…</code>
+                      {tr('; the environment variable is only for internal calls.')}
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <div className="card-header">
+                      <h3 className="card-title mb-0">{tr('Feature bindings')}</h3>
+                    </div>
+                    <div className="card-body p-0">
+                      <div className="table-responsive">
+                        <table className="table align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th scope="col">{tr('Feature')}</th>
+                              <th scope="col">{tr('Model')}</th>
+                              <th scope="col">{tr('Source')}</th>
+                              <th scope="col" className="text-end">
+                                {tr('Action')}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {features.map((feature) => {
+                              const binding =
+                                bindings[feature.key] ?? {
+                                  vendor: '',
+                                  model: '',
+                                };
+                              const modelGroups = vendors
+                                .map((vendor) => {
+                                  const internal = integrations.find(
+                                    (item) =>
+                                      item.vendor === vendor.id &&
+                                      !item.gateway &&
+                                      feature.kinds.includes(item.kind),
+                                  );
+                                  if (!internal) {
+                                    return null;
+                                  }
+                                  return { vendor, models: vendor.models };
+                                })
+                                .filter(
+                                  (group): group is NonNullable<typeof group> =>
+                                    group !== null,
+                                );
+                              const value =
+                                binding.vendor && binding.model
+                                  ? `${binding.vendor}|${binding.model}`
+                                  : '';
+                              const known = modelGroups.some(
+                                (group) =>
+                                  group.vendor.id === binding.vendor &&
+                                  group.models.some(
+                                    (model) => model.id === binding.model,
+                                  ),
+                              );
+                              const dirty =
+                                binding.vendor !== (feature.vendor ?? '') ||
+                                binding.model !== feature.model;
+                              const rowBusy = busy === `feature:${feature.key}`;
+                              return (
+                                <tr key={feature.key}>
+                                  <td style={{ minWidth: '16rem' }}>
+                                    <div className="fw-semibold">{feature.label}</div>
+                                    <div className="small text-secondary">
+                                      {feature.description}
+                                    </div>
+                                    <code className="small text-secondary">
+                                      {feature.key}
+                                    </code>
+                                  </td>
+                                  <td style={{ minWidth: '18rem' }}>
+                                    <label
+                                      className="visually-hidden"
+                                      htmlFor={`model-${feature.key}`}
+                                    >
+                                      {tr('Model for {{feature}}', {
+                                        feature: feature.label,
+                                      })}
+                                    </label>
+                                    <select
+                                      id={`model-${feature.key}`}
+                                      className="form-select form-select-sm"
+                                      value={value}
+                                      onChange={(event) => {
+                                        const raw = event.target.value;
+                                        const index = raw.indexOf('|');
+                                        const vendor =
+                                          index === -1 ? '' : raw.slice(0, index);
+                                        const model =
+                                          index === -1 ? '' : raw.slice(index + 1);
+                                        setBindings((current) => ({
+                                          ...current,
+                                          [feature.key]: { vendor, model },
+                                        }));
+                                      }}
+                                      disabled={disabled || rowBusy}
+                                    >
+                                      <option value="">{tr('Not configured')}</option>
+                                      {modelGroups.map((group) => (
+                                        <optgroup
+                                          label={group.vendor.label}
+                                          key={group.vendor.id}
                                         >
-                                          <i
-                                            className="bi bi-trash me-1"
-                                            aria-hidden="true"
-                                          />
-                                          {tr('Remove API')}
-                                        </button>
-                                        {vendor.kind === 'openai' ? (
-                                          <button
-                                            type="button"
-                                            className="btn btn-sm btn-outline-secondary"
-                                            onClick={() => syncVendor(vendor)}
-                                            disabled={disabled}
-                                            title={tr(
-                                              'Fetch the model list from the supplier /models API',
+                                          {group.models.map((model) => (
+                                            <option
+                                              value={`${group.vendor.id}|${model.id}`}
+                                              key={model.id}
+                                            >
+                                              {model.label || model.id}
+                                              {model.context_window ? (
+                                                <>
+                                                  {' · '}
+                                                  {tr('{{tokens}} ctx', {
+                                                    tokens:
+                                                      model.context_window.toLocaleString(),
+                                                  })}
+                                                </>
+                                              ) : null}
+                                            </option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                      {binding.vendor && binding.model && !known ? (
+                                        <option value={value}>
+                                          {binding.model} {tr('(not in the catalog)')}
+                                        </option>
+                                      ) : null}
+                                    </select>
+                                    <div className="form-text">
+                                      {feature.source === 'none'
+                                        ? tr('Choose the model this feature calls.')
+                                        : !known
+                                          ? tr(
+                                              'This model is not in a supplier catalog; sync it first.',
+                                            )
+                                          : tr(
+                                              'Every feature calls the model selected here.',
                                             )}
-                                          >
-                                            {busy === `sync:${vendor.id}` ? (
-                                              <>
-                                                <span
-                                                  className="spinner-border spinner-border-sm me-1"
-                                                  aria-hidden="true"
-                                                />
-                                                {tr('Syncing…')}
-                                              </>
-                                            ) : (
-                                              <>
-                                                <i
-                                                  className="bi bi-arrow-repeat me-1"
-                                                  aria-hidden="true"
-                                                />
-                                                {tr('Sync models')}
-                                              </>
-                                            )}
-                                          </button>
-                                        ) : null}
-                                      </>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    {feature.source === 'admin' ? (
+                                      <span className="badge text-bg-success">
+                                        {tr('Admin')}
+                                      </span>
                                     ) : (
-                                      <span className="small text-secondary">
-                                        {tr('No supplier API; add one with Add route/API.')}
+                                      <span className="badge text-bg-warning">
+                                        {tr('Not configured')}
                                       </span>
                                     )}
+                                  </td>
+                                  <td className="text-end">
                                     <button
                                       type="button"
-                                      className="btn btn-sm btn-outline-secondary"
-                                      onClick={() => {
-                                        setMessage(null);
-                                        setModelsError('');
-                                        setModelsEditor(vendor);
-                                      }}
-                                      disabled={disabled}
+                                      className="btn btn-sm btn-primary"
+                                      onClick={() => saveBinding(feature)}
+                                      disabled={disabled || rowBusy || !dirty}
                                     >
-                                      <i
-                                        className="bi bi-sliders me-1"
-                                        aria-hidden="true"
-                                      />
-                                      {tr('Models')}
+                                      {rowBusy ? (
+                                        <>
+                                          <span
+                                            className="spinner-border spinner-border-sm me-1"
+                                            aria-hidden="true"
+                                          />
+                                          {tr('Saving…')}
+                                        </>
+                                      ) : (
+                                        tr('Save')
+                                      )}
                                     </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                            {gatewayEndpoints.map((integration) => (
-                              <tr key={integration.id}>
-                                <td style={{ minWidth: '12rem' }}>
-                                  <div className="fw-semibold">
-                                    {tr('Gateway route · {{kind}}', {
-                                      kind: integration.kind_label,
-                                    })}
-                                  </div>
-                                  <div className="small text-secondary">
-                                    <code>{integration.name}</code>
-                                  </div>
-                                  <span className="badge text-bg-light border mt-1">
-                                    {integration.kind_label}
-                                  </span>
-                                </td>
-                                <td style={{ minWidth: '11rem' }}>
-                                  <div className="text-break">
-                                    <code>{integration.base_url}</code>
-                                  </div>
-                                </td>
-                                <td style={{ minWidth: '8rem' }}>
-                                  <span className="text-secondary">
-                                    {tr('client supplies the key')}
-                                  </span>
-                                </td>
-                                <td style={{ minWidth: '8rem' }}>
-                                  <span className="text-secondary">—</span>
-                                </td>
-                                <td style={{ minWidth: '9rem' }}>
-                                  {integration.gateway_paths.map((path) => (
-                                    <code className="d-block small" key={path}>
-                                      {path}
-                                    </code>
-                                  ))}
-                                </td>
-                                <td>
-                                  {integration.enabled ? (
-                                    <span className="badge text-bg-success">
-                                      {tr('Enabled')}
-                                    </span>
-                                  ) : (
-                                    <span className="badge text-bg-secondary">
-                                      {tr('Disabled')}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="text-end text-nowrap">
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm btn-outline-secondary me-1"
-                                    onClick={() => openEdit(integration)}
-                                    disabled={disabled}
-                                  >
-                                    {tr('Edit')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm btn-outline-danger"
-                                    onClick={() => {
-                                      setMessage(null);
-                                      setDeleteTarget(integration);
-                                    }}
-                                    disabled={disabled}
-                                  >
-                                    {tr('Delete')}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        ))}
-                      </table>
-                    </div>
-                  )}
-                </div>
-                <div className="card-footer small text-secondary">
-                  {tr(
-                    "A supplier owns its API endpoint, the models it offers and any public gateway routes. Feature bindings select a model, not an endpoint. The API button edits the supplier's server-side endpoint;",
-                  )}{' '}
-                  <strong>{tr('Sync models')}</strong> {tr('reads its')}{' '}
-                  <code>/models</code>{' '}
-                  {tr("API. Gateway routes forward the client's own vendor key at")}{' '}
-                  <code>/{'{name}'}/v1/…</code>
-                  {tr('; the environment variable is only for internal calls.')}
-                </div>
-              </div>
-
-              <div className="card">
-                <div className="card-header">
-                  <h3 className="card-title mb-0">{tr('Feature bindings')}</h3>
-                </div>
-                <div className="card-body p-0">
-                  <div className="table-responsive">
-                    <table className="table align-middle mb-0">
-                      <thead>
-                        <tr>
-                          <th scope="col">{tr('Feature')}</th>
-                          <th scope="col">{tr('Model')}</th>
-                          <th scope="col">{tr('Source')}</th>
-                          <th scope="col" className="text-end">
-                            {tr('Action')}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {features.map((feature) => {
-                          const binding =
-                            bindings[feature.key] ?? {
-                              vendor: '',
-                              model: '',
-                            };
-                          const modelGroups = vendors
-                            .map((vendor) => {
-                              const internal = integrations.find(
-                                (item) =>
-                                  item.vendor === vendor.id &&
-                                  !item.gateway &&
-                                  feature.kinds.includes(item.kind),
+                                  </td>
+                                </tr>
                               );
-                              if (!internal) {
-                                return null;
-                              }
-                              return { vendor, models: vendor.models };
-                            })
-                            .filter(
-                              (group): group is NonNullable<typeof group> =>
-                                group !== null,
-                            );
-                          const value =
-                            binding.vendor && binding.model
-                              ? `${binding.vendor}|${binding.model}`
-                              : '';
-                          const known = modelGroups.some(
-                            (group) =>
-                              group.vendor.id === binding.vendor &&
-                              group.models.some(
-                                (model) => model.id === binding.model,
-                              ),
-                          );
-                          const dirty =
-                            binding.vendor !== (feature.vendor ?? '') ||
-                            binding.model !== feature.model;
-                          const rowBusy = busy === `feature:${feature.key}`;
-                          return (
-                            <tr key={feature.key}>
-                              <td style={{ minWidth: '16rem' }}>
-                                <div className="fw-semibold">{feature.label}</div>
-                                <div className="small text-secondary">
-                                  {feature.description}
-                                </div>
-                                <code className="small text-secondary">
-                                  {feature.key}
-                                </code>
-                              </td>
-                              <td style={{ minWidth: '18rem' }}>
-                                <label
-                                  className="visually-hidden"
-                                  htmlFor={`model-${feature.key}`}
-                                >
-                                  {tr('Model for {{feature}}', {
-                                    feature: feature.label,
-                                  })}
-                                </label>
-                                <select
-                                  id={`model-${feature.key}`}
-                                  className="form-select form-select-sm"
-                                  value={value}
-                                  onChange={(event) => {
-                                    const raw = event.target.value;
-                                    const index = raw.indexOf('|');
-                                    const vendor =
-                                      index === -1 ? '' : raw.slice(0, index);
-                                    const model =
-                                      index === -1 ? '' : raw.slice(index + 1);
-                                    setBindings((current) => ({
-                                      ...current,
-                                      [feature.key]: { vendor, model },
-                                    }));
-                                  }}
-                                  disabled={disabled || rowBusy}
-                                >
-                                  <option value="">{tr('Not configured')}</option>
-                                  {modelGroups.map((group) => (
-                                    <optgroup
-                                      label={group.vendor.label}
-                                      key={group.vendor.id}
-                                    >
-                                      {group.models.map((model) => (
-                                        <option
-                                          value={`${group.vendor.id}|${model.id}`}
-                                          key={model.id}
-                                        >
-                                          {model.label || model.id}
-                                          {model.context_window ? (
-                                            <>
-                                              {' · '}
-                                              {tr('{{tokens}} ctx', {
-                                                tokens:
-                                                  model.context_window.toLocaleString(),
-                                              })}
-                                            </>
-                                          ) : null}
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  ))}
-                                  {binding.vendor && binding.model && !known ? (
-                                    <option value={value}>
-                                      {binding.model} {tr('(not in the catalog)')}
-                                    </option>
-                                  ) : null}
-                                </select>
-                                <div className="form-text">
-                                  {feature.source === 'none'
-                                    ? tr('Choose the model this feature calls.')
-                                    : !known
-                                      ? tr(
-                                          'This model is not in a supplier catalog; sync it first.',
-                                        )
-                                      : tr(
-                                          'Every feature calls the model selected here.',
-                                        )}
-                                </div>
-                              </td>
-                              <td>
-                                {feature.source === 'admin' ? (
-                                  <span className="badge text-bg-success">
-                                    {tr('Admin')}
-                                  </span>
-                                ) : (
-                                  <span className="badge text-bg-warning">
-                                    {tr('Not configured')}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="text-end">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-primary"
-                                  onClick={() => saveBinding(feature)}
-                                  disabled={disabled || rowBusy || !dirty}
-                                >
-                                  {rowBusy ? (
-                                    <>
-                                      <span
-                                        className="spinner-border spinner-border-sm me-1"
-                                        aria-hidden="true"
-                                      />
-                                      {tr('Saving…')}
-                                    </>
-                                  ) : (
-                                    tr('Save')
-                                  )}
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="card-footer small text-secondary">
+                      {tr(
+                        'Every feature calls the model selected here. The supplier is resolved from that model; there is no endpoint/provider choice in a feature binding. Models come from the supplier catalog; sync them with',
+                      )}{' '}
+                      <strong>{tr('Sync models')}</strong> {tr('or add them under')}{' '}
+                      <strong>{tr('Models')}</strong>. <code>config.yaml</code>{' '}
+                      {tr('no longer selects a model.')}
+                    </div>
                   </div>
-                </div>
-                <div className="card-footer small text-secondary">
-                  {tr(
-                    'Every feature calls the model selected here. The supplier is resolved from that model; there is no endpoint/provider choice in a feature binding. Models come from the supplier catalog; sync them with',
-                  )}{' '}
-                  <strong>{tr('Sync models')}</strong> {tr('or add them under')}{' '}
-                  <strong>{tr('Models')}</strong>. <code>config.yaml</code>{' '}
-                  {tr('no longer selects a model.')}
-                </div>
-              </div>
 
-              {runtimeDraft ? (
-                <RuntimeCard
-                  runtime={runtimeDraft}
-                  busy={busy === 'runtime'}
-                  disabled={disabled}
-                  onChange={(patch) =>
-                    setRuntimeDraft((current) =>
-                      current ? { ...current, ...patch } : current,
-                    )
-                  }
-                  onSave={saveRuntime}
-                />
+                  {runtimeDraft ? (
+                    <RuntimeCard
+                      runtime={runtimeDraft}
+                      busy={busy === 'runtime'}
+                      disabled={disabled}
+                      onChange={(patch) =>
+                        setRuntimeDraft((current) =>
+                          current ? { ...current, ...patch } : current,
+                        )
+                      }
+                      onSave={saveRuntime}
+                    />
+                  ) : null}
+                </>
               ) : null}
-            </>
-          ) : null}
+            </div>
+          )}
         </div>
       </div>
 

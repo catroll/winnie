@@ -19,7 +19,6 @@ import { RoutesPage } from './pages/RoutesPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { SkillsPage } from './pages/SkillsPage';
 import { TasksPage } from './pages/TasksPage';
-import { UsagePage } from './pages/UsagePage';
 import { UsersPage } from './pages/UsersPage';
 
 function HomeRoute() {
@@ -52,7 +51,9 @@ export function App() {
             <Route path="/account" element={<AccountPage />} />
             <Route element={<RequireAdmin />}>
               <Route path="/schedule" element={<SchedulePage />} />
-              <Route path="/usage" element={<UsagePage />} />
+              {/* The usage report is a section of the AI providers page now;
+                  the old route stays so an existing bookmark still lands on it. */}
+              <Route path="/usage" element={<Navigate to="/ai?tab=usage" replace />} />
               <Route path="/news" element={<NewsPage />} />
               <Route path="/ai" element={<AIPage />} />
               <Route path="/gateway" element={<RoutesPage />} />

@@ -33,7 +33,6 @@ export const NAVIGATION: readonly NavigationItem[] = [
   { to: '/gateway', label: 'Gateway routes', icon: 'bi-signpost-split', end: false, group: 'administration', adminOnly: true },
   { to: '/index', label: 'Document index', icon: 'bi-journal-text', end: false, group: 'administration', adminOnly: true },
   { to: '/news', label: 'News', icon: 'bi-newspaper', end: false, group: 'administration', adminOnly: true },
-  { to: '/usage', label: 'LLM usage', icon: 'bi-graph-up-arrow', end: false, group: 'administration', adminOnly: true },
 ];
 
 export function visibleNavigation(isAdmin: boolean): NavigationItem[] {

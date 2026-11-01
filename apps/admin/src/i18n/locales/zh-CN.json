@@ -226,6 +226,7 @@
   "A skill bundles tools with the prompt instructions that teach their use. Disabling one removes both from the next chat turn. Availability shows whether the service behind it is configured; a disabled skill stays listed so you can see what is off.": "技能把工具与教模型如何使用这些工具的提示说明打包在一起。停用某个技能后，下一次聊天会同时移除这两部分。可用状态表示该技能背后的服务是否已配置；已停用的技能仍会列出，以便查看哪些处于关闭状态。",
   "A supplier can own several protocol/role endpoints and a model catalog.": "一个供应商可以拥有多个协议/角色接口和一个模型目录。",
   "A supplier owns its API endpoint, the models it offers and any public gateway routes. Feature bindings select a model, not an endpoint. The API button edits the supplier's server-side endpoint;": "供应商拥有自己的 API 接口地址、它提供的模型以及所有公开网关路由。功能绑定选择的是模型，而不是接口。API 按钮编辑供应商的服务端接口；",
+  "AI provider sections": "AI 供应商区块",
   "AI suppliers": "AI 供应商",
   "API base: {{url}}": "API 基础地址：{{url}}",
   "API key": "API 密钥",

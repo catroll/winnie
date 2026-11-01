@@ -8,7 +8,9 @@ The unit a feature binds to is a **model**. A model belongs to a **supplier**;
 the supplier is resolved from the model and provides the API endpoint, key and
 model list. A feature never selects a supplier or an endpoint.
 
-- Console page: **AI suppliers** (`/ai` in the admin app)
+- Console page: **AI providers** (`/ai` in the admin app). Its **Suppliers** tab
+  is this registry; its **LLM usage** tab shows what the bound models cost (see
+  [usage.md](./usage.md))
 - API prefix: `/api/v1/ai`
 - State file: `data/ai.yaml` by default (gitignored)
 - Owner: `packages/winnie-llm` (`winnie_llm.registry`); `apps/api` only exposes

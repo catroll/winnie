@@ -22,8 +22,7 @@ keys.
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
-| **LLM usage** | Recorded model calls with token classes, latency, status and cost; breakdowns by day, feature and model; provider balances with a refresh; the configured price table |
-| **AI suppliers** | Manage suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether `winnie-llm/.env` supplies the supplier key |
+| **AI providers** | Two tabs. **Suppliers** manages suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether `winnie-llm/.env` supplies the supplier key. **LLM usage** shows recorded model calls with token classes, latency, status and cost, breakdowns by day, feature and model, provider balances with a refresh, and the configured price table |
 | **Schedule** | One week of the owner's Markdown schedule: the seven day sections with their events, the week-level items, times, tags and links; add an event to a day or to the week list, check it off, edit text and time, delete it, and move between weeks. Pre-2024 files render read-only |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
@@ -218,9 +217,9 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
   `403` makes the console re-read `/auth/me` so a demotion reaches the UI.
 - The sidebar has two groups: **Workspace** (Chat, Meetings, Phone data,
   Scheduled tasks, Skills, Account) and **Administration** (Dashboard,
-  Schedule, Users, AI providers, Gateway routes, Document index, News, LLM
-  usage). A normal user sees only Workspace, lands on `/chat`, and gets a 403
-  panel if they open an admin URL directly.
+  Schedule, Users, AI providers, Gateway routes, Document index, News). A normal
+  user sees only Workspace, lands on `/chat`, and gets a 403 panel if they open
+  an admin URL directly.
 - The bearer token is kept in `sessionStorage`. **Remember me** moves it to
   `localStorage`; signing out or a `401` clears both.
 - The console never renders a token and never sends one anywhere except the
@@ -228,17 +227,19 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 - Changing the password revokes every server-side session, including the one in
   the browser, so the console returns to the login page with a notice.
 - Meeting text is rendered as text, not HTML.
-- Vendor keys are not entered or stored here. The AI suppliers page shows the
+- Vendor keys are not entered or stored here. The AI providers page shows the
   variable `winnie-llm` derives from each supplier and whether
   `packages/winnie-llm/.env` supplies it. Gateway routes show the configured
   upstreams.
 
-## LLM usage page
+## LLM usage tab
 
-`/usage` reads `/api/v1/usage/*` and renders one report per selected period
-(24 hours, 7, 30 or 90 days). It has no write path: prices and the ledger root
-come from `apps/api/config.yaml`, and provider balances are read from the
-vendors named by the AI integrations.
+The **LLM usage** tab of `/ai` (`/ai?tab=usage`) reads `/api/v1/usage/*` and
+renders one report per selected period (24 hours, 7, 30 or 90 days). It has no
+write path: prices and the ledger root come from `apps/api/config.yaml`, and
+provider balances are read from the vendors named by the AI integrations. The
+tab is mounted only when it is opened, so the supplier section never queries the
+ledger; the retired `/usage` URL redirects here.
 
 - **Provider balances** are cached for five minutes by default. **Refresh
   balances** forces a query; a failing provider becomes an error on its row.

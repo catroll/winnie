@@ -555,6 +555,18 @@ telemetry disk error must never turn a successful model call into an error. The
 same rule covers the balance query: one provider's failure becomes an error on
 its row, not a failed page.
 
+**Usage is a tab of AI providers, not its own page.** The two pages answered one
+question from one registry: which supplier serves a feature, and what that
+supplier's calls cost. A separate navigation entry made the reader bounce
+between the supplier list and the report, while the balance table (a property of
+the supplier's key) could only be understood next to the supplier rows. The
+console therefore has `Suppliers` and `LLM usage` tabs on `/ai`; the report is
+mounted only when its tab is opened, so the registry page does not query the
+ledger. The tab is a query parameter (`/ai?tab=usage`) rather than local state
+so a link can point at the report, and `/usage` redirects there instead of
+404ing an existing bookmark. The report itself is unchanged: same endpoints,
+same numbers.
+
 ## Local file and command tools: opt-in, confirmed, audited (2026-11-01)
 
 **The assistant has to act, not only read.** The first slice deliberately had
@@ -1220,10 +1232,12 @@ supported list is explicit, not inferred from the request.
 **Navigation groups express ownership, not visual taste.** The console has one
 shell but two audiences: Workspace (Chat, Meetings, Phone data, Scheduled tasks,
 Skills, Account) is the signed-in user's own data; Administration (Dashboard,
-Schedule, Users, AI providers, Gateway routes, Document index, News, LLM usage)
-is operator-only. One metadata table (`to`, `label`, `icon`, `group`,
+Schedule, Users, AI providers, Gateway routes, Document index, News) is
+operator-only. One metadata table (`to`, `label`, `icon`, `group`,
 `adminOnly`) drives the AdminLTE `nav-header` groups and the filter, so a page
-cannot be visible but unguarded by accident. The API is still the authority:
+cannot be visible but unguarded by accident. A section that is not a page of its
+own — the LLM usage report inside AI providers — has no entry here, because a
+menu of tabs would be a second navigation that can drift from the URL. The API is still the authority:
 every Administration route has `admin_required`, and a direct URL renders a 403
 panel. A normal user lands on `/chat` rather than the admin Dashboard at `/`;
 the Dashboard is an operator overview, not a user home. A second console

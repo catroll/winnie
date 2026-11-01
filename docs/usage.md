@@ -1,11 +1,11 @@
 # LLM usage, cost and provider balances
 
-The console's **LLM usage** page (`/usage`) answers three questions from local
-data: what each model call consumed, what it cost, and how much balance the
-providers report. This document covers what is recorded, how tokens and costs
-are normalized, and the limits of each number.
+The **LLM usage** tab of the console's **AI providers** page (`/ai?tab=usage`)
+answers three questions from local data: what each model call consumed, what it
+cost, and how much balance the providers report. This document covers what is
+recorded, how tokens and costs are normalized, and the limits of each number.
 
-- Console page: **LLM usage** (`/usage`)
+- Console page: **AI providers → LLM usage** (`/ai?tab=usage`)
 - API prefix: `/api/v1/usage`
 - Ledger: `data/usage/usage-YYYY-MM.jsonl` (gitignored)
 - Price table: `usage.prices` in `apps/api/config.yaml`

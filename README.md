@@ -14,12 +14,12 @@ infrastructure below it exists to serve the assistant.
 | **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
-| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs and drafts, AI providers, LLM usage and gateway routes | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs and drafts, AI providers (suppliers and LLM usage) and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
 | **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
-| **LLM usage** | Per-call tokens and latency, cost estimates and provider balances in the console | **Implemented** |
+| **LLM usage** | Per-call tokens and latency, cost estimates and provider balances on the console's AI providers page | **Implemented** |
 
 The model gateway is one requirement of the project, not its definition. It
 landed first because every later capability needs a vendor-neutral, observable

@@ -257,7 +257,8 @@ handset has not run them yet.
       **Workspace** — Chat, Meetings, Phone data, Scheduled tasks, Skills,
       Account.
       **Administration** — Dashboard, Schedule, Users, AI providers, Gateway
-      routes, Document index, News, LLM usage.
+      routes, Document index, News. (LLM usage lives in a tab of AI providers,
+      not as a menu entry.)
 - [x] Hide the Administration group for non-admin users; keep Account available
       to everyone. Guard each admin route, not only its link, and choose a safe
       non-admin landing page (Chat or a workspace overview) instead of rendering
@@ -360,8 +361,8 @@ handset has not run them yet.
 
 ## P3 — operational polish
 
-- [x] Per-month LLM cost view in the console (`/usage`), built from the new
-      usage ledger; it prefers provider-reported costs and estimates from
+- [x] Per-month LLM cost view in the console (`/ai?tab=usage`), built from the
+      new usage ledger; it prefers provider-reported costs and estimates from
       `usage.prices`.
 - [ ] Per-meeting ASR cost view from `usage_records`; ASR is not part of the LLM
       ledger, and streaming ASR still writes no row.
