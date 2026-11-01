@@ -27,6 +27,8 @@ import type {
   IndexStatus,
   Meeting,
   MeetingList,
+  NewsDigestFormat,
+  NewsDigestResponse,
   NewsDraftDetail,
   PhoneApp,
   PhoneCalendarEvent,
@@ -634,6 +636,45 @@ export const api = {
 
   newsEvents(limit = 50): Promise<NewsEventList> {
     return request<NewsEventList>(`/api/v1/news/events?limit=${limit}`);
+  },
+
+  newsDigest(
+    runId: string,
+    format: NewsDigestFormat,
+  ): Promise<NewsDigestResponse> {
+    return request<NewsDigestResponse>(
+      `/api/v1/news/runs/${encodeURIComponent(runId)}/digest?format=${encodeURIComponent(format)}`,
+    );
+  },
+
+  async newsDraftText(runId: string, eventId: string): Promise<string> {
+    const token = getToken();
+    const headers = new Headers();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_BASE}/api/v1/news/runs/${encodeURIComponent(runId)}/drafts/${encodeURIComponent(eventId)}/text`,
+        { headers },
+      );
+    } catch {
+      throw new ApiError(
+        0,
+        'Cannot reach the Winnie API. Check that the server is running and reachable.',
+      );
+    }
+    if (response.status === 401 && token) {
+      unauthorizedHandler?.();
+    }
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        `Draft text export failed with HTTP ${response.status}.`,
+      );
+    }
+    return response.text();
   },
 
   async newsDraftMarkdown(runId: string, eventId: string): Promise<string> {

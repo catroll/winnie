@@ -411,16 +411,21 @@ scheduled-safe, so a task can produce a morning batch; its instructions forbid
 reporting a draft as published and require the run id and event id.
 
 The console page `/news` shows the four counters, the run list, one run's stage
-badges and drafts, and the selected draft with its review. It polls while a run
-is running. The digest and the plain-text draft are API-only for now: the page
-renders the draft Markdown, and the digest is fetched from
-`/api/v1/news/runs/{id}/digest`. The draft is rendered as Markdown, safely:
-`marked` parses it and
-the tokens become React elements, so nothing is inserted as HTML. Raw HTML in a
-draft is shown as text, images are not loaded (a remote pixel would report the
+badges and drafts, the selected draft with its review, and the run's digest. It
+polls while a run is running.
+
+The draft is displayed in the drafting plugin's required `title` / `content` /
+`tags` form, with a copy button for that output and one for its Markdown
+rendering. The digest card renders the stored digest in 标准版 / 晨报·晚报 /
+表格 and copies the Markdown source, so the clipboard holds exactly what the
+hot-news format defines. Both surfaces are safe by construction: the digest is
+Markdown parsed by `marked` and turned into React elements, so nothing is
+inserted as HTML, while the draft is plain text inside a `<pre>`. Raw HTML in a
+digest is shown as text, images are not loaded (a remote pixel would report the
 reader's IP), and link targets are limited to http(s), mailto and relative URLs.
 Headings are shifted down two levels because the page owns `h1` and the card
-title `h2`.
+title `h2`. A run from before the digest stage answers 404 and the card says
+本次运行没有汇总 instead of showing an error.
 
 ## Known limits
 

@@ -743,6 +743,43 @@ export interface NewsRunDrafts {
   reviews: NewsReview[];
 }
 
+export type NewsDigestFormat = 'standard' | 'brief' | 'table';
+
+export interface NewsDigestItem {
+  event_id: string;
+  category: string;
+  date: string;
+  title: string;
+  brief: string;
+  tags: string[];
+  event_type: string;
+}
+
+export interface NewsDigestSection {
+  category: string;
+  items: NewsDigestItem[];
+}
+
+export interface NewsDigest {
+  schema: string;
+  generated_at: string;
+  window_days: number;
+  start_date: string;
+  end_date: string;
+  requested: number;
+  count: number;
+  format: NewsDigestFormat;
+  sections: NewsDigestSection[];
+  excluded: Record<string, number>;
+  notes: string[];
+}
+
+export interface NewsDigestResponse {
+  digest: NewsDigest;
+  format: NewsDigestFormat;
+  text: string;
+}
+
 export interface NewsEventSummary {
   id: string;
   title: string;

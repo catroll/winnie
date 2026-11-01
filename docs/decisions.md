@@ -1633,6 +1633,18 @@ the draft JSON, which review still requires to be complete and URL-valid. The
 Markdown and the plain-text `title` / `content` / `tags` form carry no link at
 all; a link in either fails review.
 
+**The console shows the plugin's output, not a rendering of it.** The draft card
+used to render the Markdown file, which is a console convenience and not what
+the drafting plugin produces; the owner copies the publishable item out of the
+page, so the card now shows the `title` / `content` / `tags` text verbatim and
+offers a copy button for it, with a second button for the Markdown rendering.
+The digest goes the other way: its standard and table formats *are* Markdown, so
+the card renders them — literal `**` and pipes were neither the format nor
+readable — while the copy button still writes the Markdown source. A pre-digest
+run answers 404 and the card says 本次运行没有汇总. The copy path uses the
+Clipboard API and reports when the origin is insecure and `navigator.clipboard`
+is absent, instead of claiming a copy that did not happen.
+
 **Tags, category and brief come from the writer, not from a second call.** A
 digest needs one section and one scannable line per event, and the writer is
 already reading the material with the tag taxonomy in front of it. Asking for

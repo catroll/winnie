@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { api, ApiError } from '../api/client';
 import type {
+  NewsDigestFormat,
+  NewsDigestResponse,
   NewsDraftDetail,
   NewsRun,
   NewsRunDrafts,
@@ -65,6 +67,14 @@ const SOURCE_BADGE: Record<string, string> = {
   unknown: 'text-bg-secondary',
 };
 
+const DIGEST_FORMATS: NewsDigestFormat[] = ['standard', 'brief', 'table'];
+
+const DIGEST_LABEL: Record<NewsDigestFormat, string> = {
+  standard: 'Standard',
+  brief: 'Morning / evening',
+  table: 'Table',
+};
+
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
     return error.detail;
@@ -91,6 +101,12 @@ export function NewsPage() {
   const [drafts, setDrafts] = useState<NewsRunDrafts | null>(null);
   const [detail, setDetail] = useState<NewsDraftDetail | null>(null);
   const [markdown, setMarkdown] = useState<string>('');
+  const [draftText, setDraftText] = useState<string>('');
+  const [digest, setDigest] = useState<NewsDigestResponse | null>(null);
+  const [digestFormat, setDigestFormat] = useState<NewsDigestFormat>('standard');
+  const [digestNote, setDigestNote] = useState<string>('');
+  const [digestBusy, setDigestBusy] = useState(false);
+  const digestTicket = useRef(0);
   const [message, setMessage] = useState<{ kind: 'success' | 'danger'; text: string } | null>(
     null,
   );
@@ -142,6 +158,66 @@ export function NewsPage() {
     };
   }, [selectedRun?.id, selectedRun?.updated_at]);
 
+  // The digest is stored with the run and rendered on the server in three
+  // formats, so switching a format refetches rather than re-rendering locally.
+  const loadDigest = useCallback(
+    async (runId: string, format: NewsDigestFormat) => {
+      const ticket = ++digestTicket.current;
+      setDigestBusy(true);
+      try {
+        const value = await api.newsDigest(runId, format);
+        if (ticket !== digestTicket.current) {
+          return;
+        }
+        setDigest(value);
+        setDigestNote('');
+      } catch (error) {
+        if (ticket !== digestTicket.current) {
+          return;
+        }
+        setDigest(null);
+        setDigestNote(
+          error instanceof ApiError && error.status === 404
+            ? tr('No digest for this run.')
+            : describe(error),
+        );
+      } finally {
+        if (ticket === digestTicket.current) {
+          setDigestBusy(false);
+        }
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!selectedRun) {
+      setDigest(null);
+      setDigestNote('');
+      return;
+    }
+    void loadDigest(selectedRun.id, digestFormat);
+  }, [selectedRun?.id, selectedRun?.updated_at, digestFormat, loadDigest]);
+
+  async function copy(text: string, done: string): Promise<void> {
+    if (!text) {
+      return;
+    }
+    if (!navigator.clipboard) {
+      setMessage({
+        kind: 'danger',
+        text: tr('Clipboard is unavailable; select the text and copy it.'),
+      });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setMessage({ kind: 'success', text: done });
+    } catch (error) {
+      setMessage({ kind: 'danger', text: describe(error) });
+    }
+  }
+
   async function startRun(): Promise<void> {
     setBusy(true);
     setMessage(null);
@@ -163,12 +239,14 @@ export function NewsPage() {
     }
     setMessage(null);
     try {
-      const [draft, text] = await Promise.all([
+      const [draft, text, markdownText] = await Promise.all([
         api.newsDraft(selectedRun.id, eventId),
+        api.newsDraftText(selectedRun.id, eventId),
         api.newsDraftMarkdown(selectedRun.id, eventId),
       ]);
       setDetail(draft);
-      setMarkdown(text);
+      setDraftText(text);
+      setMarkdown(markdownText);
     } catch (error) {
       setMessage({ kind: 'danger', text: describe(error) });
     }
@@ -186,7 +264,13 @@ export function NewsPage() {
         detail.draft.event_id,
       );
       setDetail(updated);
-      setMarkdown(await api.newsDraftMarkdown(selectedRun.id, detail.draft.event_id));
+      const [text, markdownText] = await Promise.all([
+        api.newsDraftText(selectedRun.id, detail.draft.event_id),
+        api.newsDraftMarkdown(selectedRun.id, detail.draft.event_id),
+      ]);
+      setDraftText(text);
+      setMarkdown(markdownText);
+      void loadDigest(selectedRun.id, digestFormat);
       setMessage({
         kind: 'success',
         text: tr('Regenerated {{id}} (revision {{revision}}).', {
@@ -323,6 +407,7 @@ export function NewsPage() {
                                 setSelectedRunId(run.id);
                                 setDetail(null);
                                 setMarkdown('');
+                                setDraftText('');
                               }}
                               style={{ cursor: 'pointer' }}
                               className={selectedRun?.id === run.id ? 'table-active' : undefined}
@@ -489,6 +574,70 @@ export function NewsPage() {
                 </div>
               ) : null}
 
+              {selectedRun ? (
+                <div className="card mb-3">
+                  <div className="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <h2 className="card-title mb-0">{tr('Digest')}</h2>
+                    <div className="d-flex flex-wrap align-items-center gap-2">
+                      <div
+                        className="btn-group btn-group-sm"
+                        role="group"
+                        aria-label={tr('Digest format')}
+                      >
+                        {DIGEST_FORMATS.map((format) => (
+                          <button
+                            key={format}
+                            type="button"
+                            className={`btn ${
+                              digestFormat === format
+                                ? 'btn-primary'
+                                : 'btn-outline-primary'
+                            }`}
+                            aria-pressed={digestFormat === format}
+                            onClick={() => setDigestFormat(format)}
+                          >
+                            {tr(DIGEST_LABEL[format])}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() =>
+                          void copy(
+                            digest?.text ?? '',
+                            tr('Copied the digest to the clipboard.'),
+                          )
+                        }
+                        disabled={!digest}
+                      >
+                        <i className="bi bi-clipboard me-1" aria-hidden="true" />
+                        {tr('Copy Markdown')}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="card-body">
+                    {digestBusy ? (
+                      <p className="text-secondary mb-0">{tr('Loading digest…')}</p>
+                    ) : digest ? (
+                      <>
+                        <p className="text-secondary small mb-2">
+                          {tr('{{items}} items · window {{days}} days', {
+                            items: digest.digest.count,
+                            days: digest.digest.window_days,
+                          })}
+                        </p>
+                        <Markdown source={digest.text} />
+                      </>
+                    ) : (
+                      <p className="text-secondary mb-0">
+                        {digestNote || tr('No digest for this run.')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               {detail ? (
                 <div className="card">
                   <div
@@ -519,6 +668,7 @@ export function NewsPage() {
                         onClick={() => {
                           setDetail(null);
                           setMarkdown('');
+                          setDraftText('');
                         }}
                       >
                         {tr('Close')}
@@ -563,7 +713,45 @@ export function NewsPage() {
                         ) : null}
                       </div>
                     ) : null}
-                    <Markdown source={markdown} />
+                    <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={() =>
+                          void copy(
+                            draftText,
+                            tr('Copied the draft to the clipboard.'),
+                          )
+                        }
+                        disabled={!draftText}
+                      >
+                        <i className="bi bi-clipboard me-1" aria-hidden="true" />
+                        {tr('Copy draft')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        onClick={() =>
+                          void copy(
+                            markdown,
+                            tr('Copied the Markdown to the clipboard.'),
+                          )
+                        }
+                        disabled={!markdown}
+                      >
+                        <i className="bi bi-markdown me-1" aria-hidden="true" />
+                        {tr('Copy Markdown')}
+                      </button>
+                      <span className="text-secondary small">
+                        {tr('The draft is the plugin’s title / content / tags output.')}
+                      </span>
+                    </div>
+                    <pre
+                      className="mb-0"
+                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    >
+                      {draftText}
+                    </pre>
                   </div>
                 </div>
               ) : null}

@@ -884,5 +884,20 @@
   "Sent": "发送",
   "The opened message is older than the {{count}} messages returned here.": "打开的那条短信早于这里返回的 {{count}} 条。",
   "{{count}} message, oldest first": "{{count}} 条短信，最早的在前",
-  "{{count}} messages, oldest first": "{{count}} 条短信，最早的在前"
+  "{{count}} messages, oldest first": "{{count}} 条短信，最早的在前",
+  "Digest": "热点汇总",
+  "Digest format": "汇总格式",
+  "Standard": "标准版",
+  "Morning / evening": "晨报/晚报",
+  "Table": "表格",
+  "Copy Markdown": "复制 Markdown",
+  "Copy draft": "复制成稿",
+  "Copied the draft to the clipboard.": "已复制成稿。",
+  "Copied the Markdown to the clipboard.": "已复制 Markdown。",
+  "Copied the digest to the clipboard.": "已复制热点汇总。",
+  "Clipboard is unavailable; select the text and copy it.": "剪贴板不可用，请选择文本后复制。",
+  "No digest for this run.": "本次运行没有汇总。",
+  "Loading digest…": "正在加载汇总……",
+  "{{items}} items · window {{days}} days": "{{items}} 条 · 近 {{days}} 天",
+  "The draft is the plugin’s title / content / tags output.": "这里是插件要求的 title / content / tags 成稿。"
 }

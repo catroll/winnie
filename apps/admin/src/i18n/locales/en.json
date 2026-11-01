@@ -148,5 +148,6 @@
   "Owner": "Owner",
   "Clients reach a route with a Winnie key; create and revoke keys on": "Clients reach a route with a Winnie key; create and revoke keys on",
   "Days of the week": "Days of the week",
-  "The first line is the title; further lines become the note.": "The first line is the title; further lines become the note."
+  "The first line is the title; further lines become the note.": "The first line is the title; further lines become the note.",
+  "{{items}} items · window {{days}} days": "{{items}} items · window {{days}} days"
 }
