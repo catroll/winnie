@@ -140,6 +140,7 @@ class PhoneSourceMappingTest {
                 CalendarContract.Events.ALL_DAY,
                 CalendarContract.Events.EVENT_TIMEZONE,
                 CalendarContract.Events.RRULE,
+                CalendarContract.Events.EXDATE,
                 CalendarContract.Events.ORGANIZER,
                 CalendarContract.Events.STATUS,
             )
@@ -156,6 +157,7 @@ class PhoneSourceMappingTest {
                 0,
                 "Asia/Shanghai",
                 "FREQ=DAILY",
+                "20261106T013000Z",
                 "boss@example.com",
                 CalendarContract.Events.STATUS_TENTATIVE,
             )
@@ -173,6 +175,7 @@ class PhoneSourceMappingTest {
                 "UTC",
                 null,
                 null,
+                null,
                 CalendarContract.Events.STATUS_CONFIRMED,
             )
         )
@@ -183,6 +186,8 @@ class PhoneSourceMappingTest {
         assertEquals(2, items.size)
         assertEquals("Work", items[0].calendarName)
         assertEquals("FREQ=DAILY", items[0].recurrence)
+        assertEquals("20261106T013000Z", items[0].exdate)
+        assertEquals("", items[1].exdate)
         assertEquals("tentative", items[0].status)
         assertEquals("2023-11-14T22:13:20Z", items[0].startsAt)
         assertFalse(items[0].allDay)

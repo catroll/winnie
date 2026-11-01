@@ -80,6 +80,7 @@ class CalendarItem(BaseModel):
     all_day: bool = False
     timezone: str = Field(default="", max_length=64)
     recurrence: str = ""
+    exdate: str = Field(default="", max_length=4000)
     organizer: str = Field(default="", max_length=320)
     attendees: list[str] = Field(default_factory=list)
     status: str = Field(default="", max_length=32)
@@ -361,6 +362,7 @@ class CalendarRead(BaseModel):
     all_day: bool
     timezone: str
     recurrence: str = ""
+    exdate: str = ""
     organizer: str
     attendees: list[str]
     status: str

@@ -247,6 +247,41 @@ foreground service is what keeps the 5-second path alive overnight when the
 owner enabled alerts. The phone-data screen states both, rather than implying a
 guarantee the platform does not give.
 
+### Repeating events
+
+The calendar sync stores **one row per `Events` row**, because that id is what
+the write path updates and deletes, and it reads `DTSTART` inside the ±window
+it uploads — plus **every event that carries an `RRULE`, whatever its first
+occurrence**. Those two facts pull in opposite directions and both are needed:
+
+- A weekly class that started in August has its row, and the row's `DTSTART` is
+  in August. The occurrence the owner asks about is next Tuesday.
+- A birthday stored with its birth year has its row dated 1990. Every year it
+  occurs again.
+
+So the sync uploads the series and the **read** expands it: `PhoneService.calendar`
+turns each row's `RRULE` into the occurrences that start inside the requested
+window (`winnie_phone.recurrence`, `python-dateutil`), drops the instants listed
+in `EXDATE`, and keeps the row's duration per occurrence. Consequences worth
+knowing:
+
+- Several returned rows can share `id` — they are occurrences of one series. The
+  console therefore keys a row by device + id + occurrence start, and the
+  assistant's `phone_calendar` output repeats the same id for each occurrence,
+  which is still the right id for `phone_calendar_update`/`_delete`.
+- A read with **no window** ("everything the server holds") is not expanded:
+  there is nothing to expand into, and inventing a window would walk a daily
+  rule forward for ever. It returns the series row once.
+- An unparseable `RRULE` never hides the event: the base occurrence is returned
+  and the failure is logged.
+- `EXDATE` is parsed in both spellings Android providers emit — `...Z` and local
+  wall clock.
+- `GET /ids` mirrors the client's selection, so a series whose start is outside
+  the window is still reconcilable and a series deleted on the phone is reported.
+- Retention does not prune a repeating row by age while the rule still has
+  occurrences ahead (`PhoneService._purge_calendar_before`); a series that really
+  ended is removed once its last occurrence is older than the window.
+
 ### Device identity
 
 The app generates a random `device_key` once and keeps it. The server upserts on

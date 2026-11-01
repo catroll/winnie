@@ -987,7 +987,7 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
             </thead>
             <tbody>
               {data.items.map((event) => (
-                <tr key={`${event.device_id}-${event.id}`}>
+                <tr key={`${event.device_id}-${event.id}-${event.starts_at ?? ''}`}>
                   <td className="text-nowrap">
                     {formatDateTime(event.starts_at)}
                     <div className="small text-secondary">

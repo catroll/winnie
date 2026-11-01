@@ -143,6 +143,7 @@ class PhoneCalendarEvent(Base):
     all_day: Mapped[bool] = mapped_column(Boolean, default=False)
     timezone: Mapped[str] = mapped_column(String(64), default="")
     recurrence: Mapped[str] = mapped_column(Text, default="")
+    exdate: Mapped[str] = mapped_column(Text, default="")
     organizer: Mapped[str] = mapped_column(String(320), default="")
     attendees: Mapped[list[str]] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(32), default="")

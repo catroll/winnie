@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from winnie_phone.config import PhoneConfig
@@ -36,6 +36,7 @@ from winnie_phone.models import (
     as_utc,
     utcnow,
 )
+from winnie_phone.recurrence import expand, last_occurrence
 from winnie_phone.schemas import (
     ITEM_MODELS,
     PAYLOAD_MODELS,
@@ -641,10 +642,20 @@ class PhoneService:
                 model = RECORD_SPECS[kind].model
                 condition = [model.device_id == device.id, model.deleted_at.is_(None)]
                 if kind == "calendar":
+                    window = []
                     if since is not None:
-                        condition.append(model.starts_at >= as_utc(since))
+                        window.append(model.starts_at >= as_utc(since))
                     if until is not None:
-                        condition.append(model.starts_at <= as_utc(until))
+                        window.append(model.starts_at <= as_utc(until))
+                    if window:
+                        # Mirror the client's selection: it now uploads every
+                        # repeating event, so an old series must be reconcilable
+                        # (and deletable) even when its start is out of window.
+                        # The two bounds are one condition; OR-ing them apart
+                        # would match everything on one side of the window.
+                        condition.append(
+                            or_(and_(*window), model.recurrence != "")
+                        )
                 rows = await session.scalars(
                     select(model.external_id).where(*condition).limit(limit)
                 )
@@ -779,6 +790,18 @@ class PhoneService:
         limit: int = 50,
         ascending: bool = True,
     ) -> list[dict]:
+        """Calendar rows in a window, with recurring events expanded into it.
+
+        One row is stored per ``Events`` row, because that id is what the write
+        path updates and deletes. A read is different: a weekly class first held
+        in August must appear on this week's date, and a birthday stored with
+        its birth year must appear every year, so each row's RRULE is expanded
+        inside the requested window and its EXDATE instants are dropped. Without
+        a window there is nothing to expand into, and the base rows are returned
+        unchanged.
+        """
+        since_utc = as_utc(since)
+        until_utc = as_utc(until)
         async with self._session() as session:
             names = await self._device_names(session, user_id)
             conditions = [
@@ -787,10 +810,6 @@ class PhoneService:
             ]
             if device_id is not None:
                 conditions.append(PhoneCalendarEvent.device_id == device_id)
-            if since is not None:
-                conditions.append(PhoneCalendarEvent.starts_at >= as_utc(since))
-            if until is not None:
-                conditions.append(PhoneCalendarEvent.starts_at <= as_utc(until))
             if query:
                 conditions.append(
                     or_(
@@ -799,34 +818,62 @@ class PhoneService:
                         PhoneCalendarEvent.location.ilike(_like(query), escape="\\"),
                     )
                 )
-            column = PhoneCalendarEvent.starts_at
-            order = column.asc() if ascending else column.desc()
+            # The window bounds the stored start, except for a series: its first
+            # occurrence may be years older while the window still holds the
+            # occurrences the caller is asking about.
+            if until_utc is not None:
+                conditions.append(PhoneCalendarEvent.starts_at <= until_utc)
+            if since_utc is not None:
+                conditions.append(
+                    or_(
+                        PhoneCalendarEvent.recurrence != "",
+                        PhoneCalendarEvent.starts_at >= since_utc,
+                    )
+                )
             rows = await session.scalars(
                 select(PhoneCalendarEvent)
                 .where(*conditions)
-                .order_by(order.nullslast())
-                .limit(limit)
+                .order_by(PhoneCalendarEvent.starts_at.asc().nullslast())
             )
-            return [
-                {
-                    "id": row.external_id,
-                    "device_id": str(row.device_id),
-                    "device_name": names.get(row.device_id, "phone"),
-                    "calendar_name": row.calendar_name,
-                    "title": row.title,
-                    "description": row.description,
-                    "location": row.location,
-                    "starts_at": aware_utc(row.starts_at),
-                    "ends_at": aware_utc(row.ends_at),
-                    "all_day": row.all_day,
-                    "timezone": row.timezone,
-                    "recurrence": row.recurrence,
-                    "organizer": row.organizer,
-                    "attendees": list(row.attendees or []),
-                    "status": row.status,
-                }
-                for row in rows
-            ]
+            entries: list[tuple[datetime, dict]] = []
+            for row in rows:
+                for occurrence in expand(
+                    starts_at=row.starts_at,
+                    ends_at=row.ends_at,
+                    timezone=row.timezone,
+                    rrule=row.recurrence,
+                    exdate=row.exdate,
+                    since=since_utc,
+                    until=until_utc,
+                ):
+                    entries.append(
+                        (
+                            occurrence.starts_at,
+                            self._calendar_entry(row, names, occurrence),
+                        )
+                    )
+            entries.sort(key=lambda item: item[0], reverse=not ascending)
+            return [entry for _, entry in entries[:limit]]
+
+    def _calendar_entry(self, row, names, occurrence) -> dict:
+        return {
+            "id": row.external_id,
+            "device_id": str(row.device_id),
+            "device_name": names.get(row.device_id, "phone"),
+            "calendar_name": row.calendar_name,
+            "title": row.title,
+            "description": row.description,
+            "location": row.location,
+            "starts_at": aware_utc(occurrence.starts_at),
+            "ends_at": aware_utc(occurrence.ends_at),
+            "all_day": row.all_day,
+            "timezone": row.timezone,
+            "recurrence": row.recurrence,
+            "exdate": row.exdate,
+            "organizer": row.organizer,
+            "attendees": list(row.attendees or []),
+            "status": row.status,
+        }
 
     async def calls(
         self,
@@ -1625,6 +1672,17 @@ class PhoneService:
                 conditions.append(PhoneSignal.kind == kind)
             if days > 0 and column is not None:
                 cutoff = now - timedelta(days=days)
+                if kind == "calendar":
+                    # A repeating event is not history: the row may start years
+                    # ago while the series still has occurrences ahead. Keep it
+                    # unless the rule itself ended before the cutoff. Without
+                    # this a birthday stored with its birth year, or a weekly
+                    # class started in August, would be deleted on the sync
+                    # that uploaded it.
+                    removed += await self._purge_calendar_before(
+                        session, conditions, cutoff
+                    )
+                    continue
                 conditions.append(column < cutoff)
             elif days > 0:
                 # Snapshot kinds have no natural age; remove only tombstones
@@ -1649,6 +1707,36 @@ class PhoneService:
         removed += int(result.rowcount or 0)
         if removed:
             logger.info("phone retention removed %d rows", removed)
+        return removed
+
+
+    async def _purge_calendar_before(
+        self,
+        session: AsyncSession,
+        conditions: list[Any],
+        cutoff: datetime,
+    ) -> int:
+        """Delete stored events that started before ``cutoff`` and are over."""
+        candidates = list(
+            await session.scalars(
+                select(PhoneCalendarEvent).where(
+                    *conditions,
+                    PhoneCalendarEvent.starts_at < cutoff,
+                )
+            )
+        )
+        removed = 0
+        for row in candidates:
+            if row.recurrence:
+                last = last_occurrence(
+                    starts_at=row.starts_at,
+                    timezone=row.timezone,
+                    rrule=row.recurrence,
+                )
+                if last is None or last >= cutoff:
+                    continue
+            await session.delete(row)
+            removed += 1
         return removed
 
     async def wipe_device(self, user_id: str, device_id: uuid.UUID) -> int:

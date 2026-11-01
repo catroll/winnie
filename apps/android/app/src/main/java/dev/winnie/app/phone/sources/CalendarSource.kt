@@ -31,6 +31,7 @@ class CalendarSource(private val context: Context) {
             CalendarContract.Events.ALL_DAY,
             CalendarContract.Events.EVENT_TIMEZONE,
             CalendarContract.Events.RRULE,
+            CalendarContract.Events.EXDATE,
             CalendarContract.Events.ORGANIZER,
             CalendarContract.Events.STATUS,
         )
@@ -38,12 +39,20 @@ class CalendarSource(private val context: Context) {
         // as a full snapshot, so an exception swallowed here would tell the
         // server every stored event disappeared. Let the sync record the error
         // for this scope instead.
+        //
+        // The selection takes anything that starts inside the window, plus every
+        // repeating event whatever its first occurrence: a weekly class started
+        // in August and a birthday stored with its birth year both occur inside
+        // the window, and the server expands the rule there. Without the second
+        // branch those rows never reach the server.
         val cursor = context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
             projection,
-            "${CalendarContract.Events.DELETED} = 0 AND " +
-                "${CalendarContract.Events.DTSTART} >= ? AND " +
-                "${CalendarContract.Events.DTSTART} <= ?",
+            "${CalendarContract.Events.DELETED} = 0 AND (" +
+                "(${CalendarContract.Events.DTSTART} >= ? AND " +
+                "${CalendarContract.Events.DTSTART} <= ?) OR " +
+                "(${CalendarContract.Events.RRULE} IS NOT NULL AND " +
+                "${CalendarContract.Events.RRULE} != ''))",
             arrayOf(fromMillis.toString(), toMillis.toString()),
             "${CalendarContract.Events.DTSTART} ASC",
         ) ?: return emptyList()
@@ -178,6 +187,7 @@ internal fun mapCalendarCursor(
     val allDay = cursor.getColumnIndex(CalendarContract.Events.ALL_DAY)
     val timezone = cursor.getColumnIndex(CalendarContract.Events.EVENT_TIMEZONE)
     val rrule = cursor.getColumnIndex(CalendarContract.Events.RRULE)
+    val exdate = cursor.getColumnIndex(CalendarContract.Events.EXDATE)
     val organizer = cursor.getColumnIndex(CalendarContract.Events.ORGANIZER)
     val status = cursor.getColumnIndex(CalendarContract.Events.STATUS)
 
@@ -208,6 +218,7 @@ internal fun mapCalendarCursor(
                 if (timezone >= 0) cursor.getString(timezone).orEmpty() else ""
             ),
             recurrence = if (rrule >= 0) cursor.getString(rrule).orEmpty() else "",
+            exdate = if (exdate >= 0) cursor.getString(exdate).orEmpty() else "",
             organizer = if (organizer >= 0) cursor.getString(organizer).orEmpty() else "",
             status = when (if (status >= 0) cursor.getInt(status) else 1) {
                 CalendarContract.Events.STATUS_TENTATIVE -> "tentative"

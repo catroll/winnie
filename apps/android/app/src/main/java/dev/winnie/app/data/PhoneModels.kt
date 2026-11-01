@@ -26,6 +26,7 @@ data class PhoneCalendarItem(
     @SerialName("all_day") val allDay: Boolean = false,
     val timezone: String = "",
     val recurrence: String = "",
+    val exdate: String = "",
     val organizer: String = "",
     val status: String = "",
     @SerialName("updated_at") val updatedAt: String? = null,
