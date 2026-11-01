@@ -281,8 +281,16 @@ handset has not run them yet.
 - [x] Assistant chat in the Android client: Markdown rendering, cross-channel
       conversation history, collapsed tool output, resumed conversation. The
       wire contract and the renderer are tested; the device run is open.
-- [ ] Run the chat, remembered-password and live-caption flows on a physical
-      phone; the current build predates that run.
+- [x] 5-second change-checked phone sync: persisted per-scope tokens, content
+      observers waking the loop, faster scopes on cheap probes, slower scopes on
+      their own cadences, and a full-run fallback at WorkManager's 15-minute
+      floor. Rule-level tests cover the decision, not the device.
+- [x] English and Simplified Chinese UI: all user-facing strings in resources,
+      system-locale selection, per-app language on Android 13+, and a test that
+      keeps the key and format-argument sets identical.
+- [ ] Run the chat, remembered-password, 5-second sync and live-caption flows
+      on a physical phone; the current build predates that run, and the sync
+      loop's battery cost is unmeasured.
 - [ ] Streaming assistant replies, chat attachments and voice input on Android.
 - [ ] Android client follow-ups: foreground-service recording so a backgrounded
       app keeps recording, export/share, offline cache, and automatic

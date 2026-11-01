@@ -350,3 +350,77 @@ testing — that values are sealed before they reach `SharedPreferences`, that a
 failed sign-in does not overwrite the saved pair, that an unreadable payload is
 dropped rather than returned. The AES implementation itself is the Android
 platform's, not this app's.
+
+## "Every 5 seconds" cannot be a WorkManager period, and must not be an upload
+
+**Signal.** The requirement was a 5-second sync. The obvious change — pass 5 to
+the periodic worker — is impossible: `PeriodicWorkRequestBuilder` documents a
+15-minute minimum, and WorkManager silently clamps anything shorter. The other
+obvious change — run the whole sync every 5 seconds — uploads device, calendar,
+contacts, apps and location on every tick: ~157 KB and eight requests, 720 times
+an hour.
+
+**What works instead.** Tick every 5 seconds in the process, but make a tick a
+*local check*:
+
+1. Each scope keeps a persisted cheap token after a successful upload: a cursor
+   probe for append-only kinds, a digest for a snapshot, a time bucket for
+   sampled kinds.
+2. Only the scopes whose token differs are uploaded, and cursor kinds send only
+   the rows above their cursor.
+3. Expensive scopes check on their own cadence (30 s to 30 min); a content
+   observer marks a scope dirty and wakes the loop, so the slow cadence does not
+   delay a change the provider already announced.
+4. The loop lives in `Application.onCreate`, so it runs while the app is open
+   and while the alert foreground service keeps the process alive. When Android
+   kills the process, the WorkManager worker is the fallback — and the UI says
+   so instead of implying a guarantee the platform does not give.
+
+**Trap: reconfiguring WorkManager on every tick.** The old engine called
+`PhoneSyncScheduler.configure()` after every run. At 5 seconds that is a
+WorkManager database write (`enqueueUniquePeriodicWork(UPDATE)`) twelve times a
+minute. Reconfigure only after a full run, where the server's interval hint is
+actually read.
+
+**Trap: a stale API client after sign-out.** The loop caches one `WinnieApi` so
+it does not decrypt the Keystore token twelve times a minute. Checking the cache
+before the session state kept a revoked client alive after logout and could
+upload with the old token. Check the state first: `LoggedOut` clears the cache
+and returns null; `Restoring` may use the disk token once (a headless
+push-service process has no UI to restore).
+
+## Resource qualifiers are ordered, and Robolectric enforces it
+
+**Signal.** `@Config(qualifiers = "w360dp-h800dp-xhdpi-zh")` fails with:
+
+```
+Failed to parse qualifier string '...': Found unrecognized trailing qualifier segments zh
+```
+
+**Cause.** Android's resource qualifier order puts the locale first, before
+smallest width, width, height and density. The valid string is
+`zh-w360dp-h800dp-xhdpi`, not the other way round. A method-level `@Config`
+replaces the class-level one, which is how one test class renders both locales.
+
+**And.** `values-zh` covers Chinese regardless of region; the system locale picks
+it with no code. But Android **silently falls back** to the default resource for
+a missing key, so a half-translated build looks fine in code review. Compare the
+two XML files in a unit test — key set and `%1$s`-style arguments — because the
+resource merger will not report a hole.
+
+## A global string accessor needs one owner and one initialiser
+
+**Signal.** View models, the sync engine and notification builders have no
+Composable context, so `stringResource` is unavailable, and threading a Context
+through every constructor just to build one sentence is noise.
+
+**What works.** `AppStrings` holds the application context, is initialised once
+in `WinnieApplication.onCreate`, and resolves against the same system locale as
+`stringResource`. Robolectric instantiates the real Application, so tests get the
+same initialisation without extra setup; a pure JVM test that calls
+`friendlyMessage()` would need it, which is why those tests avoid it.
+
+**Trap: `stringResource` inside a non-composable lambda.**
+`onClick = { onSuggestion(stringResource(R.string.x)) }` does not compile
+("Composable invocations can only happen from the context of a @Composable
+function"). Resolve the string before the lambda and capture the value.

@@ -11,7 +11,7 @@ infrastructure below it exists to serve the assistant.
 | **Assistant** | Chat, web search, scheduled tasks, long-term memory and opt-in local file/command tools | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **News production** | Six-stage pipeline from public sources to a sourced, reviewed draft, with console and assistant access | **Core implemented** |
-| **Android client** | Assistant chat with Markdown, record with live captions, phone-data sync, reminders, remembered sign-in | **MVP implemented** |
+| **Android client** | Assistant chat with Markdown, 5-second change-checked phone sync, record with live captions, reminders, remembered sign-in, English/Chinese UI | **MVP implemented** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs and drafts, AI providers (suppliers and LLM usage) and gateway routes | **MVP implemented** |
@@ -103,9 +103,12 @@ page. Design, decisions and operating notes are in
 
 The phone-data capability in `packages/winnie-phone` turns the phone into the
 assistant's sensor: the Android client uploads the scopes its owner enabled
-(calendar, call log, SMS, contacts, notifications, one location fix per sync,
+(calendar, call log, SMS, contacts, notifications, location every five minutes,
 installed apps and device info), the server merges by device and record id, and
-the assistant reads it through the `phone` skill. Writes go the other way: the
+the assistant reads it through the `phone` skill. While the app process or its
+alert service is alive, a 5-second loop checks each scope for local changes and
+uploads only what changed — a new SMS sends one row, not a snapshot — and a
+15-minute WorkManager worker is the fallback once Android kills the process. Writes go the other way: the
 assistant proposes a calendar change or a text, the owner confirms it in chat,
 and the phone executes the queued command on its next sync and reports the
 result. Nothing is enabled by default, every scope has its own permission, and

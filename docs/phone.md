@@ -39,7 +39,7 @@ Success for this slice means:
 | `message` | `content://sms` | Thread, address, direction, body, subject, time, read flag | 365 days |
 | `contact` | `ContactsContract` | Display name, numbers, emails, organisation, starred | snapshot, no expiry |
 | `notification` | `NotificationListenerService` | Package, app label, title, text, category, time, clearable flag | 14 days |
-| `location` | `LocationManager` | One fix per sync: latitude, longitude, accuracy, altitude, speed, provider | 30 days |
+| `location` | `LocationManager` | One fix every five minutes while the sync loop runs: latitude, longitude, accuracy, altitude, speed, provider | 30 days |
 | `app` | `PackageManager` | Package, label, version, version code, system/enabled flags, install/update time | snapshot, no expiry |
 | `device` | `Build`, battery, storage, network, telephony, accounts | Name, model, OS, app version, timezone and an extensible `info` object | current snapshot |
 
@@ -151,10 +151,12 @@ Response:
 
 A run is one request per kind that has something to send, plus `GET /ids` when a
 snapshot kind exceeds one page and `GET /commands` at the end. Snapshot kinds
-(`device`, `calendar`, `contact`, `app`) are re-uploaded **in full on every
-run** — that is what makes `mode: "full"` an authoritative delete list. Calls
-and messages are cursor-incremental from the last `_ID`, notifications are the
-listener's queue, and location is one fix.
+(`device`, `calendar`, `contact`, `app`) are re-uploaded **in full whenever the
+client decides the snapshot changed** — that is what makes `mode: "full"` an
+authoritative delete list. The 5-second loop below is what makes "whenever"
+cheap: an unchanged snapshot is not sent at all. Calls and messages are
+cursor-incremental from the last `_ID`, notifications are the listener's queue,
+and location is one fix per five-minute bucket.
 
 Measured on NAM-AL00's data — 45 calendar events, 81 contacts, 431 apps, 39
 notifications — by replaying those rows through `PhoneService.sync()` against a
@@ -172,6 +174,50 @@ request and the run are O(rows) — negligible at the few thousand rows a phone
 holds, and the first thing to change (a cursor or an unchanged digest) if a
 device accumulates a hundred thousand rows. Uploading an unchanged snapshot
 again is the cost of full-snapshot semantics, not an oversight.
+
+### The 5-second loop and change detection
+
+The Android client ticks every 5 seconds **while its process is alive** — the
+app being open, or the alert foreground service keeping the process alive. It is
+not a 5-second upload, and it is deliberately not a 5-second request:
+
+1. Each enabled scope has a cheap local **change token**:
+
+   | Scope | Token | Cost |
+   |---|---|---|
+   | SMS, call log | "is there a row with `_ID` above the cursor?" | one indexed primary-key probe |
+   | Notifications | listener queue non-empty | file size |
+   | Calendar | SHA-256 of the window the sync would upload | one window read |
+   | Contacts | count + newest `CONTACT_LAST_UPDATED_TIMESTAMP` | one aggregate query |
+   | Apps | count + newest `lastUpdateTime` | one package-manager query |
+   | Location, device | the current five-minute bucket | nothing |
+
+2. A scope is only read when its cadence elapsed or its content observer fired.
+   Cheap scopes use the 5-second tick; calendar is checked every 30 s, contacts
+   every 60 s, location and device every 5 minutes, apps every 30 minutes. The
+   observer path is what gives a calendar edit 5-second latency without reading
+   the calendar 5 times a minute.
+3. A scope is uploaded only when its token differs from the token stored after
+   its last successful upload. Those tokens are persisted, so the first tick
+   after a process restart compares against what the server already has.
+4. Only the changed scopes are uploaded. Calls and messages send the rows above
+   their cursor; a snapshot kind sends the snapshot it just digested, with the
+   usual `/ids` deletion diff.
+5. Pending commands are polled when the loop uploads something, and at most
+   every 30 s otherwise. A push `sync` frame wakes the loop immediately, which
+   is how a confirmed write executes within a second on a phone with alerts on.
+
+A tick that finds nothing costs a handful of local queries and no network. A
+transport failure backs off exponentially to five minutes and resets on the next
+success; a repeated per-kind rejection also backs off instead of retrying every
+five seconds.
+
+Android cannot run a normal process in the background indefinitely, so this loop
+stops when the process is killed. The 15-minute WorkManager floor is the
+fallback (30 minutes by default, overridden by `interval_minutes`), and the
+foreground service is what keeps the 5-second path alive overnight when the
+owner enabled alerts. The phone-data screen states both, rather than implying a
+guarantee the platform does not give.
 
 ### Device identity
 
@@ -268,6 +314,11 @@ handler or a declared core-function exception. This build is for personal
 sideloading. That is a distribution decision, not a code defect.
 
 ### Sync mechanics
+
+The 5-second loop, its per-scope cadences, the persisted change tokens and the
+known limit that it only runs while the process is alive are described in
+[section 4](#the-5-second-loop-and-change-detection). In short: a tick checks
+local tokens, and only a changed scope is uploaded, incrementally.
 
 - **WorkManager** periodic work, default 30 minutes, never below Android's
   15-minute minimum. The interval follows the server hint and is updated after

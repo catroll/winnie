@@ -109,19 +109,38 @@ sideloading; that is a distribution decision, not a defect.
 
 How syncing behaves:
 
-- WorkManager runs a periodic sync every 30 minutes by default (Android's floor
-  is 15). The server's `interval_minutes` hint updates it after each sync.
-- Content observers on SMS, call log, calendar and contacts request a debounced
-  one-shot sync while the app process is alive; new notifications do the same.
-- A sync uploads the enabled scopes one kind at a time, in pages of 200. A
-  provider that fails (a revoked permission, a vendor calendar that rejects a
-  column) records an error and the other scopes still upload.
+- **While the app process is alive the sync loop ticks every 5 seconds** — the
+  app being open, or the alert foreground service keeping the process alive.
+  A tick is a *local change check*, not an upload: each scope has a cheap token
+  (a cursor probe for SMS/calls, a digest for a snapshot, a time bucket for
+  location/device), and only a scope whose token differs from the last accepted
+  upload is sent. Cursor kinds then send only the rows above their cursor, so a
+  new SMS uploads one message rather than re-reading the phone.
+- Cheap scopes are checked on every tick; calendar every 30 s, contacts every
+  60 s, location and device every 5 minutes, installed apps every 30 minutes.
+  A content observer on SMS, call log, calendar or contacts marks its scope
+  dirty and wakes the loop immediately, so a change it sees does not wait for
+  the slower cadence.
+- The screen shows this policy next to the master switch, including the
+  background interval: when Android kills the process there is no 5-second
+  loop, and WorkManager's periodic sync (30 minutes by default, 15-minute
+  floor) is the fallback. The server's `interval_minutes` hint updates it after
+  each full sync.
+- A full sync (the app's button, a scope toggle, the periodic worker) reads
+  every enabled scope. The 5-second path reads only the scopes the check found
+  changed, plus a pending-command poll at most every 30 s — and immediately
+  when the push stream sends a `sync` frame.
+- A provider that fails (a revoked permission, a vendor calendar that rejects a
+  column) records an error and the other scopes still upload; a repeated
+  per-kind failure backs the loop off instead of retrying it every 5 seconds.
 - Notifications are captured by a `NotificationListenerService` into a bounded
   private file (2,000 entries) and uploaded on the next sync. Ongoing
   notifications and the app's own notifications are skipped.
-- Location records one fix per sync, reusing a last-known fix younger than five
-  minutes. Background fixes need "allow all the time"; without it the fix is
-  skipped and the rest of the sync continues.
+- Location records one fix every five minutes while the loop runs, reusing a
+  last-known fix younger than five minutes. It is deliberately not sampled on
+  every 5-second tick: a GPS fix that often would cost more battery than the
+  data is worth. Background fixes need "allow all the time"; without it the fix
+  is skipped and the rest of the sync continues.
 - The assistant's confirmed writes arrive as commands on the same sync:
   calendar create/update/delete and SMS send. A calendar write needs a writable
   calendar; an SMS send is submitted to the carrier (delivery is not
@@ -130,7 +149,8 @@ How syncing behaves:
   cursors, so a later sync uploads the selected scopes again. Turning a scope
   off only stops future uploads.
 
-Known limits: SMS/MMS attachments are not read; SMS edits and deletions made in
+Known limits: the 5-second cadence runs only while the process is alive;
+SMS/MMS attachments are not read; SMS edits and deletions made in
 another app are not propagated; recurring calendar events sync as one event with
 its recurrence rule, not one row per occurrence; a sync interrupted by process
 death resumes from the last stored cursor.
@@ -243,6 +263,30 @@ captions use the same API key through the server-side streaming adapter and
 file-based ASR call on the uploaded WAV, which is the accuracy tradeoff for
 keeping one canonical pipeline.
 
+## Languages
+
+The UI ships in **English (default) and Simplified Chinese**. Android picks the
+language from the system locale, so a phone set to Chinese shows the Chinese app
+with no setting to find. On Android 13+ `android:localeConfig` also adds Winnie
+to the system's per-app language page (Settings → Apps → Winnie → Language) on
+older versions the system locale is the only control.
+
+- Every user-facing string lives in `res/values/strings.xml`; the Chinese
+  translation is `res/values-zh/strings.xml`, and plurals are in both.
+- `StringResourceParityTest` compares the two files key by key and format
+  argument by format argument, because Android silently falls back to English
+  for a missing key and would otherwise ship a half-translated screen.
+- `ChineseStringsTest` runs under a `zh` qualifier and asserts the rendered
+  values, and `LayoutScreenshotTest` renders several screens in Chinese so
+  longer translations are looked at, not assumed to fit.
+- `AppStrings` gives the non-Composable code (view models, sync engine,
+  notifications) the same resources; the application context resolves them
+  against the same locale as `stringResource`.
+- Deliberately **not** translated: data that leaves the app — assistant replies,
+  server error details, calendar/SMS command results reported back to the
+  server, and provider exception text. Those are records, not UI chrome; the
+  assistant answers in whatever language the conversation uses.
+
 ## Tests
 
 ```bash
@@ -262,13 +306,21 @@ keeping one canonical pipeline.
   thinking row, the composer, collapsed tool output, error dismissal
 - `AccountScreenTest` — Robolectric render of the account tab, the saved-password
   state, the forget and sign-out confirmations
-- `LayoutScreenshotTest` — renders Chat, history, Account, Phone and login at
-  360×800 dp and writes PNGs under `build/screenshots/`; the only way to see a
-  layout on a machine with no emulator (see `docs/LESSONS-android.md`)
+- `LayoutScreenshotTest` — renders Chat, history, Account, Phone, alerts and
+  login at 360×800 dp, in English and Chinese, and writes PNGs under
+  `build/screenshots/`; the only way to see a layout on a machine with no
+  emulator (see `docs/LESSONS-android.md`)
 - `PhoneApiTest` — phone endpoint paths, bodies and responses against an
   in-process HTTP server
 - `PhoneSourceMappingTest` — SMS, call-log and calendar cursor mapping
-- `PhonePrefsTest` — scope opt-in, cursors and the interval floor
+- `PhonePrefsTest` — scope opt-in, cursors, change fingerprints and check times
+- `PhoneChangeDetectorTest` — which scopes a 5-second tick reads and uploads:
+  cadence, observer bypass, unchanged tokens, unreadable providers
+- `PhoneSyncPolicyTest` — transport/session/revoked-device errors end a run,
+  one rejected kind does not
+- `StringResourceParityTest` — every English key and format argument exists in
+  Chinese, and vice versa
+- `ChineseStringsTest` — the Chinese resources resolve under a `zh` qualifier
 - `NotificationBufferTest` — the bounded notification queue's append/ack/trim
 - `PhoneDataScreenTest` — Robolectric render of the consent screen
 - `PushModelsTest` — the WebSocket frame contract, including unknown fields
@@ -291,8 +343,9 @@ WINNIE_ANDROID_BASE_URL=http://[::1]:8000 \
 app/src/main/java/dev/winnie/app/
 ├── data/      HTTP client, DTOs, session/token/credential storage, settings
 ├── audio/     AudioRecord wrapper and incremental WAV writer
-├── phone/     phone scopes, permissions, sources, sync engine and workers
+├── phone/     scopes, permissions, sources, change detection, sync loop/engine
 ├── push/      the foreground notification stream and its notification/routing
+├── AppStrings.kt  resources for view models, sync code and notifications
 └── ui/
     ├── AppRoot.kt          login gate and session state
     ├── AppShell.kt         bottom-bar shell, tabs and overlay routes

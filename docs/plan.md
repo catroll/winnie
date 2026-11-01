@@ -226,6 +226,13 @@ Working:
 - Assistant chat with Markdown rendering (headings, lists, tables, fenced code,
   quotes, links), the cross-channel conversation history, and collapsed tool
   output. The open conversation resumes after a restart.
+- A 5-second phone-data sync loop while the process is alive: each tick is a
+  local change check against persisted per-scope tokens, only changed scopes
+  are uploaded incrementally, and the slow/expensive scopes have their own
+  cadences. The 15-minute WorkManager worker is the fallback when the process
+  is killed.
+- English and Simplified Chinese UI following the system locale, with
+  per-app language on Android 13+ and a key/format parity test.
 - Record 16 kHz mono PCM to a WAV, with live captions over the meeting stream.
 - Meeting list, transcript with original + translation, structured minutes.
 - Discarding a recording deletes the draft meeting; finishing keeps it.
@@ -233,7 +240,8 @@ Working:
 Verified:
 
 - JVM unit tests pass, including the API client, WAV header, ws:// URL
-  derivation, the credential store and the remember-on-success rule.
+  derivation, the credential store, the remember-on-success rule, the
+  5-second change-decision rules and the English/Chinese resource parity.
 - Robolectric renders every new screen; the layout screenshots under
   `apps/android/app/build/screenshots/` are the only visual check available on
   this machine.
@@ -251,6 +259,9 @@ Open:
 - Foreground service, offline cache, export/share, token refresh, speaker
   labels, certificate pinning.
 - Streaming chat replies; chat attachments and voice input.
+- Measure the 5-second loop's battery cost on a real phone and tune the
+  per-scope cadences from the measurement rather than from intuition.
+- Chinese copy review by a native speaker; the parity test only proves coverage.
 - The meeting language is fixed to `zh` in the Android MVP.
 
 ### 5.6 Management console — MVP done

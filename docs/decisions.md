@@ -141,9 +141,46 @@ and a JVM integration test that drives the app's own client through the real
 backend. A physical-device run with the real ASR key and the chat flow is still
 required and is tracked in [todo](../docs/todo.md).
 
-**Interface language.** English. The user writes Chinese, but the project rule
-is English for all artifacts, including app strings; localisation is a later
-step, not a reason to mix languages now.
+**Interface language.** English is the default resource set and Simplified
+Chinese is a full translation (`values/`, `values-zh/`); every user-facing
+string comes from a resource, and the app follows the system locale. On Android
+13+ `android:localeConfig` adds Winnie to the system per-app language page; on
+older versions the system locale is the only control. No in-app language
+switcher is built: the platform already provides one for the versions that can
+do it well, and pre-33 would need `AppCompatDelegate` (an AppCompat dependency
+and theme) for a setting the system exposes anyway. `StringResourceParityTest`
+keeps the two files in step, which matters because a missing key silently falls
+back to English.
+
+Data that leaves the app stays English on purpose: assistant replies, server
+error details, command results reported to the server, and provider exception
+text are records, not UI chrome. Translating them would put the phone's locale
+into data the server and the model read.
+
+**Sync cadence.** The client ticks every 5 seconds while its process is alive,
+but a tick is a local change check, not an upload (see
+[phone.md](phone.md#the-5-second-loop-and-change-detection)). Each scope has a
+persisted, cheap token and is sent only when that token changed; snapshot kinds
+also have their own slower check cadence, and content observers bypass it.
+
+**Rejected: a 5-minute WorkManager periodic worker as the fast path.**
+WorkManager refuses a period below 15 minutes, so "every 5 seconds" cannot be
+expressed there at all. A foreground service dedicated to sync would give the
+cadence in the background, but it would add a second permanent notification next
+to the push service's, and 5-second polling for a week is not a battery trade
+worth making silently. The loop rides the app process and the existing alert
+service; a killed process falls back to the 15-minute floor, and the phone-data
+screen says so.
+
+**Rejected: polling the server every 5 seconds.** That would make "did anything
+change?" a network round trip — 720 requests an hour with nothing to say. The
+tokens move that question to the phone, and a content observer answers it from
+the provider's own change notification. The only server round trip on an idle
+phone is the pending-command poll, capped at one per 30 seconds.
+
+**Rejected: a location fix on every tick.** A fix every 5 seconds is a GPS drain
+that buys nothing for a personal assistant; location is sampled on a five-minute
+bucket, which keeps a usable trail without waking the radio constantly.
 
 **Live captions.** The recorder creates the meeting before it starts and opens
 `WS /api/v1/meetings/{id}/stream`; the server proxies 16 kHz mono PCM to
