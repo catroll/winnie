@@ -253,6 +253,15 @@ class DeviceSource(private val context: Context) {
         null
     }
 
+    /**
+     * The reported radio generation. The CDMA/EVDO/IDEN constants are deprecated
+     * because those networks are being retired, but `dataNetworkType` still
+     * returns them on hardware that is attached to one, and this mapping is the
+     * only consumer — there is no replacement constant, so the comparison stands
+     * and the deprecation is suppressed here rather than replacing readable
+     * names with raw integers.
+     */
+    @Suppress("DEPRECATION")
     private fun networkTypeName(value: Int): String? = when (value) {
         TelephonyManager.NETWORK_TYPE_GPRS,
         TelephonyManager.NETWORK_TYPE_EDGE,
