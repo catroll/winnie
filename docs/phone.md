@@ -548,10 +548,14 @@ phone database unless it asks for one.
 
 - Two handsets (HUAWEI TAS-AL00 and NAM-AL00, HarmonyOS 12 / API 31) have been
   reading since 2026-10-31, so the read path — calendar, calls, SMS, contacts,
-  notifications, location, apps, device — is exercised on real providers. The
-  **write** path is not: the only confirmed write so far failed with "No
-  writable calendar is available on this phone", so a successful
-  `calendar.create` and an SMS send are still unverified on hardware.
+  notifications, location, apps, device — is exercised on real providers.
+  `calendar.create` and `calendar.delete` are confirmed on TAS-AL00: a proposed
+  event executed on the phone (`Created event 5320 in 278895860@qq.com`), came
+  back through the next sync, and a proposed delete removed it on both sides.
+  The earlier "No writable calendar is available on this phone" was the same
+  system app guard that blanked the reads — with `Calendars` answering zero rows
+  there was no writable calendar to find. An **SMS send** is still unverified on
+  hardware (it costs the owner a message).
 - A write with no explicit `device_id` goes to the **most recently seen**
   phone, while reads aggregate every device, and neither the tool schema nor
   the PENDING text names the device. With two phones the owner cannot tell

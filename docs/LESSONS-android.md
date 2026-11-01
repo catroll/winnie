@@ -474,3 +474,14 @@ the query code — a silent "no" from the platform is not a bug in the caller.
 - A blank answer is a per-app ROM setting, not something the server can grant:
   the remedy is the owner's (turn the blank-data switch off for this app), and
   the console now says so instead of showing "0 联系人".
+
+**It blanks the write path too.** The same guard made `calendar.create` fail
+with `No writable calendar is available on this phone`: `CalendarSource.writableCalendar`
+queries `CalendarContract.Calendars` with `CALENDAR_ACCESS_LEVEL >= CONTRIBUTOR`,
+and a blanked provider answers with zero rows, so the phone concludes it has no
+calendar at all. The message names the wrong thing — there *was* a writable
+calendar, the app just could not see it. After the guard was removed the same
+command succeeded (`Created event 5320 in 278895860@qq.com`) and the event came
+back through the next sync. So: a write that fails for "nothing to write to"
+on a phone whose reads are also thin is one diagnosis, not two, and the fix is
+the system setting rather than the query.
