@@ -33,9 +33,11 @@ not hide state in a database.
 
 The local index service (`winnie-index`) indexes the Markdown in this directory
 together with your other documents, which is how the assistant recalls
-something said weeks ago. New or changed files reach the index on its next
-sweep, so a fact written seconds ago may not be searchable yet; the pinned
-memory in `profile/` is read directly on every turn.
+something said weeks ago. A memory note is reindexed the moment it is written;
+other new or changed files reach the index on its next sweep
+(`scan.interval_seconds`, 300 s by default). The pinned memory in `profile/` is
+read directly on every turn, and notes related to the current message are added
+to it.
 
 Scheduled tasks are managed by asking the assistant. It will confirm the
 schedule and the content before creating one, and it can list or cancel tasks
