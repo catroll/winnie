@@ -3,6 +3,40 @@
 Architecture and dependency choices that are not obvious from the code. Each
 entry records the alternative that was rejected and why.
 
+## An ambiguous birthday is reminded twice, not refused (2026-11-02)
+
+**Decision.** When one person has two dates in the synced data — `圆圆两岁生日`
+on a one-off 12-12 and a yearly lunar `圆圆生日` on 12-20 — the planner schedules
+**both** and adds one P2 conflict item that asks which is right. The answer is a
+`prefer` entry in `proactive/subjects.yaml`, applied by the next scan.
+
+**Why.** The plan said to refuse until the owner resolved it. That would have
+left the motivating case silent: the owner asked where 圆圆's birthday was, and
+a design that then says nothing until a question is answered is worse than a
+reminder for a date that turns out to be the other celebration. A wrong-date
+reminder is recoverable in one message; a missed birthday is not. The conflict
+item makes the ambiguity visible instead of hiding it behind a choice the code
+made silently.
+
+**Rejected: pick the recurring row.** The one-off may be the real celebration
+(the family may do both a solar and a lunar one), and the code cannot know.
+
+**Rejected: block all stages until `prefer` exists.** It turns a question into a
+precondition, and the question may sit unanswered for days.
+
+**Also decided in the same slice.** The escalation ladder counts only sends
+that reached a channel, skips a dead channel inside the same delivery, and is
+bounded by `escalation.after_minutes`; after that an unacked item is marked
+`digested` by the next digest rather than retried for ever. The digest itself
+is a row (`digest:<date>:<slot>`), so it is idempotent per slot and visible in
+the console like everything else.
+
+**Verified.** `apps/api/tests/test_proactive.py` covers idempotent planning,
+quiet hours, the daily budget, the ladder with a dead channel, the conflict
+item, backlog collapse, the digest and the token acknowledgement. Against the
+real database the engine planned 124 birthday stages, one conflict and one
+overdue digest from data that already existed.
+
 ## A yearly event may carry its lunar date in the RRULE (2026-11-01)
 
 **Decision.** `winnie_phone.recurrence` classifies a yearly rule before

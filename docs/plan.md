@@ -81,7 +81,7 @@ Success for the current phase:
 | News | Six-stage pipeline from public sources to a sourced, reviewed draft | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
 | Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
 | Push | Durable notification backlog, WebSocket stream to the phone, assistant reminder tool, scheduled-task and phone-command events | `winnie-push` + `apps/android` + `notify` skill | Core done |
-| Proactive | Detection, policy, composition and tracked delivery of interventions the owner did not ask for | `winnie-proactive` (planned) + console inbox | Planned — [design](./proactive.md) |
+| Proactive | Detection, policy, composition and tracked delivery of interventions the owner did not ask for | `winnie-proactive` + console inbox | Core done — Android action, alarm path and device run open |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
 | Console | Browser console: assistant chat — typed or as a voice conversation with spoken replies — and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
@@ -104,7 +104,7 @@ Success for the current phase:
 | M8 | News production | A run over real sources groups reports into events, writes one sourced draft per event, reviews it and stops at a reviewed Markdown file; console and assistant operate it | **Core done** — end-to-end verified with the fake model; real-model quality, a worker-backed run and Markdown rendering are open |
 | M9 | Phone data | The phone syncs every enabled scope on a schedule; the console shows it; the assistant answers questions from it and a confirmed calendar/SMS write is executed by the phone | **Core done** — sync, query, console page, tools and the command queue are implemented and tested; a physical-device run and SMS delivery receipts are open |
 | M10 | Push | A notification published on the server reaches the phone while it is idle, survives a reconnect from the backlog, and is used for reminders, scheduled briefs and phone-action results | **Core done** — stream, backlog, tool and Android service are implemented and tested; a device run, Redis fan-out and notification actions are open |
-| M11 | Proactive assistance | A birthday on the phone becomes dated interventions at the configured stages, arrives over a channel whose delivery is tracked, escalates when unacknowledged, and appears in the digest; the same question in chat answers from the data with its source | **Planned** — design in [proactive.md](./proactive.md) |
+| M11 | Proactive assistance | A birthday on the phone becomes dated interventions at the configured stages, arrives over a channel whose delivery is tracked, escalates when unacknowledged, and appears in the digest; the same question in chat answers from the data with its source | **Partial** — engine, push/ntfy/email ladder, digest, console Inbox and acknowledgement implemented and tested; the Android notification action, the alarm path and a device run are open |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 **M9** adds the phone as a data source: the Android client uploads the scopes
@@ -112,10 +112,10 @@ its owner enables, `winnie-phone` merges them by device and record id, and the
 assistant reads them through two skills. Writes are commands the phone claims
 after the owner confirms them in chat.
 
-**M11** is proposed, not started: the owner asked for an assistant that
-intervenes in work and life on its own initiative. The design, the evidence
-that the data is already present, and the delivery ladder are in
-[proactive.md](./proactive.md).
+**M11** is under way: the engine plans birthdays and work items, delivers
+through a bounded ladder, and records whether the owner acknowledged. The
+design, the evidence that the data was already present, and the delivery ladder
+are in [proactive.md](./proactive.md).
 
 The current work is **M3/M4 hardening** plus the first slice of **M6**: the
 meeting capability is usable on the happy path, and the assistant now has a

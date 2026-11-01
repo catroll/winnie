@@ -174,24 +174,26 @@ calendar, two a day), and birthdays plus the work week in the first version.
 The order matters: the first four fix the question that started it, and each is
 testable alone.
 
-- [ ] Decode a lunar yearly rule instead of trusting `dateutil`: a rule whose
+- [x] Decode a lunar yearly rule instead of trusting `dateutil`: a rule whose
       `BYMONTH`/`BYMONTHDAY` equal the event's lunar date is expanded in the
-      lunar calendar. Ten of the eleven yearly birthday rows need it; add all
-      eleven as a table-driven test with their expected dates.
-- [ ] Sync contact birthdays and anniversaries (`ContactsContract` Event rows)
+      lunar calendar. Ten of the eleven yearly birthday rows need it; all eleven
+      are now a table-driven test with their expected dates.
+- [x] Sync contact birthdays and anniversaries (`ContactsContract` Event rows)
       and expose them through a `birthdays(days_ahead)` tool that merges
       calendar, contacts and the owner's overrides.
-- [ ] Stop distilling a failed lookup into memory, and remove the existing
+- [x] Stop distilling a failed lookup into memory, and remove the existing
       `people.md` line that says 圆圆的生日 could not be found.
-- [ ] Build `winnie-proactive`: item store, planner, dispatcher, policy and the
+- [x] Build `winnie-proactive`: item store, planner, dispatcher, policy and the
       birthday detector, with push and a console inbox.
-- [ ] Add acknowledgement (Android action, console, signed email and ntfy link)
-      and the escalation ladder with quiet hours and a digest.
+- [x] Add acknowledgement (console, signed email and ntfy link) and the
+      escalation ladder with quiet hours and a digest.
+- [ ] Add the Android side of acknowledgement: a `收到`/`稍后` action, the item
+      in the notification payload, and a tap that opens its conversation.
 - [ ] Add the `winnie` calendar write path: Winnie creates and cancels its own
       reminders and alarms without a per-item confirmation, capped at two a day.
-- [ ] Wire the weekly schedule (`winnie-schedule`) as a source: leave-by
-      reminders, overdue items, Monday review; write-back only appends a
-      `[winnie]` line.
+- [ ] Wire the rest of the weekly schedule (`winnie-schedule`) as a source: the
+      Monday review and week-scope items; leave-by and overdue are done.
+- [ ] Give the composer a model: today every body is the deterministic template.
 
 ## P2 — accounts and security
 

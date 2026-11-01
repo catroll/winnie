@@ -1,7 +1,11 @@
 # Proactive Winnie: noticing, deciding, reaching the owner
 
-Status: **proposal — nothing in this document is implemented.** Last updated:
-2026-11-01.
+Status: **core implemented and running**, 2026-11-02. Done: the lunar fix,
+contact birthdays, the chat lookup, the memory guard, the engine
+(`winnie-proactive`) with planning, policy, ntfy/email channels, the ladder, the
+digest, the console Inbox and the acknowledgement endpoints. Open: the Android
+notification action and deep link, the model composer, the `winnie` calendar
+alarm path (§6), and a physical-device run. Last updated: 2026-11-02.
 
 Winnie today answers when asked and pushes only what a watch was already told to
 watch (weather, gold, scheduled-task results). This document plans the other
@@ -354,8 +358,13 @@ Real dates from the table in §1: 圆圆's lunar birthday is 2026-12-20.
 The `follow_up` is what makes the second year better: it records what happened,
 and next year's `prepare` can cite it. Without it, proactivity never learns.
 
-Conflict handling (the 12-12 vs 12-20 case) runs before any stage: the planner
-refuses to schedule an ambiguous subject and asks once.
+Conflict handling (the 12-12 vs 12-20 case): the planner schedules **both**
+dates and adds one conflict item that asks which is right. This deviates from
+the earlier "refuse until resolved" rule on purpose — refusing would have left
+the motivating case (圆圆) silent, and a reminder for a date the owner can
+ignore is cheaper than no reminder for the right one. A `prefer` written for
+`person:圆圆` in `proactive/subjects.yaml` drops the other source from the next
+scan.
 
 ### Work half, same pipeline
 
@@ -446,38 +455,34 @@ proactive:
     morning: "07:30"
     evening: "20:30"
     max_items: 12
+  # The host adds "push" when the push capability is enabled; "console" is the
+  # inbox and never sends. The ladder walks this order.
   channels:
-    console: {enabled: true}
-    push: {enabled: true}
+    order: [push, ntfy, email]
     ntfy:
-      enabled: true
+      enabled: false
       # Self-hosted keeps the content on the owner's infrastructure; ntfy.sh
       # works the same way but is a third party.
       server: "https://ntfy.sh"
       topic: ""
       token_env: WINNIE_NTFY_TOKEN
     email:
-      enabled: true
+      enabled: false
       to: ""
-      from: ""
+      from_address: ""
       smtp_host: ""
       smtp_port: 465
       username_env: WINNIE_SMTP_USER
       password_env: WINNIE_SMTP_PASSWORD
+  # One entry per escalation after the first send, in minutes.
   escalation:
-    - {after_minutes: 0, channel: push}
-    - {after_minutes: 20, channel: ntfy}
-    - {after_minutes: 60, channel: email}
+    after_minutes: [20, 60]
   kinds:
     birthday: {lead_days: [14, 7, 2, 0], priority: 1}
     event_soon: {lead_minutes: 30, priority: 0}
     work_item: {priority: 1}
-  # The owner's standing approval, scoped in §6: Winnie may write its own
-  # reminders into a dedicated calendar without per-item confirmation.
-  alarms:
-    enabled: true
-    calendar_name: "winnie"
-    max_per_day: 2
+  # The acknowledgement link in an email or ntfy message. Empty means no link.
+  public_url: ""
 ```
 
 Secrets come from the environment, never this file, per the project rule. The
