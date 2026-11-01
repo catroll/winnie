@@ -367,7 +367,8 @@ schedule:
 # acknowledgement link; empty means no link in those two channels.
 proactive:
   enabled: true
-  public_url: ""
+  # The address the phone and mail client can reach; used for ack links.
+  public_url: http://eqr.hosts.d3v.cn:8000
   timezone: Asia/Shanghai
   root: ../../data/proactive
   horizon_days: 120
@@ -376,17 +377,24 @@ proactive:
   channels:
     order: [push, ntfy, email]
     ntfy:
-      enabled: false
+      enabled: true
       server: https://ntfy.sh
+      # The topic is a secret on a public server; set WINNIE_NTFY_TOPIC in
+      # apps/api/.env instead of writing it here.
       topic: ""
+      topic_env: WINNIE_NTFY_TOPIC
     email:
-      enabled: false
-      to: ""
-      from_address: ""
-      smtp_host: ""
+      enabled: true
+      to: ninedoors@126.com
+      from_address: ninedoors@126.com
+      smtp_host: smtp.126.com
       smtp_port: 465
   escalation:
     after_minutes: [20, 60]
+  # The model may rewrite the body once, just before the first send. Off means
+  # the deterministic template is sent; a failure falls back to it either way.
+  composer:
+    enabled: true
 
 # Local document index (packages/winnie-index). The console reaches it through
 # this API so the browser keeps one origin and one session; set enabled: false

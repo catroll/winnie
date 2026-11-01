@@ -103,6 +103,19 @@ async def engine(tmp_path: Path):
     await engine.dispose()
 
 
+class FakeComposer:
+    def __init__(self, text: str = "记得先订蛋糕，再确认当天有没有安排。", *, fail: bool = False) -> None:
+        self.text = text
+        self.fail = fail
+        self.calls = 0
+
+    async def compose(self, **kwargs):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("the model is down")
+        return self.text
+
+
 def build(
     tmp_path: Path,
     sessions: async_sessionmaker,
@@ -113,6 +126,7 @@ def build(
     schedule=None,
     channels: dict | None = None,
     max_interrupts: int = 4,
+    composer=None,
 ) -> ProactiveService:
     config = ProactiveConfig(
         enabled=True,
@@ -137,6 +151,7 @@ def build(
         calendar=calendar,
         contacts=contacts,
         schedule=schedule,
+        composer=composer,
         clock=clock,
     )
 
@@ -434,3 +449,112 @@ async def test_an_email_ack_token_stops_the_item(
     acked = await service.ack_by_token(token)
     assert acked is not None
     assert acked["status"] == "acked"
+
+
+@pytest.mark.asyncio
+async def test_a_test_item_is_delivered_and_can_be_acknowledged(
+    tmp_path: Path, engine
+) -> None:
+    """The console's test button must produce a real item, not a bare message.
+
+    Only a real item carries an id in the notification payload, so only a real
+    item can exercise the phone's 收到 action.
+    """
+    clock = Clock(datetime(2026, 11, 2, 1, 0, tzinfo=UTC))
+    push = RecordingChannel("push")
+    service = build(
+        tmp_path, sessions_for(engine), clock=clock, channels={"push": push}
+    )
+
+    result = await service.test_message()
+
+    assert result["delivered"] is True
+    assert result["item"]["kind"] == "test"
+    assert result["channels"][0]["name"] == "push"
+    assert push.sent[-1].data["item_id"] == result["item"]["id"]
+    acked = await service.ack(OWNER, result["item"]["id"], via="test")
+    assert acked["status"] == "acked"
+
+
+@pytest.mark.asyncio
+async def test_a_targeted_test_names_the_channel_that_failed(
+    tmp_path: Path, engine
+) -> None:
+    clock = Clock(datetime(2026, 11, 2, 1, 0, tzinfo=UTC))
+    service = build(
+        tmp_path,
+        sessions_for(engine),
+        clock=clock,
+        channels={"ntfy": RecordingChannel("ntfy", fail=True)},
+    )
+
+    result = await service.test_message(channel="ntfy")
+
+    assert result["delivered"] is False
+    assert "down" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_a_channel_that_is_not_configured_is_reported(
+    tmp_path: Path, engine
+) -> None:
+    clock = Clock(datetime(2026, 11, 2, 1, 0, tzinfo=UTC))
+    service = build(
+        tmp_path, sessions_for(engine), clock=clock, channels={"push": RecordingChannel("push")}
+    )
+
+    with pytest.raises(Exception):
+        await service.test_message(channel="email")
+
+
+@pytest.mark.asyncio
+async def test_the_composer_rewrites_once_and_the_ladder_reuses_it(
+    tmp_path: Path, engine
+) -> None:
+    clock = Clock(datetime(2026, 12, 20, 1, 0, tzinfo=UTC))
+    push, ntfy = RecordingChannel("push"), RecordingChannel("ntfy")
+    composer = FakeComposer()
+    service = build(
+        tmp_path,
+        sessions_for(engine),
+        clock=clock,
+        calendar=FakeCalendar([birthday_row()]),
+        contacts=FakeContacts([]),
+        channels={"push": push, "ntfy": ntfy},
+        composer=composer,
+    )
+    await service.scan()
+    await service.dispatch()
+
+    assert composer.calls == 1
+    assert push.sent[0].body == composer.text
+
+    clock.moment += timedelta(minutes=20)
+    await service.escalate()
+
+    assert ntfy.sent[0].body == composer.text
+    assert composer.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_composer_leaves_the_template_and_is_not_retried(
+    tmp_path: Path, engine
+) -> None:
+    clock = Clock(datetime(2026, 12, 20, 1, 0, tzinfo=UTC))
+    push = RecordingChannel("push")
+    composer = FakeComposer(fail=True)
+    service = build(
+        tmp_path,
+        sessions_for(engine),
+        clock=clock,
+        calendar=FakeCalendar([birthday_row()]),
+        contacts=FakeContacts([]),
+        channels={"push": push},
+        composer=composer,
+    )
+    await service.scan()
+    await service.dispatch()
+
+    assert composer.calls == 1
+    assert "今天" in push.sent[0].title
+    assert "上午发条消息" in push.sent[0].body

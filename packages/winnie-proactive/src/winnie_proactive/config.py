@@ -22,7 +22,11 @@ class NtfyConfig(BaseModel):
 
     enabled: bool = False
     server: str = "https://ntfy.sh"
+    # On a public ntfy server the topic name is the only secret: anyone who
+    # knows it can subscribe. Prefer topic_env so the name lives in a gitignored
+    # env file; a self-hosted server can use a plain topic instead.
     topic: str = ""
+    topic_env: str = "WINNIE_NTFY_TOPIC"
     token_env: str = "WINNIE_NTFY_TOKEN"
     timeout_seconds: float = Field(default=10.0, ge=1.0, le=60.0)
     # ntfy priorities: min, low, default, high, urgent.
@@ -88,6 +92,20 @@ class WorkConfig(BaseModel):
     overdue_hour: int = Field(default=8, ge=0, le=23)
 
 
+class ComposerConfig(BaseModel):
+    """Optional model rewrite of the reminder body.
+
+    Off by default: the template is the contract, and a deployment without a
+    model must still deliver every reminder.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    max_chars: int = Field(default=600, ge=80, le=2000)
+    timeout_seconds: float = Field(default=20.0, ge=3.0, le=60.0)
+
+
 class DigestConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -129,3 +147,4 @@ class ProactiveConfig(BaseModel):
     birthday: BirthdayConfig = Field(default_factory=BirthdayConfig)
     work: WorkConfig = Field(default_factory=WorkConfig)
     digest: DigestConfig = Field(default_factory=DigestConfig)
+    composer: ComposerConfig = Field(default_factory=ComposerConfig)

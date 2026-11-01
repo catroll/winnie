@@ -106,6 +106,11 @@ class ProactiveItem(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )
+    # Set the first time a composer rewrote the body, successfully or not, so
+    # a retry or an escalation does not buy the same sentence twice.
+    composed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

@@ -48,6 +48,7 @@ from winnie_api.assistant_voice import router as assistant_voice_router
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.proactive.adapters import (
+    ModelComposer,
     PhoneCalendarAdapter,
     PhoneContactsAdapter,
     ScheduleAdapter,
@@ -267,6 +268,16 @@ def create_app(
                     schedule=(
                         ScheduleAdapter(app.state.schedule_service)
                         if app.state.schedule_service is not None
+                        else None
+                    ),
+                    composer=(
+                        ModelComposer(
+                            DynamicChatModel(ai_settings, http_client, usage_ledger),
+                            max_chars=resolved.proactive.composer.max_chars,
+                            timeout_seconds=resolved.proactive.composer.timeout_seconds,
+                        )
+                        if resolved.proactive.composer.enabled
+                        and ai_settings is not None
                         else None
                     ),
                 )

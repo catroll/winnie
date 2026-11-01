@@ -44,10 +44,16 @@ class NtfyChannel:
         self.http = http
         self.environ = environ if environ is not None else os.environ
 
+    @property
+    def topic(self) -> str:
+        from_env = self.environ.get(self.config.topic_env, "").strip()
+        return from_env or self.config.topic.strip()
+
     async def send(self, message: Message) -> str:
-        if not self.config.topic:
+        topic = self.topic
+        if not topic:
             raise ChannelError("ntfy topic is not configured")
-        url = f"{self.config.server.rstrip('/')}/{quote(self.config.topic)}"
+        url = f"{self.config.server.rstrip('/')}/{quote(topic)}"
         headers = {
             "Title": _header(message.title),
             "Priority": self.config.priority,

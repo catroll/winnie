@@ -17,6 +17,16 @@ import httpx
 from winnie_proactive.channels import EmailChannel, NtfyChannel
 from winnie_proactive.ports import Channel, Message
 
+COMPOSE_PROMPT = """\
+你在为一位个人助理改写要发给主人的提醒正文。
+
+规则：
+- 只输出正文，不要标题、编号、Markdown 标题或解释。
+- 原文里的日期、星期、姓名、数字一个字都不要改；不要新增日期或事实。
+- 补一句具体、可执行的下一步建议（不超过一句）。不知道的事情不要编。
+- 用主人使用的语言，最多三句话，语气直接、像熟人提醒。
+"""
+
 OwnerResolver = Callable[[], Awaitable[str]]
 
 
@@ -38,6 +48,54 @@ class PushChannel:
             data=dict(message.data),
         )
         return "push"
+
+
+class ModelComposer:
+    """Ask the bound chat model to improve the wording of one reminder.
+
+    The engine stores the result on the item, so the cost is one call per item
+    and an escalation re-sends the same text. A model failure is not a delivery
+    failure: the adapter raises and the engine keeps the template.
+    """
+
+    def __init__(
+        self,
+        model,
+        *,
+        max_chars: int = 600,
+        timeout_seconds: float = 20.0,
+    ) -> None:
+        self.model = model
+        self.max_chars = max_chars
+        self.timeout_seconds = timeout_seconds
+
+    async def compose(
+        self,
+        *,
+        kind: str,
+        title: str,
+        body: str,
+        due_at,
+        evidence: list[dict[str, Any]],
+    ) -> str:
+        when = due_at.isoformat() if due_at is not None else ""
+        user = (
+            f"类型: {kind}\n标题: {title}\n原文: {body}\n"
+            f"时间: {when}\n来源: {evidence}"
+        )
+        result = await asyncio.wait_for(
+            self.model.chat(
+                [
+                    {"role": "system", "content": COMPOSE_PROMPT},
+                    {"role": "user", "content": user},
+                ]
+            ),
+            timeout=self.timeout_seconds,
+        )
+        text = (getattr(result, "text", "") or "").strip()
+        if not text:
+            raise ValueError("the composer returned no text")
+        return text[: self.max_chars]
 
 
 class PhoneCalendarAdapter:
@@ -127,8 +185,10 @@ def build_channels(
     if push_service is not None:
         channels["push"] = PushChannel(push_service, resolve_owner=resolve_owner)
     ntfy = config.channels.ntfy
-    if ntfy.enabled and ntfy.topic:
-        channels["ntfy"] = NtfyChannel(ntfy, http=http)
+    if ntfy.enabled:
+        channel = NtfyChannel(ntfy, http=http)
+        if channel.topic:
+            channels["ntfy"] = channel
     email = config.channels.email
     if email.enabled and email.to and email.smtp_host:
         channels["email"] = EmailChannel(email)

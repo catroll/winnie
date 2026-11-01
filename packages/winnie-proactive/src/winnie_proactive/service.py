@@ -31,6 +31,7 @@ from winnie_proactive.models import ProactiveItem, as_utc, utcnow
 from winnie_proactive.ports import (
     Channel,
     ChannelError,
+    Composer,
     Message,
 )
 
@@ -55,6 +56,7 @@ class ProactiveService:
         calendar: Any = None,
         contacts: Any = None,
         schedule: Any = None,
+        composer: Composer | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.config = config
@@ -65,6 +67,7 @@ class ProactiveService:
         self.calendar = calendar
         self.contacts = contacts
         self.schedule = schedule
+        self.composer = composer
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.timezone = ZoneInfo(config.timezone)
         self._task: asyncio.Task[None] | None = None
@@ -534,17 +537,8 @@ class ProactiveService:
         *,
         digest: bool = False,
     ) -> bool:
-        message = Message(
-            title=item.title,
-            body=item.body,
-            data={
-                "item_id": str(item.id),
-                "kind": item.kind,
-                "ack_token": item.ack_token,
-                "ack_url": self._ack_url(item),
-                "digest": digest,
-            },
-        )
+        await self._maybe_compose(session, item)
+        message = self._message(item, digest=digest)
         for name in self._available_order():
             if _attempted(item.channels, name):
                 continue
@@ -570,6 +564,33 @@ class ProactiveService:
         item.planned_at = self._naive(self._now()) + timedelta(minutes=30)
         return False
 
+    async def _maybe_compose(
+        self, session: AsyncSession, item: ProactiveItem
+    ) -> None:
+        """Let the model rewrite the body once, never the date.
+
+        The template is what is stored at plan time; this only runs just before
+        the first send and only for items with an owner-facing stage. A failure
+        marks the attempt anyway, so a retry cannot hammer the model.
+        """
+        if self.composer is None or item.composed_at is not None or item.kind == "digest":
+            return
+        try:
+            body = await self.composer.compose(
+                kind=item.kind,
+                title=item.title,
+                body=item.body,
+                due_at=item.due_at,
+                evidence=list(item.evidence or []),
+            )
+        except Exception as exc:  # noqa: BLE001 - a reminder must survive the model
+            logger.warning("composer failed for %s: %s", item.id, exc)
+            body = ""
+        item.composed_at = self._naive(self._now())
+        if body.strip():
+            item.body = body.strip()[:1200]
+        await session.flush()
+
     async def _deliver_next(
         self,
         session: AsyncSession,
@@ -582,10 +603,90 @@ class ProactiveService:
         tried = {attempt.get("name") for attempt in item.channels or []}
         return not (set(self._available_order()) - tried)
 
+    def _message(self, item: ProactiveItem, *, digest: bool = False) -> Message:
+        return Message(
+            title=item.title,
+            body=item.body,
+            data={
+                "item_id": str(item.id),
+                "kind": item.kind,
+                "ack_token": item.ack_token,
+                "ack_url": self._ack_url(item),
+                "digest": digest,
+            },
+        )
+
     def _available_order(self) -> list[str]:
         return [name for name in self.config.channels.order if name in self.channels]
 
     # -- ack and control -------------------------------------------------
+
+    async def test_message(self, *, channel: str = "") -> dict[str, Any]:
+        """Deliver one real item so the owner can try the notification actions.
+
+        A test that is not a real item cannot show the actions or prove the
+        acknowledgement path, so this creates an item like any other and sends
+        it now, bypassing quiet hours on purpose. An explicit channel targets
+        one rung, which is how a newly configured ntfy or mailbox is checked.
+        """
+        owner = await self.resolve_owner()
+        if not owner:
+            raise ProactiveError("no owner is resolved")
+        now = self._naive(self._now())
+        local = self._local(now)
+        item = ProactiveItem(
+            user_id=owner,
+            kind="test",
+            subject_key=f"test:{now.isoformat(timespec='seconds')}",
+            occurrence_key=local.date().isoformat(),
+            stage="test",
+            priority=1,
+            title="测试提醒 · 现在",
+            body="这是一条测试：按「收到」会停止升级，按「一小时后」会稍后提醒。",
+            due_at=now,
+            planned_at=now,
+            ack_token=secrets.token_urlsafe(24),
+        )
+        async with self.session_factory() as session:
+            session.add(item)
+            await session.flush()
+            await self._maybe_compose(session, item)
+            if channel:
+                name = channel.strip()
+                if name not in self.channels:
+                    raise ProactiveError(f"channel {name} is not configured")
+                receipt = ""
+                error = ""
+                try:
+                    receipt = await self.channels[name].send(self._message(item))
+                except ChannelError as exc:
+                    error = str(exc)
+                item.channels = [
+                    {
+                        "name": name,
+                        "at": self._now().isoformat(),
+                        "receipt": receipt,
+                        "error": error,
+                    }
+                ]
+                if receipt:
+                    item.status = "sent"
+                    item.sent_at = item.last_sent_at = now
+                await session.commit()
+                return {
+                    "delivered": bool(receipt),
+                    "channel": name,
+                    "receipt": receipt,
+                    "error": error,
+                    "item": _item_dict(item),
+                }
+            delivered = await self._deliver(session, item, local)
+            await session.commit()
+            return {
+                "delivered": delivered,
+                "channels": list(item.channels or []),
+                "item": _item_dict(item),
+            }
 
     async def items(
         self,

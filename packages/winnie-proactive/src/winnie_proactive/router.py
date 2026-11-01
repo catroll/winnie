@@ -90,6 +90,25 @@ async def scan(
     return {"created": await service.scan()}
 
 
+@router.post("/test")
+async def test(
+    request: Request,
+    payload: dict | None = None,
+    user_id: str = Depends(get_user_id),
+) -> dict:
+    """Send one real item now, so the owner can try the notification actions.
+
+    An optional ``channel`` targets one rung; without it the ladder picks the
+    first available channel.
+    """
+    service = get_service(request)
+    channel = str((payload or {}).get("channel") or "")
+    try:
+        return await service.test_message(channel=channel)
+    except ProactiveError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/status")
 async def status(
     request: Request, user_id: str = Depends(get_user_id)

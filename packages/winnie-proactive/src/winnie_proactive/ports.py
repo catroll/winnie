@@ -48,6 +48,20 @@ class Message:
     data: dict[str, Any] = field(default_factory=dict)
 
 
+class Composer(Protocol):
+    """Rewrite a reminder body. Optional: the template is always the floor."""
+
+    async def compose(
+        self,
+        *,
+        kind: str,
+        title: str,
+        body: str,
+        due_at: datetime | None,
+        evidence: list[dict[str, Any]],
+    ) -> str: ...
+
+
 class Channel(Protocol):
     """One delivery path. ``send`` returns a receipt or raises ChannelError."""
 
@@ -64,6 +78,7 @@ __all__ = [
     "CalendarPort",
     "Channel",
     "ChannelError",
+    "Composer",
     "ContactsPort",
     "Message",
     "SchedulePort",
