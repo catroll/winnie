@@ -15,7 +15,9 @@ the one every file since 2024-01 follows::
 
 An event is one checkbox line plus every following line that is indented, or
 blank and followed by an indented line. A blank line followed by a heading ends
-the event, which is what keeps day sections separated.
+the event, which is what keeps day sections separated. The raw block stays in
+``Event.lines``; ``Event.note`` is the same block de-indented, which is what a
+Markdown renderer wants (four spaces would be a code block).
 
 Files from 2019-2023 have no day sections; they are parsed as ``legacy`` and
 are read-only for this tool.

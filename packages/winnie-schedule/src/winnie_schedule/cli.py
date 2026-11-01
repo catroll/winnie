@@ -137,8 +137,24 @@ def _event_line(event: Event) -> str:
     return f"  [{'x' if event.done else ' '}] {index}{detail}  {event.text}"
 
 
+def _print_note(note: str) -> None:
+    """Print the event's Markdown block under its first line.
+
+    The indent is display only: the note arrives de-indented, and the terminal
+    has no Markdown renderer, so each line is shifted in by a fixed amount and
+    the block keeps its own blank lines and list markers.
+    """
+    for line in note.split("\n"):
+        print(f"      {line}".rstrip())
+
+
 def print_week(
-    week: Week, *, only_day: date | None = None, pending: bool = False, done: bool = False
+    week: Week,
+    *,
+    only_day: date | None = None,
+    pending: bool = False,
+    done: bool = False,
+    notes: bool = True,
 ) -> None:
     print(f"{layout.human_range(week.weeks)}  {week.weeks.label}  {week.path}  ({week.layout})")
     if week.title:
@@ -155,13 +171,24 @@ def print_week(
             return False
         return True
 
+    def print_events(events: list[Event]) -> None:
+        after_note = False
+        for event in events:
+            if after_note:
+                print()
+            print(_event_line(event))
+            note = event.note if notes else ""
+            if note:
+                print()
+                _print_note(note)
+            after_note = bool(note)
+
     for section in week.sections:
         events = [event for event in section.events if wanted(event)]
         if not events:
             continue
         print(f"\n## {section.title}")
-        for event in events:
-            print(_event_line(event))
+        print_events(events)
 
     days = week.days
     if only_day is not None:
@@ -173,8 +200,7 @@ def print_week(
         print(f"\n{day.date:%m/%d} {day.label}")
         if not events:
             print("  (empty)")
-        for event in events:
-            print(_event_line(event))
+        print_events(events)
 
     if week.days:
         print(f"\nids look like {week.stem}#{week.days[0].date:%m/%d}#1 or {week.stem}#week#1")
@@ -234,7 +260,13 @@ def cmd_show(args: argparse.Namespace) -> int:
     if args.json:
         _print_json(week.to_dict(include_lines=not args.no_lines))
         return 0
-    print_week(week, only_day=day if args.day else None, pending=args.pending, done=args.done)
+    print_week(
+        week,
+        only_day=day if args.day else None,
+        pending=args.pending,
+        done=args.done,
+        notes=not args.no_note,
+    )
     return 0
 
 
@@ -258,7 +290,9 @@ def cmd_list(args: argparse.Namespace) -> int:
             payload["days"] = [item for item in payload["days"] if item["date"] == only_day.isoformat()]
         _print_json(payload)
         return 0
-    print_week(week, only_day=only_day, pending=args.pending, done=args.done)
+    print_week(
+        week, only_day=only_day, pending=args.pending, done=args.done, notes=not args.no_note
+    )
     return 0
 
 
@@ -380,6 +414,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--pending", action="store_true", help="only unchecked events")
     show.add_argument("--done", action="store_true", help="only checked events")
     show.add_argument("--no-lines", action="store_true", help="omit raw lines from --json")
+    show.add_argument("--no-note", action="store_true", help="omit the indented note block")
     show.set_defaults(func=cmd_show)
 
     parse = sub.add_parser("parse", help="dump the parsed week as JSON")
@@ -393,6 +428,7 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--day-only", action="store_true", help="only the day given as date")
     listing.add_argument("--pending", action="store_true", help="only unchecked events")
     listing.add_argument("--done", action="store_true", help="only checked events")
+    listing.add_argument("--no-note", action="store_true", help="omit the indented note block")
     listing.set_defaults(func=cmd_list)
 
     add = sub.add_parser("add", help="add an event to a day, or to the week-level list")

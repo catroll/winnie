@@ -91,3 +91,25 @@ def test_editing_a_real_week_leaves_it_unchanged(corpus: list[Path], tmp_path: P
     assert "临时验证事项" in copy.read_text(encoding="utf-8")
     delete_event(added.week, added.event.id)
     assert copy.read_text(encoding="utf-8") == original
+
+
+@needs_wlb
+def test_a_real_note_block_is_read_as_markdown() -> None:
+    """The 10/28 item that was reported: a blank line, then a 4-space summary.
+
+    Four spaces is a Markdown code fence, so the block only reads as prose and
+    an ordered list once the continuation indent is gone.
+    """
+    week = parse_file(WLB / "work/2026/Q4/10/202610-26-01.md")
+    event = next(
+        candidate
+        for candidate in week.all_events()
+        if candidate.text.startswith("所有更新都已经推送到两个平台了")
+    )
+    assert event.text == "所有更新都已经推送到两个平台了，明天大家上去看看，提提意见。"
+    assert event.note.split("\n")[0] == "总结："
+    assert "1. token 平台启用新的首页。" in event.note
+    assert "4. token / hub 两个平台都对接支付宝" in event.note
+    assert event.note.endswith("对所有价格、额度、计费信息做了批量订正。")
+    # The file keeps the indent; only the note view loses it.
+    assert "    总结：" in event.lines

@@ -978,6 +978,8 @@ export interface ScheduleEvent {
   end: string | null;
   tags: string[];
   text: string;
+  /** The indented block under the event line as Markdown, indent removed. */
+  note: string;
   links: ScheduleLink[];
 }
 

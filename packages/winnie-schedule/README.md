@@ -18,7 +18,7 @@ Markdown stays the source of truth, and a hand edit and a tool edit can coexist.
 | Command | Result |
 | --- | --- |
 | `show <date>` | the week, or one day, as a readable list |
-| `parse <date>` | the whole week as JSON: days, events, tags, times, links, warnings |
+| `parse <date>` | the whole week as JSON: days, events, tags, times, notes, links, warnings |
 | `list <date> --pending` | only what is not done |
 | `add <date> "text"` | a new event in that day's section, optionally timed and tagged |
 | `update <id>` | change the text, time, tags or checkbox state, or move it to another day |
@@ -27,6 +27,13 @@ Markdown stays the source of truth, and a hand edit and a tool edit can coexist.
 | `skill install` | copy `SKILL.md` into `~/.agents/skills/winnie-schedule` |
 
 Every edit accepts `--dry-run`, which prints a unified diff and writes nothing.
+
+An event is not limited to its first line: the indented block under it belongs
+to it and is exposed as the event's `note`, a Markdown string with the
+continuation indent removed (four spaces is Markdown's code-block marker, so
+the raw block would render as preformatted text). `show` and `list` print it
+under the event — `--no-note` keeps the list to one line per event — and
+`parse` carries it per event so a console can render it.
 
 ## Quick start
 

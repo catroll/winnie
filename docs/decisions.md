@@ -1465,3 +1465,43 @@ scope the accounts; that consequence is stated in `docs/openai-proxy.md`.
 and `owner_name` default to empty, so the existing file and any key created
 before this change load unchanged. A version bump would have added a migration
 for two fields that are display metadata.
+
+## An event's indented block is its note, and it is Markdown (2026-11-01)
+
+**The report.** A schedule view showed the 10/28 event as one line —
+`所有更新都已经推送到两个平台了…` — while the file carries a paragraph, a
+four-item summary and a closing sentence underneath it.
+
+**The parser was not dropping it.** `event.lines` already held the whole block,
+`event_end` already folded blank-line-separated indented paragraphs into the
+event, and the corpus round trip proved the bytes were intact. What was missing
+was a *field*: `to_dict(include_lines=False)`, which is what the console
+consumes and what any JSON reader should use, carried only `text` (the checkbox
+line). The block was reachable only through `lines`, so every consumer that did
+not re-parse the raw file showed one line. A missing view is indistinguishable
+from a lost value.
+
+**`note` is that block, de-indented.** `Event.note` returns the continuation
+lines as a Markdown string with the common indent removed and no leading or
+trailing blank lines. The de-indent is not cosmetic: four leading spaces are
+Markdown's code-block marker, so the raw block renders as a `<pre>`. The field
+is in `to_dict` with or without `include_lines`, so the console gets it from the
+payload it already fetches.
+
+**Where it is rendered.** The console Schedule page renders it with the
+existing safe `Markdown` component, so the summary keeps its numbered points,
+links and code fences. `breaks` is on: the author writes one point per line and
+only sometimes separates them with a blank line, so a newline must stay a
+newline. The CLI has no renderer, so `show`/`list` print the block indented under
+the event, and `--no-note` restores the one-line list for scripts. The name
+follows the surface that already exists: `--note` appends exactly this block.
+
+**Deliberately not done.** The event's first line stays plain text. It is edited
+as one string, and pushing it through the block renderer would wrap it in a
+`<p>` — or turn a leading `#` into a heading — inside a list item, for the sake
+of `**bold**` on a template line.
+
+**Guard.** `test_a_real_note_block_is_read_as_markdown` pins the reported 10/28
+item (skipped when the WLB tree is absent), `test_blank_lines_inside_a_note_stay_paragraph_breaks`
+pins the shape a fixture cannot express, and `test_week_returns_days_and_events`
+asserts the API payload carries `note` and no raw `lines`.

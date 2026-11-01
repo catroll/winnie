@@ -30,6 +30,8 @@ WEEK_TEXT = """# 周安排 05 - 11
 
 -   [ ] `10/05` [周一] [09:30~10:30] 值班巡检
 -   [x] `10/05` 已完成事项
+    -   子条目属于上一行
+    -   处理记录见 [记录](20261005-notes.md)
 
 ### 10/06 周二
 
@@ -152,7 +154,12 @@ async def test_week_returns_days_and_events(client: httpx.AsyncClient) -> None:
     assert first["start"] == "09:30"
     assert first["end"] == "10:30"
     assert first["text"] == "值班巡检"
-    assert payload["days"][0]["events"][1]["done"] is True
+    second = payload["days"][0]["events"][1]
+    assert second["done"] is True
+    # The console payload carries no raw lines, so the note must be its own field.
+    assert "lines" not in second
+    assert second["note"] == "-   子条目属于上一行\n-   处理记录见 [记录](20261005-notes.md)"
+    assert first["note"] == ""
     assert payload["sections"][0]["title"] == "工作事项"
     assert payload["sections"][0]["events"][0]["scope"] == "week"
 

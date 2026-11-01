@@ -177,3 +177,25 @@ def test_parse_day_accepts_the_documented_forms(value: str, expected: str | None
         assert result.isoformat() == expected
     else:
         assert isinstance(result, date)
+
+
+def test_show_prints_the_note_block(schedule_root: Path, capsys) -> None:
+    code, out, _ = run(capsys, "--root", str(schedule_root), "show", "2026-10-05", "--day")
+    assert code == 0
+    assert "      -   子条目属于上一行" in out
+    assert "      -   [ ] 子条目里的复选框不是事件" in out
+
+
+def test_no_note_keeps_the_list_compact(schedule_root: Path, capsys) -> None:
+    code, out, _ = run(
+        capsys, "--root", str(schedule_root), "show", "2026-10-05", "--day", "--no-note"
+    )
+    assert code == 0
+    assert "子条目属于上一行" not in out
+
+
+def test_parse_puts_the_note_in_json(schedule_root: Path, capsys) -> None:
+    code, out, _ = run(capsys, "--root", str(schedule_root), "parse", "2026-10-05")
+    assert code == 0
+    event = json.loads(out)["days"][0]["events"][1]
+    assert event["note"].startswith("-   子条目属于上一行")

@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
+from textwrap import dedent
 
 from .layout import WeekRange
 
@@ -66,6 +67,18 @@ class Event:
     def continuations(self) -> tuple[str, ...]:
         return self.lines[1:]
 
+    @property
+    def note(self) -> str:
+        """The continuation block as Markdown, with its indent removed.
+
+        The file indents those lines (4 to 6 spaces) to show that they belong
+        to the checkbox above. That same indent is Markdown's code-block
+        marker, so the raw block would render as preformatted text; removing
+        the common indent gives back the paragraphs, lists and fences the
+        author wrote. ``--note`` writes this block back with the indent.
+        """
+        return dedent("\n".join(self.lines[1:])).strip("\n")
+
     def matches(self, needle: str) -> bool:
         """Case-insensitive substring match over the whole event, text first."""
         haystacks = (self.text, "\n".join(self.lines))
@@ -89,6 +102,7 @@ class Event:
             "end": self.end,
             "tags": list(self.tags),
             "text": self.text,
+            "note": self.note,
             "links": [link.to_dict() for link in links],
         }
         if include_lines:

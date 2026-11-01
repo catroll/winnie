@@ -9,6 +9,7 @@ import type {
   ScheduleWeekPayload,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
+import { Markdown } from '../components/Markdown';
 import { PageHeader } from '../components/PageHeader';
 import { tr } from '../i18n';
 import { useApi } from '../lib/hooks';
@@ -247,9 +248,19 @@ export function SchedulePage() {
               </div>
             </div>
           ) : (
-            <div className={event.done ? 'text-secondary text-decoration-line-through' : undefined}>
-              {event.text}
-            </div>
+            <>
+              <div className={event.done ? 'text-secondary text-decoration-line-through' : undefined}>
+                {event.text}
+              </div>
+              {event.note ? (
+                // The event's indented block, already de-indented. `breaks`
+                // keeps one line per line: the author writes one point per
+                // line and only sometimes separates them with a blank line.
+                <div className={event.done ? 'schedule-body text-secondary mt-1' : 'schedule-body mt-1'}>
+                  <Markdown source={event.note} breaks />
+                </div>
+              ) : null}
+            </>
           )}
           {event.links.length > 0 ? (
             <div className="small text-secondary mt-1">

@@ -90,3 +90,16 @@
      without the bar a quote reads as an ordinary paragraph. */
   border-left: 3px solid var(--bs-secondary-color);
 }
+
+/*
+ * An event's note block in the schedule list. The block is Markdown rendered
+ * inside a list-group item, so it owns no outer margin of its own: the first
+ * and last child lose theirs, or the block pushes the next event away.
+ */
+.schedule-body .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.schedule-body .markdown-body > :last-child {
+  margin-bottom: 0;
+}

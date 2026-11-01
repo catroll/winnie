@@ -139,3 +139,53 @@ def test_an_unrelated_bullet_is_not_an_event(tmp_path: Path) -> None:
 
 def test_parse_file_matches_parse_week(week_path: Path) -> None:
     assert parse_file(week_path).render() == week_path.read_text(encoding="utf-8")
+
+
+def test_a_note_is_the_continuation_block_without_its_indent(week) -> None:
+    """The nested list under an event is its note, dedented to Markdown."""
+    event = week.day(date(2026, 10, 5)).events[1]
+    assert event.note == "-   子条目属于上一行\n-   [ ] 子条目里的复选框不是事件"
+
+
+def test_a_fenced_block_survives_as_markdown(week) -> None:
+    event = week.day(date(2026, 10, 6)).events[1]
+    assert event.note == "```sh\necho hi\n```"
+
+
+def test_an_event_without_continuations_has_no_note(week) -> None:
+    assert week.day(date(2026, 10, 5)).events[0].note == ""
+
+
+def test_note_is_in_the_payload_even_without_raw_lines(week) -> None:
+    payload = week.day(date(2026, 10, 5)).to_dict(include_lines=False)
+    second = payload["events"][1]
+    assert "lines" not in second
+    assert second["note"].startswith("-   子条目属于上一行")
+
+
+def test_blank_lines_inside_a_note_stay_paragraph_breaks(tmp_path: Path) -> None:
+    """The reported shape: one line, a blank, then a summary with a list."""
+    text = (
+        "# 周安排 05 - 11\n\n"
+        "### 10/05 周一\n\n"
+        "-   [ ] `10/05` [newapi 开发] 所有更新都已经推送到两个平台了。\n"
+        "\n"
+        "    总结：\n"
+        "\n"
+        "    1. token 平台启用新的首页。\n"
+        "\n"
+        "    2. 两个平台都加上企业微信联系人二维码。\n"
+    )
+    week = parse_week(tmp_path / "202610-05-11.md", text)
+    event = week.day(date(2026, 10, 5)).events[0]
+    assert event.text == "所有更新都已经推送到两个平台了。"
+    assert event.note == (
+        "总结：\n"
+        "\n"
+        "1. token 平台启用新的首页。\n"
+        "\n"
+        "2. 两个平台都加上企业微信联系人二维码。"
+    )
+    # The source lines stay untouched: only the view loses the indent.
+    assert event.lines[1] == ""
+    assert event.lines[2] == "    总结："
