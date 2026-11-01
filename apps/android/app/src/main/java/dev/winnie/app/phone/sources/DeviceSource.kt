@@ -28,6 +28,7 @@ import dev.winnie.app.data.PhoneDevicePayload
 import dev.winnie.app.data.PhoneDeviceSnapshot
 import dev.winnie.app.phone.PhonePermissions
 import dev.winnie.app.phone.PhoneScope
+import dev.winnie.app.phone.ScopeReadHealth
 
 /**
  * The device profile: identity, OS, battery, storage, network, SIM and accounts.
@@ -133,6 +134,10 @@ class DeviceSource(private val context: Context) {
         putJsonArray("accounts") {
             accounts().forEach { add(it) }
         }
+        // Whether the four provider scopes can be read at all. A vendor ROM may
+        // keep the grant and answer with blank rows; without this the server
+        // cannot tell that apart from an empty phone. See ScopeReadHealth.
+        put("scope_read", ScopeReadHealth(context).probe())
     }
 
     private fun androidId(): String? = try {

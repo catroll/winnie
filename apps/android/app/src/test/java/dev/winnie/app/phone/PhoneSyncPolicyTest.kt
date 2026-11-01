@@ -56,4 +56,11 @@ class PhoneSyncPolicyTest {
         assertFalse(stopsRun(SecurityException("READ_CONTACTS denied")))
         assertFalse(stopsRun(IllegalStateException("cursor closed")))
     }
+
+    @Test
+    fun anEmptySnapshotReadOnlyStopsItsOwnScope() {
+        // A blank read is one scope's problem: the run must still deliver the
+        // scopes that did read, or one blanked provider would stall the phone.
+        assertFalse(stopsRun(EmptySnapshotRead("contact", 1215, "read 0 rows")))
+    }
 }

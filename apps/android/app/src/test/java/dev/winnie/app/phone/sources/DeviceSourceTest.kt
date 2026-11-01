@@ -3,6 +3,8 @@ package dev.winnie.app.phone.sources
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import dev.winnie.app.BuildConfig
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,6 +35,25 @@ class DeviceSourceTest {
         // present, even when empty.
         assertTrue(snapshot.info.containsKey("ipv4"))
         assertTrue(snapshot.info.containsKey("ipv6"))
+    }
+
+    @Test
+    fun theProfileCarriesWhatTheProviderScopesAnswered() {
+        val snapshot = DeviceSource(context).snapshot(listOf("device"))
+
+        // The server cannot tell "no contacts" from "not allowed to read
+        // contacts" without this; it must travel with every device snapshot.
+        val reads = snapshot.info["scope_read"]?.jsonObject
+        assertTrue(reads != null)
+        for (kind in listOf("message", "call", "contact", "calendar", "calendars")) {
+            assertTrue("scope_read.$kind is missing", reads!!.containsKey(kind))
+        }
+        // Robolectric registers no provider, so every probe answers with a null
+        // cursor instead of inventing a row count.
+        assertEquals(
+            "null_cursor",
+            reads!!["contact"]?.jsonObject?.get("error")?.jsonPrimitive?.content,
+        )
     }
 
     @Test

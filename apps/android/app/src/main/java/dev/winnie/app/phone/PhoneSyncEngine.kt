@@ -339,6 +339,22 @@ class PhoneSyncEngine(
         idOf: (T) -> String,
         window: Pair<Long, Long>? = null,
     ): Int {
+        // A full snapshot is an authoritative delete list. A read that returns
+        // nothing although the last upload had rows is far more likely to be a
+        // provider that was not really read (a revoked grant, or a ROM that
+        // answers "blank data" while keeping the grant) than every row having
+        // been deleted on the phone. Skip it and say so, instead of telling the
+        // server to erase the device's copy. The escape hatch is deliberate:
+        // delete the server copy from the phone-data screen first, which clears
+        // this counter, then sync.
+        val previous = prefs.lastUploadCount(kind)
+        if (items.isEmpty() && previous > 0) {
+            throw EmptySnapshotRead(
+                kind = kind,
+                previous = previous,
+                message = AppStrings.get(R.string.phone_message_empty_read, previous),
+            )
+        }
         var accepted = 0
         if (items.size <= BATCH) {
             val result = api.syncPhone(
@@ -346,6 +362,7 @@ class PhoneSyncEngine(
                 request(kind, "full", items, serializer, window = window),
             )
             prefs.intervalMinutes = result.intervalMinutes
+            prefs.setLastUploadCount(kind, items.size)
             return result.accepted
         }
 
@@ -375,6 +392,7 @@ class PhoneSyncEngine(
             )
             accepted += result.deleted
         }
+        prefs.setLastUploadCount(kind, items.size)
         return accepted
     }
 
@@ -511,3 +529,17 @@ internal fun stopsRun(error: Throwable): Boolean = when (error) {
     is IOException -> true
     else -> false
 }
+
+/**
+ * A full snapshot read came back empty although this device had uploaded rows
+ * of that kind before.
+ *
+ * It is an exception rather than a silent skip so the run records it against
+ * its own scope (and the phone-data screen shows it) while every other scope
+ * still uploads. It is not an `IOException`, so [stopsRun] lets the run go on.
+ */
+internal class EmptySnapshotRead(
+    val kind: String,
+    val previous: Int,
+    message: String,
+) : Exception(message)

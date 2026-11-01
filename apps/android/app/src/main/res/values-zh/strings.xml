@@ -161,6 +161,7 @@
     <string name="phone_message_not_synced">本机尚未同步。</string>
     <string name="phone_message_deleted">服务器副本已删除，下次同步会重新上传已选范围。</string>
     <string name="phone_message_delete_failed">删除失败：%1$s</string>
+    <string name="phone_message_empty_read">读取到 0 条，但上次已同步 %1$d 条，已跳过上传以免清空服务器副本。若本机确实已无数据，请先删除服务器副本再同步。</string>
     <plurals name="phone_synced_records">
         <item quantity="other">已同步 %1$d 条记录。</item>
     </plurals>

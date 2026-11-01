@@ -101,6 +101,20 @@ class PhonePrefs(context: Context) {
     fun setLastCheckAt(kind: String, value: Long) =
         prefs.edit { putLong("$KEY_CHECK_PREFIX$kind", value) }
 
+    /**
+     * How many rows the last successful snapshot upload of [kind] carried.
+     *
+     * A full snapshot replaces the server's rows for that kind, so an empty one
+     * is only sent when this is also zero: otherwise a provider that answers
+     * with no rows (a revoked grant, a ROM that blanks the data while keeping
+     * the grant) would silently delete everything the phone had synced.
+     */
+    fun lastUploadCount(kind: String): Int =
+        prefs.getInt("$KEY_UPLOADED_COUNT_PREFIX$kind", 0)
+
+    fun setLastUploadCount(kind: String, value: Int) =
+        prefs.edit { putInt("$KEY_UPLOADED_COUNT_PREFIX$kind", value) }
+
     /** When the phone last asked the server for pending commands. */
     var lastCommandPollAt: Long
         get() = prefs.getLong(KEY_LAST_COMMAND_POLL, 0L)
@@ -112,6 +126,7 @@ class PhonePrefs(context: Context) {
             PhoneScope.entries.forEach {
                 remove("$KEY_FINGERPRINT_PREFIX${it.key}")
                 remove("$KEY_CHECK_PREFIX${it.key}")
+                remove("$KEY_UPLOADED_COUNT_PREFIX${it.key}")
             }
             remove(KEY_LAST_COMMAND_POLL)
         }
@@ -126,6 +141,7 @@ class PhonePrefs(context: Context) {
         const val KEY_CURSOR_PREFIX = "cursor_"
         const val KEY_FINGERPRINT_PREFIX = "fingerprint_"
         const val KEY_CHECK_PREFIX = "checked_"
+        const val KEY_UPLOADED_COUNT_PREFIX = "uploaded_"
         const val KEY_LAST_COMMAND_POLL = "last_command_poll_at"
         const val KEY_LAST_SYNC = "last_sync_at"
         const val KEY_LAST_ERROR = "last_error"

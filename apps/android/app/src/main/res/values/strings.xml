@@ -161,6 +161,7 @@
     <string name="phone_message_not_synced">This phone has not synced yet.</string>
     <string name="phone_message_deleted">Server copies deleted. The next sync uploads the selected scopes again.</string>
     <string name="phone_message_delete_failed">Could not delete: %1$s</string>
+    <string name="phone_message_empty_read">read 0 rows, but %1$d were synced before — upload skipped so the server copy is not erased. If the phone really has none, delete the server copy first and sync again.</string>
     <plurals name="phone_synced_records">
         <item quantity="one">Synced %1$d record.</item>
         <item quantity="other">Synced %1$d records.</item>
