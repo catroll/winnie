@@ -10,6 +10,7 @@ is built.
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import threading
 from pathlib import Path
@@ -406,8 +407,8 @@ class ProviderRegistry:
             api_key = self.keys.require(vendor.id)
         except MissingApiKey as exc:
             raise AIProviderError(str(exc)) from exc
-        base = integration.base_url.rstrip("/")
-        url = f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"
+        base = _openai_base(integration.base_url)
+        url = f"{base}/models"
         own_client = http is None
         client = http or httpx.AsyncClient(timeout=15)
         try:
@@ -862,11 +863,20 @@ class ProviderRegistry:
             return binding
 
 
+_VERSIONED_BASE = re.compile(r"/v\d+$")
+
+
 def _openai_base(value: str) -> str:
+    """The API root to append ``/chat/completions`` or ``/models`` to.
+
+    A base that already ends in a version segment is the root: ``/v1`` for
+    OpenAI, DeepSeek and DashScope, ``/v4`` for Zhipu. Anything else gets
+    ``/v1``, which is the OpenAI-compatible convention.
+    """
     base = value.strip().rstrip("/")
-    if not base.endswith("/v1"):
-        base = f"{base}/v1"
-    return base
+    if _VERSIONED_BASE.search(base):
+        return base
+    return f"{base}/v1"
 
 
 def _volcengine_config(provider: ResolvedProvider) -> VolcengineASRConfig:

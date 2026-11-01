@@ -12,6 +12,7 @@ def test_known_suppliers_map_to_the_documented_variables() -> None:
     assert env_name_for("openai") == "OPENAI_API_KEY"
     assert env_name_for("anthropic") == "ANTHROPIC_API_KEY"
     assert env_name_for("qwen") == "DASHSCOPE_API_KEY"
+    assert env_name_for("zhipu") == "ZHIPU_API_KEY"
     assert env_name_for("volcengine") == "VOLCENGINE_ASR_API_KEY"
     # A second account for the same vendor still has an obvious name.
     assert env_name_for("deepseek-work") == "DEEPSEEK_WORK_API_KEY"

@@ -261,3 +261,28 @@ separate records here, and the one that carries the URL is the one the UI
 silently withholds an action for. When a capability is *absent* rather than
 failing, look for a projection (`vendor.kind`) that gates its affordance and ask
 which record fills that field.
+
+## An OpenAI-compatible base_url is not always `/v1` (2026-11-01)
+
+**Signal.** Adding Zhipu as a supplier produced `404` from
+`https://open.bigmodel.cn/api/paas/v4/v1/models`, and the chat client would
+have posted to `.../v4/v1/chat/completions`. The vendor is OpenAI-compatible,
+but its API root is `/api/paas/v4`.
+
+**Cause.** Two helpers hard-coded the suffix instead of asking whether the base
+was already versioned: `sync_models` used
+`f"{base}/models" if base.endswith("/v1") else f"{base}/v1/models"`, and
+`_openai_base` appended `/v1` unless the base ended in exactly `/v1`.
+
+**Fix.** One rule, one helper — `_VERSIONED_BASE = re.compile(r"/v\d+$")` in
+`ProviderRegistry._openai_base`, used by both the sync URL and the chat client.
+A base ending in any version segment (`/v1`, `/v4`) is the root; anything else
+gets `/v1`. Guards: `test_model_sync_treats_a_versioned_base_as_the_root`,
+`test_chat_client_keeps_a_versioned_base_as_the_root`,
+`test_chat_client_appends_v1_to_an_unversioned_base`.
+
+**Lesson.** "OpenAI-compatible" constrains the *shape* of the routes
+(`/chat/completions`, `/models`), not the version segment in front of them. Any
+helper that appends a path to a user-supplied base URL must decide what the
+base already contains, and that decision belongs in one function used by every
+caller — otherwise the second caller keeps the old assumption.

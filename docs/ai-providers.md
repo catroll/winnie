@@ -47,11 +47,16 @@ A **model** belongs to the supplier:
 | `max_output_tokens` | Optional per-model output cap |
 | `notes` | Optional free text |
 
-**Sync models** calls the supplier's OpenAI-compatible
-`GET {base_url}/v1/models` with the supplier key, reads `data[].id` (plus
-`owned_by` and `created`), and writes the catalog. A model that is still used by
-a binding or an endpoint default is kept if the supplier temporarily omits it.
+**Sync models** calls the supplier's OpenAI-compatible `GET {base}/models`
+with the supplier key, reads `data[].id` (plus `owned_by` and `created`), and
+writes the catalog. A model that is still used by a binding or an endpoint
+default is kept if the supplier temporarily omits it.
 **Models** is the manual fallback for ASR and custom endpoints.
+
+`{base}` is the integration's `base_url` when it already ends in a version
+segment (`/v1` for OpenAI, DeepSeek and DashScope, `/v4` for Zhipu), and
+`{base_url}/v1` otherwise. Chat calls use the same rule, so configure the API
+root: `https://api.deepseek.com/v1`, `https://open.bigmodel.cn/api/paas/v4`.
 
 A key on its own is not enough: sync reads its base URL from the supplier's
 **internal endpoint** (an integration with `gateway: false`). A gateway route is
@@ -173,6 +178,7 @@ vendor credentials live in `packages/winnie-llm/.env`, which is read only by the
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `qwen` | `DASHSCOPE_API_KEY` |
+| `zhipu` | `ZHIPU_API_KEY` |
 | `volcengine` | `VOLCENGINE_ASR_API_KEY` |
 | any other supplier id | `<SUPPLIER>_API_KEY` |
 
@@ -280,6 +286,7 @@ supplier.
 - `volcengine_asr` options are validated by `winnie_llm.asr.VolcengineASRConfig`,
   so ranges and defaults do not drift between the console and the adapter.
 - Supplier marks are adapted from the WLB newapi `vendor-icons.js` catalog
-  (`DeepSeek`, `OpenAI`, Alibaba/Qwen, Anthropic, ByteDance/Volcengine, with a
-  monogram fallback). They are static inline SVG, so the admin needs no icon
+  (`DeepSeek`, `OpenAI`, Alibaba/Qwen, Anthropic, ByteDance/Volcengine,
+  Zhipu/BigModel — supplier id `zhipu` or `chatglm` — with a monogram
+  fallback). They are static inline SVG, so the admin needs no icon
   dependency.

@@ -7,7 +7,15 @@ import httpx
 import pytest
 import yaml
 
-from winnie_llm import AIProviderError, ApiKeys, ProviderRegistry
+from winnie_llm import (
+    AIProviderError,
+    ApiKeys,
+    BindingDraft,
+    IntegrationDraft,
+    ModelRecord,
+    ProviderRegistry,
+    VendorDraft,
+)
 
 V5 = """\
 version: 5
@@ -177,3 +185,81 @@ def test_seed_uses_the_host_routes_and_asr_defaults(tmp_path: Path) -> None:
     assert features["meetings.transcribe"]["vendor"] == "volcengine"
     assert features["assistant.chat"]["source"] == "none"
     assert config["env_path"].endswith(".env")
+
+
+def _zhipu_registry(tmp_path: Path) -> ProviderRegistry:
+    """A registry with an OpenAI-compatible supplier rooted at /v4."""
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(
+        path,
+        keys=_keys(tmp_path, DEEPSEEK_API_KEY="secret", ZHIPU_API_KEY="zhipu-key"),
+    )
+    registry.load()
+    registry.create_vendor(
+        VendorDraft(
+            id="zhipu",
+            label="Zhipu",
+            models=[ModelRecord(id="glm-4.6")],
+        )
+    )
+    registry.create_integration(
+        IntegrationDraft(
+            name="zhipu-internal",
+            label="Zhipu API",
+            vendor="zhipu",
+            kind="openai",
+            base_url="https://open.bigmodel.cn/api/paas/v4",
+            gateway=False,
+            enabled=True,
+        )
+    )
+    registry.set_binding(
+        "assistant.chat", BindingDraft(vendor="zhipu", model="glm-4.6")
+    )
+    return registry
+
+
+@pytest.mark.asyncio
+async def test_model_sync_treats_a_versioned_base_as_the_root(
+    tmp_path: Path,
+) -> None:
+    registry = _zhipu_registry(tmp_path)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"id": "glm-4.6", "owned_by": "z-ai", "created": 1759276800}
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)
+    ) as http:
+        vendor = await registry.sync_models("zhipu", http)
+
+    # /v4 is the API root, so /v1 is not appended to it.
+    assert seen == ["https://open.bigmodel.cn/api/paas/v4/models"]
+    assert [(model.id, model.owned_by) for model in vendor.models] == [
+        ("glm-4.6", "z-ai")
+    ]
+
+
+def test_chat_client_keeps_a_versioned_base_as_the_root(tmp_path: Path) -> None:
+    registry = _zhipu_registry(tmp_path)
+    client = registry.chat_for("assistant.chat")
+    assert client.base_url == "https://open.bigmodel.cn/api/paas/v4"
+
+
+def test_chat_client_appends_v1_to_an_unversioned_base(tmp_path: Path) -> None:
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(
+        path, keys=_keys(tmp_path, DEEPSEEK_API_KEY="secret")
+    )
+    registry.load()
+    client = registry.chat_for("assistant.chat")
+    assert client.base_url == "https://api.deepseek.com/v1"

@@ -27,6 +27,7 @@ VENDOR_KEY_ENV: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "qwen": "DASHSCOPE_API_KEY",
     "volcengine": "VOLCENGINE_ASR_API_KEY",
+    "zhipu": "ZHIPU_API_KEY",
 }
 
 _LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
