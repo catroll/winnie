@@ -1536,3 +1536,34 @@ instead of adding a note.
 the AI providers page, so switching days discards a half-typed draft. Keeping
 seven mounted forms to preserve a draft was rejected: the page's job is to read
 a day, and the write path is quick to retype.
+
+## Reverse geocoding on the server (2026-11-01)
+
+**The server resolves an address; the phone only sends coordinates.** A device
+that geocoded its own fixes would repeat the same lookup every sync (a phone on
+a desk syncs without moving), spend battery and data on it, and need the third
+party's key on the handset. Doing it on the server means one call per *place*
+thanks to a coordinate cache, the key stays in the environment, and turning the
+feature off leaves every row with its raw coordinates.
+
+**Amap, behind a port.** Amap has the best address and POI coverage in mainland
+China, and its regeo response carries what the request asked for: province, city,
+district, township, street, and the nearest POI. A second provider is a class,
+not a rewrite; `NullGeocoder` is the provider that is not configured and returns
+nothing rather than failing.
+
+**`city` is filled from `province` when the provider reports none.** A
+municipality (北京/上海/天津/重庆) sends an empty city, and the console's
+"省 · 市 · 区" line must not show a hole where the city belongs.
+
+**Geocoding never fails a sync.** A provider outage, a bad key or a timeout
+leaves the address empty and the fix accepted: the coordinates are the data, the
+address is a convenience. The reverse lookup therefore happens before the
+database session opens, so a slow provider cannot hold a transaction.
+
+**Old fixes need an explicit backfill.** Enriching on read would put a provider
+call on the assistant's query path and on every console refresh; instead
+`POST /locations/geocode` fills in what is missing, bounded by `limit`, and the
+console exposes it only on the location tab. The alternative — silently
+geocoding a year of history when the feature is switched on — spends the owner's
+quota without being asked.

@@ -692,9 +692,16 @@ class PhoneToolMixin:
         lines = []
         for fix in fixes:
             accuracy = fix.get("accuracy_m")
+            # The address is what makes a fix answerable ("where was I"); the
+            # coordinates stay next to it so nothing is lost without a provider.
+            place = str(fix.get("address") or "").strip()
+            coordinates = (
+                f"{float(fix.get('latitude') or 0):.5f},"
+                f"{float(fix.get('longitude') or 0):.5f}"
+            )
             lines.append(
                 f"- {self._fmt(fix.get('captured_at'))}"
-                f" {float(fix.get('latitude') or 0):.5f},{float(fix.get('longitude') or 0):.5f}"
+                f" {place + ' ' if place else ''}({coordinates})"
                 + (f" ±{float(accuracy):.0f}m" if accuracy else "")
                 + (f" via {fix['provider']}" if fix.get("provider") else "")
             )

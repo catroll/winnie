@@ -20,6 +20,9 @@ incrementally.
   design, contract and privacy notes in [docs/phone.md](../../docs/phone.md))
 - Push package: `packages/winnie-push` (mounted as `/api/v1/push`; protocol and
   transport choice in [docs/push.md](../../docs/push.md))
+- Phone geocoding: the server resolves a location fix to 省/市/区/具体位置 when
+  `phone.geocode` is enabled, and `POST /api/v1/phone/locations/geocode` backfills
+  stored fixes; see [docs/phone.md](../../docs/phone.md)
 - Schedule package: `packages/winnie-schedule` (the owner's weekly Markdown
   file tree, mounted as `/api/v1/schedule` by the host, not a capability)
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)

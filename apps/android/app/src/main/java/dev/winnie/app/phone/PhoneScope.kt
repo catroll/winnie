@@ -70,6 +70,13 @@ enum class PhoneScope(
         key = "device",
         titleRes = R.string.scope_device_title,
         descriptionRes = R.string.scope_device_description,
+        // The phone number needs READ_PHONE_NUMBERS on Android 13+ and
+        // READ_PHONE_STATE before that; both are requested so one prompt covers
+        // either platform.
+        permissions = listOf(
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_PHONE_NUMBERS,
+        ),
     ),
     ;
 

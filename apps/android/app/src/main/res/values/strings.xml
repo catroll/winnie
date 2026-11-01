@@ -190,7 +190,7 @@
     <string name="scope_app_title">Installed apps</string>
     <string name="scope_app_description">Package names, versions, install dates and system flags.</string>
     <string name="scope_device_title">Device info</string>
-    <string name="scope_device_description">Model, Android version, battery, storage, network, SIM and accounts.</string>
+    <string name="scope_device_description">Device name, model, Android version, phone number, carrier, WiFi, IP address, battery, storage, SIM and accounts.</string>
 
     <!-- Alerts / background connection -->
     <string name="alerts_title">Alerts &amp; background</string>

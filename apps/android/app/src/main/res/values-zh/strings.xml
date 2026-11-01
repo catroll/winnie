@@ -187,7 +187,7 @@
     <string name="scope_app_title">已安装应用</string>
     <string name="scope_app_description">包名、版本、安装日期和系统标记。</string>
     <string name="scope_device_title">设备信息</string>
-    <string name="scope_device_description">型号、Android 版本、电量、存储、网络、SIM 卡和账户。</string>
+    <string name="scope_device_description">设备名、型号、Android 版本、手机号、运营商、WiFi、IP 地址、电量、存储、SIM 卡和账户。</string>
 
     <!-- 提醒 / 后台连接 -->
     <string name="alerts_title">提醒与后台连接</string>

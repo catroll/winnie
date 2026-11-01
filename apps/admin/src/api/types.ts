@@ -912,6 +912,18 @@ export interface PhoneLocation {
   accuracy_m: number | null;
   provider: string;
   captured_at: string | null;
+  /** Resolved server-side; empty when reverse geocoding is not configured. */
+  address: string;
+  province: string;
+  city: string;
+  district: string;
+  poi: string;
+}
+
+export interface PhoneGeocodeResult {
+  configured: boolean;
+  geocoded: number;
+  remaining: number;
 }
 
 export interface PhoneApp {

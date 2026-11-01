@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import asyncio
 from dataclasses import dataclass
 
@@ -25,6 +27,7 @@ from winnie_phone.models import (  # noqa: F401  (metadata)
     PhoneSignal,
     PhoneSyncState,
 )
+from winnie_phone.geocode import build_geocoder
 from winnie_phone.service import PhoneService
 from winnie_push.models import PushNotification  # noqa: F401  (metadata)
 from winnie_push.service import PushService
@@ -125,6 +128,15 @@ def build_runtime(
         if settings.push.enabled
         else None
     )
+    geocoder = (
+        build_geocoder(
+            settings.phone.geocode,
+            key=os.environ.get(settings.phone.geocode.key_env, "").strip(),
+            http=http,
+        )
+        if settings.phone.enabled
+        else None
+    )
     phone_service = (
         PhoneService(
             settings.phone,
@@ -134,6 +146,7 @@ def build_runtime(
                 if push_service is not None
                 else None
             ),
+            geocoder=geocoder,
         )
         if settings.phone.enabled
         else None

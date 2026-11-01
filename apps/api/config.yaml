@@ -379,6 +379,20 @@ phone:
     location_days: 30
     app_days: 0
 
+  # Reverse geocoding turns a fix into 省 + 市 + 区 + 具体位置 on the console and
+  # for the assistant. It is off by default: turning it on sends the owner's
+  # coordinates to Amap, so the key lives in the environment and never here.
+  # Set AMAP_API_KEY and enabled: true to use it; a fix that cannot be resolved
+  # keeps its raw coordinates and the address stays empty.
+  geocode:
+    enabled: false
+    provider: amap
+    key_env: AMAP_API_KEY
+    timeout_seconds: 2.5
+    min_interval_seconds: 1.0
+    cache_entries: 512
+    max_per_sync: 5
+
 # Push notifications to the Android client. The server writes each event to the
 # database first and then hands it to the open WebSocket, so a phone that was
 # offline still receives the reminder when it reconnects. There is no vendor

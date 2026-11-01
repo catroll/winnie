@@ -413,6 +413,21 @@ class LocationRead(BaseModel):
     accuracy_m: float | None
     provider: str
     captured_at: datetime | None
+    # Resolved server-side when reverse geocoding is configured; empty
+    # otherwise, which leaves the coordinates as the only description.
+    address: str = ""
+    province: str = ""
+    city: str = ""
+    district: str = ""
+    poi: str = ""
+
+
+class GeocodeResult(BaseModel):
+    """What one address backfill did."""
+
+    configured: bool
+    geocoded: int
+    remaining: int
 
 
 class AppRead(BaseModel):

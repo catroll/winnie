@@ -39,6 +39,7 @@ import type {
   PhoneNotification,
   PhoneRangeQuery,
   PhoneSearchResponse,
+  PhoneGeocodeResult,
   PhoneSummary,
   ScheduleEventInput,
   ScheduleEventUpdate,
@@ -789,6 +790,18 @@ export const api = {
         device_id: params.deviceId,
         limit: params.limit,
       })}`,
+    );
+  },
+
+  geocodePhoneLocations(params: PhoneRangeQuery = {}): Promise<PhoneGeocodeResult> {
+    return request(
+      `/api/v1/phone/locations/geocode${queryString({
+        since: params.since,
+        until: params.until,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+      { method: 'POST' },
     );
   },
 

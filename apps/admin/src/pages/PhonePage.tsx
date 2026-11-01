@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { api } from '../api/client';
@@ -134,6 +134,12 @@ function infoText(device: PhoneDevice, key: string): string {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   if (typeof value === 'boolean') return value ? 'yes' : 'no';
   return '';
+}
+
+function infoList(device: PhoneDevice, key: string): string {
+  const value = device.info[key];
+  if (Array.isArray(value)) return value.map(String).filter(Boolean).join(', ');
+  return infoText(device, key);
 }
 
 function formatBytes(value: unknown): string {
@@ -303,6 +309,26 @@ export function PhonePage() {
     void runAction(tr('Restored {{name}}.', { name }), () =>
       api.restorePhoneDevice(device.id),
     );
+  };
+
+  const fillAddresses = () => {
+    void runAction(tr('Addresses filled in where the provider could resolve them.'), async () => {
+      const since =
+        days > 0 ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString() : undefined;
+      const result = await api.geocodePhoneLocations({
+        since,
+        deviceId: deviceId === 'all' ? undefined : deviceId,
+        limit,
+      });
+      if (!result.configured) {
+        throw new Error(
+          tr(
+            'Reverse geocoding is not configured: set phone.geocode.enabled and the provider key in the API environment.',
+          ),
+        );
+      }
+      return result;
+    });
   };
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -627,6 +653,21 @@ export function PhonePage() {
                   </div>
                 ) : null}
 
+                {tab === 'location' ? (
+                  <div className="col-auto">
+                    <label className="form-label small mb-1 d-block">&nbsp;</label>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-primary"
+                      onClick={fillAddresses}
+                      disabled={busy}
+                    >
+                      <i className="bi bi-geo me-1" aria-hidden="true" />
+                      {tr('Fill addresses')}
+                    </button>
+                  </div>
+                ) : null}
+
                 <div className="col-auto">
                   <label className="form-label small mb-1" htmlFor="phone-device">
                     {tr('Device')}
@@ -787,6 +828,40 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
               .filter(Boolean)
               .join(' · ') || tr('No device details beyond the model.')}
           </div>
+
+          <dl className="row small mb-0 mt-3">
+            {[
+              [tr('Phone number'), infoText(device, 'phone_number')],
+              [
+                tr('Carrier'),
+                [infoText(device, 'carrier') || infoText(device, 'sim_operator'), infoText(device, 'network_type')]
+                  .filter(Boolean)
+                  .join(' · '),
+              ],
+              [tr('WiFi'), infoText(device, 'wifi_ssid')],
+              [
+                tr('IP address'),
+                [infoText(device, 'wifi_ip') || infoList(device, 'ipv4'), infoText(device, 'mobile_ip')]
+                  .filter(Boolean)
+                  .join(' · '),
+              ],
+              [
+                tr('SIM'),
+                [infoText(device, 'sim_state'), infoText(device, 'sim_country')]
+                  .filter(Boolean)
+                  .join(' · '),
+              ],
+              [tr('Security patch'), infoText(device, 'security_patch')],
+              [tr('Android ID'), infoText(device, 'android_id')],
+            ]
+              .filter(([, value]) => Boolean(value))
+              .map(([label, value]) => (
+                <Fragment key={label}>
+                  <dt className="col-5 col-xl-4 fw-normal text-secondary">{label}</dt>
+                  <dd className="col-7 col-xl-8 mb-1 font-monospace">{value}</dd>
+                </Fragment>
+              ))}
+          </dl>
 
           {device.states.some((state) => state.last_error) ? (
             <div className="small text-danger mt-2">
@@ -1069,6 +1144,7 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
             <thead>
               <tr>
                 <th scope="col">{tr('When')}</th>
+                <th scope="col">{tr('Address')}</th>
                 <th scope="col">{tr('Coordinates')}</th>
                 <th scope="col">{tr('Accuracy')}</th>
                 <th scope="col">{tr('Provider')}</th>
@@ -1083,6 +1159,20 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                 return (
                   <tr key={`${fix.device_id}-${fix.id}`}>
                     <td className="text-nowrap">{formatDateTime(fix.captured_at)}</td>
+                    <td style={{ minWidth: '18rem' }}>
+                      {fix.address ? (
+                        <>
+                          <div>{fix.address}</div>
+                          <div className="small text-secondary">
+                            {[fix.province, fix.city !== fix.province ? fix.city : '', fix.district]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-secondary">{tr('not resolved')}</span>
+                      )}
+                    </td>
                     <td className="font-monospace">
                       <a href={href} target="_blank" rel="noreferrer">
                         {lat}, {lon}

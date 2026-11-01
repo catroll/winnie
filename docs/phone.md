@@ -39,9 +39,9 @@ Success for this slice means:
 | `message` | `content://sms` | Thread, address, direction, body, subject, time, read flag | 365 days |
 | `contact` | `ContactsContract` | Display name, numbers, emails, organisation, starred | snapshot, no expiry |
 | `notification` | `NotificationListenerService` | Package, app label, title, text, category, time, clearable flag | 14 days |
-| `location` | `LocationManager` | One fix every five minutes while the sync loop runs: latitude, longitude, accuracy, altitude, speed, provider | 30 days |
+| `location` | `LocationManager` | One fix every five minutes while the sync loop runs: latitude, longitude, accuracy, altitude, speed, provider; the server adds 省/市/区/具体位置 when reverse geocoding is configured | 30 days |
 | `app` | `PackageManager` | Package, label, version, version code, system/enabled flags, install/update time | snapshot, no expiry |
-| `device` | `Build`, battery, storage, network, telephony, accounts | Name, model, OS, app version, timezone and an extensible `info` object | current snapshot |
+| `device` | `Build`, `Settings`, battery, storage, connectivity, WiFi, telephony, accounts | Name (the owner-set name when the ROM exposes it), model, OS, app version, timezone and an extensible `info` object: phone number, carrier, network type, SIM state and country, WiFi SSID/BSSID, IPv4/IPv6 per interface, Android ID, fingerprint, security patch | current snapshot |
 
 Deliberately **not** collected:
 
@@ -98,12 +98,35 @@ the rest of the API.
 | `DELETE` | `/devices/{id}/data` | Delete every synced record, keep the registration |
 | `GET` | `/summary` | Devices, counts, staleness, pending commands |
 | `GET` | `/calendar`, `/calls`, `/messages`, `/contacts`, `/notifications`, `/locations`, `/apps` | Typed queries |
+| `POST` | `/locations/geocode?since=&until=&device_id=&limit=` | Resolve addresses for stored fixes (bounded; needs a provider) |
 | `GET` | `/search?q=&kinds=&since=&until=` | Cross-kind search, merged by time |
 | `POST` | `/commands` | Propose a write |
 | `POST` | `/commands/{id}/approve`, `/cancel` | Approve or cancel a proposed write |
 | `GET` | `/commands?status=` | Command history |
 
 A sync request carries **one kind**:
+
+### What a location row carries
+
+The client uploads coordinates; the server resolves an address when
+`phone.geocode` is configured:
+
+```json
+{ "external_id": "…", "latitude": 39.996, "longitude": 116.48,
+  "accuracy_m": 12.0, "provider": "gps", "captured_at": "2026-11-01T09:30:00+08:00" }
+```
+
+and `/locations` answers with the address next to it:
+
+```json
+{ "id": "…", "latitude": 39.996, "longitude": 116.48, "provider": "gps",
+  "address": "北京市朝阳区望京街道阜通东大街6号",
+  "province": "北京市", "city": "北京市", "district": "朝阳区",
+  "poi": "望京SOHO (12m)" }
+```
+
+Every address field is `""` when no provider is configured or the lookup
+failed; the coordinates are always present, so nothing is lost.
 
 ```json
 {
@@ -306,7 +329,12 @@ unavailable instead of guessing.
 | Notifications | — | Notification listener access |
 | Location | `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` | `ACCESS_BACKGROUND_LOCATION` for background fixes |
 | Apps | `QUERY_ALL_PACKAGES` (normal) | — |
-| Device | `GET_ACCOUNTS` for the account list (optional, guarded) | — |
+| Device | `READ_PHONE_STATE`, `READ_PHONE_NUMBERS` (the SIM's own number), `GET_ACCOUNTS` (account list) | — |
+
+`ACCESS_NETWORK_STATE` and `ACCESS_WIFI_STATE` are normal permissions declared in
+the manifest, not runtime prompts. The telephony pair is what makes the phone
+number readable; many carriers leave the number blank, in which case the key is
+simply absent from the profile.
 
 `READ_SMS`, `SEND_SMS` and `READ_CALL_LOG` are allowed by the OS once granted,
 but **Google Play restricts them** for apps that are not the default SMS
@@ -411,6 +439,11 @@ when the query matches its coordinates or provider, not on every query.
   phone number.
 - **Notifications may contain one-time codes.** They are stored and searchable
   by design; the short default retention (14 days) limits the exposure.
+- **Reverse geocoding leaves the server.** With `phone.geocode.enabled`, the
+  coordinates of a new fix are sent to Amap and the answer is stored with the
+  row. That is a third-party disclosure of where the owner is; it is off by
+  default, the key lives in the environment, and the console says
+  "not resolved" rather than implying the phone reported an address.
 - **The phone is not a trusted code path for writes.** The server validates the
   command payload before queueing it, but the phone is what actually inserts
   the event or sends the message; a modified app can do anything its
@@ -438,7 +471,21 @@ phone:
     notification_days: 14
     location_days: 30
     app_days: 0
+  geocode:                  # reverse geocoding; off unless the owner opts in
+    enabled: false
+    provider: amap
+    key_env: AMAP_API_KEY   # the key comes from the environment, never this file
+    timeout_seconds: 2.5
+    min_interval_seconds: 1.0
+    cache_entries: 512
+    max_per_sync: 5
 ```
+
+`geocode.enabled` is off by default because it sends the owner's coordinates to
+Amap. With a key in `AMAP_API_KEY`, a fix accepted by a sync is resolved once and
+cached by rounded coordinate (~111 m), so a phone that has not moved costs one
+call rather than one per sync. A provider failure never fails the sync: the row
+keeps its coordinates and the address stays empty.
 
 `phone.enabled` is off in the built-in defaults and on in the shipped
 `config.yaml`. A programmatic `Settings()` (tests, embedders) does not create a
@@ -471,6 +518,16 @@ phone database unless it asks for one.
   cannot edit or add a phone record, because the phone is the writer.
 - The list endpoints use a limit, not pagination, so the console shows the most
   recent N records per kind rather than every record.
+- **No IMEI, MEID or serial.** Android 10+ returns `unknown` for `Build.getSerial`
+  and refuses device identifiers to ordinary apps, so the profile reports the
+  Android ID instead. A phone number is available only when the carrier writes
+  it to the SIM; many do not.
+- **Addresses for older fixes need the console's "Fill addresses" action.** A
+  fix synced while geocoding was off keeps its coordinates until that backfill
+  runs; it is bounded per request so it cannot burn the provider quota.
+- **An address is the provider's answer, not a measurement.** It can be a
+  street-level approximation, a neighbouring POI, or stale after a boundary
+  change. The coordinates remain the authoritative part of the row.
 
 ## 11. Verification
 

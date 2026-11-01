@@ -41,6 +41,30 @@ class PhoneRetentionConfig(BaseModel):
     app_days: int = Field(default=0, ge=0)
 
 
+class PhoneGeocodeConfig(BaseModel):
+    """Reverse geocoding of location fixes, done on the server.
+
+    Disabled by default, and the key never comes from a config file: turning
+    this on sends the owner's coordinates to a third party, so it is an explicit
+    choice with the credential in the environment.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    # Only Amap ships today; the port keeps another provider a new class.
+    provider: str = "amap"
+    # Environment variable holding the provider key; empty means "amap" style.
+    key_env: str = "AMAP_API_KEY"
+    timeout_seconds: float = Field(default=2.5, gt=0, le=10)
+    # Minimum gap between two provider calls; a personal key has a low ceiling.
+    min_interval_seconds: float = Field(default=1.0, ge=0, le=10)
+    # Cached coordinates (rounded to ~111 m) kept in memory.
+    cache_entries: int = Field(default=512, ge=0, le=10000)
+    # Fixes geocoded per sync; a normal sync carries one, a backfill many.
+    max_per_sync: int = Field(default=5, ge=0, le=50)
+
+
 class PhoneConfig(BaseModel):
     """Deployment settings owned by the host."""
 
@@ -66,6 +90,7 @@ class PhoneConfig(BaseModel):
     retention: PhoneRetentionConfig = Field(
         default_factory=PhoneRetentionConfig
     )
+    geocode: PhoneGeocodeConfig = Field(default_factory=PhoneGeocodeConfig)
 
     def retention_days(self, kind: str) -> int:
         return {

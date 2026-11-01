@@ -24,6 +24,7 @@ from winnie_phone.schemas import (
     ContactRead,
     DeviceRead,
     DeviceRegister,
+    GeocodeResult,
     LocationRead,
     MessageRead,
     NotificationRead,
@@ -384,6 +385,23 @@ async def locations(
             user_id, since=since, until=until, device_id=device_id, limit=limit
         )
     ]
+
+
+@router.post("/locations/geocode", response_model=GeocodeResult)
+async def geocode_locations(
+    since: datetime | None = None,
+    until: datetime | None = None,
+    device_id: UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    service: PhoneService = Depends(get_service),
+    user_id: str = Depends(get_user_id),
+) -> GeocodeResult:
+    """Fill in addresses for fixes stored before geocoding was enabled."""
+    return GeocodeResult.model_validate(
+        await service.geocode_locations(
+            user_id, since=since, until=until, device_id=device_id, limit=limit
+        )
+    )
 
 
 @router.get("/apps", response_model=list[AppRead])

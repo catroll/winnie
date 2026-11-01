@@ -23,6 +23,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from winnie_phone.config import PhoneConfig
+from winnie_phone.geocode import Address, Geocoder, address_fields
 from winnie_phone.models import (
     PhoneCalendarEvent,
     PhoneCall,
@@ -169,12 +170,15 @@ class PhoneService:
         session_factory: async_sessionmaker[AsyncSession],
         clock: Callable[[], datetime] | None = None,
         events: PhoneEvents | None = None,
+        geocoder: Geocoder | None = None,
     ) -> None:
         self.config = config
         self.session_factory = session_factory
         # Naive UTC everywhere; see models.as_utc.
         self.clock = clock or utcnow
         self.events = events
+        # Reverse geocoding is optional: without it a fix keeps its coordinates.
+        self.geocoder = geocoder
 
     # -- plumbing --------------------------------------------------------
 
@@ -371,6 +375,9 @@ class PhoneService:
                 "send deletions explicitly"
             )
         validated = [ITEM_MODELS[kind].model_validate(item) for item in request.items]
+        # Resolve addresses before the session opens: the provider call must not
+        # hold a transaction, and a failure here must not fail the sync.
+        addresses = await self._geocode_items(validated) if kind == "location" else {}
         window = (as_utc(request.since), as_utc(request.until))
         if window == (None, None):
             window = None
@@ -397,6 +404,7 @@ class PhoneService:
                     request.deleted,
                     full=request.mode == "full",
                     now=now,
+                    extras=addresses,
                 )
             else:
                 accepted, deleted = await self._sync_records(
@@ -538,6 +546,7 @@ class PhoneService:
         *,
         full: bool,
         now: datetime,
+        extras: dict[str, dict] | None = None,
     ) -> tuple[int, int]:
         rows = list(
             await session.scalars(
@@ -551,7 +560,12 @@ class PhoneService:
         seen: set[str] = set()
         accepted = 0
         for item in items:
-            values = _signal_values(kind, item, self.config.max_text_chars)
+            values = _signal_values(
+                kind,
+                item,
+                self.config.max_text_chars,
+                extra=(extras or {}).get(item.external_id),
+            )
             external_id = values.pop("external_id")
             seen.add(external_id)
             row = existing.get(external_id)
@@ -1006,6 +1020,81 @@ class PhoneService:
             for row, name in rows
         ]
 
+    async def _geocode_items(self, items: list[Any]) -> dict[str, dict]:
+        """Resolve an address for the accepted fixes, bounded and best-effort."""
+        if self.geocoder is None or self.config.geocode.max_per_sync <= 0:
+            return {}
+        resolved: dict[str, dict] = {}
+        for item in items[: self.config.geocode.max_per_sync]:
+            address = await self._reverse(item.latitude, item.longitude)
+            if address is not None:
+                resolved[item.external_id] = address.to_payload()
+        return resolved
+
+    async def _reverse(self, latitude: float, longitude: float) -> Address | None:
+        try:
+            assert self.geocoder is not None
+            return await self.geocoder.reverse(latitude, longitude)
+        except Exception:  # noqa: BLE001 - a provider failure must not fail a sync
+            logger.warning("reverse geocoding failed", exc_info=True)
+            return None
+
+    async def geocode_locations(
+        self,
+        user_id: str,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        device_id: uuid.UUID | None = None,
+        limit: int = 50,
+    ) -> dict:
+        """Fill in addresses for fixes stored before geocoding was enabled.
+
+        The owner triggers this from the console, so it is bounded by ``limit``
+        rather than expanding to the whole history.
+        """
+        if self.geocoder is None:
+            return {"configured": False, "geocoded": 0, "remaining": 0}
+        conditions = [
+            PhoneSignal.user_id == user_id,
+            PhoneSignal.kind == "location",
+            PhoneSignal.deleted_at.is_(None),
+        ]
+        if since is not None:
+            conditions.append(PhoneSignal.occurred_at >= since)
+        if until is not None:
+            conditions.append(PhoneSignal.occurred_at <= until)
+        if device_id is not None:
+            conditions.append(PhoneSignal.device_id == device_id)
+        geocoded = 0
+        remaining = 0
+        async with self._session() as session:
+            rows = list(
+                await session.scalars(
+                    select(PhoneSignal)
+                    .where(*conditions)
+                    .order_by(PhoneSignal.occurred_at.desc())
+                    .limit(max(limit * 4, 50))
+                )
+            )
+            for row in rows:
+                payload = row.payload or {}
+                if address_fields(payload)["address"]:
+                    continue
+                if geocoded >= limit:
+                    remaining += 1
+                    continue
+                address = await self._reverse(
+                    float(payload.get("latitude") or 0.0),
+                    float(payload.get("longitude") or 0.0),
+                )
+                if address is None:
+                    remaining += 1
+                    continue
+                row.payload = {**payload, "address": address.to_payload()}
+                geocoded += 1
+        return {"configured": True, "geocoded": geocoded, "remaining": remaining}
+
     async def locations(
         self,
         user_id: str,
@@ -1033,6 +1122,7 @@ class PhoneService:
                 "accuracy_m": (row.payload or {}).get("accuracy_m"),
                 "provider": row.label,
                 "captured_at": aware_utc(row.occurred_at),
+                **address_fields(row.payload or {}),
             }
             for row, name in rows
         ]
@@ -1236,7 +1326,8 @@ class PhoneService:
             ):
                 haystack = (
                     f"{row['latitude']:.5f},{row['longitude']:.5f} "
-                    f"{row['provider']}"
+                    f"{row['provider']} {row.get('address', '')} "
+                    f"{row.get('poi', '')}"
                 ).lower()
                 if needle not in haystack:
                     continue
@@ -1244,8 +1335,10 @@ class PhoneService:
                     _hit(
                         "location",
                         row["captured_at"],
-                        f"location {row['latitude']:.5f},{row['longitude']:.5f}",
-                        f"accuracy {row['accuracy_m'] or 0:.0f}m via {row['provider']}",
+                        row.get("address")
+                        or f"location {row['latitude']:.5f},{row['longitude']:.5f}",
+                        f"accuracy {row['accuracy_m'] or 0:.0f}m via {row['provider']}"
+                        + (f" · {row['poi']}" if row.get("poi") else ""),
                         row,
                     )
                 )
@@ -1610,7 +1703,11 @@ class PhoneService:
 
 
 def _signal_values(
-    kind: str, item: Any, max_chars: int
+    kind: str,
+    item: Any,
+    max_chars: int,
+    *,
+    extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Translate a validated item into PhoneSignal columns."""
     if kind == "notification":
@@ -1632,18 +1729,24 @@ def _signal_values(
             },
         }
     if kind == "location":
+        payload: dict[str, Any] = {
+            "latitude": item.latitude,
+            "longitude": item.longitude,
+            "accuracy_m": item.accuracy_m,
+            "altitude_m": item.altitude_m,
+            "speed_mps": item.speed_mps,
+        }
+        if extra:
+            payload["address"] = extra
         return {
             "external_id": item.external_id,
             "occurred_at": as_utc(item.captured_at),
             "label": item.provider or "location",
-            "body": f"{item.latitude:.6f},{item.longitude:.6f}",
-            "payload": {
-                "latitude": item.latitude,
-                "longitude": item.longitude,
-                "accuracy_m": item.accuracy_m,
-                "altitude_m": item.altitude_m,
-                "speed_mps": item.speed_mps,
-            },
+            # The address is the searchable prose of a fix; the coordinates are
+            # the fallback when no provider is configured.
+            "body": (extra or {}).get("formatted")
+            or f"{item.latitude:.6f},{item.longitude:.6f}",
+            "payload": payload,
         }
     if kind == "app":
         installed = as_utc(item.installed_at)

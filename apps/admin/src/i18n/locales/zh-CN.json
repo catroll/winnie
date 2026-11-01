@@ -854,5 +854,16 @@
   "You have not created a gateway key yet.": "你还没有创建过网关密钥。",
   "Clients reach a route with a Winnie key; create and revoke keys on": "客户端用 Winnie 密钥访问路由；密钥的创建与吊销在",
   "Days of the week": "本周七天",
-  "The first line is the title; further lines become the note.": "第一行是标题，后面的每一行都会成为这条事项的正文。"
+  "The first line is the title; further lines become the note.": "第一行是标题，后面的每一行都会成为这条事项的正文。",
+  "Fill addresses": "补齐地址",
+  "Addresses filled in where the provider could resolve them.": "已为能解析的定位补齐地址。",
+  "Reverse geocoding is not configured: set phone.geocode.enabled and the provider key in the API environment.": "未启用逆地理编码：请设置 phone.geocode.enabled 并在 API 环境变量里配置服务商密钥。",
+  "not resolved": "未解析",
+  "Phone number": "手机号",
+  "Carrier": "运营商",
+  "WiFi": "WiFi",
+  "IP address": "IP 地址",
+  "SIM": "SIM",
+  "Security patch": "安全补丁",
+  "Android ID": "Android ID"
 }
