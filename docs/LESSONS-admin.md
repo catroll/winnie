@@ -375,3 +375,62 @@ afterwards. That is evidence about Bootstrap flex behaviour and about the
 classes, not about the page: it does not prove the composer appears, that the
 voice bar replaces it, or how the disabled state looks. Keep such a harness's
 class list identical to the JSX — one drifted class and it proves nothing.
+
+## An RMS speech gate on a freshly opened microphone hears the device wake up
+
+**Signal.** Every console voice turn answered `500 Internal Server Error`, and
+the API log's traceback ended in
+
+```
+RuntimeError: Volcengine ASR query failed: HTTP 200, code=20000003,
+message=[Normal silence audio] Handle response: no valid speech in audio
+```
+
+Two turns in a row, a few seconds apart, both `POST /api/v1/assistant/transcribe`.
+
+**Cause.** Not the microphone and not the vendor. Captured through the console's
+own recorder in both headless Firefox and headless Edge against the real device,
+a turn lasted **1.3–1.5 s** and its audio was a decaying thump followed by near
+digital silence:
+
+```
+0.02s:-13.6  0.04s:-21.0  0.10s:-35.3  0.20s:-47.0 ... 1.28s:-64.3   (dBFS)
+```
+
+Opening the stream resumes an idle input, and the analog stage settles with that
+thump, which is tens of dB above `VoiceEndpointer`'s −38 dBFS floor. Three frames
+over the floor (60 ms) set `heardSpeech = true`, the browser's noise suppressor
+gated the room noise to −80 dBFS, and 1.2 s of trailing silence ended the turn
+about 1.3 s after the microphone opened — before the owner could say a word. The
+upload was 42 KB of thump; the vendor was right that it held no speech.
+
+The console's `getUserMedia` constraints are `echoCancellation`, `noiseSuppression`
+and `autoGainControl`, which is why the same device that shows a −20 dBFS rumble
+to `parec` (capture gain 63/63 = +30 dB) reads −80 dBFS in the recording: the
+speech processing removes steady noise, so the only thing left above the floor
+was the startup transient.
+
+**Fix.** `recorder.ts` ignores the first `STARTUP_GRACE_MS = 400` ms of audio when
+feeding the endpointer (measured on the audio clock, so a stalled graph cannot
+skip real speech). The samples are still recorded and uploaded, so an owner who
+talks immediately loses nothing but the decision. Verified in headless Edge: a
+silent turn now runs to 6400 ms, reports `heardSpeech: false` and uploads
+nothing; a spoken clip through a synthetic microphone still ends on its pause
+(5240 ms, 167724 bytes) and the vendor transcribes it.
+
+**Check.** For any "the ASR says my audio was silence" report, capture one turn
+through the real UI and print per-20 ms dBFS before touching the thresholds:
+
+```bash
+# 42 KB / 2 bytes / 16000 Hz ≈ 1.3 s, which is the fingerprint of this bug
+ffprobe -v error -show_entries stream=duration -of default=nw=1 turn.wav
+```
+
+A turn that is over in ~1.5 s, or an upload under ~60 KB, cannot contain an
+utterance. If the loud part is only at the start, the endpointer opened on the
+device, not on the speaker.
+
+**Generalisable.** A speech detector that runs on RMS needs the *speech band*, not
+the whole signal: a DC step or sub-80 Hz rumble is loud enough to pass any floor
+and carries no speech. And an "I heard something" decision taken in the first
+100 ms of a capture stream is a decision about the hardware, not about the user.

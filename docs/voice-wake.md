@@ -133,6 +133,16 @@ chosen for a microphone at arm's length, which is how a desk console is used.
 The port is pure TypeScript with the same rule structure; the browser tests
 drive it through the UI.
 
+One rule is the console's own. Opening a suspended capture device is not silent:
+the analog stage settles with a thump (measured -11 dBFS on the rear microphone
+here) that clears the -38 dBFS floor, so the first three frames used to count as
+speech and the trailing-silence rule then ended the turn ~1.3 s after the
+microphone opened — before the owner had said a word. `recorder.ts` therefore
+feeds the endpointer nothing for the first 400 ms of audio; the samples are still
+recorded and uploaded, so an owner who starts talking immediately loses nothing
+but the decision. The phone has no such grace because its first audio is the
+wake word's pre-roll.
+
 One guard is new here. The rules count audio, so a microphone that stops
 delivering blocks — unplugged, suspended by the OS, a stalled audio graph —
 would leave the bar in "Listening…" for ever. `recorder.ts` ends the turn after

@@ -65,6 +65,19 @@ const LEVEL_UPDATES_PER_SECOND = 20;
 const STALL_MS = 3_000;
 /** A hard cap even if frames trickle in, so a turn cannot run for ever. */
 const MAX_TURN_MS = 25_000;
+/**
+ * The first frames are the sound of the capture device waking up, not speech.
+ *
+ * Opening the stream resumes an idle input, and the analog stage settles with a
+ * thump that measured -11 dBFS on the owner's rear microphone — far above the
+ * endpointer's -38 dBFS floor. Counting it as speech started the turn, and the
+ * 1.2 s trailing-silence rule then ended it about 1.3 s after the microphone
+ * opened, before the owner could say anything; the upload held nothing but the
+ * thump and the ASR vendor called it silence. The samples are still recorded
+ * and uploaded, only the speech decision ignores them, so an owner who starts
+ * talking immediately still gets every word into the file.
+ */
+const STARTUP_GRACE_MS = 400;
 
 export async function startRecording(
   options: RecordingOptions,
@@ -191,6 +204,12 @@ export async function startRecording(
     const chunk = event.data;
     chunks.push(chunk);
     totalSamples += chunk.length;
+    // Measured on the audio clock, not the wall clock: a stalled graph must not
+    // silently skip real speech. The grace covers the device settling only.
+    const capturedMs = (totalSamples / sampleRate) * 1_000;
+    if (capturedMs <= STARTUP_GRACE_MS) {
+      return;
+    }
     if (
       options.onLevel &&
       totalSamples - lastLevelSample >=
