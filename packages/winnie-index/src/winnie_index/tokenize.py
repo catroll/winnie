@@ -56,6 +56,23 @@ def fts_query(query: str) -> str | None:
     return " AND ".join(parts) if parts else None
 
 
+def fts_query_loose(query: str) -> str | None:
+    """OR of every token, for the retry when the strict phrase query misses.
+
+    A CJK phrase demands the exact adjacency of its bigrams, so a paraphrase
+    ("哪里的天气") misses a note written as "……否则默认查询武汉的天气". OR-ing the
+    bigrams lets BM25 rank partial overlap instead of requiring the wording to
+    match. Fallback only: the strict query is more precise when it hits.
+    """
+    parts: list[str] = []
+    for segment in segments(query):
+        for token in tokenize(segment):
+            quoted = _quote(token)
+            if quoted not in parts:
+                parts.append(quoted)
+    return " OR ".join(parts) if parts else None
+
+
 def raw_terms(query: str) -> list[str]:
     """Lowercased surface terms, used to keep hits that really contain them."""
     terms: list[str] = []

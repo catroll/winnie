@@ -21,12 +21,20 @@ from urllib.parse import parse_qs, urlparse
 from winnie_index import db, mcp
 from winnie_index.admin import AdminError, Service
 from winnie_index.config import Config, ConfigError
+from winnie_index.scan import reindex_path
 from winnie_index.search import get_document, search, search_debug, status
 
 logger = logging.getLogger(__name__)
 MAX_BODY = 1_000_000
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
-ADMIN_PATHS = ("/admin/config", "/admin/build", "/admin/skill", "/admin/status", "/admin/search")
+ADMIN_PATHS = (
+    "/admin/config",
+    "/admin/build",
+    "/admin/index",
+    "/admin/skill",
+    "/admin/status",
+    "/admin/search",
+)
 
 
 def _connect(config: Config) -> sqlite3.Connection:
@@ -252,6 +260,26 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, {"build": result})
             return
 
+        if parsed.path == "/admin/index":
+            path = str(body.get("path") or "").strip()
+            if not path:
+                self._error(400, "path is required")
+                return
+            conn = _connect(self.config)
+            try:
+                try:
+                    result = reindex_path(conn, self.config, path)
+                except ValueError as exc:
+                    self._error(400, str(exc))
+                    return
+                except LookupError as exc:
+                    self._error(404, str(exc))
+                    return
+            finally:
+                conn.close()
+            self._send(200, {"indexed": result})
+            return
+
         if parsed.path == "/admin/skill":
             action = str(body.get("action") or "check")
             if action == "install":
@@ -277,6 +305,7 @@ class _Handler(BaseHTTPRequestHandler):
                         roots=list(body.get("roots") or []) or None,
                         since=body.get("since"),
                         limit=body.get("limit"),
+                        loose=bool(body.get("loose", False)),
                     )
                 except ValueError as exc:
                     self._error(400, str(exc))

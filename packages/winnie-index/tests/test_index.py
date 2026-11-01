@@ -254,3 +254,71 @@ def test_debug_search_honours_the_root_filter(conn, config: Config):
     scan(conn, config)
     result = search_debug(conn, config, "Qdrant", roots=["docs"])
     assert {hit["root"] for hit in result["hits"]} == {"docs"}
+
+
+def test_a_paraphrase_misses_strictly_and_hits_when_loose(
+    conn, config: Config, tree: Path
+):
+    """The 2026-11-01 failure: a paraphrase reported "no such note"."""
+    note = tree / "roots" / "notes" / "memory.md"
+    note.write_text(
+        "# 记忆\n- 用户未指定地点时，否则默认查询武汉的天气。\n", encoding="utf-8"
+    )
+    scan(conn, config)
+    assert search(conn, config, "哪里的天气") == []
+    hits = search(conn, config, "哪里的天气", loose=True)
+    assert hits and hits[0]["path"] == "memory.md"
+    assert hits[0]["loose"] is True
+    # A strict hit must not be labelled loose.
+    strict = search(conn, config, "武汉的天气")
+    assert strict and strict[0]["loose"] is False
+
+
+def test_loose_search_still_reports_nothing_when_nothing_matches(
+    conn, config: Config
+):
+    scan(conn, config)
+    assert search(conn, config, "量子引力波", loose=True) == []
+
+
+def test_reindex_path_indexes_one_file_without_a_sweep(
+    conn, config: Config, tree: Path
+):
+    from winnie_index.scan import reindex_path
+
+    scan(conn, config)
+    note = tree / "roots" / "notes" / "memory.md"
+    note.write_text("# 记忆\n- 天气默认查询武汉。\n", encoding="utf-8")
+    assert search(conn, config, "武汉") == []  # the sweep has not run yet
+
+    result = reindex_path(conn, config, str(note))
+    assert result["created"] is True
+    assert result["chunks"] == 1
+
+    hits = search(conn, config, "武汉")
+    assert hits and hits[0]["path"] == "memory.md"
+    # The same call twice is not a second document.
+    again = reindex_path(conn, config, str(note))
+    assert again["created"] is False
+    count = conn.execute(
+        "SELECT COUNT(*) FROM docs WHERE rel_path = 'memory.md'"
+    ).fetchone()[0]
+    assert count == 1
+
+
+def test_reindex_path_refuses_a_path_outside_the_roots(
+    conn, config: Config, tmp_path: Path
+):
+    from winnie_index.scan import reindex_path
+
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("hello\n", encoding="utf-8")
+    with pytest.raises(LookupError, match="not under any configured root"):
+        reindex_path(conn, config, str(outside))
+
+
+def test_reindex_path_refuses_a_relative_path(conn, config: Config):
+    from winnie_index.scan import reindex_path
+
+    with pytest.raises(ValueError, match="absolute"):
+        reindex_path(conn, config, "notes/project.md")

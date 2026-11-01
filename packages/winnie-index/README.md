@@ -46,7 +46,14 @@ directories exist.
 
 - **Freshness.** A sweep compares `stat` before reading, a byte hash before
   decoding, and a text hash before re-chunking. `get` revalidates against the
-  file, so a read never returns stale text even if the sweep lagged.
+  file, so a read never returns stale text even if the sweep lagged. A writer
+  that knows which file changed posts `{"path": …}` to `/admin/index` instead of
+  waiting up to `scan.interval_seconds`.
+- **Phrase, then OR.** A CJK query is one FTS5 phrase of adjacent bigrams, so a
+  paraphrase finds nothing; `{"loose": true}` retries the same tokens as an OR
+  and marks every hit `"loose": true`. The strict behaviour is the default, so a
+  caller that draws a conclusion from "nothing found" must opt in to the
+  forgiving variant and can see that it did.
 - **Dedupe.** Identical bytes share one decode and one set of chunks; search
   returns one result per text with the other paths in `also_at`.
 - **Chinese.** FTS5's own tokenizers treat a whole Chinese run as one token, so
@@ -68,6 +75,7 @@ random page cannot rewrite the configuration.
 | `PUT /admin/config` | Validate, write the YAML, reload in place; removes retired roots |
 | `POST /admin/search` | Chunk-level hits, the FTS expression and a miss hint |
 | `POST /admin/build` | `{"dry_run": true}` to preview, false to index |
+| `POST /admin/index` | `{"path": "/abs/file.md"}` to index one file now, without waiting for the sweep |
 | `POST /admin/skill` | `{"action": "install"|"check"}` |
 
 ## Service

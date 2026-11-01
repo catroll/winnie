@@ -15,7 +15,7 @@ from pathlib import Path
 
 from winnie_index.config import Config
 from winnie_index.scan import FileEntry, _index_document
-from winnie_index.tokenize import fts_query, raw_terms
+from winnie_index.tokenize import fts_query, fts_query_loose, raw_terms
 
 _SINCE = re.compile(r"^(\d+)([dhw])$")
 
@@ -70,9 +70,16 @@ def _candidates(
     roots: list[str] | None,
     since: str | None,
     limit: int | None,
+    loose: bool = False,
 ) -> tuple[str | None, list[str], list[sqlite3.Row]]:
-    """Run the FTS query and return ``(expression, terms, rows)``."""
-    match = fts_query(query)
+    """Run the FTS query and return ``(expression, terms, rows)``.
+
+    ``loose`` swaps the strict phrase expression for an OR of the same tokens.
+    Callers only ask for it after the strict expression returned nothing: a
+    paraphrase of a note ("哪里的天气" for "……查询武汉的天气") otherwise reads as
+    "no such document", which is the expensive failure.
+    """
+    match = fts_query_loose(query) if loose else fts_query(query)
     terms = raw_terms(query)
     if match is None:
         return None, terms, []
@@ -110,12 +117,28 @@ def search(
     roots: list[str] | None = None,
     since: str | None = None,
     limit: int | None = None,
+    loose: bool = False,
 ) -> list[dict[str, object]]:
+    """Search the catalog.
+
+    ``loose`` retries a zero-result strict query as an OR of the same tokens.
+    It is off by default because it changes what "matches" means — a caller that
+    will draw a conclusion from "nothing found" must ask for the forgiving
+    variant explicitly, and hits carry ``loose: true`` so the reader can see the
+    wording was a fallback.
+    """
     match, terms, rows = _candidates(
         conn, config, query, roots=roots, since=since, limit=limit
     )
     if match is None:
         return []
+    matched_loosely = False
+    if not rows and loose:
+        loose_match, _, loose_rows = _candidates(
+            conn, config, query, roots=roots, since=since, limit=limit, loose=True
+        )
+        if loose_match is not None and loose_rows:
+            match, rows, matched_loosely = loose_match, loose_rows, True
     wanted = max(1, min(limit or config.limit, 50))
 
     owners: dict[str, dict[str, object]] = {}
@@ -150,6 +173,7 @@ def search(
                 row["mtime_ns"] / 1_000_000_000, tz=timezone.utc
             ).isoformat(timespec="seconds"),
             "text_hash": text_hash,
+            "loose": matched_loosely,
             "_doc_id": doc_id,
         }
         owners[text_hash] = hit
@@ -164,7 +188,13 @@ def search(
 
 
 def _debug_hint(
-    match: str | None, terms: list[str], candidates: int, dropped: int, returned: int
+    match: str | None,
+    terms: list[str],
+    candidates: int,
+    dropped: int,
+    returned: int,
+    *,
+    loose: bool = False,
 ) -> str:
     if match is None:
         return (
@@ -173,13 +203,19 @@ def _debug_hint(
         )
     if candidates == 0:
         return (
-            "No chunk matched the FTS expression. Try fewer or different words, "
-            "or run a build if the files are new."
+            "No chunk matched the FTS expression, neither strictly nor as an OR "
+            "of its tokens. Try fewer or different words, or run a build if the "
+            "files are new."
         )
     if returned == 0 and dropped:
         return (
             "Every candidate failed the term-coverage check, which usually means "
             "the index is behind the files: run a build."
+        )
+    if loose and returned:
+        return (
+            "The strict phrase matched nothing; these hits come from an OR of the "
+            "same tokens, so a hit is related wording, not the same wording."
         )
     return ""
 
@@ -204,6 +240,13 @@ def search_debug(
     match, terms, rows = _candidates(
         conn, config, query, roots=roots, since=since, limit=limit
     )
+    loose = False
+    if match is not None and not rows:
+        loose_match, _, loose_rows = _candidates(
+            conn, config, query, roots=roots, since=since, limit=limit, loose=True
+        )
+        if loose_match is not None and loose_rows:
+            match, rows, loose = loose_match, loose_rows, True
     elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
 
     hits: list[dict[str, object]] = []
@@ -261,13 +304,14 @@ def search_debug(
     return {
         "query": query,
         "expression": match,
+        "loose": loose,
         "terms": terms,
         "roots": roots or [],
         "elapsed_ms": elapsed_ms,
         "candidates": len(rows),
         "returned": len(hits),
         "dropped": dropped,
-        "hint": _debug_hint(match, terms, len(rows), dropped, len(hits)),
+        "hint": _debug_hint(match, terms, len(rows), dropped, len(hits), loose=loose),
         "hits": hits,
         "files": sorted(files.values(), key=lambda item: float(item["best_score"])),
     }

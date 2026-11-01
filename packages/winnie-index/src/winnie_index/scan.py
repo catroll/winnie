@@ -437,3 +437,87 @@ def scan(
         set_meta(conn, "last_sweep_at", _now())
         conn.commit()
     return stats
+
+
+def root_for_path(config: Config, path: Path) -> tuple[Root, str] | None:
+    """The configured root that owns ``path``, with the root-relative path.
+
+    The deepest matching root wins, so a root nested inside another one is not
+    shadowed by its parent.
+    """
+    resolved = path.resolve(strict=False)
+    best: tuple[int, Root, str] | None = None
+    for root in config.roots:
+        base = root.path.resolve(strict=False)
+        try:
+            relative = resolved.relative_to(base)
+        except ValueError:
+            continue
+        depth = len(base.parts)
+        if best is None or depth > best[0]:
+            best = (depth, root, relative.as_posix())
+    if best is None:
+        return None
+    return best[1], best[2]
+
+
+def reindex_path(conn: sqlite3.Connection, config: Config, path: str) -> dict[str, object]:
+    """Index one file now instead of waiting for the next sweep.
+
+    The timer sweep stays the correctness mechanism: it finds files nobody told
+    the daemon about. A writer that already knows which file it changed — the
+    assistant appending a memory note — calls this so the new text is searchable
+    in the same turn. The path must be absolute and inside a configured root;
+    excluded or oversized files are refused rather than silently skipped.
+    """
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("path must be absolute")
+    resolved = candidate.resolve(strict=False)
+    located = root_for_path(config, resolved)
+    if located is None:
+        raise LookupError(f"not under any configured root: {resolved}")
+    root, rel_path = located
+    if not resolved.is_file():
+        raise LookupError(f"not a file: {resolved}")
+    if not _wanted(rel_path, resolved.name, root, config.prose_ext):
+        raise LookupError(f"not an indexed file type: {rel_path}")
+    stat = resolved.stat()
+    if stat.st_size > config.max_file_bytes:
+        raise LookupError(f"larger than the index limit: {rel_path}")
+    entry = FileEntry(
+        rel_path=rel_path,
+        path=resolved,
+        size=stat.st_size,
+        mtime_ns=stat.st_mtime_ns,
+        ino=stat.st_ino,
+        dev=stat.st_dev,
+    )
+    root_id = _ensure_root(conn, root)
+    row = conn.execute(
+        "SELECT id, state FROM docs WHERE root_id = ? AND rel_path = ?",
+        (root_id, rel_path),
+    ).fetchone()
+    created = row is None
+    if row is None:
+        doc_id = _insert_doc(conn, root_id, entry)
+    else:
+        doc_id = int(row["id"])
+        if row["state"] == "deleted":
+            _resurrect_doc(conn, doc_id)
+    try:
+        chunks = _index_document(conn, config, doc_id, resolved.read_bytes(), entry)
+    except (BinaryFile, DecodeError) as exc:
+        conn.execute(
+            "UPDATE docs SET state='sealed', attempts=attempts+1, last_error=? WHERE id=?",
+            (str(exc), doc_id),
+        )
+        conn.commit()
+        raise LookupError(f"cannot index {rel_path}: {exc}") from exc
+    conn.commit()
+    return {
+        "root": root.name,
+        "path": rel_path,
+        "chunks": chunks,
+        "created": created,
+    }
