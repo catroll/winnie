@@ -118,7 +118,7 @@ function AddEventForm({ date, weekScope, busy, onAdd }: AddEventFormProps) {
   return (
     <form onSubmit={(submitEvent) => void submit(submitEvent)}>
       <div className="row g-2">
-        <div className="col-12 col-lg-7">
+        <div className="col-12">
           <label className="form-label small" htmlFor={`schedule-text-${scope}`}>
             {tr('Event text')}
           </label>
@@ -139,7 +139,7 @@ function AddEventForm({ date, weekScope, busy, onAdd }: AddEventFormProps) {
             </div>
           ) : null}
         </div>
-        <div className="col-6 col-lg-2">
+        <div className="col-12 col-lg-6">
           <label className="form-label small" htmlFor={`schedule-time-${scope}`}>
             {tr('Time')}
           </label>
@@ -151,7 +151,7 @@ function AddEventForm({ date, weekScope, busy, onAdd }: AddEventFormProps) {
             placeholder="09:30~10:30"
           />
         </div>
-        <div className="col-6 col-lg-3">
+        <div className="col-12 col-lg-6">
           <label className="form-label small" htmlFor={`schedule-tag-${scope}`}>
             {tr('Tag')}
           </label>
