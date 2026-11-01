@@ -9,7 +9,10 @@ half: noticing things on its own, deciding whether they deserve the owner's
 attention, saying what to do about them, and making sure the message arrives.
 
 Related: [assistant](./assistant.md), [push](./push.md), [phone](./phone.md),
-[plan](./plan.md), [decisions](./decisions.md).
+[state](./state.md), [plan](./plan.md), [decisions](./decisions.md). The
+[state](./state.md) proposal covers *what* Winnie can know about the owner's
+place, body, focus and availability; this document covers *what it does* with
+what it knows.
 
 ## 1. The incident that motivates this
 
@@ -133,12 +136,13 @@ Three loops, not one:
 | Phone SMS | **yes** | appointment confirmations, bills, deliveries, exam/booking notices | seconds–minutes |
 | Phone notifications | **yes** — 7 rows so far | what other apps consider urgent; flight/refund/repair notices | seconds |
 | Phone location | **yes** — 35 fixes | "you are near the pharmacy", late-night, travel day | 5–15 min |
+| Owner state ([state](./state.md)) | **no — proposal only** | whether now is a good moment: asleep, driving, in a meeting | per projection TTL |
 | Weekly schedule (WLB) | **yes, not wired to the assistant** | work items by day and time, week goals, unchecked items | on demand |
 | Document index / memory | **yes** | promises made in notes or chat, project deadlines, people facts | ≤5 min |
 | Weather / gold watchers | **yes** | existing watches | unchanged |
 
 The birthday incident is fixed by the first two rows. The work half of the
-request needs the sixth, and the "life admin" half needs the third and fourth.
+request needs the seventh, and the "life admin" half needs the third and fourth.
 
 ## 5. The intervention model
 
@@ -211,7 +215,10 @@ answers "圆圆生日是什么时候" too.
 - One item per `(subject, occurrence, stage)` ever. A stage sent and unacked is
   escalated, never re-planned.
 - `quiet_hours: ["22:30", "07:30"]`, configurable per weekday (a Saturday
-  morning may differ from a Tuesday).
+  morning may differ from a Tuesday). Once the [state](./state.md) projections
+  exist, `availability` narrows this further: asleep and driving hold P1 the
+  same way, a meeting holds everything but P0, and an `unknown` projection does
+  not invent a reason to stay silent.
 - `snooze` moves `planned_at`; `mute` silences a subject or a kind for a period;
   both are reversible from the inbox.
 - A collapsed catch-up: if the server was down across several stages, send one
