@@ -44,6 +44,7 @@ import type {
   PhoneSearchResponse,
   PhoneGeocodeResult,
   PhoneSummary,
+  ProactiveChannelAttempt,
   ProactiveItem,
   ProactiveStatus,
   ScheduleEventInput,
@@ -829,6 +830,20 @@ export const api = {
 
   proactiveScan(): Promise<{ created: number }> {
     return request('/api/v1/proactive/scan', { method: 'POST' });
+  },
+
+  proactiveTest(channel = ''): Promise<{
+    delivered: boolean;
+    channel?: string;
+    receipt?: string;
+    error?: string;
+    channels?: ProactiveChannelAttempt[];
+    item: ProactiveItem;
+  }> {
+    return request('/api/v1/proactive/test', {
+      method: 'POST',
+      body: channel ? { channel } : {},
+    });
   },
 
   proactiveAck(id: string): Promise<ProactiveItem> {

@@ -3,10 +3,10 @@
 Status: **core implemented and running**, 2026-11-02. Done: the lunar fix,
 contact birthdays, the chat lookup, the memory guard, the engine
 (`winnie-proactive`) with planning, policy, ntfy/email channels, the ladder, the
-digest, the console Inbox, the acknowledgement endpoints and the Android notification
-actions. Open: the model composer, the `winnie` calendar alarm path (§6), a
-deep link into the conversation, and a physical-device run. Last updated:
-2026-11-02.
+digest, the console Inbox, the acknowledgement endpoints, the Android notification
+actions and the optional model composer. Channels: push, ntfy and email are
+configured. Open: the `winnie` calendar alarm path (§6), a deep link into the
+conversation, and a physical-device run. Last updated: 2026-11-02.
 
 Winnie today answers when asked and pushes only what a watch was already told to
 watch (weather, gold, scheduled-task results). This document plans the other
@@ -547,7 +547,34 @@ Live:
 - Medical, legal or financial advice: Winnie points at the owner's own data and
   at a professional, it does not decide.
 
-## 16. Decisions taken
+## 16. Trying it today
+
+Prerequisite: the current debug APK
+(`apps/android/app/build/outputs/apk/debug/app-debug.apk`), signed in, with
+"Alerts & background" enabled on the phone.
+
+1. **Console → Inbox → 测试提醒 / Test reminder.** It creates a *real* item, so
+   the notification carries an `item_id`, and sends it through the first
+   available channel (push when the app is connected). The Inbox row shows each
+   attempt and its receipt or error.
+2. **On the phone**, a proactive notification has two buttons: **收到** (ack)
+   and **一小时后** (snooze 60 minutes). 收到 clears it and stops the ladder;
+   一小时后 moves it out by an hour. Tapping the body opens the app.
+3. **ntfy**: subscribe to the topic named by `WINNIE_NTFY_TOPIC` in
+   `apps/api/.env`. The message's click action is the signed acknowledgement
+   URL. On a public ntfy server the **topic name is the only credential** —
+   anyone who knows it can read the messages — so keep it random and out of
+   git, or self-host.
+4. **Email**: the 126 mailbox needs its **authorization code**, not the login
+   password, in `WINNIE_SMTP_PASSWORD`. Without it the channel reports the
+   missing variable and the ladder skips it. `POST /api/v1/proactive/test`
+   with `{"channel": "email"}` tests that rung alone.
+5. **Escalation**: send a test and leave it. At +20 minutes the next rung is
+   tried, at +60 the next, and what is left joins the digest.
+6. **Quiet hours** are bypassed by a manual test on purpose; real items are
+   held until 07:30.
+
+## 17. Decisions taken
 
 Answered by the owner on 2026-11-01:
 

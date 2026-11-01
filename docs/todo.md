@@ -195,7 +195,10 @@ testable alone.
       reminders and alarms without a per-item confirmation, capped at two a day.
 - [ ] Wire the rest of the weekly schedule (`winnie-schedule`) as a source: the
       Monday review and week-scope items; leave-by and overdue are done.
-- [ ] Give the composer a model: today every body is the deterministic template.
+- [x] Give the composer a model: the body is rewritten once per item, with the
+      deterministic template as the fallback.
+- [ ] Send the 126 authorization code (`WINNIE_SMTP_PASSWORD`) to make the email
+      rung real; ntfy is configured through `WINNIE_NTFY_TOPIC`.
 
 ## P2 — accounts and security
 

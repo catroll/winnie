@@ -51,6 +51,7 @@ export function InboxPage() {
   const [revision, setRevision] = useState(0);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const result = useApi<InboxData>(async () => {
     const [items, status] = await Promise.all([
@@ -93,6 +94,26 @@ export function InboxPage() {
     }
   }
 
+  async function testReminder() {
+    setError('');
+    setNotice('');
+    try {
+      const result = await api.proactiveTest();
+      if (!result.delivered) {
+        setNotice(tr('No channel could deliver the test'));
+      } else {
+        const channels = (result.channels ?? [])
+          .filter((entry) => entry.receipt)
+          .map((entry) => entry.name)
+          .join(', ');
+        setNotice(`${tr('The test was delivered through')} ${channels}`);
+      }
+      setRevision((value) => value + 1);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : String(exc));
+    }
+  }
+
   return (
     <>
       <PageHeader title="Inbox" />
@@ -119,6 +140,10 @@ export function InboxPage() {
                 <i className="bi bi-arrow-clockwise me-1" aria-hidden="true" />
                 {tr('Scan now')}
               </button>
+              <button type="button" className="btn btn-sm btn-outline-primary" onClick={testReminder}>
+                <i className="bi bi-bell me-1" aria-hidden="true" />
+                {tr('Test reminder')}
+              </button>
             </div>
           ) : null}
 
@@ -132,6 +157,12 @@ export function InboxPage() {
           {error ? (
             <div className="alert alert-danger" role="alert">
               {error}
+            </div>
+          ) : null}
+
+          {notice ? (
+            <div className="alert alert-info" role="status">
+              {notice}
             </div>
           ) : null}
 

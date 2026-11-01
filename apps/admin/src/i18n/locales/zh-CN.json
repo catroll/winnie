@@ -939,5 +939,8 @@
   "Stage": "阶段",
   "What": "内容",
   "last scan": "上次扫描",
-  "no channel is configured": "没有配置通道"
+  "no channel is configured": "没有配置通道",
+  "No channel could deliver the test": "没有通道能发出这条测试",
+  "Test reminder": "测试提醒",
+  "The test was delivered through": "测试已通过以下通道发送："
 }
