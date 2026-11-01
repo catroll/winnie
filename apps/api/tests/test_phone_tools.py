@@ -237,6 +237,31 @@ async def test_calendar_shows_local_time_and_event_id(toolbox: ToolBox) -> None:
 
 
 @pytest.mark.asyncio
+async def test_calendar_reads_with_the_default_clock(phone: StubPhone) -> None:
+    """The factory passes a zone and no clock; the default must work.
+
+    Every other test injects ``clock=lambda: NOW``, which is why a default
+    clock that raised on every call went unnoticed until the Android chat
+    asked for today's schedule.
+    """
+    toolbox = ToolBox(
+        search=FakeSearchProvider(),
+        index=None,
+        memory=None,
+        scheduler=None,
+        http=httpx.AsyncClient(),
+        phone=phone,
+        timezone=SHANGHAI,
+    )
+    now = toolbox.clock()
+    assert now.tzinfo is not None
+    assert now.utcoffset() == timedelta(0)
+
+    text = await call(toolbox, "phone_calendar", days_ahead=2)
+    assert "Dentist" in text
+
+
+@pytest.mark.asyncio
 async def test_search_renders_hits(toolbox: ToolBox) -> None:
     text = await call(toolbox, "phone_search", query="dentist")
     assert "[message]" in text

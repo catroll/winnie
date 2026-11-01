@@ -17,7 +17,7 @@ import logging
 import re
 import socket
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 from zoneinfo import ZoneInfo
@@ -615,7 +615,13 @@ class ToolBox(PhoneToolMixin):
         self.phone = phone
         self.notifier = notifier
         self.timezone = timezone or ZoneInfo("UTC")
-        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        # `timezone` here is the ZoneInfo argument above, not the
+        # datetime.timezone module it shadows. UTC is the same object as
+        # timezone.utc but, being a separate name, cannot be captured by the
+        # argument; `datetime.now(timezone.utc)` used to raise
+        # AttributeError: 'zoneinfo.ZoneInfo' object has no attribute 'utc'
+        # on the first tool that needed the clock.
+        self.clock = clock or (lambda: datetime.now(UTC))
 
     @property
     def has_news_tools(self) -> bool:

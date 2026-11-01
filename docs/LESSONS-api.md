@@ -338,3 +338,51 @@ command payload and its device with the command's `device_id`; on a mismatch the
 real finding is what the command failed with. Corollary for the product: a
 multi-device surface must name the device it is about to touch in the same
 breath as the proposal, otherwise the owner cannot even falsify the claim.
+
+## A `timezone` keyword argument shadows `datetime.timezone` (2026-11-01)
+
+**Signal.** A chat request for today's schedule came back with one tool broken
+and the rest of the turn intact: `phone_status` reported the sync time and
+`calendar=45`, but the calendar read answered
+`ERROR: AttributeError: 'zoneinfo.ZoneInfo' object has no attribute 'utc'`.
+The assistant then had to tell the owner it could not read their calendar while
+describing data it had just read — a single-tool failure dressed up as a
+service outage.
+
+**Cause.** `ToolBox.__init__` takes `timezone: ZoneInfo | None`, which shadows
+the `datetime.timezone` module imported at the top of the same file. Its
+default clock then read
+
+```python
+self.clock = clock or (lambda: datetime.now(timezone.utc))
+```
+
+so `timezone` was the `ZoneInfo` argument, and the attribute access only failed
+when the lambda *ran*. Every read tool calls `self._now()`; `phone_status` and
+`phone_apps` do not, which is exactly the split the chat showed.
+
+**Why the suite missed it.** Every test built the toolbox with
+`clock=lambda: NOW`, so the default lambda was never invoked — the injected
+clock is what a test needs for determinism, and it is also what hides a broken
+default. The tool wrapper renders any exception as `ERROR: <type>: <message>`,
+so the failure reached the model as a string to paraphrase, not as a traceback
+to inspect.
+
+**Fix.** `self.clock = clock or (lambda: datetime.now(UTC))`. `datetime.UTC`
+(since 3.11, and the package requires 3.11+) is the same object as
+`timezone.utc` but is a different name, so an argument called `timezone` cannot
+capture it. Renaming the keyword was rejected: `timezone=` is the repo-wide
+name for this parameter on `WeatherService`, `GoldWatch`, `AssistantScheduler`
+and the rest.
+
+**Check.** `test_calendar_reads_with_the_default_clock` builds the toolbox with
+a `ZoneInfo` and **no** clock, asserts `toolbox.clock()` is UTC-aware, and runs
+`phone_calendar` end to end. Against the old line it fails with the reported
+`AttributeError: 'zoneinfo.ZoneInfo' object has no attribute 'utc'`.
+
+**Generalisable.** A parameter named after a module it shadows turns a
+module-level idiom into a runtime error that no import-time check sees. When a
+function binds a name that also names an import, every `<name>.<attr>` inside
+it refers to the argument; prefer the stdlib alias (`UTC`) or a differently
+named parameter, and make at least one test exercise the default path rather
+than the injected clock.
