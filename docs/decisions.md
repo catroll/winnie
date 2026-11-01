@@ -1766,22 +1766,6 @@ kept_previous=0`). The datum shift was confirmed the hard way on one coordinate 
 `provider: amap` in its gitignored `config.local.yaml`, so the tracked config
 still resolves something on a checkout with no key.
 
-**`city` is filled from `province` when the provider reports none.** A
-municipality (北京/上海/天津/重庆) sends an empty city, and the console's
-"省 · 市 · 区" line must not show a hole where the city belongs.
-
-**Geocoding never fails a sync.** A provider outage, a bad key or a timeout
-leaves the address empty and the fix accepted: the coordinates are the data, the
-address is a convenience. The reverse lookup therefore happens before the
-database session opens, so a slow provider cannot hold a transaction.
-
-**Old fixes need an explicit backfill.** Enriching on read would put a provider
-call on the assistant's query path and on every console refresh; instead
-`POST /locations/geocode` fills in what is missing, bounded by `limit`, and the
-console exposes it only on the location tab. The alternative — silently
-geocoding a year of history when the feature is switched on — spends the owner's
-quota without being asked.
-
 **The answer is cached in the database, not only in the process.** The provider
 already memoised by rounded coordinate (~111 m), which keeps a phone on a desk to
 one call — but that cache is memory, so every restart, every redeploy and every
