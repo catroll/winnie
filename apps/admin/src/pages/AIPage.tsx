@@ -27,6 +27,10 @@ type Message = { kind: 'success' | 'danger'; text: string } | null;
 // the old /usage bookmark (and any link to it) can land on the right section.
 const TABS = [
   { key: 'suppliers', label: 'Suppliers', icon: 'bi-hdd-network' },
+  // Model catalogues are owned by a supplier but read across all of them: the
+  // same model id can be offered by several suppliers, and that is the question
+  // a reader has when picking one. The tab answers it without leaving the page.
+  { key: 'models', label: 'Models', icon: 'bi-collection' },
   { key: 'usage', label: 'LLM usage', icon: 'bi-graph-up-arrow' },
 ] as const;
 
@@ -161,7 +165,12 @@ export function AIPage() {
   const [bindings, setBindings] = useState<Record<string, BindingState>>({});
   const [runtimeDraft, setRuntimeDraft] = useState<ModelRuntime | null>(null);
 
-  const tab: TabKey = searchParams.get('tab') === 'usage' ? 'usage' : 'suppliers';
+  // Any tab not named in the URL is the first one, so an unknown or stale
+  // ``?tab=`` value still lands on a real section.
+  const requestedTab = searchParams.get('tab');
+  const tab: TabKey = TABS.some((item) => item.key === requestedTab)
+    ? (requestedTab as TabKey)
+    : 'suppliers';
   const selectTab = (next: TabKey) => {
     const params = new URLSearchParams(searchParams);
     if (next === 'suppliers') {
@@ -473,6 +482,20 @@ export function AIPage() {
               aria-labelledby="ai-tab-usage"
             >
               <UsagePanel />
+            </div>
+          ) : tab === 'models' ? (
+            <div
+              role="tabpanel"
+              id="ai-panel-models"
+              aria-labelledby="ai-tab-models"
+            >
+              {result.status === 'loading' ? (
+                <LoadingBlock label="Loading AI suppliers…" />
+              ) : result.status === 'error' ? (
+                <ErrorBlock error={result.error} onRetry={result.reload} />
+              ) : (
+                <ModelsPanel vendors={vendors} features={features} />
+              )}
             </div>
           ) : (
             <div
@@ -1144,6 +1167,199 @@ export function AIPage() {
         />
       ) : null}
     </>
+  );
+}
+
+interface CatalogRow {
+  /** The model id as the supplier spells it. */
+  id: string;
+  /** Suppliers whose synced catalogue contains this id. */
+  suppliers: AIVendor[];
+  /** Features bound to this model id. */
+  features: AIFeature[];
+}
+
+// Invert the per-supplier catalogues into one row per model id.
+//
+// A supplier owns its models, so the same id legitimately appears under more
+// than one supplier (an OpenAI-compatible endpoint and its vendor, say). The
+// count that matters is distinct suppliers, not endpoints.
+function catalogRows(vendors: AIVendor[], features: AIFeature[]): CatalogRow[] {
+  const byId = new Map<string, CatalogRow>();
+  for (const vendor of vendors) {
+    for (const model of vendor.models) {
+      const id = model.id.trim();
+      if (!id) {
+        continue;
+      }
+      const row = byId.get(id) ?? { id, suppliers: [], features: [] };
+      // A catalogue that repeats an id must not count its supplier twice.
+      if (!row.suppliers.some((item) => item.id === vendor.id)) {
+        row.suppliers.push(vendor);
+      }
+      byId.set(id, row);
+    }
+  }
+  for (const feature of features) {
+    const model = feature.model.trim();
+    if (model) {
+      byId.get(model)?.features.push(feature);
+    }
+  }
+  // Models offered by more than one supplier are the ones worth knowing about:
+  // they keep working when one supplier is disabled or out of quota.
+  return [...byId.values()].sort(
+    (a, b) =>
+      b.suppliers.length - a.suppliers.length || a.id.localeCompare(b.id),
+  );
+}
+
+function ModelsPanel({
+  vendors,
+  features,
+}: {
+  vendors: AIVendor[];
+  features: AIFeature[];
+}) {
+  const [query, setQuery] = useState('');
+
+  const rows = catalogRows(vendors, features);
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? rows.filter(
+        (row) =>
+          row.id.toLowerCase().includes(needle) ||
+          row.suppliers.some(
+            (vendor) =>
+              vendor.id.toLowerCase().includes(needle) ||
+              vendor.label.toLowerCase().includes(needle),
+          ),
+      )
+    : rows;
+  const shared = rows.filter((row) => row.suppliers.length > 1).length;
+
+  return (
+    <div className="card mb-3">
+      <div className="card-header d-flex flex-wrap align-items-center gap-2">
+        <h3 className="card-title mb-0">{tr('Models')}</h3>
+        {rows.length > 0 ? (
+          <span className="badge text-bg-secondary">
+            {tr('{{count}} models', { count: rows.length })}
+          </span>
+        ) : null}
+        {shared > 0 ? (
+          <span className="badge text-bg-primary">
+            {tr('{{count}} multi-supplier', { count: shared })}
+          </span>
+        ) : null}
+      </div>
+      <div className="card-body">
+        <p className="small text-secondary">
+          {tr(
+            'Every model in a connected supplier catalogue, one row per model id. The count is suppliers, not endpoints: a model offered by more than one supplier keeps working when one of them is disabled.',
+          )}
+        </p>
+        {rows.length === 0 ? (
+          <EmptyState message="No models yet. Sync a supplier on the Suppliers tab to list its models." />
+        ) : (
+          <>
+            <div className="row g-2 align-items-end mb-3">
+              <div className="col-sm-6 col-lg-4">
+                <label className="form-label small" htmlFor="ai-model-search">
+                  {tr('Filter models')}
+                </label>
+                <input
+                  id="ai-model-search"
+                  className="form-control form-control-sm"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={tr('Model id or supplier')}
+                />
+              </div>
+              <div className="col-sm-6 col-lg-8">
+                <p className="small text-secondary mb-0">
+                  {tr('{{shown}} of {{total}} models shown', {
+                    shown: visible.length,
+                    total: rows.length,
+                  })}
+                </p>
+              </div>
+            </div>
+
+            {visible.length === 0 ? (
+              <EmptyState message="No model matches the filter." />
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-striped align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col">{tr('Model')}</th>
+                      <th scope="col">{tr('Suppliers')}</th>
+                      <th scope="col">{tr('Offered by')}</th>
+                      <th scope="col">{tr('Used by')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((row) => (
+                      <tr key={row.id}>
+                        <td>
+                          <code>{row.id}</code>
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              row.suppliers.length > 1
+                                ? 'text-bg-primary'
+                                : 'text-bg-secondary'
+                            }`}
+                          >
+                            {row.suppliers.length === 1
+                              ? tr('{{count}} supplier', { count: 1 })
+                              : tr('{{count}} suppliers', {
+                                  count: row.suppliers.length,
+                                })}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="d-flex flex-wrap align-items-center gap-2">
+                            {row.suppliers.map((vendor) => (
+                              <span
+                                className="d-inline-flex align-items-center gap-1"
+                                key={vendor.id}
+                                title={vendor.id}
+                              >
+                                <VendorIcon id={vendor.id} label={vendor.label} />
+                                <span className="small">{vendor.label}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          {row.features.length === 0 ? (
+                            <span className="small text-secondary">—</span>
+                          ) : (
+                            <div className="d-flex flex-wrap gap-1">
+                              {row.features.map((feature) => (
+                                <span
+                                  className="badge text-bg-light border"
+                                  key={feature.key}
+                                >
+                                  {feature.label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
