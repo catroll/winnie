@@ -386,3 +386,76 @@ function binds a name that also names an import, every `<name>.<attr>` inside
 it refers to the argument; prefer the stdlib alias (`UTC`) or a differently
 named parameter, and make at least one test exercise the default path rather
 than the injected clock.
+
+## Memory that the prompt never reads is not memory: three gates between a fact and an answer (2026-11-01)
+
+**Signal.** The owner said "记录到本地记忆，没有指定位置的情况下……默认武汉的天气", the
+assistant answered "已记到本地记忆（procedures）" — and the next two questions
+("明天有雨么？") were both answered from the configured 上海 forecast. The last
+reply even said "这个预报是按配置里的**上海**查的，不是你常用的武汉", which is a
+memory being read and then ignored.
+
+**The write path was fine.** `~/Documents/Mine/Winnie/profile/procedures.md` held
+`- [2026-11-01] 用户未指定地点时，若可获取经纬度，则按该经纬度查询当地天气；否则默认查询武汉的天气。 <!-- source: chat:20261101T150006Z-03f48b -->`
+The failure is entirely on the read side, and there are three independent gates.
+
+**Gate 1: only three categories reach the prompt.**
+`winnie_assistant/memory.py` defines
+`PINNED_CATEGORIES = frozenset({"identity", "preferences", "constraints"})`, and
+`MemoryStore.digest()` yields only `entry.pinned` entries. `AssistantAgent.chat`
+passes exactly `self.memory.digest()` as `memory_digest`, so a `procedures`,
+`people`, `projects`, `domain`, `resources` or `episodes` fact is in **no**
+model call of **any** turn. The `remember` tool schema
+(`tools.py`, `"name": "remember"`) enumerates all ten categories with no marker
+for the pinned three, so the model put a *preference* — "default location when
+none is given" — into `procedures` and nothing objected.
+
+**Gate 2: the only read path is a literal-phrase FTS search, and that path lags.**
+`profile/` is in the file tools' protected set, so the model cannot list or read
+it; the sole route is `search_documents` → `winnie-index`. Two separate problems:
+
+- *Phrase, not concept.* `winnie_index/tokenize.py` builds one quoted FTS5
+  phrase per query segment out of overlapping CJK bigrams. Against the live
+  daemon on the same corpus: `{"query": "默认位置"}` returns
+  `Winnie/profile/procedures.md`, while `{"query": "哪里的天气"}` returns only the
+  conversation and not the memory. The owner's sentence — "如果我没有指定位置，
+  应该获取哪里的天气" — is exactly the paraphrase that matches nothing: four
+  `search_documents` calls returned `No local document matched that query.` and
+  the assistant told the owner "没有找到任何关于'默认天气位置'的记录".
+- *Five-minute lag.* `httpapi._sweep_loop` reindexes only every
+  `config.scan_interval` (300 s); the per-root `watch: true` is written to
+  `roots.watch` and **never read** — there is no inotify code in the package
+  although `config.py`'s sample comment advertises "inotify acceleration".
+  Catalog evidence: `Winnie/profile/procedures.md` mtime `15:03:07` →
+  `indexed_at 15:06:20`; the two conversation files written 15:00–15:03 were all
+  stamped `15:06:20`. A fact remembered at 15:00:08 is unfindable for up to five
+  minutes, and the owner asked 73 seconds later.
+
+**Gate 3: the tool cannot honour the memory even when the prompt has it.**
+`weather_forecast` is declared with `"properties": {}` and
+`additionalProperties: false`; `ToolBox._weather_forecast()` calls
+`self.weather.check()`, which reads `config.weather.location`. The default
+location is therefore a deployment setting with no per-turn input, and a
+correctly stored "use 武汉" rule changes nothing about the answer. This is the
+part that matters most: it makes the other two gates unobservable from inside a
+conversation, because reading the memory and not reading it produce the same
+reply.
+
+**Generalisable.** "The assistant remembers" is a chain of four independent
+contracts, and each can fail silently: the category→prompt mapping, the
+retrieval path's query language, index freshness, and the tool's own inputs.
+Before claiming a memory worked, check the last link — a tool with no parameter
+for the remembered value cannot be steered by memory at all, and it will keep
+producing plausible answers that look like they ignored the prompt.
+
+**Checks to add, in the order they would have caught this.**
+1. A test that `remember(category, text)` then `build_system_prompt()` contains
+   the text for the category in use, or that `remember` refuses a category whose
+   entries never reach a prompt. Today neither holds for `procedures`.
+2. A `search_documents` test with a paraphrase, not the stored wording:
+   `"哪里的天气"` must find the 武汉 entry.
+3. A freshness test: write a memory file, then require it to be searchable
+   without waiting for the sweep — either an explicit reindex call on write or a
+   sweep interval short enough to state in the contract.
+4. `weather_forecast` must accept `location` (or `lat`/`lon`) with the config as
+   the default, and a test must prove a per-call location wins.
