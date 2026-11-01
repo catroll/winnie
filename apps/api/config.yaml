@@ -360,6 +360,34 @@ schedule:
   enabled: true
   root: ~/Projects/Mine/WLB
 
+# Proactive assistance (packages/winnie-proactive): birthdays, leave-by
+# reminders and the digest. Detection is code and never calls a model; the
+# channels below only carry what was already decided. `public_url` is the
+# address the owner's phone or mail client can reach, used to build the
+# acknowledgement link; empty means no link in those two channels.
+proactive:
+  enabled: true
+  public_url: ""
+  timezone: Asia/Shanghai
+  root: ../../data/proactive
+  horizon_days: 120
+  quiet_hours: ["22:30", "07:30"]
+  max_interrupts_per_day: 4
+  channels:
+    order: [push, ntfy, email]
+    ntfy:
+      enabled: false
+      server: https://ntfy.sh
+      topic: ""
+    email:
+      enabled: false
+      to: ""
+      from_address: ""
+      smtp_host: ""
+      smtp_port: 465
+  escalation:
+    after_minutes: [20, 60]
+
 # Local document index (packages/winnie-index). The console reaches it through
 # this API so the browser keeps one origin and one session; set enabled: false
 # to hide the console page and the /api/v1/index/* routes.

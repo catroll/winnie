@@ -28,7 +28,9 @@ from winnie_meetings.capability import capability as meetings_capability
 from winnie_news.capability import capability as news_capability
 from winnie_news.service import NewsService
 from winnie_phone.capability import capability as phone_capability
+from winnie_proactive.capability import capability as proactive_capability
 from winnie_push.capability import capability as push_capability
+from winnie_proactive.service import ProactiveService
 from winnie_llm import ApiKeys, ProviderRegistry
 
 from winnie_api import __version__
@@ -45,6 +47,12 @@ from winnie_api.ai.router import router as ai_router
 from winnie_api.assistant_voice import router as assistant_voice_router
 from winnie_api.index_router import router as index_router
 from winnie_api.runtime import AppRuntime, build_runtime
+from winnie_api.proactive.adapters import (
+    PhoneCalendarAdapter,
+    PhoneContactsAdapter,
+    ScheduleAdapter,
+    build_channels,
+)
 from winnie_api.schedule.router import router as schedule_router
 from winnie_api.schedule.service import ScheduleService, ScheduleUnavailable
 from winnie_api.settings import Settings, load_settings
@@ -200,6 +208,8 @@ def create_app(
         app.state.admin_user_service = None
         app.state.schedule_service = None
         app.state.schedule_error = ""
+        app.state.proactive_service = None
+        app.state.proactive_error = ""
         if runtime is not None:
             await runtime.startup()
             app.state.auth_service = runtime.auth_service
@@ -224,6 +234,47 @@ def create_app(
             except ScheduleUnavailable as exc:
                 app.state.schedule_error = str(exc)
                 logger.warning("schedule unavailable: %s", exc)
+
+        proactive = None
+        if resolved.proactive.enabled and runtime is not None:
+            try:
+                channels = build_channels(
+                    resolved.proactive,
+                    http=http_client,
+                    push_service=runtime.push_service,
+                    resolve_owner=resolve_owner,
+                )
+                proactive = ProactiveService(
+                    resolved.proactive,
+                    session_factory=runtime.session_factory,
+                    channels=channels,
+                    resolve_owner=resolve_owner,
+                    root=resolved.resolve_proactive_root(),
+                    calendar=(
+                        PhoneCalendarAdapter(
+                            runtime.phone_service, resolve_owner=resolve_owner
+                        )
+                        if runtime.phone_service is not None
+                        else None
+                    ),
+                    contacts=(
+                        PhoneContactsAdapter(
+                            runtime.phone_service, resolve_owner=resolve_owner
+                        )
+                        if runtime.phone_service is not None
+                        else None
+                    ),
+                    schedule=(
+                        ScheduleAdapter(app.state.schedule_service)
+                        if app.state.schedule_service is not None
+                        else None
+                    ),
+                )
+                await proactive.startup()
+                app.state.proactive_service = proactive
+            except Exception as exc:  # noqa: BLE001 - the rest of the API stays up
+                app.state.proactive_error = f"{type(exc).__name__}: {exc}"
+                logger.exception("proactive assistance failed to start")
 
         news = None
         if resolved.news.enabled:
@@ -286,6 +337,9 @@ def create_app(
         try:
             yield
         finally:
+            if proactive is not None:
+                await proactive.shutdown()
+                app.state.proactive_service = None
             if news is not None:
                 await news.shutdown()
                 app.state.news_service = None
@@ -312,6 +366,8 @@ def create_app(
         framework.register(phone_capability())
     if resolved.push.enabled:
         framework.register(push_capability())
+    if resolved.proactive.enabled:
+        framework.register(proactive_capability())
     # The document index is not a capability: it is a separate daemon, and this
     # router only proxies to it, so the host owns the mount.
     if resolved.index.enabled:

@@ -17,6 +17,7 @@ from winnie_gateway.config import GatewayConfig, RouteConfig
 from winnie_meetings.config import MeetingsConfig
 from winnie_news.config import NewsConfig
 from winnie_phone.config import PhoneConfig
+from winnie_proactive.config import ProactiveConfig
 from winnie_push.config import PushConfig
 
 _API_ROOT = Path(__file__).resolve().parents[2]
@@ -82,6 +83,7 @@ class Settings(BaseModel):
     assistant: AssistantConfig = Field(default_factory=AssistantConfig)
     news: NewsConfig = Field(default_factory=NewsConfig)
     phone: PhoneConfig = Field(default_factory=PhoneConfig)
+    proactive: ProactiveConfig = Field(default_factory=ProactiveConfig)
     push: PushConfig = Field(default_factory=PushConfig)
     index: IndexConfig = Field(default_factory=IndexConfig)
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
@@ -127,6 +129,9 @@ class Settings(BaseModel):
 
     def resolve_schedule_root(self) -> Path:
         return _resolve_path(self.schedule.root)
+
+    def resolve_proactive_root(self) -> Path:
+        return _resolve_path(self.proactive.root)
 
     def resolve_database_url(self) -> str:
         """Make relative SQLite paths absolute; leave server URLs untouched."""
