@@ -368,6 +368,19 @@ local tokens, and only a changed scope is uploaded, incrementally.
 - **A failed provider read is an error, not an empty snapshot.** Calendar and
   contacts upload with `mode: "full"`, where an empty list means "the phone has
   nothing"; returning empty on a failed read would delete the server copies.
+- **A blank read is refused too.** Every device snapshot carries `scope_read`:
+  for each provider scope, the runtime grant as this process sees it and the raw
+  answer (row count, `null_cursor`, or the exception). A ROM can keep the grant
+  and answer with zero rows — HarmonyOS/EMUI "blank data" (空白通行证 /
+  虚拟权限) and its app guard do exactly that for calls, SMS, contacts and
+  calendar — and then nothing distinguishes "this phone has no contacts" from
+  "this phone is not allowed to see its contacts" unless the phone says which it
+  is. The console shows the answer next to the device, so an empty tab is
+  explained instead of implied. When a full snapshot reads zero rows although
+  the previous upload carried some, the upload is skipped and the scope records
+  an error: a blanked provider must not erase the server copy. Deleting the
+  server copy first clears the counter, which is the deliberate path for "the
+  phone really has none".
 
 ### SMS and calendar accuracy notes
 
@@ -503,6 +516,14 @@ phone database unless it asks for one.
   phone, while reads aggregate every device, and neither the tool schema nor
   the PENDING text names the device. With two phones the owner cannot tell
   which one a proposal will touch.
+- One handset can be **blanked by its ROM** for the four provider scopes while
+  staying fully synced for apps, notifications, location and the device profile.
+  TAS-AL00 answered `permission: granted, rows: 0` for calls, SMS, contacts and
+  calendar while its own notifications carried real senders and event titles;
+  the same build read 2000 calls, 1462 SMS, 81 contacts and 47 events on the
+  other handset. The server cannot grant that access — the owner has to turn the
+  ROM's blank-data switch (空白通行证 / 虚拟权限 / app guard) off for this app.
+  Until then the console shows the blank answer instead of an empty dataset.
 - No MMS, no attachments, no media.
 - The push channel wakes the phone for a confirmed write only while the
   foreground service is connected; if it is stopped, the command waits for the

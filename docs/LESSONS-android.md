@@ -424,3 +424,53 @@ same initialisation without extra setup; a pure JVM test that calls
 `onClick = { onSuggestion(stringResource(R.string.x)) }` does not compile
 ("Composable invocations can only happen from the context of a @Composable
 function"). Resolve the string before the lambda and capture the value.
+
+## "Granted" and zero rows is a privacy answer, not an empty phone
+
+**Signal.** One handset (HUAWEI TAS-AL00) recorded a *successful* `calendar` and
+`contact` sync with `accepted_total = 0`, never sent `call` or `message` at all,
+yet its notification rows named real SMS senders (`【阿里云】…`, `【滴滴数科】…`)
+and a real calendar event (`日历 · 吴倩的生日 · 今天 全天`). The app's own
+phone-data screen said every scope was enabled and showed no error, and the
+system permission screen said 电话/信息/通讯录/日历 = 允许.
+
+**Two explanations fit that surface, and they need different fixes:** the phone
+really has no rows, or the phone is not allowed to see its rows. Counting rows
+on the server cannot tell them apart — both are zero.
+
+**What settled it.** Ship the answer in the data the phone already uploads. Each
+device snapshot now carries `scope_read`, five cheap count probes:
+
+```json
+{"uid":10329,"data_dir":"/data/user/0/dev.winnie.app/files","package":"dev.winnie.app",
+ "message":{"permission":"granted","rows":0},"call":{"permission":"granted","rows":0},
+ "contact":{"permission":"granted","rows":0},"calendar":{"permission":"granted","rows":0},
+ "calendars":{"permission":"granted","rows":0}}
+```
+
+Granted, no exception, no null cursor: the provider answered a cursor with no
+rows. The same APK on NAM-AL00 read 2000 calls, 1462 SMS, 81 contacts and 47
+events, so the code was never the variable. The ROM's "blank data" privacy gate
+(空白通行证 / 虚拟权限, and the app guard that covers sideloaded APKs) keeps the
+grant and blanks exactly the four data classes — calls, SMS, contacts, calendar —
+which is precisely the set that failed.
+
+**Why it was invisible for hours.** Three layers agreed with each other:
+`checkSelfPermission` said granted, `ContentResolver.query` returned a cursor, and
+the sync looked successful with zero accepted rows. Nothing in the chain had a
+reason to complain. The generic lesson is about *where* to look: when a whole
+class of reads returns nothing while an unrelated class works, probe the
+provider's raw answer and compare it with the permission state before touching
+the query code — a silent "no" from the platform is not a bug in the caller.
+
+**What the code does now.**
+- `scope_read` travels with every device snapshot and is shown on the console's
+  device card, so an empty tab is explained rather than implied.
+- A full snapshot that reads zero rows although the previous upload carried some
+  is **not sent**: it would be an authoritative delete list for the server copy.
+  The scope records an error naming the previous count; wiping the server copy
+  first clears the counter and is the deliberate way to say "they really are
+  gone".
+- A blank answer is a per-app ROM setting, not something the server can grant:
+  the remedy is the owner's (turn the blank-data switch off for this app), and
+  the console now says so instead of showing "0 联系人".
