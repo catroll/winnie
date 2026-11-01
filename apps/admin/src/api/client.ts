@@ -165,6 +165,46 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     );
   }
 
+  return readResponse<T>(response, token);
+}
+
+/**
+ * Upload one recorded utterance and get its text back.
+ *
+ * This is the phone's `POST /api/v1/assistant/transcribe` and the console sends
+ * the same 16 kHz mono WAV, so one ASR binding serves both clients. Multipart
+ * cannot go through `request()`: that helper serialises JSON.
+ */
+async function requestAudio<T>(path: string, audio: Blob): Promise<T> {
+  const headers = new Headers({ Accept: 'application/json' });
+  const token = getToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  const form = new FormData();
+  form.append('file', audio, 'utterance.wav');
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers,
+      body: form,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new ApiError(
+      0,
+      'Cannot reach the Winnie API. Check that the server is running and reachable.',
+    );
+  }
+  return readResponse<T>(response, token);
+}
+
+/** Shared status handling so JSON and multipart requests fail identically. */
+async function readResponse<T>(response: Response, token: string | null): Promise<T> {
   if (response.status === 401 && token) {
     unauthorizedHandler?.();
   }
@@ -457,6 +497,14 @@ export const api = {
       method: 'POST',
       body: payload,
     });
+  },
+
+  /**
+   * Transcribe one spoken turn. A 422 means the vendor heard no speech, which
+   * the voice bar reports as "try again" rather than as a failure.
+   */
+  assistantTranscribe(audio: Blob): Promise<{ text: string }> {
+    return requestAudio<{ text: string }>('/api/v1/assistant/transcribe', audio);
   },
 
   usageOverview(days: number): Promise<UsageOverview> {

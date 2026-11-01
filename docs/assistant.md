@@ -595,6 +595,7 @@ accounts are disabled the local owner is used.
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/assistant/chat` | send `{message, conversation_id?, channel?}`, get the reply |
+| POST | `/assistant/transcribe` | multipart `file` (audio), one recorded utterance → `{text}`; used by the phone's wake turn and the console's voice turn |
 | GET | `/assistant/conversations` | recent conversations, newest first; `limit`, `offset`, `channel` |
 | GET | `/assistant/conversations/{id}` | full transcript (tool blocks included) |
 | GET | `/assistant/skills` | registered skills with enabled/available state, tools, permissions and instructions |

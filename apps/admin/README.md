@@ -16,7 +16,7 @@ keys.
 | Page | What it shows |
 |------|---------------|
 | **Dashboard** | Meeting count, configured routes, API version and readiness, plus the five most recent meetings |
-| **Chat** | A ChatGPT-like conversation with the assistant, plus the full history from every channel: console, phone page, API clients and scheduled task runs. Filter by channel, reopen any transcript including its tool blocks, and send from the console |
+| **Chat** | A ChatGPT-like conversation with the assistant, plus the full history from every channel: console, phone page, API clients and scheduled task runs. Filter by channel, reopen any transcript including its tool blocks, and send from the console — typed, or as a hands-free voice conversation with spoken replies |
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
 | **Phone data** | A card per synced device with model, OS, phone number, carrier and network type, WiFi SSID, IP address, SIM, security patch, scopes, per-kind record counts, battery/network/storage, last sync and sync errors, plus revoke, restore and delete-server-data actions; tabs for calendar, calls, SMS, contacts, notifications, location and apps with a time window, text filter, call direction, unread-only and a result limit; SMS adds multi-number and received/sent filters and opens a number's whole conversation at the clicked message; the location tab shows the resolved 省/市/区/具体位置 next to the coordinates and can fill in addresses for stored fixes; a cross-kind search; the assistant action queue with status, result and error |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
@@ -109,6 +109,31 @@ trace.
 The chat is available when `assistant.enabled` is true in
 `apps/api/config.yaml`; otherwise the history request explains why it cannot
 load.
+
+### Voice conversation
+
+The microphone button beside Send starts a voice conversation and replaces the
+composer with a status bar. One turn is: speak, pause, and the silence ends it;
+the audio is transcribed by the same ASR binding the phone uses; the text is
+sent as a normal chat turn; the reply is spoken; the microphone opens again for
+the next turn. **Cancel** ends the conversation, **Send now** skips the wait for
+a pause, and **Read replies aloud** (remembered between visits) turns only the
+speech off.
+
+- The browser captures 16 kHz mono WAV through an AudioWorklet and uploads it
+  to `POST /api/v1/assistant/transcribe`; the console never sees a vendor key.
+- A turn with no speech, a stalled microphone, a refused permission and an ASR
+  outage each get their own message, and the first two upload nothing.
+- `getUserMedia` exists only in a secure context: the console must be on
+  `localhost` or HTTPS, and the bar says so when it is not.
+- Spoken replies use the browser's own voices, so voice quality is the
+  platform's and nothing is billed per character. The spoken text is a
+  speech-optimised reduction of the Markdown reply (code blocks and URLs are
+  dropped); the full reply stays on screen and the Stop button ends the speech
+  without ending the conversation.
+
+The conversation is recorded under the **Console** channel like any other, so a
+voice turn can be reopened later from the history.
 
 ## Skills
 

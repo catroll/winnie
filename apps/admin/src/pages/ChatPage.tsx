@@ -11,10 +11,12 @@ import type {
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { Markdown } from '../components/Markdown';
 import { PageHeader } from '../components/PageHeader';
+import { VoiceBar } from '../components/VoiceBar';
 import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 import { conversationChannel } from '../lib/status';
+import { useVoiceConversation } from '../lib/voice/useVoiceConversation';
 
 const PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -215,10 +217,10 @@ export function ChatPage() {
     Boolean(conversationId) && !activeConversation && !conversationError;
   const composerBlocked = sending || (Boolean(conversationId) && !activeConversation);
 
-  const submit = async () => {
-    const message = draft.trim();
+  const submit = async (text?: string): Promise<string | null> => {
+    const message = (text ?? draft).trim();
     if (!message || composerBlocked || readOnly) {
-      return;
+      return null;
     }
     setSending(true);
     setSendError(null);
@@ -241,14 +243,20 @@ export function ChatPage() {
         // return, appear in the record.
         setConversationRevision((value) => value + 1);
       }
+      return response.reply;
     } catch (error) {
       setPendingUser(null);
       setSendError(describe(error));
       setDraft(message);
+      return null;
     } finally {
       setSending(false);
     }
   };
+
+  // A voice turn is a normal chat turn whose text came from the microphone, so
+  // it goes through the same submit path and the reply comes back for speaking.
+  const voice = useVoiceConversation({ onUtterance: submit });
 
   const loadedHistory = history.status === 'success' ? history.data : null;
   const items = loadedHistory?.items ?? [];
@@ -537,6 +545,8 @@ export function ChatPage() {
                       {tr('Start a new chat')}
                     </Link>
                   </div>
+                ) : voice.phase !== 'idle' || voice.error ? (
+                  <VoiceBar voice={voice} />
                 ) : (
                   <form
                     className="card-footer"
@@ -570,6 +580,17 @@ export function ChatPage() {
                         disabled={composerBlocked}
                         style={{ resize: 'none', maxHeight: '160px' }}
                       />
+                      <button
+                        type="button"
+                        id="chat-voice"
+                        className="btn btn-outline-secondary align-self-stretch"
+                        onClick={voice.start}
+                        disabled={composerBlocked}
+                        title={tr('Voice conversation')}
+                        aria-label={tr('Voice conversation')}
+                      >
+                        <i className="bi bi-mic" aria-hidden="true" />
+                      </button>
                       <button
                         type="submit"
                         className="btn btn-primary"

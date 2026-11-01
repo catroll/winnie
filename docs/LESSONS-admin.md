@@ -230,3 +230,94 @@ await evaluate(`JSON.stringify((${readBubble})())`);
 Keep the function free of module-scope variables — it does not close over the
 Node module it is defined in.
 
+
+## A tiny worklet imported with `?url` is inlined as a `data:` URL
+
+**Signal.** The voice recorder called `audioWorklet.addModule(...)` with a URL,
+but the built bundle contained the processor source and no separate asset file:
+`grep -o 'data:text/javascript' dist/assets/index-*.js` found it, and
+`ls dist/assets | grep capture` was empty.
+
+**Cause.** Vite inlines any asset below the 4 kB `assetsInlineLimit`, including
+a `?url` import and a `new URL(..., import.meta.url)` reference. A worklet
+module fetched from a `data:` URL is not a reliable load path, so the recorder
+would fail at exactly the moment the browser starts recording.
+
+**Fix.** The processor lives in `apps/admin/public/voice-capture-worklet.js` and
+is addressed as `${import.meta.env.BASE_URL}voice-capture-worklet.js`. A
+`public/` file is served untouched in dev and copied as-is into a build. Keep
+the worklet in the repository as a plain `.js` file: it runs in a different
+global scope, so bundling it is not required.
+
+**Check.** After a build, `ls dist | grep voice-capture-worklet` names the file,
+and a dev-server `curl -o /dev/null -w '%{http_code}' /voice-capture-worklet.js`
+is `200`.
+
+## Firefox speaks with an empty `speechSynthesis.getVoices()` list
+
+**Signal.** Every voice picker was empty — `speechSynthesis.getVoices()` returned
+`[]` in Firefox on this host — yet `speak()` fired `start`/`end` and the sink's
+monitor source carried audio at RMS ~15,000 for the whole sentence.
+
+**Cause.** Firefox's Linux speech backend is speech-dispatcher; it speaks
+through `libspeechd` without publishing a Web Speech voice list in this
+configuration. An empty list is therefore not evidence of "no TTS".
+
+**Fix.** Do not gate spoken replies on `getVoices().length`. Set
+`utterance.lang`, pick a matching voice only when a list exists, and treat
+"`start` never fired within 3 s" as the real failure. The same probe showed
+Chinese works too (`u.lang = 'zh-CN'`, `spd-say -L` lists `cmn`): about 22
+characters of Mandarin ran for over 12 s, so a long reply really is long and
+needs the Stop button.
+
+**Check.** Play a sentence and record the default sink's monitor source
+(`parec --device=...monitor`), then look for non-zero RMS while `speaking` is
+true. Screenshots cannot show whether a speaker heard anything.
+
+## A synthetic MediaStream stops delivering frames when its audio ends
+
+**Signal.** A fake microphone built from `AudioBufferSourceNode` →
+`MediaStreamAudioDestinationNode` drove the level meter for the 4.3 s clip, then
+the meter froze at 0 % while the voice bar stayed "Listening…" past 30 s. The
+endpointer never reached even its 6 s no-speech limit, so no audio blocks were
+reaching the worklet. A destination with no source at all produced no blocks
+from the start.
+
+**Cause.** Web Audio is a pull graph. When the only source feeding the
+destination ends (or the buffer is entirely silent and optimised away), the
+worklet stops being pulled. A real microphone never does this — it keeps
+delivering silence blocks.
+
+**Fix for the test double.** A synthetic clip must carry its own silent tail
+(the clip + 3 s of zeros), so the endpointer hears the pause and ends the turn
+while the source is still playing. A "silent microphone" test needs a very quiet
+non-zero tone (0.001 at 440 Hz, −60 dBFS, well below the −38 dBFS floor), not a
+zero buffer.
+
+**Fix for the app.** The console recorder now ends the turn after 3 s without a
+block and at 25 s wall-clock, mirroring the phone's guard. Without it, an
+unplugged microphone or a suspended audio graph would leave "Listening…" on
+screen for ever. The end-to-end run asserts the stalled case ends in ~3.2 s with
+no upload.
+
+**Check.** When a VAD test hangs, ask whether the *frames* stopped arriving
+before touching the thresholds; the level meter freezing while the phase stays
+"Listening" is that signature.
+
+## A synthetic `element.click()` does not start an AudioContext
+
+**Signal.** The voice test clicked the microphone button through
+`document.querySelector(...).click()`, and the fake microphone's buffer source
+never played: the context stayed suspended and the entire turn was silence,
+although the same code played fine from a manually pressed button.
+
+**Cause.** Browser autoplay policy trusts only user activation; a synthetic
+click is untrusted, so starting/resuming a context from its handler can be
+refused. This is invisible in the DOM: the button handler runs, the recorder
+starts, the bar says "Listening", and no audio arrives.
+
+**Fix.** Drive the microphone button with WebDriver input
+(`input.performActions` at the element's centre) rather than `.click()`. For
+buttons that touch audio or permissions this is not optional. The test profile
+also sets `media.autoplay.default=0` and `media.autoplay.block-webaudio=false`,
+but the trusted click is what a person actually does.

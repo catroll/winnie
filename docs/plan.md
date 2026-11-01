@@ -82,7 +82,7 @@ Success for the current phase:
 | Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
 | Push | Durable notification backlog, WebSocket stream to the phone, assistant reminder tool, scheduled-task and phone-command events | `winnie-push` + `apps/android` + `notify` skill | Core done |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: assistant chat — typed or as a voice conversation with spoken replies — and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | Byte-level OpenAI/Anthropic proxy, Winnie gateway keys, server-held vendor credentials, SSE, logs | `winnie-gateway` | Done |
 | Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
@@ -283,7 +283,10 @@ Working:
   filterable by channel. Any transcript can be reopened, including its tool
   blocks; a task-run record is read-only. Replies render Markdown — lists, task
   items, fenced code, tables, links, quotes and emphasis — while the owner's own
-  turn is shown as typed.
+  turn is shown as typed. A microphone button runs a hands-free voice
+  conversation: the browser records 16 kHz mono WAV, the server transcribes it on
+  the phone's ASR binding, the transcript is sent, and the reply is spoken with
+  the platform's own voices before the microphone reopens.
 - Meetings: paginated list; detail with stage, processing error, transcript and
   translations, structured minutes, Markdown/TXT export, minutes regeneration
   and deletion.

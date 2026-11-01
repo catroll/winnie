@@ -1,15 +1,15 @@
-"""Short-utterance speech to text for the phone's voice chat.
+"""Short-utterance speech to text for the voice chats.
 
-The wake word is detected on the phone, so this endpoint never sees the audio
-that was listened to in the background: it receives only the utterance that
-followed a detection, once. It reuses the meeting-notes ASR binding
-(``meetings.transcribe``) so switching the supplier in the console changes the
-voice chat as well, and the call is visible in the LLM usage ledger through the
-same adapter.
+Two clients use this: the phone, where the wake word is detected on-device, and
+the admin console, where the owner starts a turn with the microphone button.
+Neither streams: the endpoint receives one recorded utterance and returns its
+text. It reuses the meeting-notes ASR binding (``meetings.transcribe``) so
+switching the supplier in the console changes every voice chat at once, and the
+call is visible in the LLM usage ledger through the same adapter.
 
-The phone uploads 16 kHz mono WAV, but the content type decides the suffix
-because a vendor adapter may accept a compressed format and a caller may send
-one.
+The phone uploads 16 kHz mono WAV and the console encodes the same format from
+its AudioWorklet capture, but the content type decides the suffix because a
+vendor adapter may accept a compressed format and a caller may send one.
 """
 
 from __future__ import annotations

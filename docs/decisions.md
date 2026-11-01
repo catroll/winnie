@@ -1749,3 +1749,59 @@ foreground-service behaviour are unmeasured: there is no device or emulator on
 the development machine. The boosting score and threshold are the library
 defaults until that measurement moves them; [docs/voice-wake.md](./voice-wake.md)
 lists the five checks that would make this "validated" rather than "implemented".
+
+## The console talks too: server ASR in, browser voices out (2026-11-01)
+
+**Decision.** The admin console's chat page gets a voice conversation: the
+microphone button starts a loop of listen → transcribe → send → speak the reply
+→ listen again, and the composer becomes a status bar until it is stopped.
+Audio goes **in** through the same `POST /api/v1/assistant/transcribe` endpoint
+as the phone; speech comes **out** through the browser's own
+`SpeechSynthesis`, with no new vendor, binding or bill.
+
+**Same endpoint and same endpointing as the phone.** One ASR binding
+(`meetings.transcribe`) transcribes both clients, so switching the supplier
+changes both and every call lands in the usage ledger once. The console's
+endpointer keeps `EndpointDetector`'s numbers — 20 ms frames, -38 dBFS floor,
+1.2 s trailing silence, 6 s no-speech, 20 s maximum — because a voice turn
+should not have two personalities depending on the device in the owner's hand.
+The port is pure TypeScript, and the browser test drives it through the UI.
+
+**PCM, not MediaRecorder.** The browser's recorder produces WebM/Opus;
+recording-file ASR APIs are not reliably Opus decoders, and transcoding on the
+server would add a dependency to save a few lines. An AudioWorklet hands blocks
+to the page, an `OfflineAudioContext` resamples to 16 kHz, and the WAV header is
+written by hand — the exact container the phone already sends, proven by the
+same adapter.
+
+**A stall guard the phone also has.** Endpointing counts audio, so a microphone
+that stops delivering blocks would pin "Listening…" for ever. Three seconds
+without a block, or 25 s wall-clock, ends the turn. The phone's
+`ChatViewModel` already has this guard; the console needed it for the same
+reason.
+
+**Spoken replies stay local.** A vendor TTS binding would add a second billed
+capability, a credential and a round-trip for something every operating system
+already does. The reply is reduced to sentences first — code blocks are dropped,
+links lose their URLs, tables are flattened — and the language is chosen from
+the reply's script, not the UI's. The cost of this choice is real and accepted:
+voice quality is the platform's, voices differ per machine, and Firefox reports
+an empty `getVoices()` list while still speaking through the system
+speech-dispatcher. An empty list is therefore not treated as "no speech
+support"; only a failure to start is. A persisted "Read replies aloud" switch
+exists because a quiet room and a meeting want opposite defaults, and Stop ends
+the speech without ending the conversation.
+
+**Auto-send, not dictation.** The transcript is sent as the turn immediately.
+A voice conversation that needed a keypress per turn would not be a conversation;
+the transcript appears in the message list, so the owner still sees exactly what
+was sent, and a misrecognition is visible in the record rather than hidden in a
+composer.
+
+**Verified, and not.** A recorded Mandarin clip, injected as the browser's
+microphone stream, reached the real ASR binding and came back as the expected
+text; the console uploaded RIFF / mono / 16 kHz / 16-bit PCM; the reply was
+queued for speech and the loop reopened the microphone; Cancel released every
+track. The real microphone opens through the app's recorder. Permission denial,
+a quiet turn and a stalled stream each produce their own message. The owner's
+own voice, the recognition rate on it, and Safari/Chromium remain unmeasured.

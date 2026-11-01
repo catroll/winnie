@@ -108,6 +108,85 @@ after 6 s; a turn that never stops ends at 20 s. The rules are pure Kotlin and
 unit tested, because they decide the shape of every voice interaction and a
 device is not needed to prove them.
 
+## The console's voice conversation
+
+The admin console's chat page has the same capability without the wake word: the
+microphone button in the composer starts a voice conversation, and the composer
+is replaced by a status bar until it ends. There is no always-on listening in a
+browser tab, and none is wanted.
+
+```
+composer microphone button → useVoiceConversation
+  └─ recorder.ts: getUserMedia → AudioWorklet → VoiceEndpointer
+       └─ 16 kHz mono WAV (OfflineAudioContext resample, hand-written header)
+            └─ POST /api/v1/assistant/transcribe
+                 └─ submit() — the normal chat turn, shown as a user message
+                      └─ reply → speech.ts: speakableText → SpeechSynthesis
+                           └─ listen again, until Cancel
+```
+
+The numbers are the phone's, not a second tuning: `VoiceEndpointer` keeps
+`EndpointDetector`'s 20 ms frames, -38 dBFS speech floor, three frames to accept
+speech, 1.2 s of trailing silence, and the 6 s / 20 s limits. A voice turn must
+feel the same whichever client the owner is holding, and the phone's values were
+chosen for a microphone at arm's length, which is how a desk console is used.
+The port is pure TypeScript with the same rule structure; the browser tests
+drive it through the UI.
+
+One guard is new here. The rules count audio, so a microphone that stops
+delivering blocks — unplugged, suspended by the OS, a stalled audio graph —
+would leave the bar in "Listening…" for ever. `recorder.ts` ends the turn after
+3 s without a block, and at 25 s wall-clock regardless. The phone has the same
+guard for the same reason ("a microphone that returns silence forever must not
+pin the sheet").
+
+**Capture is PCM, not MediaRecorder.** `MediaRecorder` produces WebM/Opus, and a
+recording-file ASR API is not reliably an Opus decoder; the phone already sends
+16 kHz mono WAV, so the console encodes the same container itself. A worklet
+hands 128-frame blocks to the page, an `OfflineAudioContext` resamples the
+device rate (48 kHz here) to 16 kHz, and the WAV header is written by hand. The
+processor lives in `apps/admin/public/` because `audioWorklet.addModule` needs a
+real URL: Vite inlines a small `?url` import as a `data:` URL, which is not a
+reliable place to load a worklet module.
+
+**Spoken replies use the browser, not a vendor.** The reply is reduced to
+sentences (code blocks dropped, links and emphasis stripped, tables flattened),
+the language is chosen from the reply's script, and the platform's voices speak
+it. There is no TTS binding and no per-character bill: an ASR call per turn is
+the cost, and voice *output* does not need to leave the machine. The trade-off
+is that voice quality and availability are the platform's, and a long reply is
+spoken for as long as the platform takes — the bar has a Stop button and the
+transcript is on screen. `docs/decisions.md` records why no vendor was added.
+
+Two behaviours are deliberate and easy to mistake for bugs:
+
+- The transcript is **sent automatically**, not inserted into the composer. A
+  voice conversation that required a keypress per turn would not be hands-free.
+- After the reply is spoken the microphone opens again. That loop is the
+  feature; Cancel ends it, and the "Read replies aloud" switch (persisted) turns
+  only the speech off.
+
+**What was verified here.** On the development machine, in headless Firefox
+driven over WebDriver BiDi:
+
+- The real microphone opens through the app's own recorder and the level meter
+  follows it (5–34 % of the meter for room noise; a person speaking drives it
+  higher).
+- A recorded Mandarin clip, injected as the microphone stream, was uploaded as
+  RIFF / mono / 16 kHz / 16-bit PCM (164,568 bytes), transcribed by the real
+  `meetings.transcribe` binding as `你好，问你今天天气怎么样？`, sent as a chat
+  turn, answered, spoken, and the loop returned to listening with a second
+  `getUserMedia` call. Cancel released every track (`readyState === 'ended'`).
+- A refused permission, a quiet turn and a stalled stream each end with their
+  own message, and neither the quiet nor the stalled turn uploads anything.
+- The Chinese UI and the dark theme render the bar.
+
+**What is not verified.** The owner's own voice and how often the vendor
+mishears it; spoken-reply quality on this host (Firefox exposes no voice list
+yet speaks through speech-dispatcher — see the lessons doc); Safari and
+Chromium; and a real HTTPS deployment, where the origin must be secure for
+`getUserMedia` to exist at all (the bar says so when it is not).
+
 ## What Android allows, and what it does not
 
 This is the part that decides how "always listening" really behaves. None of it
@@ -152,6 +231,7 @@ can be fixed in the app.
 | Per wake | 0 — no network, no vendor |
 | APK growth | ~5.3 MB model + ~15 MB native library per ABI |
 | Voice turn | one ASR call on the `meetings.transcribe` binding (paid) |
+| Spoken reply | 0 — the browser's own voices, no vendor |
 | Battery | the real price; unmeasured on a device (see below) |
 
 The wake detector and the voice turn are deliberately separate costs: the part
@@ -173,6 +253,17 @@ one utterance.
   same ASR binding as meeting notes, with 400/413/422/502/503 distinguished.
 - A wake switch on the Account tab that requests the microphone permission and
   starts the service from a visible screen.
+
+Console (same document, previous section):
+
+- A microphone button in the chat composer that starts a continuous voice
+  conversation: listen, transcribe, send, speak the reply, listen again.
+- Browser capture through an AudioWorklet to a 16 kHz mono WAV, with the phone's
+  endpointing rules and a 3 s stall / 25 s length guard.
+- Spoken replies through the platform's `SpeechSynthesis`, with a persisted
+  "Read replies aloud" switch, a Markdown-to-speech reduction and a Stop button.
+- Distinct messages for a refused, missing, busy or insecure microphone, a turn
+  with no speech, an ASR outage and a speech-synthesis failure.
 
 ## What was measured, without a phone
 
@@ -249,3 +340,9 @@ phone", and the README says so.
 - `audio/WakePrefs.kt` — the setting.
 - `ui/chat/ChatViewModel.kt` — the voice turn state machine.
 - `apps/api/src/winnie_api/assistant_voice.py` — the transcription endpoint.
+- `apps/admin/src/lib/voice/recorder.ts` — browser capture, resample, WAV encode.
+- `apps/admin/src/lib/voice/endpoint.ts` — the endpointer, the phone's rules.
+- `apps/admin/src/lib/voice/speech.ts` — Markdown-to-speech and the platform voices.
+- `apps/admin/src/lib/voice/useVoiceConversation.ts` — the console's turn loop.
+- `apps/admin/src/components/VoiceBar.tsx` — the composer's replacement.
+- `apps/admin/public/voice-capture-worklet.js` — the AudioWorklet processor.
