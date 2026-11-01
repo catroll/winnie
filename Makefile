@@ -48,7 +48,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help api android android-kws admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test schedule schedule-test schedule-skill
+.PHONY: help audio-check api android android-kws admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test schedule schedule-test schedule-skill
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -67,6 +67,9 @@ help: ## Show this help
 	@printf '\nVendor API keys: %s (gitignored, read by winnie-llm only)\n' 'packages/winnie-llm/.env'
 	@printf '  DEEPSEEK_API_KEY, OPENAI_API_KEY, DASHSCOPE_API_KEY,\n'
 	@printf '  ANTHROPIC_API_KEY, VOLCENGINE_ASR_API_KEY\n'
+
+audio-check: ## Record the local microphone and report whether it hears speech
+	@python3 '$(ROOT)/scripts/check-audio-input.py' $(ARGS)
 
 api: ## Run the API on [::]:8000, reachable over IPv6, with reload enabled
 	@cd '$(API_DIR)' && \

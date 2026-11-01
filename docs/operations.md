@@ -143,3 +143,33 @@ the reverse proxy is the only public listener. See
 [README](../README.md) for the current security caveat: the development path is
 still cleartext HTTP/WS, and the Android network-security config must be
 narrowed after TLS is in place.
+
+## Diagnostics: the local microphone
+
+A voice turn that fails is usually one of two questions: did the room reach the
+microphone, and did the server turn it into text? The first one is measurable
+without the app:
+
+```bash
+make audio-check                                  # speak when prompted
+make audio-check ARGS="--play clip.wav"           # speaker -> room -> mic
+make audio-check ARGS="--json --quiet 2 --speech 2"
+```
+
+`scripts/check-audio-input.py` records a quiet phase and a spoken phase from the
+default capture source (`parec`, 16 kHz mono), then reports RMS, peak, DC offset,
+clipping, 20 ms frame levels, the 300-3000 Hz band level and the share of power
+per band, and writes both phases to `.cache/audio-check/` so they can be played
+back. The pass/fail decision is taken in the speech band, because broadband RMS
+cannot tell a voice from a hot input's own rumble.
+
+Two limits worth knowing before reading its output:
+
+- The browser's `echoCancellation`, `noiseSuppression` and `autoGainControl`
+  change the numbers a lot — the console can read -80 dBFS where this script
+  reads -20 dBFS. This is the hardware baseline; the app on top of it is a
+  separate measurement.
+- A capture chain at high gain (mic boost plus capture gain) makes an open input
+  look loud, so a loud broadband number with an empty speech band means "nothing
+  audible is connected", not "the microphone is sensitive". `alsamixer -c <card>`
+  shows the boost; the script prints the card number.
