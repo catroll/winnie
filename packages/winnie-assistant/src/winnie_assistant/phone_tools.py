@@ -597,9 +597,13 @@ class PhoneToolMixin:
             calendar = (
                 f" [{event['calendar_name']}]" if event.get("calendar_name") else ""
             )
+            # An expanded occurrence carries its series id and rule, so say so:
+            # several lines with the same id are one repeating event, and an
+            # update or delete of that id touches the series.
+            repeating = " (recurring)" if event.get("recurrence") else ""
             lines.append(
                 f"- {when} [id {event['id']}] {event.get('title') or '(untitled)'}"
-                f"{location}{calendar}"
+                f"{location}{calendar}{repeating}"
             )
         return "\n".join(lines)
 
