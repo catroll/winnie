@@ -25,6 +25,7 @@ export const NAVIGATION: readonly NavigationItem[] = [
   { to: '/phone', label: 'Phone data', icon: 'bi-phone', end: false, group: 'workspace', adminOnly: false },
   { to: '/tasks', label: 'Scheduled tasks', icon: 'bi-alarm', end: false, group: 'workspace', adminOnly: false },
   { to: '/skills', label: 'Skills', icon: 'bi-puzzle', end: false, group: 'workspace', adminOnly: false },
+  { to: '/keys', label: 'API keys', icon: 'bi-key', end: false, group: 'workspace', adminOnly: false },
   { to: '/account', label: 'Account', icon: 'bi-person-gear', end: false, group: 'workspace', adminOnly: false },
   { to: '/', label: 'Dashboard', icon: 'bi-speedometer2', end: true, group: 'administration', adminOnly: true },
   { to: '/schedule', label: 'Schedule', icon: 'bi-calendar-week', end: false, group: 'administration', adminOnly: true },

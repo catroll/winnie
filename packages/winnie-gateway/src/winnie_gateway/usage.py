@@ -99,6 +99,7 @@ def usage_observer(
                 "endpoint": endpoint,
                 "key_id": key.id,
                 "key_label": key.label,
+                "key_owner": key.owner_id,
             },
         )
         try:

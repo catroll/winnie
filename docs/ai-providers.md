@@ -197,7 +197,7 @@ CI and one-off runs possible. `WINNIE_LLM_ENV_FILE` points the loader at another
 file; the API tests use it so the checkout's real keys never reach a test.
 
 A gateway route uses the same supplier key: the gateway injects it for a caller
-that presents a Winnie gateway key (created on the Gateway routes page). The
+that presents a Winnie gateway key (created on the API keys page). The
 environment file is therefore the single place a supplier credential lives, for
 internal jobs and proxied traffic alike; editing it needs an API restart. A
 gateway-only record is never a feature target; the internal API button/config is

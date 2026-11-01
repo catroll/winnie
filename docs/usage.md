@@ -145,8 +145,8 @@ provider's failure becomes an error on its row, not a failed page.
 assistant and the gateway. A gateway route injects the same supplier key, so a
 proxied call counts against the account shown on the provider card. Each
 gateway event also records the Winnie key that made it (`detail.key_id`,
-`detail.key_label`), which is how one client's spend is separated from another's
-without a per-key total in the UI.
+`detail.key_label`, `detail.key_owner`), which is how one client's spend is
+separated from another's without a per-key total in the UI.
 
 ## HTTP API
 

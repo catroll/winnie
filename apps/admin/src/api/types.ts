@@ -32,10 +32,15 @@ export interface GatewayKey {
   created_at: string;
   revoked_at: string | null;
   routes: string[];
+  /** Account that created the key; empty for a key older than ownership. */
+  owner_id: string;
+  owner_name: string;
 }
 
 export interface GatewayKeyList {
   keys: GatewayKey[];
+  /** Route names a key may be limited to; not secret. */
+  routes: string[];
 }
 
 export interface GatewayKeyCreated {

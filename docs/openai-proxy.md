@@ -30,14 +30,30 @@ deployment.
 ## Keys
 
 A gateway key is a Winnie credential, not a vendor key. Create one on the
-Gateway routes page; the secret (`wsk_…`) is shown once and only its SHA-256
-digest is written to `data/gateway-keys.yaml` (mode `0600`).
+console's **API keys** page (Workspace); the secret (`wsk_…`) is shown once and
+only its SHA-256 digest is written to `data/gateway-keys.yaml` (mode `0600`).
 
 | Operation | HTTP |
 |---|---|
-| List keys (no secret, no digest) | `GET /api/v1/gateway/keys` |
-| Create a key | `POST /api/v1/gateway/keys` |
-| Revoke a key | `DELETE /api/v1/gateway/keys/{id}` |
+| List your keys (no secret, no digest) | `GET /api/v1/gateway/keys` |
+| List every account's keys (administrator) | `GET /api/v1/gateway/keys?scope=all` |
+| Create a key for yourself | `POST /api/v1/gateway/keys` |
+| Revoke your key | `DELETE /api/v1/gateway/keys/{id}` |
+
+**A key belongs to the account that created it.** Every signed-in account can
+list, create and revoke its own keys without an administrator; the API scopes
+the list to the caller and refuses a revoke outside it (404, so it does not
+reveal another account's key). An administrator may list every key and revoke
+any of them, which is how access is removed when an account goes away. A key
+without an owner was created before ownership existed; only an administrator can
+see or revoke it.
+
+Because every active account can mint a key, every active account can spend the
+supplier credit those routes use. That is the intended shape for a personal
+deployment with registration closed; an open-registration instance must treat
+"can sign up" as "can call the models", and revoke the account or its key
+otherwise. Per-account route limits beyond the key's own allowlist are not
+implemented.
 
 A key may be limited to a set of route names. An empty list allows every route,
 which is the convenient default for a personal deployment; a restriction makes a
@@ -167,7 +183,7 @@ It never includes a credential.
 
 ## Calling it
 
-Create a key on the Gateway routes page, put the vendor key in
+Create a key on the API keys page, put the vendor key in
 `packages/winnie-llm/.env`, then point any OpenAI-compatible client at
 `http://[::1]:8000/{route}`:
 

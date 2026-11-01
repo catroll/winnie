@@ -86,21 +86,24 @@ data, not the instance:
 | `POST /api/v1/auth/login` | Obtain a session. Rate-limited by `login_throttles`. |
 | `/{route}/{path}` | The model gateway's data plane. It authenticates with a Winnie gateway key, not a console session, and injects the route's supplier key from `packages/winnie-llm/.env`; this is not a console surface and gating it on a session would break non-console clients. |
 
-Gateway keys are managed through the console API:
+Gateway keys are managed through the console API. Every signed-in account sees
+its own keys; `scope=all` is administrator-only:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/gateway/keys` | List keys: id, label, allowlist, creation and revocation time. Never the secret or digest. |
-| `POST` | `/api/v1/gateway/keys` | Create a key; the response contains `secret` exactly once. An allowlist may only name configured routes. |
-| `DELETE` | `/api/v1/gateway/keys/{id}` | Revoke a key. The record stays for attribution; a second call is idempotent. |
+| `GET` | `/api/v1/gateway/keys` | The caller's own keys plus the route names an allowlist may use. Keys carry id, label, owner, allowlist and times; never the secret or digest. |
+| `GET` | `/api/v1/gateway/keys?scope=all` | Every account's keys. Returns `403` for a normal user. |
+| `POST` | `/api/v1/gateway/keys` | Create a key owned by the caller; the response contains `secret` exactly once. An allowlist may only name configured routes. |
+| `DELETE` | `/api/v1/gateway/keys/{id}` | Revoke a key the caller owns, or any key as an administrator. Another account's key answers `404`. The record stays for attribution; a second call is idempotent. |
 
 ## Deliberately not gated
 
 - **Phone routes** stay owner-scoped. Another workstream owns
   `packages/winnie-phone/**`; changing its authorization is out of scope here.
 - **Gateway data-plane routes** stay open (see the table above): a caller may
-  reach them without a session, because a key is the credential there. Only
-  route inspection (`GET /routes`) and key management are admin-only.
+  reach them without a session, because a key is the credential there. Route
+  inspection (`GET /routes`) is admin-only; key management is owner-scoped with
+  an administrator override.
 - **Meetings, chat, assistant tasks, skills and account** stay available to
   normal users by product decision; they are owner-scoped rather than global.
 

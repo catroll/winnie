@@ -119,7 +119,6 @@
   "Gateway keys": "Gateway keys",
   "Create key": "Create key",
   "Loading keys…": "Loading keys…",
-  "No active gateway key exists. Every call to a route is rejected with 401 until you create one.": "No active gateway key exists. Every call to a route is rejected with 401 until you create one.",
   "Label": "Label",
   "Laptop, phone, build agent…": "Laptop, phone, build agent…",
   "Names the client this key belongs to.": "Names the client this key belongs to.",
@@ -139,5 +138,13 @@
   "Route": "Route",
   "Protocol": "Protocol",
   "Upstream": "Upstream",
-  "No gateway routes are configured.": "No gateway routes are configured."
+  "No gateway routes are configured.": "No gateway routes are configured.",
+  "API keys": "API keys",
+  "A gateway key authenticates one of your clients. It is shown once and only a digest is stored. Clients send it as Authorization: Bearer, x-api-key, or x-winnie-key.": "A gateway key authenticates one of your clients. It is shown once and only a digest is stored. Clients send it as Authorization: Bearer, x-api-key, or x-winnie-key.",
+  "All users' keys": "All users' keys",
+  "You have no active gateway key. Clients using a route answer 401 until you create one.": "You have no active gateway key. Clients using a route answer 401 until you create one.",
+  "No active gateway key exists.": "No active gateway key exists.",
+  "You have not created a gateway key yet.": "You have not created a gateway key yet.",
+  "Owner": "Owner",
+  "Clients reach a route with a Winnie key; create and revoke keys on": "Clients reach a route with a Winnie key; create and revoke keys on"
 }

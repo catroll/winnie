@@ -1236,9 +1236,9 @@ supported list is explicit, not inferred from the request.
 
 **Navigation groups express ownership, not visual taste.** The console has one
 shell but two audiences: Workspace (Chat, Meetings, Phone data, Scheduled tasks,
-Skills, Account) is the signed-in user's own data; Administration (Dashboard,
-Schedule, Users, AI providers, Gateway routes, Document index, News) is
-operator-only. One metadata table (`to`, `label`, `icon`, `group`,
+Skills, API keys, Account) is the signed-in user's own data; Administration
+(Dashboard, Schedule, Users, AI providers, Gateway routes, Document index, News)
+is operator-only. One metadata table (`to`, `label`, `icon`, `group`,
 `adminOnly`) drives the AdminLTE `nav-header` groups and the filter, so a page
 cannot be visible but unguarded by accident. A section that is not a page of its
 own — the LLM usage report inside AI providers — has no entry here, because a
@@ -1327,3 +1327,41 @@ body cannot be parsed for usage, and a client's `br` would depend on a decoder
 this process may not have. The request's `Accept-Encoding` is dropped, the body
 is returned decoded with `Content-Encoding`/`Content-Length` removed, and the
 bandwidth cost of one local hop is accepted.
+
+## Gateway keys belong to the account that created them (2026-11-01)
+
+**A key is a personal credential, so it lives on a personal page.** The first
+slice put key management on the administrator-only Gateway routes page, which
+made the operator the only person who could mint or revoke a client's key. A key
+is per client (a laptop, a phone, a build agent), and the person who owns that
+client is the one who knows when it leaked. The records gained `owner_id` and
+`owner_name`, the list is scoped to the caller, and creation takes the owner from
+the session. The page moved from Administration to Workspace and is visible to
+every signed-in account; Gateway routes keeps the operator's view of the
+upstreams and links to it.
+
+**Revoking outside your scope answers 404, not 403.** The key id is eight hex
+characters, so a 403/404 distinction lets a caller confirm that another
+account's key exists. Both are refused; 404 is the one that reveals nothing.
+
+**An administrator keeps an override.** `GET /keys?scope=all` lists every key and
+`DELETE` accepts any key when the role is admin. That is the single action needed
+when an account goes away. A key without an owner predates ownership; only an
+administrator can see or revoke it, because there is no account to attribute it
+to and hiding it would strand it.
+
+**The trade-off is deliberate: every active account can spend the supplier
+credit of the routes it may reach.** An empty allowlist means every route, and
+there is no per-account route policy beyond the key's own list. Registration is
+closed by default, so "an active account" is someone the operator created; the
+framework already offers a single kill switch per account (deactivate, reset the
+password, revoke the sessions). An admin-approval queue for keys was rejected
+because it turns a personal tool into an approval workflow and still ends in the
+same account-level control. An instance that opens registration must read
+"anyone may sign up" as "anyone may call the models" and close registration or
+scope the accounts; that consequence is stated in `docs/openai-proxy.md`.
+
+**Ownerless records are optional fields, not a file version bump.** `owner_id`
+and `owner_name` default to empty, so the existing file and any key created
+before this change load unchanged. A version bump would have added a migration
+for two fields that are display metadata.

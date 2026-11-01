@@ -225,8 +225,9 @@ export const api = {
     return request<RouteList>('/routes');
   },
 
-  gatewayKeys(): Promise<GatewayKeyList> {
-    return request<GatewayKeyList>('/api/v1/gateway/keys');
+  gatewayKeys(scope: 'own' | 'all' = 'own'): Promise<GatewayKeyList> {
+    const suffix = scope === 'all' ? '?scope=all' : '';
+    return request<GatewayKeyList>(`/api/v1/gateway/keys${suffix}`);
   },
 
   createGatewayKey(payload: GatewayKeyDraft): Promise<GatewayKeyCreated> {

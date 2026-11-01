@@ -52,8 +52,8 @@ The model gateway is fully implemented. It supports:
   method, query string and header, not a hand-written endpoint list
 - Path-based routing, so one deployment can front OpenAI, Anthropic, DeepSeek
   and Qwen at once
-- Winnie gateway keys: per-client, route-scoped and revocable, managed on the
-  console's Gateway routes page
+- Winnie gateway keys: owned per account, route-scoped and revocable, managed on
+  the console's API keys page
 - Server-held vendor credentials — clients never see a vendor key
 - Streaming (SSE) passthrough
 - Paired `ask`/`answer` logs on local disk, per route
@@ -181,7 +181,7 @@ curl -s 'http://[::1]:8000/routes'
 
 Point any OpenAI-compatible client at `http://[::1]:8000/<route>` (or
 `API_HOST=0.0.0.0 make api` for IPv4) and authenticate with a Winnie gateway
-key, created on the console's Gateway routes page. The vendor key is injected by
+key, created on the console's API keys page. The vendor key is injected by
 the server from `packages/winnie-llm/.env`; clients never hold it. Routing,
 configuration and request examples are in
 [docs/openai-proxy.md](./docs/openai-proxy.md).

@@ -837,7 +837,6 @@
   "Gateway keys": "网关密钥",
   "Create key": "创建密钥",
   "Loading keys…": "正在加载密钥…",
-  "No active gateway key exists. Every call to a route is rejected with 401 until you create one.": "当前没有可用的网关密钥。在创建之前，所有路由调用都会返回 401。",
   "Laptop, phone, build agent…": "笔记本、手机、构建代理…",
   "Names the client this key belongs to.": "用来标识这把密钥属于哪个客户端。",
   "Allowed routes": "允许的路由",
@@ -845,5 +844,12 @@
   "Leave every box unchecked to allow all routes.": "全部不勾选表示允许所有路由。",
   "Key id": "密钥 ID",
   "All routes": "所有路由",
-  "No gateway key has been created yet.": "还没有创建过网关密钥。"
+  "No gateway key has been created yet.": "还没有创建过网关密钥。",
+  "API keys": "API 密钥",
+  "A gateway key authenticates one of your clients. It is shown once and only a digest is stored. Clients send it as Authorization: Bearer, x-api-key, or x-winnie-key.": "网关密钥用于认证你的一个客户端。它只显示一次，服务端只存摘要。客户端把它放在 Authorization: Bearer、x-api-key 或 x-winnie-key 里。",
+  "All users' keys": "所有用户的密钥",
+  "You have no active gateway key. Clients using a route answer 401 until you create one.": "你还没有可用的网关密钥。在创建之前，客户端访问路由会返回 401。",
+  "No active gateway key exists.": "当前没有可用的网关密钥。",
+  "You have not created a gateway key yet.": "你还没有创建过网关密钥。",
+  "Clients reach a route with a Winnie key; create and revoke keys on": "客户端用 Winnie 密钥访问路由；密钥的创建与吊销在"
 }

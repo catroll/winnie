@@ -126,10 +126,11 @@ durability rather than new surface area.
   per-endpoint handler and no protocol translation, so embeddings, models,
   count-tokens and future endpoints work without new code.
 - Callers authenticate with a Winnie gateway key; the server injects the route's
-  supplier key from `packages/winnie-llm/.env`. A key can be limited to a set of
-  routes and is revoked, never recovered.
+  supplier key from `packages/winnie-llm/.env`. A key belongs to the account that
+  created it, can be limited to a set of routes, and is revoked, never
+  recovered.
 - Keys live in `data/gateway-keys.yaml` (digest only, mode `0600`) and are
-  managed on the console's Gateway routes page.
+  managed on the console's API keys page, separately for each account.
 - SSE streaming is passed through chunk by chunk; each ask/answer pair is
   recorded locally and every call is attributed to its key in the usage ledger.
 - Covered by `apps/api/tests/test_gateway.py` and `test_gateway_keys.py`.

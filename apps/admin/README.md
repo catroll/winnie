@@ -25,7 +25,8 @@ keys.
 | **AI providers** | Two tabs. **Suppliers** manages suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether `winnie-llm/.env` supplies the supplier key. **LLM usage** shows recorded model calls with token classes, latency, status and cost, breakdowns by day, feature and model, provider balances with a refresh, and the configured price table |
 | **Schedule** | One week of the owner's Markdown schedule: the seven day sections with their events, the week-level items, times, tags and links; add an event to a day or to the week list, check it off, edit text and time, delete it, and move between weeks. Pre-2024 files render read-only |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
-| **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, proxy prefix and whether its supplier credential is present; plus the Winnie gateway keys that clients use, with a route allowlist, one-time secret and revocation |
+| **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, proxy prefix and whether its supplier credential is present. Administrator-only |
+| **API keys** | The signed-in account's Winnie gateway keys: label, key id, route allowlist, creation time and revocation, plus a one-time secret when a key is created. An administrator can switch the list to every account's keys and revoke any of them |
 | **Users** | Admin-only account list with search, role/status filters, pagination, user creation with a one-time temporary password, password reset, role changes, and activate/deactivate. The last active admin and self-deactivation are protected |
 | **Account** | Profile, session expiry and password change |
 
@@ -218,7 +219,7 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
   operator route with `403`; hiding a menu item is not the access control. A
   `403` makes the console re-read `/auth/me` so a demotion reaches the UI.
 - The sidebar has two groups: **Workspace** (Chat, Meetings, Phone data,
-  Scheduled tasks, Skills, Account) and **Administration** (Dashboard,
+  Scheduled tasks, Skills, API keys, Account) and **Administration** (Dashboard,
   Schedule, Users, AI providers, Gateway routes, Document index, News). A normal
   user sees only Workspace, lands on `/chat`, and gets a 403 panel if they open
   an admin URL directly.
@@ -231,9 +232,9 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 - Meeting text is rendered as text, not HTML.
 - Vendor keys are not entered or stored here. The AI providers page shows the
   variable `winnie-llm` derives from each supplier and whether
-  `packages/winnie-llm/.env` supplies it. Gateway routes show the configured
-  upstreams and the Winnie keys clients present; the key secret is shown once at
-  creation and only its digest is stored.
+  `packages/winnie-llm/.env` supplies it. The API keys page shows the caller's
+  own keys; the secret is shown once at creation and only its digest is stored.
+  A key can only be revoked by its owner or an administrator.
 
 ## LLM usage tab
 

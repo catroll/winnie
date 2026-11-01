@@ -54,7 +54,13 @@ def digest_secret(secret: str) -> str:
 
 
 class GatewayKey(BaseModel):
-    """One stored key: the caller-facing record, never a usable credential."""
+    """One stored key: the caller-facing record, never a usable credential.
+
+    ``owner_id`` is the account that created the key. A key without an owner
+    predates per-account ownership and can only be managed by an administrator;
+    ``owner_name`` is a snapshot for display, because the key file must stay
+    readable without a database.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -64,6 +70,8 @@ class GatewayKey(BaseModel):
     created_at: str
     revoked_at: str | None = None
     routes: list[str] = Field(default_factory=list)
+    owner_id: str = ""
+    owner_name: str = ""
 
     @property
     def revoked(self) -> bool:
@@ -83,6 +91,8 @@ class GatewayKey(BaseModel):
             "created_at": self.created_at,
             "revoked_at": self.revoked_at,
             "routes": list(self.routes),
+            "owner_id": self.owner_id,
+            "owner_name": self.owner_name,
         }
 
 
@@ -177,6 +187,8 @@ class GatewayKeyStore:
         *,
         label: str,
         routes: list[str] | tuple[str, ...] | None = None,
+        owner_id: str = "",
+        owner_name: str = "",
     ) -> tuple[GatewayKey, str]:
         """Issue one key and return it with the secret, which is stored nowhere."""
         cleaned = _validate_label(label)
@@ -188,6 +200,8 @@ class GatewayKeyStore:
             digest=digest_secret(secret),
             created_at=utcnow(),
             routes=allowed,
+            owner_id=owner_id.strip(),
+            owner_name=owner_name.strip(),
         )
         with self._lock:
             self._maybe_reload()

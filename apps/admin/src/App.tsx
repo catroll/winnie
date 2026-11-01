@@ -9,6 +9,7 @@ import { AIPage } from './pages/AIPage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { IndexPage } from './pages/IndexPage';
+import { KeysPage } from './pages/KeysPage';
 import { LoginPage } from './pages/LoginPage';
 import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { MeetingsPage } from './pages/MeetingsPage';
@@ -48,6 +49,7 @@ export function App() {
             <Route path="/meetings/:meetingId" element={<MeetingDetailPage />} />
             <Route path="/tasks" element={<TasksPage />} />
             <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/keys" element={<KeysPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route element={<RequireAdmin />}>
               <Route path="/schedule" element={<SchedulePage />} />
