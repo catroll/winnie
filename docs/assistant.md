@@ -134,8 +134,9 @@ in `assistant.exec.workdir`; their audit log and the file-tool backups live unde
 
 The directory is created on startup with `README.md` and the subdirectories. It
 sits inside the index root (`Documents/Mine`), so every Markdown file written
-here becomes searchable on the next sweep; `tasks.json`, `runs.jsonl` and
-`.state/` are JSON and are not indexed.
+here is searchable: a memory write is reindexed immediately, and any other file
+becomes searchable on the next sweep. `tasks.json`, `runs.jsonl` and `.state/`
+are JSON and are not indexed.
 
 The instance is **single-user** by design: `auth.allow_registration` is off, and
 the bearer token protects the API rather than partitioning data. The owner id is
@@ -873,6 +874,7 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
 | A6 | Dedicated chat engine and skill registry | `winnie-chat` owns the loop/prompt/skills; the assistant only persists; admin lists, inspects and toggles skills | Done |
 | A7 | Default weather watch | Daily forecast check writes an umbrella/clothing notice only when advice changed; the skill exposes the same forecast to chat; admin can switch it off | Done |
 | A8 | Gold price watch with app push | Samples every 5 minutes; a ≥1% hourly or ≥2.5% daily move records a notice and pushes the Winnie app; the skill exposes the quote to chat; admin can switch it off | Done |
+| A9 | The memory read path | A fact written in one turn is in the next turn's prompt (pinned digest or recall); a paraphrase finds the note; the weather rule reaches the tool as a per-call location | Done |
 
 Follow-ups after this slice, in order:
 
