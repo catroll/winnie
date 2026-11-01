@@ -14,6 +14,7 @@ vendor adapter may accept a compressed format and a caller may send one.
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 
@@ -23,7 +24,9 @@ from pydantic import BaseModel
 
 from winnie_core.auth.dependencies import get_user_id
 from winnie_core.types import AudioRef
-from winnie_llm import AIProviderError
+from winnie_llm import AIProviderError, ASRError, ASRNoSpeech
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -70,6 +73,12 @@ async def transcribe_utterance(
     binding, 502 means the vendor call failed, 422 means the vendor answered
     with no speech. The client shows the same sentence for all three, but the
     console and the log can tell them apart.
+
+    "No speech" reached this endpoint as a 500 for a while, because the adapter
+    signalled every vendor failure as a bare ``RuntimeError`` and this handler
+    only knew ``AIProviderError``. The status code is the contract the client
+    and the log rely on, so the adapter now raises :class:`ASRNoSpeech` and
+    :class:`ASRError` and both are mapped here.
     """
     registry = getattr(request.app.state, "ai_settings", None)
     http = getattr(request.app.state, "http", None)
@@ -85,6 +94,10 @@ async def transcribe_utterance(
     if not audio:
         raise HTTPException(status_code=400, detail="the upload is empty")
 
+    # The size is the only thing that tells a 1.5 s silent turn apart from a
+    # real utterance after the fact; the audio itself is deleted below.
+    turn = f"{len(audio)} bytes of {file.content_type or 'unknown type'}"
+
     path = _write_temp(audio, _suffix(file.content_type))
     try:
         try:
@@ -97,9 +110,22 @@ async def transcribe_utterance(
                 ),
                 language_hint=None,
             )
+        except ASRNoSpeech as exc:
+            logger.warning("voice turn held no speech (%s): %s", turn, exc)
+            raise HTTPException(
+                status_code=422, detail="no speech was recognized"
+            ) from exc
+        except ASRError as exc:
+            logger.error("voice turn failed to transcribe (%s): %s", turn, exc)
+            raise HTTPException(
+                status_code=502, detail=f"the ASR provider failed: {exc}"
+            ) from exc
         except AIProviderError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except httpx.HTTPError as exc:
+            logger.error(
+                "voice turn could not reach the ASR provider (%s): %s", turn, exc
+            )
             raise HTTPException(
                 status_code=502, detail=f"the ASR provider failed: {exc}"
             ) from exc

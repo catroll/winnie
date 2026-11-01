@@ -12,6 +12,8 @@ resolves a feature to a supplier model, and builds the matching client.
 """
 
 from winnie_llm.asr import (
+    ASRError,
+    ASRNoSpeech,
     ASRProvider,
     ASRResult,
     ASRSegment,
@@ -67,6 +69,8 @@ __all__ = [
     "AIConflict",
     "AINotFound",
     "AIState",
+    "ASRError",
+    "ASRNoSpeech",
     "ASRProvider",
     "ASRResult",
     "ASRSegment",

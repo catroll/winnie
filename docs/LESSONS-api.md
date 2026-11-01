@@ -459,3 +459,64 @@ producing plausible answers that look like they ignored the prompt.
    sweep interval short enough to state in the contract.
 4. `weather_forecast` must accept `location` (or `lat`/`lon`) with the config as
    the default, and a test must prove a per-call location wins.
+
+## A vendor's successful answer can carry a failure, and a bare `RuntimeError` is a 500 (2026-11-01)
+
+1. **Signal.** Every `POST /api/v1/assistant/transcribe` answered
+   `500 Internal Server Error`; the traceback ended in
+
+   ```
+   File ".../winnie_llm/asr/volcengine.py", line 161, in _raise_for_status
+   RuntimeError: Volcengine ASR query failed: HTTP 200, code=20000003,
+   message=[Normal silence audio] Handle response: no valid speech in audio
+   ```
+
+2. **Cause.** Two layers disagreed about what an error is. The adapter signalled
+   *every* vendor condition — a real failure, a missing key, a successful query
+   whose body holds no text — as a bare `RuntimeError`. The route caught
+   `AIProviderError`, `httpx.HTTPError` and `ValueError` only. So nothing caught
+   "the recording held no speech", and FastAPI's error middleware turned it into
+   a 500 with a server traceback. The route's own docstring already promised
+   `422 means the vendor answered with no speech`; the code below it could never
+   produce one.
+
+3. **Why it matters beyond the status code.** The client shows the same sentence
+   for 422 and 502, but a 500 says "the server is broken". The real condition was
+   the opposite: the vendor answered successfully, the server was fine, and the
+   *recording* was empty. Nobody looking at a 500 can act on that.
+
+4. **Fix.** The speech port now owns two error types —
+   `ASRError` for "the provider call failed" and `ASRNoSpeech` for "the provider
+   decoded it and heard nothing", both `RuntimeError` subclasses so existing
+   `except RuntimeError` handlers (the meetings pipeline) keep working. The
+   Volcengine adapter raises `ASRNoSpeech` for `code=20000003` and for a
+   successful body with no segments, and `ASRError` everywhere else. The route
+   maps `ASRNoSpeech → 422`, `ASRError → 502`, `AIProviderError → 503`,
+   `ValueError → 400`, and logs one line with the upload's size and content type,
+   because the byte count is the only trace a silent turn leaves behind.
+
+5. **Check.** Grep the route's `except` list against what the adapter can
+   actually raise — they are different files and nothing enforces the contract:
+
+   ```bash
+   grep -n "raise " packages/winnie-llm/src/winnie_llm/asr/volcengine.py
+   grep -n "except " apps/api/src/winnie_api/assistant_voice.py
+   ```
+
+   Then exercise the "successful but empty" answer, not just the obvious failure:
+   `test_a_silent_recording_is_not_a_provider_failure` scripts a `200` with
+   `X-Api-Status-Code: 20000003`, and `test_a_silent_turn_is_a_client_error`
+   asserts the route answers 422. A test suite that only mocks a transport error
+   never reaches this branch.
+
+   **Trap, again.** `make api`'s `--reload` watches `apps/api` only. This change
+   touches `packages/winnie-llm`, so the running server kept returning the old
+   500 until a reload happened for another reason; confirm with a real request
+   against `127.0.0.1:8000`, and check the process start time against the file
+   mtime (`ps -o lstart -p <uvicorn child>`, `stat -c %y <file>`).
+
+6. **Generalisation.** A vendor's HTTP 200 is not a successful call: the status
+   lives in a header (`X-Api-Status-Code`) and `20000003` is a *verdict about the
+   audio*, not a failure. An adapter must translate that vocabulary into a small
+   typed set the host can map onto status codes, or every vendor condition above
+   the success code becomes an opaque 500 at the edge.

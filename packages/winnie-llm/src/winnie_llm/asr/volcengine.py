@@ -23,11 +23,21 @@ from pathlib import Path
 import httpx
 
 from winnie_core.types import AudioRef, Usage
-from winnie_llm.asr.base import ASRProvider, ASRResult, ASRSegment
+from winnie_llm.asr.base import (
+    ASRError,
+    ASRNoSpeech,
+    ASRProvider,
+    ASRResult,
+    ASRSegment,
+)
 
 DEFAULT_BASE_URL = "https://openspeech.bytedance.com"
 SUCCESS = "20000000"
 PROCESSING = {"20000001", "20000002"}
+# The vendor answers the query successfully but reports that the file holds no
+# speech ("Normal silence audio"). A short voice turn that recorded no voice
+# lands here; it is a property of the recording, not a failed call.
+NO_SPEECH = "20000003"
 
 
 class VolcengineASRProvider(ASRProvider):
@@ -111,15 +121,20 @@ class VolcengineASRProvider(ASRProvider):
                 code = queried.headers.get("X-Api-Status-Code", "")
                 if code in ("", SUCCESS):
                     return self._parse(queried.json())
+                if code == NO_SPEECH:
+                    raise ASRNoSpeech(
+                        "Volcengine ASR found no speech in the audio: "
+                        f"{_vendor_message(queried)}"
+                    )
                 if code in PROCESSING:
                     if asyncio.get_running_loop().time() >= deadline:
-                        raise RuntimeError(
+                        raise ASRError(
                             f"Volcengine ASR timed out (request {request_id})"
                         )
                     await asyncio.sleep(self.poll_interval_seconds)
                     continue
                 self._raise_for_status(queried, "query")
-                raise RuntimeError(
+                raise ASRError(
                     f"Volcengine ASR query failed with code {code!r}"
                 )
         finally:
@@ -128,7 +143,7 @@ class VolcengineASRProvider(ASRProvider):
 
     def _require_credentials(self) -> None:
         if not self.api_key:
-            raise RuntimeError(
+            raise ASRError(
                 "Volcengine ASR API key is missing; add VOLCENGINE_ASR_API_KEY "
                 "to packages/winnie-llm/.env"
             )
@@ -152,16 +167,11 @@ class VolcengineASRProvider(ASRProvider):
     @staticmethod
     def _raise_for_status(response: httpx.Response, stage: str) -> None:
         code = response.headers.get("X-Api-Status-Code", "")
-        message = (
-            response.headers.get("X-Api-Message")
-            or response.text[:300]
-            or "no message"
-        )
         if response.status_code >= 400 or (code and code != SUCCESS):
-            raise RuntimeError(
+            raise ASRError(
                 f"Volcengine ASR {stage} failed: "
                 f"HTTP {response.status_code}, code={code or 'unknown'}, "
-                f"message={message}"
+                f"message={_vendor_message(response)}"
             )
 
     def _parse(self, body: dict) -> ASRResult:
@@ -193,7 +203,7 @@ class VolcengineASRProvider(ASRProvider):
                     )
                 )
         if not segments:
-            raise RuntimeError("Volcengine ASR returned no text")
+            raise ASRNoSpeech("Volcengine ASR returned no text")
 
         duration_ms = int((body.get("audio_info") or {}).get("duration") or 0)
         if duration_ms <= 0:
@@ -211,3 +221,12 @@ class VolcengineASRProvider(ASRProvider):
 def _audio_format(path: Path) -> str:
     suffix = path.suffix.lstrip(".").lower()
     return suffix or "mp3"
+
+
+def _vendor_message(response: httpx.Response) -> str:
+    """The vendor's own words, in the one place two call sites need them."""
+    return (
+        response.headers.get("X-Api-Message")
+        or response.text[:300]
+        or "no message"
+    )
