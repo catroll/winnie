@@ -111,12 +111,27 @@ the rest of the API.
 | `POST` | `/commands/{id}/approve`, `/cancel` | Approve or cancel a proposed write |
 | `GET` | `/commands?status=` | Command history |
 
-The message query also takes `direction=inbox|sent` and any number of repeated
-`addresses=` filters. Each address matches part of a number after normalisation
-(strip separators and a Chinese `+86`), so `addresses=106` selects the 106-bulk
-senders, `addresses=10086&addresses=10010` selects either short code, and a
-selected `+8613800138000` also matches the reply stored as `13800138000`.
-`/messages/thread` uses the same normalised comparison, which is what keeps one
+The message query also takes `direction=inbox|sent` and three exclusion filters,
+so the list can drop the numbers the owner never wants to read:
+
+- `hide_service_numbers=true` removes every address starting with `106`, the
+  bulk/A2P range. No mobile number starts with those digits, so a prefix match
+  cannot hide a real conversation.
+- `hide_short_codes=true` removes five-character addresses (`10086`, `10010`,
+  `95566`), which is how the provider stores short codes. A personal number is
+  longer and survives.
+- `exclude_addresses=` (repeated) hides specific numbers. A full number
+  (`+8613800138000`) is matched anywhere, so the `+86` and plain spellings go
+  together; a shorter fragment (`106`, `955`) is a prefix, so hiding it cannot
+  catch a mobile that merely contains those digits. Normalisation strips
+  separators and the Chinese `+86`, and folds the case of alphanumeric sender
+  ids.
+
+Nothing is hidden by default; the console exposes the two categories as
+checkboxes and the specific numbers as removable chips plus the recent-sender
+picker. `/messages/thread` is deliberately not filtered by these options: a
+conversation with a hidden number still opens if the owner asks for it another
+way. It uses the same normalised comparison, which is what keeps one
 conversation in one dialog instead of splitting it by country-code spelling.
 `/messages/senders` merges both spellings into one counted entry.
 
@@ -472,8 +487,9 @@ operate view. It shows:
 - a tab per kind (calendar, calls, SMS, contacts, notifications, location,
   apps) with a time window, a text filter, call direction, unread-only and a
   result limit; the SMS tab adds a direction filter (received/sent) and a
-  multi-select number picker built from the most frequent senders, with a typed
-  fragment such as `106` or `10086` accepted as well;
+  **hide** block: checkboxes for `106` service numbers and five-digit short
+  numbers, plus removable chips for specific numbers or prefixes built from
+  the most frequent senders or typed by hand;
 - clicking an SMS opens the whole conversation with that number, oldest first,
   scrolls to the clicked message and rings its bubble, with received and sent
   messages on opposite sides;

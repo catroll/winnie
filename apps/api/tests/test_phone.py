@@ -201,7 +201,7 @@ async def seed_known_senders(client: httpx.AsyncClient, device_id: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_message_filters_by_direction_and_several_numbers(
+async def test_message_filters_by_direction_and_hidden_numbers(
     phone_client: httpx.AsyncClient,
 ) -> None:
     device = await register(phone_client)
@@ -220,32 +220,86 @@ async def test_message_filters_by_direction_and_several_numbers(
     ).json()
     assert len(only_inbox) == 4
 
-    # Two selected short numbers: the OR, not the first one only.
-    short_codes = (
+    # "Hide 5-digit short numbers" removes 10086 and 95566, not 106* or the
+    # mobile; the mobile is stored as +86… too, so that form must survive.
+    no_short = (
         await phone_client.get(
-            "/api/v1/phone/messages",
-            params=[("addresses", "10086"), ("addresses", "95566")],
+            "/api/v1/phone/messages", params={"hide_short_codes": "true"}
         )
     ).json()
-    assert [row["body"] for row in short_codes] == [
+    assert [row["body"] for row in no_short] == [
+        "bulk promotion",
+        "reply to the mobile",
+        "received from the mobile",
+    ]
+    assert {row["address"] for row in no_short} == {
+        "1069000000001",
+        "13800138000",
+        "+8613800138000",
+    }
+
+    # "Hide 106 service numbers" removes the 106* bulk sender only.
+    no_bulk = (
+        await phone_client.get(
+            "/api/v1/phone/messages", params={"hide_service_numbers": "true"}
+        )
+    ).json()
+    assert [row["body"] for row in no_bulk] == [
         "bank notice",
         "carrier confirmation",
         "carrier notice",
+        "reply to the mobile",
+        "received from the mobile",
     ]
 
-    # A partial number is enough: every 106* bulk sender, and nothing else.
-    bulk = (
-        await phone_client.get("/api/v1/phone/messages", params={"addresses": "106"})
-    ).json()
-    assert [row["body"] for row in bulk] == ["bulk promotion"]
-
-    # A selected number is normalised, so it matches both stored spellings.
-    mobile = (
+    # Both categories toggled: a 106* number is not 5 characters and a short
+    # number does not start with 106, so the two rules stack without overlap.
+    no_services = (
         await phone_client.get(
-            "/api/v1/phone/messages", params={"addresses": "+8613800138000"}
+            "/api/v1/phone/messages",
+            params={"hide_short_codes": "true", "hide_service_numbers": "true"},
         )
     ).json()
-    assert [row["body"] for row in mobile] == [
+    assert [row["body"] for row in no_services] == [
+        "reply to the mobile",
+        "received from the mobile",
+    ]
+
+    # Several explicit numbers hide together (the multi-select).
+    without_two = (
+        await phone_client.get(
+            "/api/v1/phone/messages",
+            params=[("exclude_addresses", "10086"), ("exclude_addresses", "95566")],
+        )
+    ).json()
+    assert [row["body"] for row in without_two] == [
+        "bulk promotion",
+        "reply to the mobile",
+        "received from the mobile",
+    ]
+
+    # A full number is matched anywhere, so both stored spellings disappear.
+    without_mobile = (
+        await phone_client.get(
+            "/api/v1/phone/messages",
+            params={"exclude_addresses": "+8613800138000"},
+        )
+    ).json()
+    assert "+8613800138000" not in {row["address"] for row in without_mobile}
+    assert "13800138000" not in {row["address"] for row in without_mobile}
+    assert len(without_mobile) == 4
+
+    # A short fragment is a prefix: hiding 106 must not hide a mobile that
+    # happens to contain those digits somewhere in the middle.
+    no_prefix = (
+        await phone_client.get(
+            "/api/v1/phone/messages", params={"exclude_addresses": "106"}
+        )
+    ).json()
+    assert [row["body"] for row in no_prefix] == [
+        "bank notice",
+        "carrier confirmation",
+        "carrier notice",
         "reply to the mobile",
         "received from the mobile",
     ]
@@ -345,12 +399,20 @@ async def test_message_thread_keeps_an_alphanumeric_sender(
     senders = (await phone_client.get("/api/v1/phone/messages/senders")).json()
     assert [row["address"] for row in senders] == ["bank"]
 
-    filtered = (
+    # Hiding it is case-insensitive and uses the literal id, not its digits.
+    hidden = (
         await phone_client.get(
-            "/api/v1/phone/messages", params={"addresses": "BANK"}
+            "/api/v1/phone/messages", params={"exclude_addresses": "bank"}
         )
     ).json()
-    assert [row["body"] for row in filtered] == ["your code is 1234"]
+    assert hidden == []
+
+    kept = (
+        await phone_client.get(
+            "/api/v1/phone/messages", params={"exclude_addresses": "10086"}
+        )
+    ).json()
+    assert [row["body"] for row in kept] == ["your code is 1234"]
 
 
 @pytest.mark.asyncio

@@ -1573,29 +1573,44 @@ quota without being asked.
 **The provider stores one person under two strings.** An incoming message often
 arrives as `+8613800138000` while the reply to it is stored as `13800138000`.
 A thread that matches the raw address therefore splits one conversation in two,
-and a quick filter built from raw addresses shows the same person twice. The
-conversation view, the multi-number filter and the sender picker all compare
+and a sender list built from raw addresses shows the same person twice. The
+conversation view, the exclusion filters and the sender picker all compare
 digits with the Chinese `+86` / `0086` prefix removed
 (`winnie_phone.addresses.normalize_address`). The normalisation is applied to
 SMS *query paths only*: calls and contacts keep the raw number the device
 uploaded, because those rows are quoted back to the owner as they are.
 
+**The filter hides noise; it does not select messages to keep.** The SMS list's
+problem is the service numbers that write most often, not finding one of them.
+An include filter was tried first and was the wrong control: the owner would
+have had to enumerate the noise to remove it, and every new 106* sender would
+appear until selected. The server therefore takes the three rules the console
+needs — `hide_service_numbers` (address prefix `106`), `hide_short_codes`
+(exactly five characters) and repeated `exclude_addresses` — and applies them
+before the limit. `106` is safe as a prefix because no mobile number starts with
+those digits; five characters is how the provider stores `10086`/`10010`/`95566`
+and a personal number is longer. An explicit full number is matched anywhere so
+its `+86` spelling disappears too, while a shorter fragment is a prefix: hiding
+`106` must not catch a mobile that happens to contain `106` in the middle.
+
 **SQL narrows, the normalised comparison decides.** There is no generated
-normalised column and no migration: a filter turns each selected number into
-its digits and matches them with `ILIKE` (which also matches the `+86` spelling,
-because the digits are contiguous inside it), then the service compares the
-normalised form for the thread. That keeps the schema unchanged and costs one
-pass over the narrow candidate set. It would be the wrong shape for millions of
-messages; this data set is one phone's history, and the list is capped at 500.
+normalised column and no migration: the thread turns the number into its digits
+and matches them with `ILIKE` (which also matches the `+86` spelling, because
+the digits are contiguous inside it), then the service compares the normalised
+form. That keeps the schema unchanged and costs one pass over the narrow
+candidate set. It would be the wrong shape for millions of messages; this data
+set is one phone's history, and the list is capped at 500.
 
 **The filters and the picker are server-side.** The console shows at most 500
-rows per request, so filtering a fetched page would hide messages that exist but
-sit outside the window — and a picker built from the page would omit the number
-that only appears in older messages. `/messages?addresses=&direction=` and
-`/messages/senders` do the work over the whole window instead. `direction` keeps
-the values the phone writes (`inbox`, `sent`); the console maps them to
+rows per request, so filtering a fetched page would leave a page that looks
+empty while more messages exist outside the window — and a picker built from
+the page would omit the number that only appears in older messages.
+`/messages?hide_service_numbers=&hide_short_codes=&exclude_addresses=&direction=`
+and `/messages/senders` do the work over the whole window instead. `direction`
+keeps the values the phone writes (`inbox`, `sent`); the console maps them to
 Received/Sent, and "Sent" means the phone stored a sent message, not that the
-carrier delivered it.
+carrier delivered it. Every exclusion is off by default: the list shows
+everything until the owner asks it to hide something.
 
 ## The editor plugins became the news pipeline's prompts (2026-11-01)
 

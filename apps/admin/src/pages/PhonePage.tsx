@@ -225,8 +225,10 @@ export function PhonePage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [direction, setDirection] = useState('');
   const [messageDirection, setMessageDirection] = useState('');
-  const [messageAddresses, setMessageAddresses] = useState<string[]>([]);
-  const [addressInput, setAddressInput] = useState('');
+  const [hideServiceNumbers, setHideServiceNumbers] = useState(false);
+  const [hideShortCodes, setHideShortCodes] = useState(false);
+  const [excludedAddresses, setExcludedAddresses] = useState<string[]>([]);
+  const [excludeInput, setExcludeInput] = useState('');
   const [openedMessage, setOpenedMessage] = useState<PhoneMessage | null>(null);
   const [commandStatus, setCommandStatus] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -266,7 +268,10 @@ export function PhonePage() {
             q: appliedQuery,
             unreadOnly,
             direction: messageDirection || undefined,
-            addresses: messageAddresses.length > 0 ? messageAddresses : undefined,
+            hideServiceNumbers,
+            hideShortCodes,
+            excludeAddresses:
+              excludedAddresses.length > 0 ? excludedAddresses : undefined,
           }),
         };
       case 'contact':
@@ -303,7 +308,9 @@ export function PhonePage() {
     unreadOnly,
     direction,
     messageDirection,
-    messageAddresses,
+    hideServiceNumbers,
+    hideShortCodes,
+    excludedAddresses,
     commandStatus,
   ]);
 
@@ -319,6 +326,18 @@ export function PhonePage() {
         : Promise.resolve([]),
     [tab, deviceId, days],
   );
+
+  // Do not offer a sender that the category checkboxes already hide. An
+  // explicitly excluded sender stays in the list as a pressed chip, which is
+  // how it is turned back on.
+  const visibleSenders =
+    senders.status === 'success'
+      ? senders.data.filter((sender) => {
+          if (hideServiceNumbers && sender.address.startsWith('106')) return false;
+          if (hideShortCodes && sender.address.length === 5) return false;
+          return true;
+        })
+      : [];
 
   const search = useApi(
     () =>
@@ -422,8 +441,8 @@ export function PhonePage() {
     setAppliedQuery(queryInput.trim());
   };
 
-  const addMessageAddresses = (values: string[]) => {
-    setMessageAddresses((current) => {
+  const addExcludedAddresses = (values: string[]) => {
+    setExcludedAddresses((current) => {
       const next = [...current];
       for (const raw of values) {
         const value = raw.trim();
@@ -437,21 +456,21 @@ export function PhonePage() {
     });
   };
 
-  const toggleMessageAddress = (value: string) => {
+  const toggleExcludedAddress = (value: string) => {
     const key = value.trim();
     if (!key) return;
-    setMessageAddresses((current) =>
+    setExcludedAddresses((current) =>
       current.some((entry) => entry.toLowerCase() === key.toLowerCase())
         ? current.filter((entry) => entry.toLowerCase() !== key.toLowerCase())
         : [...current, key],
     );
   };
 
-  const submitMessageAddresses = (event: FormEvent<HTMLFormElement>) => {
+  const submitExcludedAddresses = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // One line may carry several numbers: "10086, 10010 106".
-    addMessageAddresses(addressInput.split(/[,，;；\s]+/));
-    setAddressInput('');
+    // One line may carry several numbers or prefixes: "10086, 10010 106".
+    addExcludedAddresses(excludeInput.split(/[,，;；\s]+/));
+    setExcludeInput('');
   };
 
   const commandDeviceName = (command: PhoneCommand) =>
@@ -765,32 +784,59 @@ export function PhonePage() {
 
                 {tab === 'message' ? (
                   <div className="col-12">
-                    <label className="form-label small mb-1" htmlFor="phone-numbers">
-                      {tr('Numbers')}
+                    <span className="form-label small mb-1">
+                      {tr('Hide from the list')}
+                    </span>
+                    <div className="d-flex flex-wrap align-items-center gap-3">
+                      <div className="form-check">
+                        <input
+                          id="phone-hide-service"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={hideServiceNumbers}
+                          onChange={(event) => setHideServiceNumbers(event.target.checked)}
+                        />
+                        <label className="form-check-label small" htmlFor="phone-hide-service">
+                          {tr('106 service numbers')}
+                        </label>
+                      </div>
+                      <div className="form-check">
+                        <input
+                          id="phone-hide-short"
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={hideShortCodes}
+                          onChange={(event) => setHideShortCodes(event.target.checked)}
+                        />
+                        <label className="form-check-label small" htmlFor="phone-hide-short">
+                          {tr('5-digit short numbers')}
+                        </label>
+                      </div>
+                    </div>
+                    <label className="form-label small mb-1 mt-2" htmlFor="phone-numbers">
+                      {tr('Numbers to hide')}
                     </label>
                     <div className="d-flex flex-wrap align-items-center gap-2">
                       <form
                         className="input-group input-group-sm"
                         style={{ maxWidth: '26rem' }}
-                        onSubmit={submitMessageAddresses}
+                        onSubmit={submitExcludedAddresses}
                       >
                         <input
                           id="phone-numbers"
                           className="form-control"
-                          placeholder={tr(
-                            'A number or part of one, e.g. 106 or 10086',
-                          )}
-                          value={addressInput}
-                          onChange={(event) => setAddressInput(event.target.value)}
+                          placeholder={tr('A number or prefix, e.g. 955 or 1068')}
+                          value={excludeInput}
+                          onChange={(event) => setExcludeInput(event.target.value)}
                         />
                         <button type="submit" className="btn btn-outline-secondary">
                           {tr('Add')}
                         </button>
                       </form>
-                      {messageAddresses.map((address) => (
+                      {excludedAddresses.map((address) => (
                         <span
                           key={address}
-                          className="badge text-bg-primary d-inline-flex align-items-center gap-1"
+                          className="badge text-bg-secondary d-inline-flex align-items-center gap-1"
                         >
                           <span className="font-monospace">{address}</span>
                           <button
@@ -798,31 +844,31 @@ export function PhonePage() {
                             className="btn-close btn-close-white"
                             style={{ fontSize: '0.55rem' }}
                             aria-label={tr('Remove {{value}}', { value: address })}
-                            onClick={() => toggleMessageAddress(address)}
+                            onClick={() => toggleExcludedAddress(address)}
                           />
                         </span>
                       ))}
-                      {messageAddresses.length > 0 ? (
+                      {excludedAddresses.length > 0 ? (
                         <button
                           type="button"
                           className="btn btn-sm btn-link p-0"
-                          onClick={() => setMessageAddresses([])}
+                          onClick={() => setExcludedAddresses([])}
                         >
                           {tr('Clear')}
                         </button>
                       ) : null}
                     </div>
                     <div className="small text-secondary mt-1 d-flex flex-wrap align-items-center gap-1">
-                      <span>{tr('Recent senders:')}</span>
+                      <span>{tr('Recent senders to hide:')}</span>
                       {senders.status === 'loading' ? (
                         <span>{tr('Loading…')}</span>
                       ) : senders.status === 'error' ? (
                         <span>{tr('Could not load the senders.')}</span>
-                      ) : senders.data.length === 0 ? (
+                      ) : visibleSenders.length === 0 ? (
                         <span>{tr('none')}</span>
                       ) : (
-                        senders.data.map((sender) => {
-                          const selected = messageAddresses.some(
+                        visibleSenders.map((sender) => {
+                          const selected = excludedAddresses.some(
                             (entry) =>
                               entry.toLowerCase() === sender.address.toLowerCase(),
                           );
@@ -831,13 +877,13 @@ export function PhonePage() {
                               key={sender.address}
                               type="button"
                               className={`winnie-sms-sender btn btn-sm py-0 ${
-                                selected ? 'btn-primary' : 'btn-outline-secondary'
+                                selected ? 'btn-secondary' : 'btn-outline-secondary'
                               }`}
                               aria-pressed={selected}
                               title={tr('Last message {{when}}', {
                                 when: formatDateTime(sender.last_at),
                               })}
-                              onClick={() => toggleMessageAddress(sender.address)}
+                              onClick={() => toggleExcludedAddress(sender.address)}
                             >
                               <span className="font-monospace">{sender.address}</span>
                               <span className="ms-1 opacity-75">· {sender.count}</span>

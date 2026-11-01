@@ -18,7 +18,7 @@ keys.
 | **Dashboard** | Meeting count, configured routes, API version and readiness, plus the five most recent meetings |
 | **Chat** | A ChatGPT-like conversation with the assistant, plus the full history from every channel: console, phone page, API clients and scheduled task runs. Filter by channel, reopen any transcript including its tool blocks, and send from the console — typed, or as a hands-free voice conversation with spoken replies |
 | **Meetings** | Paginated list of the signed-in user's meetings with status, source, duration and update time |
-| **Phone data** | A card per synced device with model, OS, phone number, carrier and network type, WiFi SSID, IP address, SIM, security patch, scopes, per-kind record counts, battery/network/storage, last sync and sync errors, plus revoke, restore and delete-server-data actions; tabs for calendar, calls, SMS, contacts, notifications, location and apps with a time window, text filter, call direction, unread-only and a result limit; SMS adds multi-number and received/sent filters and opens a number's whole conversation at the clicked message; the location tab shows the resolved 省/市/区/具体位置 next to the coordinates and can fill in addresses for stored fixes; a cross-kind search; the assistant action queue with status, result and error |
+| **Phone data** | A card per synced device with model, OS, phone number, carrier and network type, WiFi SSID, IP address, SIM, security patch, scopes, per-kind record counts, battery/network/storage, last sync and sync errors, plus revoke, restore and delete-server-data actions; tabs for calendar, calls, SMS, contacts, notifications, location and apps with a time window, text filter, call direction, unread-only and a result limit; SMS adds received/sent and hide filters for 106 service numbers, five-digit short numbers and specific numbers, and opens a number's whole conversation at the clicked message; the location tab shows the resolved 省/市/区/具体位置 next to the coordinates and can fill in addresses for stored fixes; a cross-kind search; the assistant action queue with status, result and error |
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
@@ -51,12 +51,13 @@ Below the cards:
   text filter where the kind supports one, a call direction, an unread-only
   switch for SMS, and a limit of 50–500. The API returns the newest N records;
   the footer says so rather than implying pagination.
-- The **SMS tab** filters by received/sent and by one or more numbers: the
-  recent-sender picker is one click, and a typed fragment such as `106` or
-  `10086` adds the same kind of filter. Clicking a message opens the whole
-  conversation with that number, scrolls to the clicked message and rings it;
-  sent and received bubbles sit on opposite sides. `/messages/thread` merges the
-  `+86` and plain spellings of one number.
+- The **SMS tab** filters by received/sent and hides the numbers that write
+  most: checkboxes drop `106` service numbers and five-digit short numbers,
+  and removable chips hide specific numbers or prefixes; picking a recent
+  sender is one click. Clicking a message opens the whole conversation with
+  that number, scrolls to the clicked message and rings it; sent and received
+  bubbles sit on opposite sides. `/messages/thread` merges the `+86` and plain
+  spellings of one number.
 - **Assistant actions** lists the deferred writes the assistant proposed: kind,
   summary, status (`proposed` to `succeeded`/`failed`/`expired`), the result or
   error, and when it was approved or completed.

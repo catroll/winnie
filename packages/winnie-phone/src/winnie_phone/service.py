@@ -153,9 +153,16 @@ def aware_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(timezone.utc)
 
 
+def _escape_like(term: str) -> str:
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _like(term: str) -> str:
-    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
+    return f"%{_escape_like(term)}%"
+
+
+def _like_prefix(term: str) -> str:
+    return f"{_escape_like(term)}%"
 
 
 def _truncate(value: str | None, limit: int) -> str:
@@ -180,11 +187,11 @@ def _message_row(row: PhoneMessage, names: dict[uuid.UUID, str]) -> dict:
 
 
 def _address_terms(values: Sequence[str] | None) -> list[str]:
-    """The searchable forms of the requested senders, without duplicates.
+    """The normalised numbers or prefixes to exclude, without duplicates.
 
     A selected number is compared by its digits, so choosing ``+8613800138000``
-    from the quick picker also matches the reply stored as ``13800138000``.
-    An alphanumeric sender id stays literal, with only its case folded.
+    also hides the reply stored as ``13800138000``. An alphanumeric sender id
+    stays literal, with only its case folded.
     """
     terms: list[str] = []
     for value in values or ():
@@ -969,7 +976,9 @@ class PhoneService:
         since: datetime | None = None,
         until: datetime | None = None,
         address: str = "",
-        addresses: Sequence[str] | None = None,
+        exclude_addresses: Sequence[str] | None = None,
+        hide_service_numbers: bool = False,
+        hide_short_codes: bool = False,
         direction: str = "",
         query: str = "",
         unread_only: bool = False,
@@ -992,18 +1001,26 @@ class PhoneService:
                 conditions.append(
                     PhoneMessage.address.ilike(_like(address), escape="\\")
                 )
-            terms = _address_terms(addresses)
-            if terms:
-                # Any selected number (or part of one) can match. The OR is what
-                # makes the multi-select useful: 10086 and 10010 together.
-                conditions.append(
-                    or_(
-                        *(
-                            PhoneMessage.address.ilike(_like(term), escape="\\")
-                            for term in terms
-                        )
+            if hide_service_numbers:
+                # 106xxxxxxx is the bulk/A2P range. No mobile number starts
+                # with 106, so a prefix match cannot hide a real conversation.
+                conditions.append(~PhoneMessage.address.like(_like_prefix("106")))
+            if hide_short_codes:
+                # 10086/10010/95566: the provider stores these as five
+                # characters. A personal number is longer, so this is safe.
+                conditions.append(func.length(PhoneMessage.address) != 5)
+            for term in _address_terms(exclude_addresses):
+                # A full number is matched anywhere, so +86… and the plain
+                # spelling are hidden together. A shorter fragment is a prefix,
+                # which is what "106" means; contains would also hide a mobile
+                # that happens to contain those digits.
+                if len(term) <= 6:
+                    hidden = PhoneMessage.address.ilike(
+                        _like_prefix(term), escape="\\"
                     )
-                )
+                else:
+                    hidden = PhoneMessage.address.ilike(_like(term), escape="\\")
+                conditions.append(~hidden)
             if direction:
                 conditions.append(PhoneMessage.direction == direction)
             if query:

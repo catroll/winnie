@@ -849,7 +849,9 @@ export const api = {
   phoneMessages(
     params: PhoneRangeQuery & {
       address?: string;
-      addresses?: string[];
+      excludeAddresses?: string[];
+      hideServiceNumbers?: boolean;
+      hideShortCodes?: boolean;
       direction?: string;
       q?: string;
       unreadOnly?: boolean;
@@ -860,7 +862,9 @@ export const api = {
         since: params.since,
         until: params.until,
         address: params.address,
-        addresses: params.addresses,
+        exclude_addresses: params.excludeAddresses,
+        hide_service_numbers: params.hideServiceNumbers ? 'true' : undefined,
+        hide_short_codes: params.hideShortCodes ? 'true' : undefined,
         direction: params.direction,
         q: params.q,
         unread_only: params.unreadOnly ? 'true' : undefined,
