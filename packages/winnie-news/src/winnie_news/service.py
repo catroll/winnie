@@ -212,6 +212,18 @@ class NewsService:
                 config=self.config,
             )
         except asyncio.CancelledError:
+            # The run record is the report, but only the log says *when* and
+            # *which* run a restart killed. A dev `--reload` during a batch and
+            # a crash look identical in run.json, so name the run and the stage
+            # here and the next diagnosis starts from one log line.
+            logger.warning(
+                "news run %s cancelled during stage %r: the service is shutting down",
+                run.id,
+                next(
+                    (stage.name for stage in run.stages if stage.status == "running"),
+                    "",
+                ),
+            )
             run.status = "failed"
             run.error = "run cancelled because the service stopped"
             self._mark_running_stage_failed(run, run.error)

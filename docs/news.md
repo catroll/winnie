@@ -169,6 +169,25 @@ next startup the service marks every run still `running` as `failed` with
 stages as `failed` or `skipped`. A run therefore never stays "running" for ever
 and the console never shows progress that will not happen.
 
+A *graceful* stop takes a different path: the lifespan `finally` awaits
+`NewsService.shutdown()`, which cancels the run task, so the record ends `failed`
+with `run cancelled because the service stopped`, the running stage is marked
+failed, and the log carries
+`news run <id> cancelled during stage '<stage>': the service is shutting down`.
+That is the string `Ctrl-C` produces, and the one every dev reload produces:
+`make api` passes `--reload` and uvicorn watches its own cwd (`apps/api`, the
+default `reload_dirs`), so **any write under `apps/api` during a batch kills that
+batch** — including a byte-identical rewrite. Writes under `packages/` and
+`data/` are outside the watched tree and do not interrupt a run.
+
+Neither string is a pipeline error; a real stage failure logs
+`news run <id> failed` with a traceback instead. To tell a reload apart from a
+crash, compare `run.json`'s `updated_at` with the reloader's own line:
+
+```bash
+grep -n "WatchFiles detected changes" .cache/logs/api.log | tail -3
+```
+
 ### Source health
 
 Each material batch records per-source outcomes in `data/news/source_health.json`:

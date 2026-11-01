@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
+
 import pytest
 
 from winnie_news.common.material import make_document, make_item
@@ -98,6 +102,34 @@ async def test_startup_fails_a_run_left_running(tmp_path) -> None:
     assert "restarted" in loaded.error
     assert loaded.stages[1].status == "failed"
     assert loaded.stages[2].status == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_shutdown_names_the_batch_it_cancelled(tmp_path, caplog) -> None:
+    """A reload during a batch must leave a log line, not only a run record.
+
+    The failure mode this pins: `make api` runs uvicorn with `--reload`, so any
+    write under apps/api restarts the process and cancels the in-flight run.
+    Without this line the log is silent and run.json is the only witness.
+    """
+    service = build_service(tmp_path)
+    service._material_source = lambda **kwargs: (
+        time.sleep(0.3),
+        material_batch(),
+    )[1]
+    await service.startup()
+
+    with caplog.at_level(logging.WARNING, logger="winnie_news.service"):
+        run = await service.start_run()
+        await asyncio.sleep(0)  # let the task reach its first await
+        await service.shutdown()
+
+    loaded = service.get_run(run.id)
+    assert loaded.status == "failed"
+    assert loaded.error == "run cancelled because the service stopped"
+    assert loaded.stages[0].status == "failed"
+    assert run.id in caplog.text
+    assert "material" in caplog.text
 
 
 @pytest.mark.asyncio
