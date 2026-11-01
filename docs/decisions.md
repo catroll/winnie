@@ -1666,6 +1666,15 @@ now go to the log on every empty answer; `SERVICE_NOT_AVAILABLE` (10002) is what
 a key of the wrong type returns, and without it in the log it is
 indistinguishable from a rural road.
 
+**Verified against the owner's own key.** A key created years earlier still
+works: the first probe on a real Wuhan fix answered `status=1` with a street
+address, and all 34 stored fixes were re-resolved (`resolved=34
+kept_previous=0`). The datum shift was confirmed the hard way on one coordinate —
+30.437588,114.434242 became `天纵水晶郦都(北1门)` when converted and
+`百捷国际广场`, a different compound, when sent raw. That deployment now names
+`provider: amap` in its gitignored `config.local.yaml`, so the tracked config
+still resolves something on a checkout with no key.
+
 **`city` is filled from `province` when the provider reports none.** A
 municipality (北京/上海/天津/重庆) sends an empty city, and the console's
 "省 · 市 · 区" line must not show a hole where the city belongs.

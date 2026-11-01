@@ -608,6 +608,27 @@ be named even when the owner is on a road. A feature further than 5 km from the
 fix is discarded rather than stored: at that distance the name describes OSM's
 coverage, not where the owner was.
 
+The provider is machine-local. The tracked `config.yaml` names `photon` so a
+checkout with no credential still resolves something; a deployment with a key
+puts the override in the gitignored `apps/api/config.local.yaml` (deep-merged
+over it) and the key in `apps/api/.env`:
+
+```yaml
+phone:
+  geocode:
+    provider: amap
+```
+
+The tracked config is not the place for `provider: amap` alone: an Amap provider
+without `AMAP_API_KEY` degrades to `NullGeocoder`, which is the "not resolved"
+state this whole section exists to avoid.
+
+**Switching providers does not rewrite what is stored.** `POST
+/locations/geocode` fills in rows whose address is *empty*, so the 34 fixes
+resolved by Photon kept their Photon address after the key arrived; they were
+re-resolved once by a one-off pass that overwrites only on success. A future
+"re-resolve" action belongs in the console, bounded like the backfill.
+
 `phone.enabled` is off in the built-in defaults and on in the shipped
 `config.yaml`. A programmatic `Settings()` (tests, embedders) does not create a
 phone database unless it asks for one.
