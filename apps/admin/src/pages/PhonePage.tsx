@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 
 import { api } from '../api/client';
@@ -11,6 +11,7 @@ import type {
   PhoneDevice,
   PhoneLocation,
   PhoneMessage,
+  PhoneMessageSender,
   PhoneNotification,
   PhoneSearchResponse,
   PhoneSummary,
@@ -128,6 +129,22 @@ function snippet(text: string, limit = 160): string {
   return `${clean.slice(0, limit - 1)}…`;
 }
 
+/**
+ * Directions the phone writes for an outgoing message. `sent` is the ordinary
+ * one; the others are a send that is still queued, failed or only a draft.
+ */
+const OUTGOING_DIRECTIONS = new Set(['sent', 'outbox', 'queued', 'failed', 'draft']);
+
+function isOutgoingMessage(message: PhoneMessage): boolean {
+  return OUTGOING_DIRECTIONS.has(message.direction);
+}
+
+function messageDirectionLabel(direction: string): string {
+  if (direction === 'inbox') return tr('Received');
+  if (direction === 'sent') return tr('Sent');
+  return direction;
+}
+
 function infoText(device: PhoneDevice, key: string): string {
   const value = device.info[key];
   if (typeof value === 'string') return value.trim();
@@ -207,6 +224,10 @@ export function PhonePage() {
   const [appliedQuery, setAppliedQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [direction, setDirection] = useState('');
+  const [messageDirection, setMessageDirection] = useState('');
+  const [messageAddresses, setMessageAddresses] = useState<string[]>([]);
+  const [addressInput, setAddressInput] = useState('');
+  const [openedMessage, setOpenedMessage] = useState<PhoneMessage | null>(null);
   const [commandStatus, setCommandStatus] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -217,13 +238,15 @@ export function PhonePage() {
 
   const summary = useApi(() => api.phoneSummary(), []);
 
+  // The same window the rows use; the sender picker filters by it too.
+  const windowSince =
+    isTimeBased(tab) && days > 0
+      ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+      : undefined;
+
   const loadTab = async (): Promise<TabData> => {
     const device = deviceId === 'all' ? undefined : deviceId;
-    const since =
-      isTimeBased(tab) && days > 0
-        ? new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-        : undefined;
-    const shared = { deviceId: device, since, limit };
+    const shared = { deviceId: device, since: windowSince, limit };
     switch (tab) {
       case 'calendar':
         return {
@@ -242,6 +265,8 @@ export function PhonePage() {
             ...shared,
             q: appliedQuery,
             unreadOnly,
+            direction: messageDirection || undefined,
+            addresses: messageAddresses.length > 0 ? messageAddresses : undefined,
           }),
         };
       case 'contact':
@@ -277,8 +302,23 @@ export function PhonePage() {
     appliedQuery,
     unreadOnly,
     direction,
+    messageDirection,
+    messageAddresses,
     commandStatus,
   ]);
+
+  // The quick picker only makes sense for SMS; on other tabs it is empty.
+  const senders = useApi<PhoneMessageSender[]>(
+    () =>
+      tab === 'message'
+        ? api.phoneMessageSenders({
+            since: windowSince,
+            deviceId: deviceId === 'all' ? undefined : deviceId,
+            limit: 12,
+          })
+        : Promise.resolve([]),
+    [tab, deviceId, days],
+  );
 
   const search = useApi(
     () =>
@@ -380,6 +420,38 @@ export function PhonePage() {
   const submitFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAppliedQuery(queryInput.trim());
+  };
+
+  const addMessageAddresses = (values: string[]) => {
+    setMessageAddresses((current) => {
+      const next = [...current];
+      for (const raw of values) {
+        const value = raw.trim();
+        if (!value) continue;
+        if (next.some((entry) => entry.toLowerCase() === value.toLowerCase())) {
+          continue;
+        }
+        next.push(value);
+      }
+      return next.length === current.length ? current : next;
+    });
+  };
+
+  const toggleMessageAddress = (value: string) => {
+    const key = value.trim();
+    if (!key) return;
+    setMessageAddresses((current) =>
+      current.some((entry) => entry.toLowerCase() === key.toLowerCase())
+        ? current.filter((entry) => entry.toLowerCase() !== key.toLowerCase())
+        : [...current, key],
+    );
+  };
+
+  const submitMessageAddresses = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    // One line may carry several numbers: "10086, 10010 106".
+    addMessageAddresses(addressInput.split(/[,，;；\s]+/));
+    setAddressInput('');
   };
 
   const commandDeviceName = (command: PhoneCommand) =>
@@ -628,6 +700,24 @@ export function PhonePage() {
                   </div>
                 ) : null}
 
+                {tab === 'message' ? (
+                  <div className="col-auto">
+                    <label className="form-label small mb-1" htmlFor="phone-message-direction">
+                      {tr('Direction')}
+                    </label>
+                    <select
+                      id="phone-message-direction"
+                      className="form-select form-select-sm"
+                      value={messageDirection}
+                      onChange={(event) => setMessageDirection(event.target.value)}
+                    >
+                      <option value="">{tr('Any')}</option>
+                      <option value="inbox">{tr('Received')}</option>
+                      <option value="sent">{tr('Sent')}</option>
+                    </select>
+                  </div>
+                ) : null}
+
                 {isSearchable(tab) ? (
                   <div className="col-12 col-md">
                     <label className="form-label small mb-1" htmlFor="phone-filter">
@@ -669,6 +759,92 @@ export function PhonePage() {
                       <label className="form-check-label small" htmlFor="phone-unread">
                         {tr('Unread only')}
                       </label>
+                    </div>
+                  </div>
+                ) : null}
+
+                {tab === 'message' ? (
+                  <div className="col-12">
+                    <label className="form-label small mb-1" htmlFor="phone-numbers">
+                      {tr('Numbers')}
+                    </label>
+                    <div className="d-flex flex-wrap align-items-center gap-2">
+                      <form
+                        className="input-group input-group-sm"
+                        style={{ maxWidth: '26rem' }}
+                        onSubmit={submitMessageAddresses}
+                      >
+                        <input
+                          id="phone-numbers"
+                          className="form-control"
+                          placeholder={tr(
+                            'A number or part of one, e.g. 106 or 10086',
+                          )}
+                          value={addressInput}
+                          onChange={(event) => setAddressInput(event.target.value)}
+                        />
+                        <button type="submit" className="btn btn-outline-secondary">
+                          {tr('Add')}
+                        </button>
+                      </form>
+                      {messageAddresses.map((address) => (
+                        <span
+                          key={address}
+                          className="badge text-bg-primary d-inline-flex align-items-center gap-1"
+                        >
+                          <span className="font-monospace">{address}</span>
+                          <button
+                            type="button"
+                            className="btn-close btn-close-white"
+                            style={{ fontSize: '0.55rem' }}
+                            aria-label={tr('Remove {{value}}', { value: address })}
+                            onClick={() => toggleMessageAddress(address)}
+                          />
+                        </span>
+                      ))}
+                      {messageAddresses.length > 0 ? (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-link p-0"
+                          onClick={() => setMessageAddresses([])}
+                        >
+                          {tr('Clear')}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="small text-secondary mt-1 d-flex flex-wrap align-items-center gap-1">
+                      <span>{tr('Recent senders:')}</span>
+                      {senders.status === 'loading' ? (
+                        <span>{tr('Loading…')}</span>
+                      ) : senders.status === 'error' ? (
+                        <span>{tr('Could not load the senders.')}</span>
+                      ) : senders.data.length === 0 ? (
+                        <span>{tr('none')}</span>
+                      ) : (
+                        senders.data.map((sender) => {
+                          const selected = messageAddresses.some(
+                            (entry) =>
+                              entry.toLowerCase() === sender.address.toLowerCase(),
+                          );
+                          return (
+                            <button
+                              key={sender.address}
+                              type="button"
+                              className={`winnie-sms-sender btn btn-sm py-0 ${
+                                selected ? 'btn-primary' : 'btn-outline-secondary'
+                              }`}
+                              aria-pressed={selected}
+                              title={tr('Last message {{when}}', {
+                                when: formatDateTime(sender.last_at),
+                              })}
+                              onClick={() => toggleMessageAddress(sender.address)}
+                            >
+                              <span className="font-monospace">{sender.address}</span>
+                              <span className="ms-1 opacity-75">· {sender.count}</span>
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -764,7 +940,11 @@ export function PhonePage() {
               ) : rows.data.items.length === 0 ? (
                 <EmptyState message={emptyMessage(tab)} />
               ) : (
-                <PhoneTable data={rows.data} commandDeviceName={commandDeviceName} />
+                <PhoneTable
+                  data={rows.data}
+                  commandDeviceName={commandDeviceName}
+                  onOpenMessage={setOpenedMessage}
+                />
               )}
             </div>
 
@@ -779,6 +959,14 @@ export function PhonePage() {
           </div>
         </div>
       </div>
+
+      {openedMessage ? (
+        <MessageThreadDialog
+          message={openedMessage}
+          deviceId={deviceId === 'all' ? undefined : deviceId}
+          onClose={() => setOpenedMessage(null)}
+        />
+      ) : null}
     </>
   );
 }
@@ -968,9 +1156,10 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
 interface PhoneTableProps {
   data: TabData;
   commandDeviceName: (command: PhoneCommand) => string;
+  onOpenMessage: (message: PhoneMessage) => void;
 }
 
-function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
+function PhoneTable({ data, commandDeviceName, onOpenMessage }: PhoneTableProps) {
   switch (data.kind) {
     case 'calendar':
       return (
@@ -1080,18 +1269,29 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                 <th scope="col">{tr('Message')}</th>
                 <th scope="col">{tr('State')}</th>
                 <th scope="col">{tr('Device')}</th>
+                <th scope="col" style={{ width: '1%' }}>
+                  <span className="visually-hidden">{tr('Open')}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((message) => (
-                <tr key={`${message.device_id}-${message.id}`}>
+                <tr
+                  key={`${message.device_id}-${message.id}`}
+                  className="winnie-sms-row"
+                  onClick={() => {
+                    // A drag to copy the number must not open the dialog.
+                    if (window.getSelection()?.toString()) return;
+                    onOpenMessage(message);
+                  }}
+                >
                   <td className="text-nowrap">{formatDateTime(message.received_at)}</td>
                   <td className="font-monospace">{message.address || tr('unknown')}</td>
-                  <td>{message.direction}</td>
+                  <td>{messageDirectionLabel(message.direction)}</td>
                   <td>
                     <span
                       className="d-inline-block text-truncate"
-                      style={{ maxWidth: '30rem' }}
+                      style={{ maxWidth: '22rem' }}
                       title={message.body}
                     >
                       {snippet(message.body, 200) || tr('(empty)')}
@@ -1112,6 +1312,20 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
                     </span>
                   </td>
                   <td className="text-nowrap">{message.device_name}</td>
+                  <td className="text-end text-nowrap">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      aria-label={tr('Open every message exchanged with this number')}
+                      title={tr('Open every message exchanged with this number')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenMessage(message);
+                      }}
+                    >
+                      <i className="bi bi-chat-square-text" aria-hidden="true" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1346,4 +1560,163 @@ function PhoneTable({ data, commandDeviceName }: PhoneTableProps) {
     default:
       return null;
   }
+}
+
+interface MessageThreadDialogProps {
+  message: PhoneMessage;
+  deviceId?: string;
+  onClose: () => void;
+}
+
+/**
+ * Everything exchanged with one number, oldest first.
+ *
+ * The clicked row is opened in place: the dialog scrolls to that message and
+ * rings its bubble once the thread has loaded, so a conversation of hundreds
+ * of messages still answers "which one did I click". The server matches the
+ * number in its normalised form, so an inbox row stored as `+86…` and its
+ * reply stored without the country code are one conversation.
+ */
+function MessageThreadDialog({ message, deviceId, onClose }: MessageThreadDialogProps) {
+  const thread = useApi(
+    () =>
+      api.phoneMessageThread({
+        address: message.address,
+        deviceId,
+        limit: 500,
+      }),
+    [message.address, message.device_id, deviceId],
+  );
+  const target = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (thread.status !== 'success' || target.current === null) return;
+    target.current.scrollIntoView({ block: 'center' });
+  }, [thread.status, thread.data]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const items = thread.status === 'success' ? thread.data : [];
+  const targetFound = items.some(
+    (entry) => entry.id === message.id && entry.device_id === message.device_id,
+  );
+
+  return (
+    <>
+      <div
+        className="modal fade show d-block"
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sms-thread-title"
+      >
+        <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+          <div className="modal-content">
+            <div className="modal-header">
+              <div>
+                <h5 className="modal-title" id="sms-thread-title">
+                  {tr('Conversation with {{address}}', { address: message.address })}
+                </h5>
+                <div className="small text-secondary">
+                  {thread.status === 'success'
+                    ? thread.data.length === 1
+                      ? tr('{{count}} message, oldest first', { count: 1 })
+                      : tr('{{count}} messages, oldest first', {
+                          count: thread.data.length,
+                        })
+                    : tr('Every message exchanged with this number, in both directions.')}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close"
+                aria-label={tr('Close')}
+                onClick={onClose}
+              />
+            </div>
+            <div className="modal-body">
+              {thread.status === 'loading' ? (
+                <LoadingBlock label={tr('Loading conversation…')} />
+              ) : thread.status === 'error' ? (
+                <ErrorBlock error={thread.error} onRetry={thread.reload} />
+              ) : thread.data.length === 0 ? (
+                <EmptyState message={tr('No message with this number.')} />
+              ) : (
+                <div className="direct-chat direct-chat-primary winnie-sms-thread">
+                  {thread.data.map((entry) => {
+                    const outgoing = isOutgoingMessage(entry);
+                    const current =
+                      entry.id === message.id && entry.device_id === message.device_id;
+                    return (
+                      <div
+                        key={`${entry.device_id}-${entry.id}`}
+                        ref={current ? target : undefined}
+                        className={`direct-chat-msg${outgoing ? ' end' : ''}${
+                          current ? ' winnie-sms-target' : ''
+                        }`}
+                        aria-current={current ? 'true' : undefined}
+                      >
+                        <div className="direct-chat-infos clearfix">
+                          <span
+                            className={`direct-chat-name ${
+                              outgoing ? 'float-end' : 'float-start'
+                            }`}
+                          >
+                            {messageDirectionLabel(entry.direction)}
+                          </span>
+                          <span
+                            className={`direct-chat-timestamp ${
+                              outgoing ? 'float-start' : 'float-end'
+                            }`}
+                          >
+                            {formatDateTime(entry.received_at)}
+                            {entry.device_name ? ` · ${entry.device_name}` : ''}
+                          </span>
+                        </div>
+                        <div
+                          className={`direct-chat-img d-flex align-items-center justify-content-center ${
+                            outgoing ? 'bg-primary text-white' : 'bg-secondary text-white'
+                          }`}
+                          aria-hidden="true"
+                        >
+                          <i
+                            className={`bi ${
+                              outgoing ? 'bi-person-fill' : 'bi-chat-left-text'
+                            }`}
+                          />
+                        </div>
+                        <div className="direct-chat-text text-break winnie-pre-line">
+                          {entry.body || tr('(empty)')}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {thread.status === 'success' && items.length > 0 && !targetFound ? (
+                <p className="small text-secondary mb-0 mt-3">
+                  {tr(
+                    'The opened message is older than the {{count}} messages returned here.',
+                    { count: items.length },
+                  )}
+                </p>
+              ) : null}
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-outline-secondary" onClick={onClose}>
+                {tr('Close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
 }

@@ -103,11 +103,22 @@ the rest of the API.
 | `DELETE` | `/devices/{id}/data` | Delete every synced record, keep the registration |
 | `GET` | `/summary` | Devices, counts, staleness, pending commands |
 | `GET` | `/calendar`, `/calls`, `/messages`, `/contacts`, `/notifications`, `/locations`, `/apps` | Typed queries |
+| `GET` | `/messages/senders?since=&until=&device_id=&limit=` | The most frequent senders, merged by normalised number |
+| `GET` | `/messages/thread?address=&device_id=&limit=` | One conversation with a number, oldest first, both directions |
 | `POST` | `/locations/geocode?since=&until=&device_id=&limit=` | Resolve addresses for stored fixes (bounded; needs a provider) |
 | `GET` | `/search?q=&kinds=&since=&until=` | Cross-kind search, merged by time |
 | `POST` | `/commands` | Propose a write |
 | `POST` | `/commands/{id}/approve`, `/cancel` | Approve or cancel a proposed write |
 | `GET` | `/commands?status=` | Command history |
+
+The message query also takes `direction=inbox|sent` and any number of repeated
+`addresses=` filters. Each address matches part of a number after normalisation
+(strip separators and a Chinese `+86`), so `addresses=106` selects the 106-bulk
+senders, `addresses=10086&addresses=10010` selects either short code, and a
+selected `+8613800138000` also matches the reply stored as `13800138000`.
+`/messages/thread` uses the same normalised comparison, which is what keeps one
+conversation in one dialog instead of splitting it by country-code spelling.
+`/messages/senders` merges both spellings into one counted entry.
 
 A sync request carries **one kind**:
 
@@ -460,7 +471,12 @@ operate view. It shows:
   **Revoke**, **Restore** and **Delete server data** actions;
 - a tab per kind (calendar, calls, SMS, contacts, notifications, location,
   apps) with a time window, a text filter, call direction, unread-only and a
-  result limit;
+  result limit; the SMS tab adds a direction filter (received/sent) and a
+  multi-select number picker built from the most frequent senders, with a typed
+  fragment such as `106` or `10086` accepted as well;
+- clicking an SMS opens the whole conversation with that number, oldest first,
+  scrolls to the clicked message and rings its bubble, with received and sent
+  messages on opposite sides;
 - **Assistant actions**, the command queue with status, summary, result or
   error, and the device it belongs to;
 - a cross-kind search.

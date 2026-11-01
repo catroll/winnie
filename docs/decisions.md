@@ -1568,6 +1568,35 @@ console exposes it only on the location tab. The alternative — silently
 geocoding a year of history when the feature is switched on — spends the owner's
 quota without being asked.
 
+## SMS conversations are grouped by normalised digits (2026-11-01)
+
+**The provider stores one person under two strings.** An incoming message often
+arrives as `+8613800138000` while the reply to it is stored as `13800138000`.
+A thread that matches the raw address therefore splits one conversation in two,
+and a quick filter built from raw addresses shows the same person twice. The
+conversation view, the multi-number filter and the sender picker all compare
+digits with the Chinese `+86` / `0086` prefix removed
+(`winnie_phone.addresses.normalize_address`). The normalisation is applied to
+SMS *query paths only*: calls and contacts keep the raw number the device
+uploaded, because those rows are quoted back to the owner as they are.
+
+**SQL narrows, the normalised comparison decides.** There is no generated
+normalised column and no migration: a filter turns each selected number into
+its digits and matches them with `ILIKE` (which also matches the `+86` spelling,
+because the digits are contiguous inside it), then the service compares the
+normalised form for the thread. That keeps the schema unchanged and costs one
+pass over the narrow candidate set. It would be the wrong shape for millions of
+messages; this data set is one phone's history, and the list is capped at 500.
+
+**The filters and the picker are server-side.** The console shows at most 500
+rows per request, so filtering a fetched page would hide messages that exist but
+sit outside the window — and a picker built from the page would omit the number
+that only appears in older messages. `/messages?addresses=&direction=` and
+`/messages/senders` do the work over the whole window instead. `direction` keeps
+the values the phone writes (`inbox`, `sent`); the console maps them to
+Received/Sent, and "Sent" means the phone stored a sent message, not that the
+carrier delivered it.
+
 ## The editor plugins became the news pipeline's prompts (2026-11-01)
 
 **Two ChatGPT editor plugins are a contract, not a prompt to paste.** The

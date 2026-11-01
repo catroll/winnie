@@ -142,6 +142,217 @@ async def test_reupload_updates_in_place(phone_client: httpx.AsyncClient) -> Non
     assert listing[0]["body"] == "edited"
 
 
+async def seed_known_senders(client: httpx.AsyncClient, device_id: str) -> None:
+    """Six messages from four senders, with the +86 split real phones produce."""
+    response = await sync(
+        client,
+        device_id,
+        "message",
+        [
+            message(
+                "211",
+                "received from the mobile",
+                address="+8613800138000",
+                received_at=iso(minutes=50),
+            ),
+            message(
+                "212",
+                "reply to the mobile",
+                address="13800138000",
+                direction="sent",
+                received_at=iso(minutes=40),
+            ),
+            message(
+                "213",
+                "carrier notice",
+                address="10086",
+                received_at=iso(minutes=30),
+            ),
+            message(
+                "214",
+                "carrier confirmation",
+                address="10086",
+                direction="sent",
+                received_at=iso(minutes=25),
+            ),
+            message(
+                "215",
+                "bulk promotion",
+                address="1069000000001",
+                received_at=iso(minutes=20),
+            ),
+        ],
+    )
+    assert response.status_code == 200, response.text
+    response = await sync(
+        client,
+        device_id,
+        "message",
+        [
+            message(
+                "216",
+                "bank notice",
+                address="95566",
+                received_at=iso(minutes=10),
+            ),
+        ],
+    )
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
+async def test_message_filters_by_direction_and_several_numbers(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    device = await register(phone_client)
+    await seed_known_senders(phone_client, device["id"])
+
+    only_sent = (
+        await phone_client.get("/api/v1/phone/messages", params={"direction": "sent"})
+    ).json()
+    assert [row["body"] for row in only_sent] == [
+        "carrier confirmation",
+        "reply to the mobile",
+    ]
+
+    only_inbox = (
+        await phone_client.get("/api/v1/phone/messages", params={"direction": "inbox"})
+    ).json()
+    assert len(only_inbox) == 4
+
+    # Two selected short numbers: the OR, not the first one only.
+    short_codes = (
+        await phone_client.get(
+            "/api/v1/phone/messages",
+            params=[("addresses", "10086"), ("addresses", "95566")],
+        )
+    ).json()
+    assert [row["body"] for row in short_codes] == [
+        "bank notice",
+        "carrier confirmation",
+        "carrier notice",
+    ]
+
+    # A partial number is enough: every 106* bulk sender, and nothing else.
+    bulk = (
+        await phone_client.get("/api/v1/phone/messages", params={"addresses": "106"})
+    ).json()
+    assert [row["body"] for row in bulk] == ["bulk promotion"]
+
+    # A selected number is normalised, so it matches both stored spellings.
+    mobile = (
+        await phone_client.get(
+            "/api/v1/phone/messages", params={"addresses": "+8613800138000"}
+        )
+    ).json()
+    assert [row["body"] for row in mobile] == [
+        "reply to the mobile",
+        "received from the mobile",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_message_senders_merge_country_code_spellings(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    device = await register(phone_client)
+    await seed_known_senders(phone_client, device["id"])
+
+    senders = (await phone_client.get("/api/v1/phone/messages/senders")).json()
+    counts = {row["address"]: row["count"] for row in senders}
+    assert counts["10086"] == 2
+    assert counts["13800138000"] == 2
+    assert counts["1069000000001"] == 1
+    # One entry for the mobile, not "+8613800138000" next to "13800138000".
+    assert "+8613800138000" not in counts
+    # Newest last, count first: the carrier wrote twice and most recently of
+    # the two-count senders.
+    assert senders[0]["address"] == "10086"
+    assert {row["address"] for row in senders} == {
+        "10086",
+        "13800138000",
+        "1069000000001",
+        "95566",
+    }
+
+
+@pytest.mark.asyncio
+async def test_message_thread_is_one_conversation_oldest_first(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    device = await register(phone_client)
+    await seed_known_senders(phone_client, device["id"])
+
+    # Opening either spelling returns both messages, in reading order.
+    for spelling in ("+8613800138000", "13800138000"):
+        thread = (
+            await phone_client.get(
+                "/api/v1/phone/messages/thread", params={"address": spelling}
+            )
+        ).json()
+        assert [row["body"] for row in thread] == [
+            "received from the mobile",
+            "reply to the mobile",
+        ]
+        assert [row["direction"] for row in thread] == ["inbox", "sent"]
+
+    # The thread is scoped to the device that owns the row, like the list.
+    other = await register(
+        phone_client,
+        device_key="phone-key-0002",
+        name="Second phone",
+        model="Pixel 9",
+    )
+    await sync(
+        phone_client,
+        other["id"],
+        "message",
+        [message("301", "same number elsewhere", address="13800138000")],
+    )
+    scoped = (
+        await phone_client.get(
+            "/api/v1/phone/messages/thread",
+            params={"address": "13800138000", "device_id": device["id"]},
+        )
+    ).json()
+    assert [row["body"] for row in scoped] == [
+        "received from the mobile",
+        "reply to the mobile",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_message_thread_keeps_an_alphanumeric_sender(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    device = await register(phone_client)
+    await sync(
+        phone_client,
+        device["id"],
+        "message",
+        [message("321", "your code is 1234", address="BANK")],
+    )
+
+    # An alphanumeric sender id is not a phone number: digits alone would let
+    # a thread for "BANK" collide with any number containing its digits.
+    thread = (
+        await phone_client.get(
+            "/api/v1/phone/messages/thread", params={"address": "bank"}
+        )
+    ).json()
+    assert [row["body"] for row in thread] == ["your code is 1234"]
+
+    senders = (await phone_client.get("/api/v1/phone/messages/senders")).json()
+    assert [row["address"] for row in senders] == ["bank"]
+
+    filtered = (
+        await phone_client.get(
+            "/api/v1/phone/messages", params={"addresses": "BANK"}
+        )
+    ).json()
+    assert [row["body"] for row in filtered] == ["your code is 1234"]
+
+
 @pytest.mark.asyncio
 async def test_full_calendar_snapshot_deletes_missing_events(
     phone_client: httpx.AsyncClient,

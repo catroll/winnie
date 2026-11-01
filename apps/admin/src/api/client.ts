@@ -36,6 +36,7 @@ import type {
   PhoneDevice,
   PhoneLocation,
   PhoneMessage,
+  PhoneMessageSender,
   PhoneNotification,
   PhoneRangeQuery,
   PhoneSearchResponse,
@@ -202,11 +203,21 @@ function parseFilename(header: string | null, fallback: string): string {
 }
 
 function queryString(
-  params: Record<string, string | number | boolean | undefined | null>,
+  params: Record<
+    string,
+    string | number | boolean | string[] | undefined | null
+  >,
 ): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null || value === '') continue;
+    if (Array.isArray(value)) {
+      // Repeated keys are how FastAPI reads a list query parameter.
+      for (const item of value) {
+        if (item !== '') search.append(key, item);
+      }
+      continue;
+    }
     search.set(key, String(value));
   }
   const encoded = search.toString();
@@ -749,6 +760,8 @@ export const api = {
   phoneMessages(
     params: PhoneRangeQuery & {
       address?: string;
+      addresses?: string[];
+      direction?: string;
       q?: string;
       unreadOnly?: boolean;
     } = {},
@@ -758,8 +771,35 @@ export const api = {
         since: params.since,
         until: params.until,
         address: params.address,
+        addresses: params.addresses,
+        direction: params.direction,
         q: params.q,
         unread_only: params.unreadOnly ? 'true' : undefined,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneMessageSenders(
+    params: PhoneRangeQuery = {},
+  ): Promise<PhoneMessageSender[]> {
+    return request(
+      `/api/v1/phone/messages/senders${queryString({
+        since: params.since,
+        until: params.until,
+        device_id: params.deviceId,
+        limit: params.limit,
+      })}`,
+    );
+  },
+
+  phoneMessageThread(
+    params: { address: string; deviceId?: string; limit?: number },
+  ): Promise<PhoneMessage[]> {
+    return request(
+      `/api/v1/phone/messages/thread${queryString({
+        address: params.address,
         device_id: params.deviceId,
         limit: params.limit,
       })}`,

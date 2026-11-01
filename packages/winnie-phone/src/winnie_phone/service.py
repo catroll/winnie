@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -22,6 +22,7 @@ from typing import Any, Protocol
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from winnie_phone.addresses import normalize_address
 from winnie_phone.config import PhoneConfig
 from winnie_phone.geocode import Address, Geocoder, address_fields
 from winnie_phone.models import (
@@ -161,6 +162,39 @@ def _truncate(value: str | None, limit: int) -> str:
     if not value:
         return ""
     return value if len(value) <= limit else value[:limit]
+
+
+def _message_row(row: PhoneMessage, names: dict[uuid.UUID, str]) -> dict:
+    return {
+        "id": row.external_id,
+        "device_id": str(row.device_id),
+        "device_name": names.get(row.device_id, "phone"),
+        "address": row.address,
+        "direction": row.direction,
+        "body": row.body,
+        "subject": row.subject,
+        "received_at": aware_utc(row.received_at),
+        "is_read": row.is_read,
+        "kind": row.kind,
+    }
+
+
+def _address_terms(values: Sequence[str] | None) -> list[str]:
+    """The searchable forms of the requested senders, without duplicates.
+
+    A selected number is compared by its digits, so choosing ``+8613800138000``
+    from the quick picker also matches the reply stored as ``13800138000``.
+    An alphanumeric sender id stays literal, with only its case folded.
+    """
+    terms: list[str] = []
+    for value in values or ():
+        text = value.strip()
+        if not text:
+            continue
+        term = normalize_address(text) or text
+        if term not in terms:
+            terms.append(term)
+    return terms
 
 
 class PhoneService:
@@ -935,6 +969,8 @@ class PhoneService:
         since: datetime | None = None,
         until: datetime | None = None,
         address: str = "",
+        addresses: Sequence[str] | None = None,
+        direction: str = "",
         query: str = "",
         unread_only: bool = False,
         device_id: uuid.UUID | None = None,
@@ -956,6 +992,20 @@ class PhoneService:
                 conditions.append(
                     PhoneMessage.address.ilike(_like(address), escape="\\")
                 )
+            terms = _address_terms(addresses)
+            if terms:
+                # Any selected number (or part of one) can match. The OR is what
+                # makes the multi-select useful: 10086 and 10010 together.
+                conditions.append(
+                    or_(
+                        *(
+                            PhoneMessage.address.ilike(_like(term), escape="\\")
+                            for term in terms
+                        )
+                    )
+                )
+            if direction:
+                conditions.append(PhoneMessage.direction == direction)
             if query:
                 conditions.append(
                     or_(
@@ -971,20 +1021,112 @@ class PhoneService:
                 .order_by(PhoneMessage.received_at.desc().nullslast())
                 .limit(limit)
             )
+            return [_message_row(row, names) for row in rows]
+
+    async def message_thread(
+        self,
+        user_id: str,
+        *,
+        address: str,
+        device_id: uuid.UUID | None = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Every message exchanged with one number, oldest first.
+
+        The same sender arrives as ``+8613800138000`` and leaves as
+        ``13800138000``, so a raw-string match would split one conversation in
+        two. SQL narrows the rows by the digits (which survive the prefix), and
+        the normalised comparison decides which of them belong to the thread.
+        """
+        target = normalize_address(address)
+        if not target:
+            return []
+        async with self._session() as session:
+            names = await self._device_names(session, user_id)
+            conditions = [
+                PhoneMessage.user_id == user_id,
+                PhoneMessage.deleted_at.is_(None),
+                PhoneMessage.address.ilike(_like(target), escape="\\"),
+            ]
+            if device_id is not None:
+                conditions.append(PhoneMessage.device_id == device_id)
+            rows = await session.scalars(
+                select(PhoneMessage)
+                .where(*conditions)
+                .order_by(PhoneMessage.received_at.desc().nullslast())
+                .limit(limit)
+            )
+            matches = [
+                row for row in rows if normalize_address(row.address) == target
+            ]
+        # The newest `limit` are selected above; a conversation reads forwards.
+        matches.reverse()
+        return [_message_row(row, names) for row in matches]
+
+    async def message_senders(
+        self,
+        user_id: str,
+        *,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        device_id: uuid.UUID | None = None,
+        limit: int = 12,
+    ) -> list[dict]:
+        """The numbers that wrote most often, counted per normalised address.
+
+        This is the quick picker's source: 106xxxxxx bulk senders and short
+        codes such as 10086 are exactly the numbers that repeat and are tedious
+        to type.
+        """
+        async with self._session() as session:
+            conditions = [
+                PhoneMessage.user_id == user_id,
+                PhoneMessage.deleted_at.is_(None),
+                PhoneMessage.address != "",
+            ]
+            if device_id is not None:
+                conditions.append(PhoneMessage.device_id == device_id)
+            if since is not None:
+                conditions.append(PhoneMessage.received_at >= as_utc(since))
+            if until is not None:
+                conditions.append(PhoneMessage.received_at <= as_utc(until))
+            rows = await session.execute(
+                select(
+                    PhoneMessage.address,
+                    func.count(PhoneMessage.id),
+                    func.max(PhoneMessage.received_at),
+                )
+                .where(*conditions)
+                .group_by(PhoneMessage.address)
+            )
+            merged: dict[str, dict] = {}
+            for raw, count, last in rows:
+                key = normalize_address(raw) or raw
+                last = as_utc(last)
+                entry = merged.get(key)
+                if entry is None:
+                    merged[key] = {"address": key, "count": count, "last_at": last}
+                else:
+                    entry["count"] += count
+                    if last is not None and (
+                        entry["last_at"] is None or last > entry["last_at"]
+                    ):
+                        entry["last_at"] = last
+            ordered = sorted(
+                merged.values(),
+                key=lambda entry: (
+                    entry["count"],
+                    entry["last_at"] or datetime.min,
+                ),
+                reverse=True,
+            )[:limit]
             return [
                 {
-                    "id": row.external_id,
-                    "device_id": str(row.device_id),
-                    "device_name": names.get(row.device_id, "phone"),
-                    "address": row.address,
-                    "direction": row.direction,
-                    "body": row.body,
-                    "subject": row.subject,
-                    "received_at": aware_utc(row.received_at),
-                    "is_read": row.is_read,
-                    "kind": row.kind,
+                    "address": entry["address"],
+                    "count": entry["count"],
+                    "last_at": aware_utc(entry["last_at"]),
                 }
-                for row in rows
+                for entry in ordered
             ]
 
     async def contacts(

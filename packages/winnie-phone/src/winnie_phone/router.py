@@ -27,6 +27,7 @@ from winnie_phone.schemas import (
     GeocodeResult,
     LocationRead,
     MessageRead,
+    MessageSenderRead,
     NotificationRead,
     SearchResponse,
     SummaryRead,
@@ -302,11 +303,59 @@ async def calls(
     ]
 
 
+@router.get("/messages/senders", response_model=list[MessageSenderRead])
+async def message_senders(
+    since: datetime | None = None,
+    until: datetime | None = None,
+    device_id: UUID | None = None,
+    limit: int = Query(default=12, ge=1, le=100),
+    service: PhoneService = Depends(get_service),
+    user_id: str = Depends(get_user_id),
+) -> list[MessageSenderRead]:
+    """The numbers that wrote most often, for the quick multi-select filter.
+
+    Counted per normalised address, so ``+8613800138000`` and
+    ``13800138000`` are one entry rather than two.
+    """
+    return [
+        MessageSenderRead.model_validate(row)
+        for row in await service.message_senders(
+            user_id,
+            since=since,
+            until=until,
+            device_id=device_id,
+            limit=limit,
+        )
+    ]
+
+
+@router.get("/messages/thread", response_model=list[MessageRead])
+async def message_thread(
+    address: str = Query(min_length=1),
+    device_id: UUID | None = None,
+    limit: int = Query(default=500, ge=1, le=500),
+    service: PhoneService = Depends(get_service),
+    user_id: str = Depends(get_user_id),
+) -> list[MessageRead]:
+    """One conversation, oldest first, both directions, one normalised number."""
+    return [
+        MessageRead.model_validate(row)
+        for row in await service.message_thread(
+            user_id,
+            address=address,
+            device_id=device_id,
+            limit=limit,
+        )
+    ]
+
+
 @router.get("/messages", response_model=list[MessageRead])
 async def messages(
     since: datetime | None = None,
     until: datetime | None = None,
     address: str = "",
+    addresses: list[str] | None = Query(default=None),
+    direction: str = "",
     q: str = "",
     unread_only: bool = False,
     device_id: UUID | None = None,
@@ -321,6 +370,8 @@ async def messages(
             since=since,
             until=until,
             address=address,
+            addresses=addresses,
+            direction=direction,
             query=q,
             unread_only=unread_only,
             device_id=device_id,

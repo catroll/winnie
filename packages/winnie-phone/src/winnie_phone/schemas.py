@@ -393,6 +393,14 @@ class MessageRead(BaseModel):
     kind: str
 
 
+class MessageSenderRead(BaseModel):
+    """One number in the SMS quick picker, counted per normalised address."""
+
+    address: str
+    count: int
+    last_at: datetime | None
+
+
 class NotificationRead(BaseModel):
     id: str
     device_id: str

@@ -883,6 +883,13 @@ export interface PhoneMessage {
   kind: string;
 }
 
+/** One number in the SMS quick picker, counted per normalised address. */
+export interface PhoneMessageSender {
+  address: string;
+  count: number;
+  last_at: string | null;
+}
+
 export interface PhoneContact {
   id: string;
   device_id: string;

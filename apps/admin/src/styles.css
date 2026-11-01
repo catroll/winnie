@@ -103,3 +103,18 @@
 .schedule-body .markdown-body > :last-child {
   margin-bottom: 0;
 }
+
+/* The SMS table opens a conversation on a row click; show that it is clickable. */
+.winnie-sms-row {
+  cursor: pointer;
+}
+
+/*
+ * The thread dialog scrolls to the message that was opened. A ring around its
+ * bubble keeps it findable afterwards, in a conversation of hundreds of rows.
+ * Only the bubble is ringed: the avatar and the timestamp are already aligned
+ * by AdminLTE and a ring around them would fight that layout.
+ */
+.winnie-sms-thread .direct-chat-msg.winnie-sms-target > .direct-chat-text {
+  box-shadow: 0 0 0 0.2rem rgba(var(--bs-warning-rgb), 0.55);
+}
