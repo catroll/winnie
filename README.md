@@ -11,7 +11,7 @@ infrastructure below it exists to serve the assistant.
 | **Assistant** | Chat, web search, scheduled tasks, long-term memory and opt-in local file/command tools | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **News production** | Six-stage pipeline from public sources to a sourced, reviewed draft, with console and assistant access | **Core implemented** |
-| **Android client** | Record with live captions, upload, read transcript and minutes | **MVP implemented** |
+| **Android client** | Assistant chat with Markdown, record with live captions, phone-data sync, reminders, remembered sign-in | **MVP implemented** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs and drafts, AI providers (suppliers and LLM usage) and gateway routes | **MVP implemented** |
@@ -71,16 +71,20 @@ translation/minutes smoke test
 passed, and the file and streaming Doubao ASR paths are validated against the
 real endpoints. The Android client MVP in `apps/android` runs the file-first
 flow with live captions — sign in, record, watch provisional captions, stop,
-upload, transcript and minutes — and is verified against the local backend;
-running it on a device with a live ASR key is still pending.
+upload, transcript and minutes — alongside the assistant chat tab, and is
+verified against the local backend; running it on a device with a live ASR key
+is still pending.
 
-The assistant capability is usable end to end: a phone-sized chat page at
-`/api/v1/assistant/ui` and a ChatGPT-like chat in the management console, a
-dedicated `winnie-chat` engine with a skill registry (web, weather, document
-index, memory, scheduled tasks and local execution), append-only Markdown
-conversations under `~/Documents/Mine/Winnie`, long-term memory distilled from
-those files and recalled through the local index service, and scheduled tasks
-the assistant creates and cancels when asked in conversation. Two watches are on
+The assistant capability is usable end to end: a native chat tab in the Android
+client, a phone-sized web page at `/api/v1/assistant/ui` and a ChatGPT-like chat
+in the management console, a dedicated `winnie-chat` engine with a skill
+registry (web, weather, document index, memory, scheduled tasks and local
+execution), append-only Markdown conversations under `~/Documents/Mine/Winnie`,
+long-term memory distilled from those files and recalled through the local index
+service, and scheduled tasks the assistant creates and cancels when asked in
+conversation. The Android tab renders replies as Markdown and shares one
+conversation history with the console and the web page; tool output stays
+collapsed until it is opened. Two watches are on
 by default: a daily weather check records an umbrella or clothing notice only
 when the advice changes, and a gold watch samples the price every five minutes
 and pushes the Winnie app when it moves sharply (≥1% in an hour or ≥2.5% in a

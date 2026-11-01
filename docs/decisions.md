@@ -43,10 +43,13 @@ existing migration chain keeps working.
 
 **Stack.** Kotlin 2.4.21, Jetpack Compose with Material 3, a single
 `ComponentActivity`, and manual dependency construction in `AppContainer`.
-No navigation or DI framework: the MVP has four screens and one object graph,
-and a navigation library plus Hilt would add build plugins and a second way to
-construct view models before the screen set is stable. Add them when a back
-stack, deep links or a second module make them pay for themselves.
+No navigation or DI framework: the signed-in shell has four tabs and at most one
+overlay route, and a `rememberSaveable` enum plus four booleans expresses that
+without a graph. A navigation library plus Hilt would add build plugins and a
+second way to construct view models before deep links or a second module make
+them pay for themselves. The view models that must survive a tab switch (chat,
+account) are scoped to the activity and keyed by the signed-in user id, so two
+accounts on one phone never share a conversation.
 
 **Build.** Android Gradle Plugin 9.5.0 with its built-in Kotlin support,
 Gradle 9.8.2, `compileSdk = 37`, `compileSdkMinor = 2`, `targetSdk = 37`,
@@ -57,11 +60,10 @@ AndroidX artifacts (core 1.19.1, Compose BOM 2026.09.00, OkHttp 5.5.1) require
 API 37; API 36 was rejected by the AAR metadata check.
 
 **HTTP.** OkHttp 5.5.1 with hand-written `kotlinx.serialization` requests
-instead of Retrofit. The API has eight endpoints; the Retrofit dependency and
-its converter would mostly restate the same DTOs, while this client is directly
-usable from a JVM integration test. When the endpoint count grows past roughly
-twenty, or when interceptors for retries/metrics are needed, Retrofit becomes
-worth its layer.
+instead of Retrofit. The client wraps roughly two dozen endpoints in one file;
+Retrofit would restate the same DTOs behind an annotation layer without removing
+any code, and this client is directly usable from a JVM integration test.
+Revisit when retry/metrics interceptors or a plugin architecture appear.
 
 **Audio.** `AudioRecord` at 16 kHz mono 16-bit PCM, streamed into a WAV file
 whose header is patched on close. This is smaller than the emulator's default
@@ -77,6 +79,44 @@ of a recording until that follow-up lands.
 library is deprecated and its replacement guidance is to use the Keystore
 directly. A plain preference would expose the bearer token to anyone who can
 read the app's data.
+
+**Remembered credentials.** The username and password of the last successful
+sign-in are sealed with the same Keystore key and pre-fill the login form. The
+**Remember username and password** checkbox is on for a fresh install, an
+explicit opt-out deletes the pair, the Account tab can forget it again, and a
+failed sign-in never overwrites the pair that used to work. Signing out clears
+the token and the open conversation id but keeps the pair — that is what
+"remember" means.
+
+**Rejected: Android Autofill or Credential Manager.** Both store the password in
+a system credential provider and need an app association with a publicly
+reachable domain; a self-hosted Winnie on a LAN host has neither, and a
+self-signed HTTPS host would still have to be registered with the provider. The
+local encrypted pair works with any address the owner types.
+
+**Rejected: plain `SharedPreferences`.** The invariant every password-saving app
+shares is that a copy of the data directory must not reveal the password. The
+Keystore key never leaves the device, so a copied file does not decrypt
+elsewhere. The remaining exposure is a person who can unlock the phone and open
+the app, which is exactly what the eye toggle and the opt-out are for.
+
+**Markdown rendering.** `com.mikepenz:multiplatform-markdown-renderer` 0.46.0
+with its `-m3` module, checked on Maven Central when it was added (released
+2026-10-13) and built with Kotlin 2.4.21 / Compose 1.12.1, the same versions
+this module uses. It parses JetBrains Markdown into Compose UI, so there is no
+WebView, no JavaScript bridge and no second rendering engine. Its heading
+defaults are article-scale (`##` is 45 sp), so chat maps them onto the app's title
+styles; a table wider than a bubble scrolls horizontally, which is the library's
+own answer. No image loader is added: assistant replies are text, and adding Coil
+is a separate decision.
+
+**Rejected: `com.github.jeziellago:compose-markdown`.** It is published only on
+JitPack, not Maven Central, and it wraps Markwon in an `AndroidView`, so text
+layout, theming and selection run in a second engine that does not follow
+Material 3.
+
+**Rejected: `com.halilibo.compose-richtext`.** Its `richtext-commonmark` is still
+`1.0.0-alpha05`; an alpha renderer is not the newest *stable* option.
 
 **Server address.** `WINNIE_PUBLIC_URL` is read at build time and baked into
 `BuildConfig.DEFAULT_SERVER_URL`, so one checkout can produce an APK for the
@@ -95,10 +135,11 @@ narrowed to that domain.
 
 **Verification.** This machine has no `/dev/kvm`, so an Android emulator cannot
 run. Verification is therefore: a debug/release APK build, JVM unit tests for
-the HTTP and WAV code, a Robolectric Compose smoke test for the login screen,
+the HTTP, WAV, credential and assistant-contract code, Robolectric renders of
+every screen (including PNG screenshots at 360×800 dp for a human to look at),
 and a JVM integration test that drives the app's own client through the real
-backend. A physical-device run with the real ASR key is still required and is
-tracked in [todo](../docs/todo.md).
+backend. A physical-device run with the real ASR key and the chat flow is still
+required and is tracked in [todo](../docs/todo.md).
 
 **Interface language.** English. The user writes Chinese, but the project rule
 is English for all artifacts, including app strings; localisation is a later

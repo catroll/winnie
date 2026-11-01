@@ -217,14 +217,26 @@ Open:
 Working:
 
 - Sign in or create the first account; server address is editable and persisted.
+- The username and password are remembered on request, sealed with a
+  Keystore-held AES/GCM key, with a show-password eye and an explicit opt-out;
+  the Account tab can forget the pair.
+- A four-tab shell — Chat, Meetings, Phone, Account — with detail screens
+  (meeting, recorder, conversation history, alerts) on top, and no title sharing
+  its app bar with four text actions.
+- Assistant chat with Markdown rendering (headings, lists, tables, fenced code,
+  quotes, links), the cross-channel conversation history, and collapsed tool
+  output. The open conversation resumes after a restart.
 - Record 16 kHz mono PCM to a WAV, with live captions over the meeting stream.
 - Meeting list, transcript with original + translation, structured minutes.
 - Discarding a recording deletes the draft meeting; finishing keeps it.
 
 Verified:
 
-- JVM unit tests pass, including the API client, WAV header and ws:// URL
-  derivation.
+- JVM unit tests pass, including the API client, WAV header, ws:// URL
+  derivation, the credential store and the remember-on-success rule.
+- Robolectric renders every new screen; the layout screenshots under
+  `apps/android/app/build/screenshots/` are the only visual check available on
+  this machine.
 - The debug APK builds at
   `apps/android/app/build/outputs/apk/debug/app-debug.apk`.
 - The file flow has been exercised from a physical phone against the LAN API
@@ -233,9 +245,12 @@ Verified:
 
 Open:
 
-- Run the live-caption build on the phone; the current build predates that run.
+- Run the live-caption build and the chat/credential flow on the phone; the
+  current build predates that run, and the remembered-password UI is only
+  exercised under Robolectric.
 - Foreground service, offline cache, export/share, token refresh, speaker
   labels, certificate pinning.
+- Streaming chat replies; chat attachments and voice input.
 - The meeting language is fixed to `zh` in the Android MVP.
 
 ### 5.6 Management console — MVP done

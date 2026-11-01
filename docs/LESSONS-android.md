@@ -271,3 +271,82 @@ record, a stale DHCP lease or a port-forward that was never added all surface as
 "the server is slow" if the only evidence is the sentence the app shows. The
 tell is asymmetry: one device and one address family fine, another silent, with
 no request in the server log.
+
+## A decorative `weight` next to a `weight` halves the row
+
+**Signal.** A settings row on a 360 dp screen wrapped its title onto two lines
+while leaving a wide empty gap before the trailing chevron. The subtitle wrapped
+earlier than the row's width allowed, and the row looked like it was reserving
+space for something that was not there.
+
+**Cause.** The row had both `Column(Modifier.weight(1f))` for the text and
+`Spacer(Modifier.weight(1f))` before the icon. Every weighted child shares the
+free space, so the text got half of it. A spacer that exists only to push a
+trailing element right is never needed when another child already has `weight`.
+
+**Check.** In a `Row`, list the weighted children and add up their weights. If a
+`Spacer` carries `weight`, ask what it is competing with. `git grep
+'weight(1f)' <file>` on a suspicious layout is enough; the screenshot shows the
+symptom, the modifier list shows the cause.
+
+## Robolectric can rasterise the screen, so look at it instead of reasoning
+
+**Signal.** A Markdown reply rendered `##` at 45 sp inside a chat bubble, and a
+title wrapped at a width that arithmetic said it could not. No assertion was
+failing; the layout was simply wrong.
+
+**What works.** With `@GraphicsMode(GraphicsMode.Mode.NATIVE)` and a phone
+qualifier, a Compose test can capture real pixels:
+
+```kotlin
+@Config(qualifiers = "w360dp-h800dp-xhdpi")
+class LayoutScreenshotTest {
+    @get:Rule val compose = createComposeRule()
+
+    @Test fun chat() {
+        compose.setContent { WinnieTheme { ChatScreen(...) } }
+        compose.waitForIdle()
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        File("build/screenshots/chat.png").outputStream().use {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+        }
+    }
+}
+```
+
+`build/screenshots/*.png` is gitignored with the rest of `build/`. This is the
+only visual check available without `/dev/kvm`, and it caught both problems
+above in one run. Keep it as a test that writes images and asserts nothing about
+pixels; a human (or an image-reading agent) looks at the result.
+
+**Corollary.** A Compose test's window is not the device's. After the login form
+grew by two rows, `onNodeWithText("Sign in").assertIsDisplayed()` failed because
+the button was below the fold; `performScrollTo()` is the fix. When a screen
+grows, expect the older assertions to need scrolling, not that the screen broke.
+
+## `kotlinx.serialization` does not send a property that has a default
+
+**Signal.** The chat request worked against the real server, but the wire test
+failed on `assertTrue(body.contains("\"channel\":\"api\""))`: the field was
+absent from the JSON. The server has the same default, so only the assertion
+noticed.
+
+**Cause.** `encodeDefaults` is `false` by default, and it applies to *every*
+defaulted property whether or not the value differs from the default.
+
+**Fix.** Either drop the default from the DTO and pass the value explicitly, or
+annotate the property `@EncodeDefault`. Test the field that must be on the wire;
+"the server accepted it" does not prove the client sent it.
+
+## The Android Keystore does not exist under Robolectric
+
+**Signal.** A store that calls `KeyStore.getInstance("AndroidKeyStore")` cannot
+be unit-tested: Robolectric ships no provider or shadow for it, so the first
+`Cipher.init` fails and the test proves nothing about the persistence rules.
+
+**Fix.** Put the encryption behind `SecretBox` (`seal`/`open`) and inject a fake
+in tests. `TokenStore` and `CredentialStore` then test what actually needs
+testing — that values are sealed before they reach `SharedPreferences`, that a
+failed sign-in does not overwrite the saved pair, that an unreadable payload is
+dropped rather than returned. The AES implementation itself is the Android
+platform's, not this app's.

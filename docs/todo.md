@@ -274,6 +274,16 @@ handset has not run them yet.
       upload, request transcription, meeting list, transcript and minutes views.
       Verified against the local backend with fake providers, including a
       JVM integration test that runs the same HTTP client the app uses.
+- [x] Android sign-in and shell redesign: remembered username and password
+      (Keystore-sealed, explicit opt-out, forgettable), a password eye, and a
+      four-tab bottom-bar shell (Chat, Meetings, Phone, Account) instead of four
+      text actions sharing one app bar.
+- [x] Assistant chat in the Android client: Markdown rendering, cross-channel
+      conversation history, collapsed tool output, resumed conversation. The
+      wire contract and the renderer are tested; the device run is open.
+- [ ] Run the chat, remembered-password and live-caption flows on a physical
+      phone; the current build predates that run.
+- [ ] Streaming assistant replies, chat attachments and voice input on Android.
 - [ ] Android client follow-ups: foreground-service recording so a backgrounded
       app keeps recording, export/share, offline cache, and automatic
       token-refresh handling.

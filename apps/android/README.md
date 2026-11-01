@@ -1,15 +1,24 @@
 # Winnie Android client (MVP)
 
-Kotlin/Compose client for the Winnie meeting-notes backend. It signs in, records
-a meeting at 16 kHz mono, streams live captions while recording, then uploads
-the WAV, waits for the pipeline and shows the final transcript and structured
-minutes. It contains no AI logic: the FastAPI
-`/api/v1` contract is the source of truth.
+Kotlin/Compose client for Winnie. It has four tabs — **Chat**, **Meetings**,
+**Phone** and **Account** — and signs in once against your own FastAPI backend.
+The Chat tab talks to the assistant, Meetings records a meeting at 16 kHz mono,
+streams live captions, uploads the WAV and shows the transcript and structured
+minutes, Phone holds the opt-in phone-data sync and Account holds the
+notification stream, the remembered password and sign-out. It contains no AI
+logic: the FastAPI `/api/v1` contract is the source of truth.
 
 ## What works
 
-- Sign in, or create the first account; the bearer token is encrypted with an
-  AES/GCM key held in the Android Keystore
+- Sign in, or create the first account. The username and password are
+  remembered on request, encrypted with an AES/GCM key held in the Android
+  Keystore; the password field has a show/hide eye and the login screen has an
+  explicit **Remember username and password** checkbox, on by default
+- Bottom navigation: Chat, Meetings, Phone, Account. Detail screens (meeting,
+  recorder, conversation history, alerts) open on top of the tabs
+- Assistant chat with Markdown rendering — headings, lists, tables, fenced code,
+  quotes and links — a conversation history that includes every channel, and
+  tool output collapsed behind **Show**
 - Record 16 kHz mono PCM to a WAV file and upload it
 - Live captions over a WebSocket while recording; the final transcript still
   comes from the uploaded file
@@ -21,17 +30,66 @@ minutes. It contains no AI logic: the FastAPI
 - Reminders from the server: a foreground service holds the push WebSocket,
   posts alerts, and wakes the phone to run a confirmed command immediately
 
-Not implemented yet: foreground-service recording (a backgrounded app can be
-killed, and that also stops the live-caption stream), MMS and attachments,
-SMS delivery receipts, a command poll separate from the data sync, offline cache,
-export/share, speaker labels, certificate pinning, and automatic recovery from
-an expired session. The
-meeting language is fixed to `zh` (the server's local language) in this MVP.
+Not implemented yet: streaming assistant replies (one response per turn),
+attachments or voice input in chat, foreground-service recording (a backgrounded
+app can be killed, and that also stops the live-caption stream), MMS and
+attachments, SMS delivery receipts, a command poll separate from the data sync,
+offline cache, export/share, speaker labels, certificate pinning, and automatic
+recovery from an expired session. The meeting language is fixed to `zh` (the
+server's local language) in this MVP.
+
+## Sign-in and remembered credentials
+
+The login form pre-fills the username and password saved by the last successful
+sign-in, so returning to the app is one tap. Both values are sealed with the
+Android Keystore key before they reach `SharedPreferences` — a copied data
+directory does not reveal them. The trade-off is deliberate and visible:
+
+- Anyone who can unlock the phone and open Winnie can reveal the saved password
+  with the eye icon. That is the point of remembering it, and it is why the
+  checkbox is explicit rather than automatic.
+- Unticking the checkbox and signing in deletes the pair. So does **Forget** on
+  the Account tab.
+- A failed sign-in never replaces the saved pair, so a typo does not lose the
+  credentials that used to work.
+- Signing out keeps the saved pair (that is what "remember" means); it deletes
+  the session token and the id of the open conversation, so a different account
+  on the same phone cannot resume someone else's transcript.
+- This is not Android autofill or Credential Manager. Those need an app
+  association and a credential provider account for a publicly reachable
+  domain; a self-hosted instance on a LAN has neither. The local encrypted pair
+  is the honest alternative, not a replacement.
+
+## Assistant chat
+
+**Chat** starts a conversation, resumes the one that was open when the app was
+last used, and opens **history** from the clock icon. Every conversation is
+listed regardless of where it started — the console, the phone web page, an API
+client or a scheduled task — because the server keeps one history. A scheduled
+task run is read-only and is marked as such.
+
+A reply is rendered as Markdown by
+[`multiplatform-markdown-renderer`](https://github.com/mikepenz/multiplatform-markdown-renderer):
+a heading, a bullet list, a table, a fenced code block and a link all render as
+Compose UI rather than plain text, and links open in the browser. A table wider
+than a phone bubble scrolls horizontally. Heading sizes are mapped down to the
+app's title styles; the library's defaults are article-scale and would render
+`##` at 45 sp inside a bubble.
+
+Tool calls appear as a collapsed **Tool · name** row with the raw output behind
+**Show**, so the conversation reads like a conversation. A failed turn is
+removed from the list and its text returns to the composer: the server never
+stored it, and a bubble that disappears on reload would lie about the
+transcript.
+
+The client uses the `api` channel for every turn, which keeps phone messages
+distinguishable from console and web ones in the console history.
+
 
 ## Phone data
 
-Open **Phone data** from the home screen. Nothing is shared until the owner
-turns on a scope; each switch requests that scope's permission first.
+Open the **Phone** tab. Nothing is shared until the owner turns on a scope; each
+switch requests that scope's permission first.
 
 | Scope | Android permissions | Special access |
 |---|---|---|
@@ -82,7 +140,7 @@ The server-side contract, retention windows and privacy position are in
 
 ## Push notifications
 
-Open **Alerts** from the home screen. The switch starts a foreground service
+Open **Account → Alerts & background**. The switch starts a foreground service
 that keeps one WebSocket to `/api/v1/push/ws` open, so an assistant reminder, a
 scheduled task's brief or a finished phone action arrives without the phone
 polling.
@@ -191,9 +249,22 @@ keeping one canonical pipeline.
 ./gradlew :app:testDebugUnitTest
 ```
 
-- `WinnieApiTest` — request/response handling against an in-process HTTP server
+- `WinnieApiTest` — request/response handling against an in-process HTTP server,
+  including the assistant chat and conversation endpoints
 - `WavFileWriterTest` — WAV header sizes and patching
-- `LoginScreenTest` — Compose UI smoke test under Robolectric, no emulator needed
+- `LoginScreenTest` — Robolectric render of the login screen: prefill, the
+  password eye, the remember checkbox, registration mode
+- `CredentialStoreTest` — the remembered pair is sealed, cleared and never
+  written in clear text; an unreadable payload is dropped
+- `SessionManagerTest` — a successful sign-in remembers, an opt-out clears, and
+  a failed attempt keeps the pair that used to work
+- `ChatScreenTest` — Robolectric render of the assistant tab: Markdown, the
+  thinking row, the composer, collapsed tool output, error dismissal
+- `AccountScreenTest` — Robolectric render of the account tab, the saved-password
+  state, the forget and sign-out confirmations
+- `LayoutScreenshotTest` — renders Chat, history, Account, Phone and login at
+  360×800 dp and writes PNGs under `build/screenshots/`; the only way to see a
+  layout on a machine with no emulator (see `docs/LESSONS-android.md`)
 - `PhoneApiTest` — phone endpoint paths, bodies and responses against an
   in-process HTTP server
 - `PhoneSourceMappingTest` — SMS, call-log and calendar cursor mapping
@@ -218,11 +289,29 @@ WINNIE_ANDROID_BASE_URL=http://[::1]:8000 \
 
 ```text
 app/src/main/java/dev/winnie/app/
-├── data/      HTTP client, DTOs, session/token storage, server settings
+├── data/      HTTP client, DTOs, session/token/credential storage, settings
 ├── audio/     AudioRecord wrapper and incremental WAV writer
-├── ui/        Compose screens: login, meeting list, recorder, meeting detail
-└── AppContainer.kt
+├── phone/     phone scopes, permissions, sources, sync engine and workers
+├── push/      the foreground notification stream and its notification/routing
+└── ui/
+    ├── AppRoot.kt          login gate and session state
+    ├── AppShell.kt         bottom-bar shell, tabs and overlay routes
+    ├── Components.kt       shared small composables
+    ├── account/            identity, saved password, sign-out
+    ├── chat/               assistant chat and conversation history
+    ├── home/               meetings tab
+    ├── login/              sign-in and remembered credentials
+    ├── meeting/            transcript and minutes
+    ├── phone/              phone-data consent and status
+    ├── push/               alerts and background connection
+    ├── record/             recorder and live captions
+    └── theme/              Material 3 theme
 ```
+
+The signed-in shell owns the bottom bar and the four tabs; a detail screen is a
+full-screen route with no bar, chosen by `rememberSaveable` state rather than a
+navigation library. The back stack is four overlays deep at most, so a graph
+would be more machinery than the screen set needs.
 
 Recording stops when the activity is destroyed; the follow-up is a foreground
 service. Transcription uses the file-first API, so the backend's job backend
