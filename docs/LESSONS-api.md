@@ -286,3 +286,55 @@ gets `/v1`. Guards: `test_model_sync_treats_a_versioned_base_as_the_root`,
 helper that appends a path to a user-supplied base URL must decide what the
 base already contains, and that decision belongs in one function used by every
 caller — otherwise the second caller keeps the old assumption.
+
+## A synced phone row is not evidence that the assistant wrote it (2026-11-01)
+
+**Signal.** "I asked for a 13:00 reminder today, and one phone ended up with an
+entry for 10/10 15:57–16:57." The synced table does contain such a row, so it
+looks like corroboration:
+
+```
+device 5c146cec…  external_id 112  title 叫我起床
+starts_at 2026-10-10 07:57:29Z  ends_at 08:57:29Z  timezone Asia/Shanghai
+created_at 2026-11-01 00:02:11Z  updated_at == created_at
+```
+
+**What decides it is `phone_commands`, not the data table.**
+
+```bash
+sqlite3 data/winnie.db \
+  "select device_id,status,error,payload from phone_commands;"
+```
+
+Both proposals and the one dispatched command carry
+`starts_at = 2026-11-01T13:00:00+08:00`, target `e33cdb45…` (TAS-AL00), and the
+dispatched one is `failed: No writable calendar is available on this phone.`
+The row above belongs to the *other* device, was inserted at the phone's first
+calendar sync 4 h 44 min **before** the turn, was never updated afterwards, and
+no conversation ever proposed its title. Three independent facts, each of which
+alone rules the assistant out: no command for that device, a payload time the
+row does not match, an insertion that predates the request.
+
+**The tell is in the timestamp.** `15:57:29` — odd minute *and* seconds — is a
+clock reading taken at creation time ("now"), not a parsed request
+(`13:00:00`). `PhoneCommandRunner.createEvent` writes only
+`payload["starts_at"]`, so a seconds-precision start cannot have come from a
+command; it came from whatever created the row on the device. The title is the
+same argument: a write of ours carries the proposed title.
+
+**Why nothing landed at all.** `propose_command` without a `device_id` targets
+the most recently seen phone (`_require_device`,
+`order_by(last_seen_at desc)`), `phone_calendar_create` has no device
+parameter, and the PENDING text does not name the device either. So the request
+silently went to TAS-AL00 — the phone with zero calendar rows and no writable
+calendar — while `calendar()` and `search()` aggregate *every* device. Reads are
+a union; a write lands on one arbitrary phone, invisibly. The failure was
+correct; the targeting was not observable.
+
+**Lesson.** A deferred write is audited in the command table (payload, status,
+error) plus the push record of the result, never in the synced data table. To
+judge "the assistant created this entry", compare its `starts_at` with the
+command payload and its device with the command's `device_id`; on a mismatch the
+real finding is what the command failed with. Corollary for the product: a
+multi-device surface must name the device it is about to touch in the same
+breath as the proposal, otherwise the owner cannot even falsify the claim.

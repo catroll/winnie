@@ -369,10 +369,16 @@ phone database unless it asks for one.
 
 ## 10. Limits and known gaps
 
-- A device run on a real phone has not happened yet. Permission flows, the
-  notification listener, background location and the vendors' calendar
-  providers are verified by unit tests and a successful APK build, not by a
-  handset.
+- Two handsets (HUAWEI TAS-AL00 and NAM-AL00, HarmonyOS 12 / API 31) have been
+  reading since 2026-10-31, so the read path — calendar, calls, SMS, contacts,
+  notifications, location, apps, device — is exercised on real providers. The
+  **write** path is not: the only confirmed write so far failed with "No
+  writable calendar is available on this phone", so a successful
+  `calendar.create` and an SMS send are still unverified on hardware.
+- A write with no explicit `device_id` goes to the **most recently seen**
+  phone, while reads aggregate every device, and neither the tool schema nor
+  the PENDING text names the device. With two phones the owner cannot tell
+  which one a proposal will touch.
 - No MMS, no attachments, no media.
 - The push channel wakes the phone for a confirmed write only while the
   foreground service is connected; if it is stopped, the command waits for the
