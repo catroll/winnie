@@ -73,7 +73,7 @@ class Settings(BaseModel):
 
     log_root: str = "../../data/logs"
     anthropic_version: str = "2023-06-01"
-    proxy_api_key: str = ""
+    gateway_keys_path: str = "../../data/gateway-keys.yaml"
     routes: dict[str, RouteConfig] = Field(default_factory=dict)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
@@ -93,11 +93,13 @@ class Settings(BaseModel):
             routes=self.routes,
             log_root=self.resolve_log_root(),
             anthropic_version=self.anthropic_version,
-            proxy_api_key=self.proxy_api_key,
         )
 
     def resolve_log_root(self) -> Path:
         return _resolve_path(self.log_root)
+
+    def resolve_gateway_keys_path(self) -> Path:
+        return _resolve_path(self.gateway_keys_path)
 
     def resolve_meetings_root(self) -> Path:
         return _resolve_path(self.meetings.local_root)

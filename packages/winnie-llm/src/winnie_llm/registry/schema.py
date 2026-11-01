@@ -571,11 +571,18 @@ class AIState(BaseModel):
 
 @dataclass(frozen=True)
 class RouteEntry:
-    """A gateway route derived from an OpenAI/Anthropic integration."""
+    """A gateway route derived from an OpenAI/Anthropic integration.
+
+    ``vendor`` is the supplier whose credential the host injects when a caller
+    reaches this route: the supplier id, never a key or a variable name. It is
+    here so the host does not have to re-read the registry to find out which
+    credential a route needs.
+    """
 
     name: str
     protocol: Literal["openai", "anthropic"]
     base_url: str
+    vendor: str = ""
 
 
 @dataclass(frozen=True)

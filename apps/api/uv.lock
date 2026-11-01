@@ -1641,6 +1641,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "winnie-core" },
 ]
 
@@ -1649,6 +1650,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.141.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "winnie-core", editable = "../../packages/winnie-core" },
 ]
 

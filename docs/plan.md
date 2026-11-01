@@ -84,7 +84,7 @@ Success for the current phase:
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
 | Console | Browser console: assistant chat and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
-| Gateway | OpenAI/Anthropic-compatible transparent proxy, routes, SSE, logs | `winnie-gateway` | Done |
+| Gateway | Byte-level OpenAI/Anthropic proxy, Winnie gateway keys, server-held vendor credentials, SSE, logs | `winnie-gateway` | Done |
 | Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
 | Schedule | Read and edit the owner's weekly Markdown schedule: days, events, times, tags, week-level items | `winnie-schedule` + `apps/api/schedule` + console Schedule page | Done |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
@@ -94,7 +94,7 @@ Success for the current phase:
 | ID | Milestone | Exit criteria | Status |
 |---|---|---|---|
 | M0 | Foundation | Repository, capability packages, host composition root, Alembic baseline, Makefile entry points | **Done** |
-| M1 | Model gateway | OpenAI and Anthropic routes forward without translation; SSE passes through; paired ask/answer logs; live upstream test | **Done** |
+| M1 | Model gateway | Every route path forwards unchanged; a Winnie key authenticates and the supplier key is injected; SSE passes through; paired ask/answer logs; live upstream test | **Done** |
 | M2 | Accounts | Register/login/logout, opaque bearer sessions, per-user meeting isolation, login throttling, password change and host reset | **Done** |
 | M3 | File-first meetings | Real bilingual meeting is recorded, transcribed, translated, summarized, exported and written as a note; retention and jobs verified | **Core done** — pipeline and live ASR work; long bilingual fixture and real LLM minutes still pending |
 | M4 | Live captions | PCM stream, live caption UI, canonical file pass, foreground recording and reconnect | **Core done** — captions and final pass work; foreground service, reconnect and streaming usage records are open |
@@ -122,12 +122,17 @@ durability rather than new surface area.
 
 ### 5.1 Model gateway — Done
 
-- OpenAI Chat Completions and Anthropic Messages are forwarded as-is; no
-  protocol translation.
-- Path-based routes can front OpenAI, Anthropic, DeepSeek and Qwen at once.
-- Client-supplied vendor keys pass through; Winnie does not store them.
-- SSE streaming is proxied; each ask/answer pair is recorded locally.
-- Covered by `apps/api/tests/test_gateway.py`.
+- Every path and method under `/{route}/` is forwarded unchanged; there is no
+  per-endpoint handler and no protocol translation, so embeddings, models,
+  count-tokens and future endpoints work without new code.
+- Callers authenticate with a Winnie gateway key; the server injects the route's
+  supplier key from `packages/winnie-llm/.env`. A key can be limited to a set of
+  routes and is revoked, never recovered.
+- Keys live in `data/gateway-keys.yaml` (digest only, mode `0600`) and are
+  managed on the console's Gateway routes page.
+- SSE streaming is passed through chunk by chunk; each ask/answer pair is
+  recorded locally and every call is attributed to its key in the usage ledger.
+- Covered by `apps/api/tests/test_gateway.py` and `test_gateway_keys.py`.
 
 ### 5.2 Accounts — Done
 

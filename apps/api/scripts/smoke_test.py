@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""冒烟测试：同一把 DeepSeek Key 测两种协议代理。
+"""Smoke-test the gateway with one Winnie key against both wire protocols.
 
-- deepseek-openai  → POST /deepseek-openai/v1/chat/completions
-- deepseek-anthropic → POST /deepseek-anthropic/v1/messages
+- ``deepseek-openai``    -> POST /deepseek-openai/v1/chat/completions
+- ``deepseek-anthropic`` -> POST /deepseek-anthropic/v1/messages
 
-密钥：scripts/.env 中的 DEEPSEEK_API_KEY。
+The caller only needs a Winnie gateway key; the vendor credential is injected by
+the server from ``packages/winnie-llm/.env``. The key is read from
+``WINNIE_GATEWAY_KEY``, ``scripts/.env``, or an interactive prompt.
 
-用法（先启动代理）：
+Usage (the API must be running):
   cd apps/api
   uv run python scripts/smoke_test.py
 """
@@ -14,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -23,7 +26,8 @@ import httpx
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_FILE = SCRIPT_DIR / ".env"
-MODEL = "deepseek-v4-flash"
+KEY_NAME = "WINNIE_GATEWAY_KEY"
+DEFAULT_MODEL = "deepseek-chat"
 
 
 def _load_env_file(path: Path) -> dict[str, str]:
@@ -41,12 +45,12 @@ def _load_env_file(path: Path) -> dict[str, str]:
     return out
 
 
-def _resolve_key(*names: str, file_vars: dict[str, str]) -> str:
-    for name in names:
-        if val := os.environ.get(name, "").strip():
-            return val
-        if val := file_vars.get(name, "").strip():
-            return val
+def _gateway_key(file_vars: dict[str, str]) -> str:
+    value = os.environ.get(KEY_NAME, "").strip() or file_vars.get(KEY_NAME, "").strip()
+    if value:
+        return value
+    if sys.stdin.isatty():
+        return getpass.getpass(f"{KEY_NAME}: ").strip()
     return ""
 
 
@@ -57,93 +61,82 @@ def _print_result(title: str, ok: bool, detail: str) -> None:
 
 def test_health(client: httpx.Client, base: str) -> bool:
     try:
-        r = client.get(f"{base}/healthz")
-        r.raise_for_status()
-        data = r.json()
-        _print_result("healthz", True, json.dumps(data, ensure_ascii=False))
+        response = client.get(f"{base}/healthz")
+        response.raise_for_status()
+        _print_result("healthz", True, json.dumps(response.json(), ensure_ascii=False))
         return True
     except Exception as exc:  # noqa: BLE001
         _print_result("healthz", False, str(exc))
         return False
 
 
-def test_deepseek_openai(client: httpx.Client, base: str, api_key: str) -> bool:
+def test_deepseek_openai(
+    client: httpx.Client, base: str, key: str, model: str
+) -> bool:
     title = "deepseek-openai"
-    if not api_key:
-        _print_result(title, False, f"缺少 DEEPSEEK_API_KEY（写入 {ENV_FILE.name}）")
-        return False
-    url = f"{base}/deepseek-openai/v1/chat/completions"
     body = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": "只回复一个词：pong"}],
+        "model": model,
+        "messages": [{"role": "user", "content": "Reply with exactly: pong"}],
         "max_tokens": 64,
     }
     try:
-        r = client.post(
-            url,
+        response = client.post(
+            f"{base}/deepseek-openai/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
             json=body,
         )
-        data = r.json()
-        if r.status_code >= 400:
-            _print_result(title, False, f"HTTP {r.status_code} {data}")
+        data = response.json()
+        if response.status_code >= 400:
+            _print_result(title, False, f"HTTP {response.status_code} {data}")
             return False
-        msg = (data.get("choices") or [{}])[0].get("message") or {}
-        text = (msg.get("content") or msg.get("reasoning_content") or "").strip()
-        ok = bool(text)
-        _print_result(title, ok, f"HTTP {r.status_code} text={text[:120]!r}")
-        return ok
+        message = (data.get("choices") or [{}])[0].get("message") or {}
+        text = (message.get("content") or message.get("reasoning_content") or "").strip()
+        _print_result(title, bool(text), f"HTTP {response.status_code} text={text[:120]!r}")
+        return bool(text)
     except Exception as exc:  # noqa: BLE001
         _print_result(title, False, str(exc))
         return False
 
 
-def test_deepseek_anthropic(client: httpx.Client, base: str, api_key: str) -> bool:
+def test_deepseek_anthropic(
+    client: httpx.Client, base: str, key: str, model: str
+) -> bool:
     title = "deepseek-anthropic"
-    if not api_key:
-        _print_result(title, False, f"缺少 DEEPSEEK_API_KEY（写入 {ENV_FILE.name}）")
-        return False
-    url = f"{base}/deepseek-anthropic/v1/messages"
     body = {
-        "model": MODEL,
+        "model": model,
         "max_tokens": 64,
-        "messages": [{"role": "user", "content": "只回复一个词：pong"}],
+        "messages": [{"role": "user", "content": "Reply with exactly: pong"}],
     }
     try:
-        r = client.post(
-            url,
+        response = client.post(
+            f"{base}/deepseek-anthropic/v1/messages",
             headers={
-                "x-api-key": api_key,
+                "x-api-key": key,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
             },
             json=body,
         )
-        data = r.json()
-        if r.status_code >= 400:
-            _print_result(title, False, f"HTTP {r.status_code} {data}")
+        data = response.json()
+        if response.status_code >= 400:
+            _print_result(title, False, f"HTTP {response.status_code} {data}")
             return False
-        blocks = data.get("content") or []
         texts: list[str] = []
-        for b in blocks:
-            if not isinstance(b, dict):
+        for block in data.get("content") or []:
+            if not isinstance(block, dict):
                 continue
-            if b.get("type") == "text" and b.get("text"):
-                texts.append(str(b["text"]))
-            # 部分兼容实现可能把思考放在 thinking 块
-            if b.get("type") == "thinking" and b.get("thinking"):
-                texts.append(str(b["thinking"]))
+            if block.get("type") == "text" and block.get("text"):
+                texts.append(str(block["text"]))
+            if block.get("type") == "thinking" and block.get("thinking"):
+                texts.append(str(block["thinking"]))
         text = "".join(texts).strip()
-        # 若 content 为空，仍可能有顶层字段
-        if not text and isinstance(data.get("content"), str):
-            text = data["content"].strip()
-        ok = r.status_code == 200 and (
+        ok = response.status_code == 200 and (
             bool(text) or data.get("type") == "message" or "id" in data
         )
-        detail = f"HTTP {r.status_code} text={text[:120]!r}"
+        detail = f"HTTP {response.status_code} text={text[:120]!r}"
         if not text:
             detail += f" raw_keys={list(data.keys())}"
         _print_result(title, ok, detail)
@@ -155,37 +148,41 @@ def test_deepseek_anthropic(client: httpx.Client, base: str, api_key: str) -> bo
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Winnie proxy smoke test (DeepSeek OpenAI + Anthropic)"
+        description="Winnie gateway smoke test (DeepSeek OpenAI + Anthropic)"
     )
     parser.add_argument(
-        "--base-url",
-        default="http://[::1]:8000",
-        help="proxy base URL",
+        "--base-url", default="http://[::1]:8000", help="gateway base URL"
     )
     parser.add_argument(
         "--only",
         choices=("openai", "anthropic", "both"),
         default="both",
-        help="只跑某一协议（默认 both）",
+        help="run one protocol only (default: both)",
     )
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="model id to request")
     args = parser.parse_args()
     base = args.base_url.rstrip("/")
-
-    file_vars = _load_env_file(ENV_FILE)
-    deepseek_key = _resolve_key("DEEPSEEK_API_KEY", "OPENAI_API_KEY", file_vars=file_vars)
+    key = _gateway_key(_load_env_file(ENV_FILE))
 
     print(f"base_url={base}")
-    print(f"env_file={ENV_FILE} exists={ENV_FILE.is_file()}")
-    print(f"model={MODEL}")
+    print(f"model={args.model}")
+    if not key:
+        print(
+            f"missing {KEY_NAME}: create a key on the Gateway routes page and "
+            f"export it, or put it in {ENV_FILE}",
+            file=sys.stderr,
+        )
+        return 1
+
     results: list[bool] = []
     with httpx.Client(timeout=httpx.Timeout(120.0, connect=15.0)) as client:
         results.append(test_health(client, base))
         if args.only in ("openai", "both"):
-            results.append(test_deepseek_openai(client, base, deepseek_key))
+            results.append(test_deepseek_openai(client, base, key, args.model))
         if args.only in ("anthropic", "both"):
-            results.append(test_deepseek_anthropic(client, base, deepseek_key))
+            results.append(test_deepseek_anthropic(client, base, key, args.model))
 
-    failed = sum(1 for x in results if not x)
+    failed = sum(1 for ok in results if not ok)
     print(f"done: {len(results) - failed}/{len(results)} passed")
     return 1 if failed else 0
 

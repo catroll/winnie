@@ -1,1 +1,1 @@
-"""OpenAI/Anthropic transparent gateway capability."""
+"""OpenAI/Anthropic gateway with server-held vendor credentials."""

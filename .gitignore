@@ -12,6 +12,9 @@ data/news/
 # Admin-managed AI providers; generated on first start and machine-local.
 data/ai.yaml
 data/.ai.yaml*
+# Winnie gateway keys (digests only, but still a credential file).
+data/gateway-keys.yaml
+data/.gateway-keys-*
 **/__pycache__/
 **/.venv/
 **/.env

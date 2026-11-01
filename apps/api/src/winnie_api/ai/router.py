@@ -25,8 +25,6 @@ from winnie_llm import (
     VendorDraft,
 )
 
-from winnie_api.ai.routes import gateway_route_table
-
 router = APIRouter(
     prefix="/ai",
     tags=["ai"],
@@ -53,8 +51,10 @@ def _error(exc: AIProviderError) -> HTTPException:
 
 
 def _refresh_routes(request: Request, service: ProviderRegistry) -> None:
-    if hasattr(request.app.state, "routes_table"):
-        request.app.state.routes_table = gateway_route_table(service)
+    """Rebuild the live table, credentials included, after a registry change."""
+    rebuild = getattr(request.app.state, "rebuild_routes", None)
+    if rebuild is not None:
+        request.app.state.routes_table = rebuild()
 
 
 def _integration_view(

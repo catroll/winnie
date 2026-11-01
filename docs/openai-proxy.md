@@ -1,88 +1,211 @@
-# LLM 透明代理（阶段一）
+# Model gateway
 
-> 对应 DESIGN「第一阶段：MVP」与「透明 LLM 层」。  
-> 用 **路径前缀** 区分上游；**厂商 API Key 一律客户端透传**；运行配置用 **`config.yaml`**，不用环境变量。
+Winnie's gateway exposes OpenAI- and Anthropic-compatible routes at
+`/{route}/...`. It forwards every path and method unchanged, and it is the only
+place a model request is authenticated against a credential Winnie issued: the
+caller presents a **Winnie gateway key**, and the gateway injects the **vendor
+key** that belongs to the route. A client never sees a vendor credential.
 
-## 需求
+There is no protocol translation. An OpenAI path goes to an OpenAI-compatible
+upstream; an Anthropic path goes to an Anthropic-compatible one. Routes are
+configured in the console (Admin → AI providers) and appear on the Gateway
+routes page; `config.yaml` seeds them and is the fallback for a gateway-only
+deployment.
 
-1. **路径路由**：`/{route}/v1/...` 决定打到哪家上游，例如 `/deepseek-openai/`、`/qwen-openai/`、`/openai/`、`/anthropic/`。
-2. **密钥透传**：OpenAI 兼容用 `Authorization: Bearer …`；Anthropic 用 `x-api-key`（或 Bearer）。服务端不保管厂商密钥。
-3. **YAML 配置**：路由、日志目录、可选大门钥写在 `apps/api/config.yaml`；本地覆盖用 `config.local.yaml`（gitignore）。
-4. **协议原样转发**：`openai` → Chat Completions；`anthropic` → Messages。不做协议互转。
-5. **本地日志**：按路由分目录落盘 ask/answer；流式 SSE 透传。
+## Requirements
 
-## 配置
+1. **Path routing**: the first segment after `/` selects an upstream.
+2. **Caller credentials**: a Winnie key from `data/gateway-keys.yaml`, sent as
+   `Authorization: Bearer …`, `x-api-key`, or `x-winnie-key`.
+3. **Vendor credentials**: resolved per route from
+   `packages/winnie-llm/.env` (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, …) and
+   injected as `Authorization: Bearer` (OpenAI) or `x-api-key` (Anthropic).
+4. **Transparent forwarding**: every path, method, query string and header that
+   is not listed under [What is not forwarded](#what-is-not-forwarded) reaches
+   the upstream unchanged; the upstream's status, body and headers come back
+   unchanged.
+5. **Local observability**: one ask/answer pair per route under `data/logs/`,
+   and one line per call in the usage ledger with the key that made it.
 
-见 [`apps/api/config.yaml`](../apps/api/config.yaml)。要点：
+## Keys
+
+A gateway key is a Winnie credential, not a vendor key. Create one on the
+Gateway routes page; the secret (`wsk_…`) is shown once and only its SHA-256
+digest is written to `data/gateway-keys.yaml` (mode `0600`).
+
+| Operation | HTTP |
+|---|---|
+| List keys (no secret, no digest) | `GET /api/v1/gateway/keys` |
+| Create a key | `POST /api/v1/gateway/keys` |
+| Revoke a key | `DELETE /api/v1/gateway/keys/{id}` |
+
+A key may be limited to a set of route names. An empty list allows every route,
+which is the convenient default for a personal deployment; a restriction makes a
+key that belongs to a phone or a build agent harmless when it is copied
+somewhere else.
+
+Revoking is immediate and keeps the record: the usage ledger can still say which
+key made an old call. There is no expiry time — revoke when it is no longer
+needed. A lost key is replaced, not recovered.
+
+The file is re-read when its mtime changes, so a key created in the console
+works on the next request, and a second process sharing the file sees it
+without a restart.
+
+## Errors a caller can see
+
+| Status | Meaning |
+|---|---|
+| `401` | No key, or a key that is invalid/revoked. Also returned when a vendor key is sent by mistake. |
+| `403` | The key is valid but its allowlist does not include this route. |
+| `404` | The path prefix is not a configured route. |
+| `503` | The route exists but its vendor key is missing from `packages/winnie-llm/.env`. |
+
+Bodies follow the route's protocol: `{"error": {"message", "type"}}` for OpenAI,
+`{"type": "error", "error": {"type", "message"}}` for Anthropic, so vendor SDKs
+surface them without special handling. `401` also carries `WWW-Authenticate:
+Bearer`.
+
+## Upstream credentials
+
+Each route names a supplier. The key comes from the same environment the
+internal assistant and meeting pipelines use, so there is one place to rotate
+it:
+
+| Supplier | Variable |
+|---|---|
+| `deepseek` | `DEEPSEEK_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `anthropic` | `ANTHROPIC_API_KEY` |
+| `qwen` | `DASHSCOPE_API_KEY` |
+
+Editing the file requires an API restart; the process loads it at startup.
+Rotating the key therefore cuts over every route for that supplier at once,
+which is the point of one variable per supplier.
+
+## What is forwarded
+
+* the method and the path (`GET /v1/models`, `POST /v1/embeddings`,
+  `POST /v1/messages`, `POST /v1/chat/completions`, `DELETE /v1/files/…`, …);
+* the raw query string;
+* every request header except the ones listed below;
+* the request body byte for byte;
+* the upstream response status, body and headers, including request ids,
+  rate-limit headers and `Retry-After`.
+
+Streaming is recognised by `Content-Type: text/event-stream` and passed through
+chunk by chunk; an SSE frame is never re-serialised.
+
+## What is not forwarded
+
+| Header | Why |
+|---|---|
+| `Authorization`, `x-api-key`, `x-winnie-key` | They carry the caller's Winnie key. The vendor credential replaces them. |
+| `openai-organization`, `openai-project` | Account scoping does not apply to a server-held key. |
+| `cookie` | A browser session must not travel to a vendor. |
+| `host`, `content-length`, `transfer-encoding` | Framing is recomputed by this side. |
+| `accept-encoding` (request) | The body is re-sent decoded so it can be inspected; `content-encoding` and the stale `content-length` are dropped from the response. |
+| Hop-by-hop headers (`connection`, `keep-alive`, `te`, `upgrade`, …) | They describe one socket, not a forwarded request. |
+
+A route prefix named `api`, `routes`, `healthz`, `readyz`, `docs`, `redoc` or
+`openapi.json` is reserved: it is never resolved as a gateway route, so a
+supplier endpoint cannot shadow the host's own paths.
+
+## Configuration
+
+`apps/api/config.yaml`:
 
 ```yaml
-log_root: ../../data/logs
-anthropic_version: "2023-06-01"
-proxy_api_key: ""   # 可选；留空不校验
+gateway_keys_path: ../../data/gateway-keys.yaml
+
 routes:
   deepseek-openai:
     protocol: openai
     base_url: https://api.deepseek.com
-  anthropic:
-    protocol: anthropic
-    base_url: https://api.anthropic.com
+    vendor: deepseek
 ```
 
-查询当前表：`GET /routes`。
+When `ai.enabled` is true the admin registry is authoritative and these route
+entries are only the first-start seed; the console edits the live table. When it
+is false, this block is the live table, which keeps a gateway-only deployment
+working without a database. A route without `vendor`, or whose supplier has no
+key in the environment file, answers `503` rather than forwarding unauthenticated
+traffic.
 
-## 契约
+## Logs and usage
 
-| 项 | 约定 |
-|----|------|
-| OpenAI Chat | `POST /{route}/v1/chat/completions`（protocol=openai） |
-| Anthropic Messages | `POST /{route}/v1/messages`（protocol=anthropic） |
-| Models | `GET /{route}/v1/models` |
-| Health | `GET /healthz` |
-| 厂商密钥 | 客户端请求头透传 |
-| 代理大门钥 | `config.yaml` 的 `proxy_api_key`（可选） |
+`data/logs/{route}/` holds a `*-ask.txt` / `*-answer.txt` pair per call. The ask
+file records the client URL, the upstream URL, the parsed body, and metadata
+including `key_id`; neither the Winnie secret nor the vendor key is written.
 
-## 日志
+Each call also appends one line to `data/usage/` with token classes, latency and
+the estimated cost, attributed to `key_id` in `detail`. See
+[usage.md](./usage.md).
 
-`data/logs/{route}/`，成对 `ask` / `answer`。  
-ask 头部含 `client_url`（客户请求本代理的地址）与 `upstream_url`（真实上游调用地址）。
+## Discovery
 
-Each call also appends one line to the usage ledger under `data/usage/` (token
-classes, latency, estimated cost); it keeps counts, not prompts. See
-[usage.md](./usage.md) for the fields, pricing and limits.
+`GET /routes` (administrator session) lists the live table:
 
-## 启动
-
-```bash
-cd apps/api
-# 按需编辑 config.yaml；敏感覆盖写 config.local.yaml
-uv sync
-uv run uvicorn winnie_api.main:app --reload --host :: --port 8000
+```json
+{
+  "routes": [
+    {
+      "name": "deepseek-openai",
+      "protocol": "openai",
+      "base_url": "https://api.deepseek.com",
+      "api_base": "https://api.deepseek.com/v1",
+      "path_prefix": "/deepseek-openai/",
+      "vendor": "deepseek",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "credential_present": true
+    }
+  ]
+}
 ```
 
-### 调用示例
+It never includes a credential.
+
+## Calling it
+
+Create a key on the Gateway routes page, put the vendor key in
+`packages/winnie-llm/.env`, then point any OpenAI-compatible client at
+`http://[::1]:8000/{route}`:
 
 ```bash
 curl -s 'http://[::1]:8000/deepseek-openai/v1/chat/completions' \
-  -H "Authorization: Bearer $DEEPSEEK_API_KEY" \
+  -H "Authorization: Bearer $WINNIE_GATEWAY_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"deepseek-chat","messages":[{"role":"user","content":"ping"}]}'
+```
 
+An Anthropic SDK sends `x-api-key`, which is also accepted:
+
+```bash
 curl -s 'http://[::1]:8000/anthropic/v1/messages' \
-  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "x-api-key: $WINNIE_GATEWAY_KEY" \
   -H 'anthropic-version: 2023-06-01' \
   -H 'Content-Type: application/json' \
   -d '{"model":"claude-sonnet-4-5","max_tokens":64,"messages":[{"role":"user","content":"ping"}]}'
 ```
 
-客户端 `base_url` 设为 `http://[::1]:8000/{route}`。
-
-## 冒烟测试
-
-用 DeepSeek 同一把 Key 验证 OpenAI / Anthropic 两套代理：
+## Smoke test
 
 ```bash
 cd apps/api
 uv run python scripts/smoke_test.py
 ```
 
-调试经验见 [LESSONS-api.md](./LESSONS-api.md)。
+The script reads a Winnie key from `WINNIE_GATEWAY_KEY` (or asks for one) and a
+vendor key from `packages/winnie-llm/.env`.
+
+## Limits
+
+* One API process owns the live route table; a route added in the console is
+  visible to that process immediately and to a worker on its next restart.
+* A route's upstream is a base URL, not a proxy chain: there is no per-route
+  timeout, retry or rate limit. The HTTP client has one 300-second timeout for
+  every model call.
+* A key is a bearer credential with an optional route allowlist. There is no
+  per-key quota or spend cap; the ledger reports what each key used.
+
+Debugging experience is in [LESSONS-api.md](./LESSONS-api.md).

@@ -1,35 +1,50 @@
-# Winnie API configuration (no vendor keys; clients pass them through)
+# Winnie API configuration. Vendor credentials live in
+# packages/winnie-llm/.env and are never written here; callers authenticate to
+# the gateway with a Winnie key created in the console.
 
 # Root directory for local conversation logs; files go to {log_root}/{route}/
-# Relative paths are resolved against apps/api/.
+# Relative paths are resolved against apps/api/. A file holds the ask/answer
+# pair for every gateway call.
 log_root: ../../data/logs
 
 # Default used when the client does not send anthropic-version.
 anthropic_version: "2023-06-01"
 
-# Optional gateway key (unrelated to vendor API keys). Empty means no check.
-proxy_api_key: ""
+# Winnie gateway keys. The file is created by the console (Admin -> Gateway
+# routes) with mode 0600 and stores only a SHA-256 digest per key. A missing
+# file means no key exists yet, so every gateway call answers 401.
+gateway_keys_path: ../../data/gateway-keys.yaml
 
-# Path prefix -> upstream. Public paths are /{name}/v1/...
+# Path prefix -> upstream. Any path under /{name}/ is forwarded unchanged.
+# `vendor` names the supplier whose credential is injected; the key itself is
+# read from packages/winnie-llm/.env (DEEPSEEK_API_KEY, OPENAI_API_KEY, ...).
+# These entries seed the admin registry; when ai.enabled is true the registry
+# is authoritative and this block only matters for a gateway-only deployment.
 routes:
   openai:
     protocol: openai
     base_url: https://api.openai.com
+    vendor: openai
   deepseek-openai:
     protocol: openai
     base_url: https://api.deepseek.com
+    vendor: deepseek
   deepseek-anthropic:
     protocol: anthropic
     base_url: https://api.deepseek.com/anthropic
+    vendor: deepseek
   qwen-openai:
     protocol: openai
     base_url: https://dashscope.aliyuncs.com/compatible-mode
+    vendor: qwen
   qwen-anthropic:
     protocol: anthropic
     base_url: https://dashscope.aliyuncs.com/apps/anthropic
+    vendor: qwen
   anthropic:
     protocol: anthropic
     base_url: https://api.anthropic.com
+    vendor: anthropic
 
 # Admin-managed AI providers and the feature bindings that use them. On the
 # first start the routes, LLM, ASR and assistant values above are imported

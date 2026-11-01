@@ -26,8 +26,8 @@ A **supplier** is the vendor (`deepseek`, `openai`, `qwen`, `anthropic`,
 - one **API endpoint** for internal calls: base URL and protocol (the key is
   not part of the record);
 - a **model catalog**;
-- zero or more **gateway routes** — public `/{name}/v1/...` proxy paths that
-  forward the client's own vendor key.
+- zero or more **gateway routes** — public `/{name}/...` proxy paths that inject
+  the supplier's server-side key for a caller holding a Winnie gateway key.
 
 The API endpoint and the gateway routes are different roles, but they are not
 separate suppliers and they are not feature targets. The console shows one
@@ -178,8 +178,10 @@ A process-environment variable of the same name overrides the file, which keeps
 CI and one-off runs possible. `WINNIE_LLM_ENV_FILE` points the loader at another
 file; the API tests use it so the checkout's real keys never reach a test.
 
-Gateway paths still forward the client's own vendor key. The environment file
-matters for internal jobs and the assistant, which call the supplier directly. A
+A gateway route uses the same supplier key: the gateway injects it for a caller
+that presents a Winnie gateway key (created on the Gateway routes page). The
+environment file is therefore the single place a supplier credential lives, for
+internal jobs and proxied traffic alike; editing it needs an API restart. A
 gateway-only record is never a feature target; the internal API button/config is
 separate.
 
@@ -191,11 +193,13 @@ model, syncing the catalog or editing the supplier API affects the next
 assistant turn, the next meeting pipeline stage and the next live-caption
 connection.
 
-The gateway route table is refreshed in the API process on every CRUD request.
-An OpenAI or Anthropic gateway route makes `/{name}/v1/...` reachable
-immediately; turning it off, disabling or deleting it removes the path. The
-separate arq worker reads the file by modification time, so it also sees the
-change without a restart.
+The gateway route table is refreshed in the API process on every CRUD request,
+including the supplier key attached to each route. An OpenAI or Anthropic gateway
+route makes `/{name}/...` reachable immediately; turning it off, disabling or
+deleting it removes the path. The separate arq worker reads the file by
+modification time, so it also sees the change without a restart. The environment
+file is different: its keys are read once at startup, so rotating a vendor key
+still needs an API restart.
 
 ## HTTP API
 

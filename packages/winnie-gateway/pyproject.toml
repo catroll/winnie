@@ -1,12 +1,13 @@
 [project]
 name = "winnie-gateway"
 version = "0.1.0"
-description = "Winnie's transparent OpenAI/Anthropic gateway"
+description = "Winnie's OpenAI/Anthropic gateway with server-held vendor credentials"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.141.0",
     "httpx>=0.28.0",
     "pydantic>=2.13.0",
+    "pyyaml>=6.0.3",
     "winnie-core",
 ]
 

@@ -1,4 +1,11 @@
+"""The gateway data plane: Winnie keys in, vendor credential injected, bytes out."""
+
 from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 import pytest
@@ -9,6 +16,25 @@ from winnie_api.settings import RouteConfig, Settings
 
 OPENAI_URL = "/fake-openai/v1/chat/completions"
 ANTHROPIC_URL = "/fake-anthropic/v1/messages"
+
+CHAT_BODY = {
+    "model": "fake-model",
+    "messages": [{"role": "user", "content": "ping"}],
+}
+
+
+def _answer_files(root: Path, route: str) -> list[Path]:
+    return sorted((root / route).glob("*-answer.txt"))
+
+
+def _ask_files(root: Path, route: str) -> list[Path]:
+    return sorted((root / route).glob("*-ask.txt"))
+
+
+async def test_healthz(client: httpx.AsyncClient) -> None:
+    response = await client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
 
 
 async def test_readyz_reports_disabled_database(client: httpx.AsyncClient) -> None:
@@ -21,216 +47,253 @@ async def test_readyz_reports_disabled_database(client: httpx.AsyncClient) -> No
     }
 
 
-async def test_healthz(client: httpx.AsyncClient) -> None:
-    response = await client.get("/healthz")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "ok"
-    assert "version" in body
-
-
-async def test_routes_lists_configured_routes(client: httpx.AsyncClient) -> None:
+async def test_routes_lists_routes_with_credentials(client: httpx.AsyncClient) -> None:
     response = await client.get("/routes")
     assert response.status_code == 200
     routes = response.json()["routes"]
-    assert [r["name"] for r in routes] == ["fake-anthropic", "fake-openai"]
-    assert routes[0]["protocol"] == "anthropic"
-    assert routes[1]["paths"] == [
-        "/fake-openai/v1/chat/completions",
-        "/fake-openai/v1/models",
-    ]
+    assert [route["name"] for route in routes] == ["fake-anthropic", "fake-openai"]
+    openai = routes[1]
+    assert openai["protocol"] == "openai"
+    assert openai["path_prefix"] == "/fake-openai/"
+    assert openai["vendor"] == "fake"
+    assert openai["api_key_env"] == "FAKE_API_KEY"
+    assert openai["credential_present"] is True
+    assert "api_key" not in openai
 
 
 async def test_unknown_route_returns_404(client: httpx.AsyncClient) -> None:
-    response = await client.get("/missing/v1/models")
+    response = await client.post("/missing/v1/models", json={})
     assert response.status_code == 404
     assert "unknown route" in response.json()["detail"]
 
 
-async def test_wrong_protocol_returns_404(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        "/fake-openai/v1/messages",
-        json={"model": "m", "max_tokens": 8, "messages": []},
-    )
-    assert response.status_code == 404
-    assert "not 'anthropic'" in response.json()["detail"]
+async def test_missing_key_is_rejected(client: httpx.AsyncClient) -> None:
+    response = await client.post(OPENAI_URL, json=CHAT_BODY)
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    message = response.json()["error"]["message"]
+    assert "gateway API key" in message
 
 
-async def test_openai_rejects_invalid_json(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        OPENAI_URL,
-        headers={"content-type": "application/json"},
-        content=b"{not json",
-    )
-    assert response.status_code == 400
-    assert "invalid json" in response.json()["error"]["message"]
-
-
-async def test_openai_requires_messages(client: httpx.AsyncClient) -> None:
-    response = await client.post(OPENAI_URL, json={"model": "m"})
-    assert response.status_code == 400
-    assert response.json()["error"]["message"] == "messages is required"
-
-
-async def test_openai_forwards_request_and_records_pair(
+async def test_missing_key_uses_the_anthropic_error_shape(
     client: httpx.AsyncClient,
+) -> None:
+    response = await client.post(ANTHROPIC_URL, json={"model": "m", "messages": []})
+    assert response.status_code == 401
+    body = response.json()
+    assert body["type"] == "error"
+    assert body["error"]["type"] == "authentication_error"
+
+
+async def test_invalid_and_vendor_keys_are_rejected(
+    gateway_client: httpx.AsyncClient,
+) -> None:
+    invalid = await gateway_client.post(
+        OPENAI_URL,
+        headers={"Authorization": "Bearer not-a-winnie-key"},
+        json=CHAT_BODY,
+    )
+    assert invalid.status_code == 401
+    assert "invalid or revoked" in invalid.json()["error"]["message"]
+
+    vendor = await gateway_client.post(
+        OPENAI_URL,
+        headers={"Authorization": "Bearer fake-vendor-key"},
+        json=CHAT_BODY,
+    )
+    assert vendor.status_code == 401
+
+
+async def test_forwards_request_and_injects_the_vendor_key(
+    gateway_client: httpx.AsyncClient,
+    gateway_app,
     upstream,
     settings: Settings,
 ) -> None:
-    response = await client.post(
-        OPENAI_URL,
-        headers={"Authorization": "Bearer client-key"},
-        json={"model": "fake-model", "messages": [{"role": "user", "content": "ping"}]},
+    response = await gateway_client.post(
+        f"{OPENAI_URL}?trace=1",
+        headers={
+            "X-Client-Trace": "trace-abc",
+            "Idempotency-Key": "idem-1",
+            "User-Agent": "probe/1.0",
+        },
+        json=CHAT_BODY,
     )
 
     assert response.status_code == 200
     assert response.json()["choices"][0]["message"]["content"] == "pong"
+    assert response.headers["x-upstream-request-id"] == "req-fake-1"
 
     forwarded = upstream.requests[-1]
-    assert str(forwarded.url) == "https://fake.openai/v1/chat/completions"
-    assert forwarded.headers["authorization"] == "Bearer client-key"
+    assert str(forwarded.url) == "https://fake.openai/v1/chat/completions?trace=1"
+    assert forwarded.headers["authorization"] == "Bearer fake-vendor-key"
+    assert "x-api-key" not in forwarded.headers
+    assert forwarded.headers["x-client-trace"] == "trace-abc"
+    assert forwarded.headers["idempotency-key"] == "idem-1"
+    assert forwarded.headers["user-agent"] == "probe/1.0"
+    assert json.loads(forwarded.content) == CHAT_BODY
 
-    route_dir = settings.resolve_log_root() / "fake-openai"
-    ask_files = sorted(route_dir.glob("*-ask.txt"))
-    answer_files = sorted(route_dir.glob("*-answer.txt"))
-    assert len(ask_files) == 1
-    assert len(answer_files) == 1
+    ask = _ask_files(settings.resolve_log_root(), "fake-openai")[0].read_text(
+        encoding="utf-8"
+    )
+    assert "trace=1" in ask
+    assert "key_id" in ask
+    assert "fake-vendor-key" not in ask
+    assert gateway_app.state.pytest_gateway_secret not in ask
 
-    ask = ask_files[0].read_text(encoding="utf-8")
-    assert "client_url:" in ask
-    assert "upstream_url: https://fake.openai/v1/chat/completions" in ask
-    assert "has_authorization" in ask
-    assert "client-key" not in ask
-
-    answer = answer_files[0].read_text(encoding="utf-8")
+    answer = _answer_files(settings.resolve_log_root(), "fake-openai")[0].read_text(
+        encoding="utf-8"
+    )
     assert '"status_code": 200' in answer
     assert '"content": "pong"' in answer
 
 
-async def test_openai_stream_passthrough(client: httpx.AsyncClient, settings: Settings) -> None:
-    response = await client.post(
-        OPENAI_URL,
-        json={
-            "model": "fake-model",
-            "stream": True,
-            "messages": [{"role": "user", "content": "ping"}],
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "pong" in response.text
-    assert "data: [DONE]" in response.text
-
-    answer_files = sorted((settings.resolve_log_root() / "fake-openai").glob("*-answer.txt"))
-    answer = answer_files[0].read_text(encoding="utf-8")
-    assert '"stream": true' in answer
-    assert '"text": "pong"' in answer
-
-
-async def test_anthropic_forwards_headers_and_version(
-    client: httpx.AsyncClient,
+async def test_anthropic_key_goes_in_x_api_key(
+    gateway_app,
     upstream,
 ) -> None:
-    response = await client.post(
-        ANTHROPIC_URL,
-        headers={"x-api-key": "anthropic-key"},
-        json={
-            "model": "fake-model",
-            "max_tokens": 8,
-            "messages": [{"role": "user", "content": "ping"}],
-        },
-    )
+    secret = gateway_app.state.pytest_gateway_secret
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=gateway_app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            ANTHROPIC_URL,
+            headers={"x-api-key": secret},
+            json={"model": "m", "max_tokens": 8, "messages": []},
+        )
 
     assert response.status_code == 200
-    assert response.json()["content"][0]["text"] == "pong"
-
     forwarded = upstream.requests[-1]
-    assert str(forwarded.url) == "https://fake.anthropic/v1/messages"
-    assert forwarded.headers["x-api-key"] == "anthropic-key"
+    assert forwarded.headers["x-api-key"] == "fake-vendor-key"
+    assert "authorization" not in forwarded.headers
     assert forwarded.headers["anthropic-version"] == "2023-06-01"
 
 
-async def test_anthropic_requires_max_tokens(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        ANTHROPIC_URL,
-        json={"model": "m", "messages": [{"role": "user", "content": "ping"}]},
+async def test_a_key_can_be_limited_to_routes(gateway_app, upstream) -> None:
+    _, secret = gateway_app.state.gateway_keys.create(
+        label="openai only", routes=["fake-openai"]
     )
-    assert response.status_code == 400
-    assert "max_tokens" in response.json()["error"]["message"]
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=gateway_app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {secret}"},
+    ) as client:
+        allowed = await client.post(OPENAI_URL, json=CHAT_BODY)
+        denied = await client.post(ANTHROPIC_URL, json={"model": "m", "max_tokens": 8})
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 403
+    assert denied.json()["type"] == "error"
+    assert "allowed: fake-openai" in denied.json()["error"]["message"]
+    assert len(upstream.requests) == 1
 
 
-async def test_anthropic_stream_passthrough(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        ANTHROPIC_URL,
-        json={
-            "model": "fake-model",
-            "max_tokens": 8,
-            "stream": True,
-            "messages": [{"role": "user", "content": "ping"}],
+@asynccontextmanager
+async def _app_with(settings: Settings) -> AsyncIterator:
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"ok": True})
+        )
+    )
+    app = create_app(settings=settings, http=http)
+    async with app.router.lifespan_context(app):
+        yield app
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_route_without_a_vendor_key_answers_503(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("MISSING_API_KEY", raising=False)
+    settings = Settings(
+        log_root=str(tmp_path / "logs"),
+        gateway_keys_path=str(tmp_path / "gateway-keys.yaml"),
+        routes={
+            "ghost": RouteConfig(
+                protocol="openai", base_url="https://ghost.example", vendor="missing"
+            )
         },
     )
+    async with _app_with(settings) as app:
+        _, secret = app.state.gateway_keys.create(label="test")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {secret}"},
+        ) as client:
+            response = await client.post("/ghost/v1/chat/completions", json=CHAT_BODY)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "pong" in response.text
-
-
-async def test_models_endpoints(client: httpx.AsyncClient) -> None:
-    openai = await client.get("/fake-openai/v1/models")
-    assert openai.status_code == 200
-    assert openai.json()["data"][0]["id"] == "fake-openai-model"
-
-    anthropic = await client.get("/fake-anthropic/v1/models")
-    assert anthropic.status_code == 200
-    assert anthropic.json()["data"][0]["id"] == "fake-anthropic-model"
+    assert response.status_code == 503
+    assert "MISSING_API_KEY" in response.json()["error"]["message"]
 
 
-async def test_upstream_error_is_passed_through(
-    client: httpx.AsyncClient,
+async def test_upstream_errors_keep_their_status_body_and_headers(
+    gateway_client: httpx.AsyncClient,
     upstream,
     settings: Settings,
 ) -> None:
     upstream.error_response = httpx.Response(
         429,
         json={"error": {"message": "rate limited", "type": "rate_limit_error"}},
+        headers={"retry-after": "7", "x-upstream-request-id": "err-1"},
     )
-    response = await client.post(
-        OPENAI_URL,
-        json={"model": "m", "messages": [{"role": "user", "content": "ping"}]},
-    )
+    response = await gateway_client.post(OPENAI_URL, json=CHAT_BODY)
+
     assert response.status_code == 429
     assert response.json()["error"]["message"] == "rate limited"
+    assert response.headers["retry-after"] == "7"
+    assert response.headers["x-upstream-request-id"] == "err-1"
 
-    answer_files = sorted((settings.resolve_log_root() / "fake-openai").glob("*-answer.txt"))
-    assert '"status_code": 429' in answer_files[0].read_text(encoding="utf-8")
-
-
-async def test_proxy_auth_is_enforced_when_configured(upstream) -> None:
-    settings = Settings(
-        log_root="../../data/logs",
-        proxy_api_key="secret",
-        routes={
-            "fake-openai": RouteConfig(
-                protocol="openai", base_url="https://fake.openai"
-            )
-        },
+    answer = _answer_files(settings.resolve_log_root(), "fake-openai")[0].read_text(
+        encoding="utf-8"
     )
-    http = httpx.AsyncClient(transport=httpx.MockTransport(upstream), timeout=5.0)
-    app = create_app(settings=settings, http=http)
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as auth_client:
-            missing = await auth_client.get("/fake-openai/v1/models")
-            assert missing.status_code == 401
+    assert '"status_code": 429' in answer
 
-            allowed = await auth_client.get(
-                "/fake-openai/v1/models",
-                headers={"Authorization": "Bearer secret"},
-            )
-            assert allowed.status_code == 200
-    await http.aclose()
+
+async def test_streaming_bytes_pass_through_unchanged(
+    gateway_client: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    expected = (
+        b'data: {"choices":[{"delta":{"content":"pong"}}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    response = await gateway_client.post(
+        OPENAI_URL, json={**CHAT_BODY, "stream": True}
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.content == expected
+
+    answer = _answer_files(settings.resolve_log_root(), "fake-openai")[0].read_text(
+        encoding="utf-8"
+    )
+    assert '"stream": true' in answer
+    assert '"text": "pong"' in answer
+
+
+async def test_every_path_and_method_is_forwarded(
+    gateway_client: httpx.AsyncClient,
+    upstream,
+) -> None:
+    embeddings = await gateway_client.post(
+        "/fake-openai/v1/embeddings",
+        json={"model": "text-embedding-3-small", "input": "ping"},
+    )
+    assert embeddings.status_code == 200
+    assert embeddings.json()["data"][0]["embedding"] == [0.1, 0.2]
+    assert upstream.requests[-1].url.path == "/v1/embeddings"
+
+    deleted = await gateway_client.delete("/fake-openai/v1/files/file-1")
+    assert deleted.status_code == 404  # the fake upstream has no such path
+    assert upstream.requests[-1].method == "DELETE"
+    assert upstream.requests[-1].url.path == "/v1/files/file-1"
+
+    models = await gateway_client.get("/fake-openai/v1/models")
+    assert models.status_code == 200
+    assert models.json()["data"][0]["id"] == "fake-openai-model"
 
 
 def test_settings_reject_unknown_keys() -> None:
@@ -249,3 +312,7 @@ def test_settings_reject_unknown_keys() -> None:
                 }
             }
         )
+
+    # The shared-key design is gone; a stale config must not be accepted.
+    with pytest.raises(ValidationError):
+        Settings.model_validate({"proxy_api_key": "secret"})

@@ -20,8 +20,10 @@ the admin/operator route inventory are in [admin-api.md](./admin-api.md).
 Notes:
 
 - The **model gateway is not a separate process**. It is a capability mounted
-  inside the API, so the same port serves `/v1/chat/completions`, `/v1/messages`
-  and the Winnie routes.
+  inside the API, so the same port serves `/{route}/...` and the Winnie routes.
+  Its route table lives in that process, so one API worker owns the live table;
+  a second worker sees a console change on its next restart. Gateway keys are in
+  `data/gateway-keys.yaml` and are re-read by mtime, so they need no restart.
 - The **Android app is a client**, not a service. It connects to the API at
   build-time `WINNIE_PUBLIC_URL` or the address entered on the login screen.
 - **Push has no process of its own.** It is a capability inside the API: a

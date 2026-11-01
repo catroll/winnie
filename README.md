@@ -18,7 +18,7 @@ infrastructure below it exists to serve the assistant.
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
-| **Model gateway** | OpenAI- and Anthropic-compatible transparent proxy with per-route upstreams and complete local logs | **Implemented** |
+| **Model gateway** | Byte-level OpenAI- and Anthropic-compatible proxy with per-route upstreams, Winnie gateway keys and complete local logs | **Implemented** |
 | **LLM usage** | Per-call tokens and latency, cost estimates and provider balances on the console's AI providers page | **Implemented** |
 
 The model gateway is one requirement of the project, not its definition. It
@@ -48,15 +48,18 @@ Milestone status, completion evidence and the next development plan are in
 
 The model gateway is fully implemented. It supports:
 
-- OpenAI Chat Completions and Anthropic Messages, forwarded without protocol
-  translation
+- OpenAI and Anthropic wire protocols forwarded byte for byte — every path and
+  method, query string and header, not a hand-written endpoint list
 - Path-based routing, so one deployment can front OpenAI, Anthropic, DeepSeek
   and Qwen at once
-- Client-supplied vendor API keys — Winnie never stores them
+- Winnie gateway keys: per-client, route-scoped and revocable, managed on the
+  console's Gateway routes page
+- Server-held vendor credentials — clients never see a vendor key
 - Streaming (SSE) passthrough
 - Paired `ask`/`answer` logs on local disk, per route
-- A usage ledger shared with internal model calls, priced per model, plus
-  provider balances where the vendor exposes them
+- A usage ledger shared with internal model calls, attributed to the key that
+  made the call, priced per model, plus provider balances where the vendor
+  exposes them
 
 The meeting-notes backend is functional but **not production-ready**. Meeting
 CRUD, audio upload, a file-first processing pipeline, transcript/minutes/export
@@ -177,8 +180,10 @@ curl -s 'http://[::1]:8000/routes'
 ```
 
 Point any OpenAI-compatible client at `http://[::1]:8000/<route>` (or
-`API_HOST=0.0.0.0 make api` for IPv4) and pass your vendor key in the request
-headers. Routing, configuration and request examples are in
+`API_HOST=0.0.0.0 make api` for IPv4) and authenticate with a Winnie gateway
+key, created on the console's Gateway routes page. The vendor key is injected by
+the server from `packages/winnie-llm/.env`; clients never hold it. Routing,
+configuration and request examples are in
 [docs/openai-proxy.md](./docs/openai-proxy.md).
 
 Accounts and meeting notes are mounted under `/api/v1` when enabled in

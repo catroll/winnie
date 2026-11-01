@@ -79,6 +79,7 @@ class FakeUpstream:
                 )
             return httpx.Response(
                 200,
+                headers={"x-upstream-request-id": "req-fake-1"},
                 json={
                     "id": "chatcmpl-fake",
                     "object": "chat.completion",
@@ -115,6 +116,16 @@ class FakeUpstream:
                 },
             )
 
+        if path.endswith("/embeddings"):
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [{"object": "embedding", "embedding": [0.1, 0.2]}],
+                    "usage": {"prompt_tokens": 4, "total_tokens": 4},
+                },
+            )
+
         return httpx.Response(404, json={"error": "unexpected upstream path"})
 
 
@@ -124,35 +135,61 @@ def upstream() -> FakeUpstream:
 
 
 @pytest.fixture
-def settings(tmp_path) -> Settings:
+def settings(tmp_path, monkeypatch) -> Settings:
+    # The gateway injects a server credential, so a route needs a vendor and
+    # that vendor needs a key in the winnie-llm environment.
+    monkeypatch.setenv("FAKE_API_KEY", "fake-vendor-key")
     return Settings(
         log_root=str(tmp_path / "logs"),
+        gateway_keys_path=str(tmp_path / "gateway-keys.yaml"),
         anthropic_version="2023-06-01",
         routes={
             "fake-openai": RouteConfig(
-                protocol="openai", base_url="https://fake.openai"
+                protocol="openai", base_url="https://fake.openai", vendor="fake"
             ),
             "fake-anthropic": RouteConfig(
-                protocol="anthropic", base_url="https://fake.anthropic"
+                protocol="anthropic",
+                base_url="https://fake.anthropic",
+                vendor="fake",
             ),
         },
     )
 
 
 @pytest_asyncio.fixture
-async def client(settings: Settings, upstream: FakeUpstream) -> AsyncIterator[httpx.AsyncClient]:
+async def gateway_app(settings: Settings, upstream: FakeUpstream):
     http = httpx.AsyncClient(
         transport=httpx.MockTransport(upstream),
         timeout=httpx.Timeout(5.0),
     )
     app = create_app(settings=settings, http=http)
     async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as test_client:
-            yield test_client
+        # A key that may call every route, plus its secret for tests that need
+        # to present it in a non-default header.
+        _, secret = app.state.gateway_keys.create(label="pytest")
+        app.state.pytest_gateway_secret = secret
+        yield app
     await http.aclose()
+
+
+@pytest_asyncio.fixture
+async def client(gateway_app) -> AsyncIterator[httpx.AsyncClient]:
+    """Unauthenticated client: exercises the 401 path of the data plane."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=gateway_app), base_url="http://test"
+    ) as test_client:
+        yield test_client
+
+
+@pytest_asyncio.fixture
+async def gateway_client(gateway_app) -> AsyncIterator[httpx.AsyncClient]:
+    """Client carrying a valid Winnie key for every route."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=gateway_app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {gateway_app.state.pytest_gateway_secret}"},
+    ) as test_client:
+        yield test_client
 
 
 @pytest.fixture

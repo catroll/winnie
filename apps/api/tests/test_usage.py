@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -56,13 +57,21 @@ def _event(**overrides: Any) -> UsageEvent:
 
 @asynccontextmanager
 async def _open(settings: Settings, handler):
+    # The gateway injects a vendor credential; the isolated env file is where
+    # this suite is allowed to put one.
+    Path(os.environ["WINNIE_LLM_ENV_FILE"]).write_text(
+        "FAKE_API_KEY=fake-vendor-key\n", encoding="utf-8"
+    )
     http = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), timeout=httpx.Timeout(5.0)
     )
     app = create_app(settings=settings, http=http)
     async with app.router.lifespan_context(app):
+        _, secret = app.state.gateway_keys.create(label="usage-test")
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {secret}"},
         ) as client:
             yield client
     await http.aclose()
@@ -71,12 +80,15 @@ async def _open(settings: Settings, handler):
 def _settings(tmp_path: Path, **overrides: Any) -> Settings:
     values: dict[str, Any] = {
         "log_root": str(tmp_path / "logs"),
+        "gateway_keys_path": str(tmp_path / "gateway-keys.yaml"),
         "routes": {
             "fake-openai": GatewayRouteConfig(
-                protocol="openai", base_url="https://fake.openai"
+                protocol="openai", base_url="https://fake.openai", vendor="fake"
             ),
             "fake-anthropic": GatewayRouteConfig(
-                protocol="anthropic", base_url="https://fake.anthropic"
+                protocol="anthropic",
+                base_url="https://fake.anthropic",
+                vendor="fake",
             ),
         },
         "usage": UsageConfig(
@@ -360,6 +372,9 @@ async def test_gateway_records_json_usage(tmp_path: Path) -> None:
     assert event.input_tokens == 300
     assert event.output_tokens == 30
     assert event.status == "ok"
+    assert event.detail["key_id"]
+    assert event.detail["key_label"] == "usage-test"
+    assert event.detail["endpoint"] == "/v1/chat/completions"
 
 
 async def test_gateway_records_streamed_openai_usage(tmp_path: Path) -> None:

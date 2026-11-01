@@ -2,12 +2,15 @@
 
 OpenAI / Anthropic 透明代理落地时的踩坑与约定。
 
+> 2026-11-01：网关改为字节级透传 + Winnie 密钥，厂商密钥由服务端注入。
+> 本页其余内容仍然成立；下面两条已按新实现改写。
+
 ## 配置
 
-1. **不用 `.env`**：路由与选项写在 `config.yaml`；本地覆盖用 `config.local.yaml`（gitignore，可放 `proxy_api_key`）。
-2. **厂商 API Key 不进配置文件**：只透传客户端 `Authorization` / `x-api-key`。
+1. **不用 `.env` 存路由选项**：路由与选项写在 `config.yaml`；本地覆盖用 `config.local.yaml`（gitignore）。
+2. **厂商 API Key 不进配置文件**：从 `packages/winnie-llm/.env` 读取，由网关注入到上游请求头。
 3. **用路径区分上游**：`/deepseek-openai/`、`/qwen-openai/`、`/openai/`、`/anthropic/`。
-4. **协议与路径必须匹配**：openai 路由无 `/v1/messages`；anthropic 路由无 `/v1/chat/completions`。
+4. **协议与路径不再绑定**：每个路径都原样转发；`protocol` 只决定注入 `Authorization` 还是 `x-api-key`。
 
 ## 上游兼容
 

@@ -141,10 +141,12 @@ returns the cache when it is fresh; **Refresh balances** forces a query. Each
 provider is queried in parallel with `usage.balance_timeout_seconds`, and one
 provider's failure becomes an error on its row, not a failed page.
 
-**Scope.** Balances cover the server-side keys used by internal jobs and the
-assistant. A gateway route forwards the client's own vendor key, so proxied
-traffic consumes the client's account and is not visible here. The ledger still
-records those calls, because usage comes from the response, not from the key.
+**Scope.** Balances cover the server-side keys used by internal jobs, the
+assistant and the gateway. A gateway route injects the same supplier key, so a
+proxied call counts against the account shown on the provider card. Each
+gateway event also records the Winnie key that made it (`detail.key_id`,
+`detail.key_label`), which is how one client's spend is separated from another's
+without a per-key total in the UI.
 
 ## HTTP API
 

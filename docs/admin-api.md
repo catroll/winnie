@@ -84,14 +84,23 @@ data, not the instance:
 | `GET /healthz`, `GET /readyz` | Liveness and readiness probes. |
 | `POST /api/v1/auth/register` | Bootstrap. The first account can always register even when `auth.allow_registration` is false; later registrations are refused with `403`. |
 | `POST /api/v1/auth/login` | Obtain a session. Rate-limited by `login_throttles`. |
-| `/{route}/v1/models`, `/{route}/v1/chat/completions`, `/{route}/v1/messages` | The transparent model gateway's data plane. Clients pass vendor credentials and the optional `proxy_api_key`; this is not a console surface and gating it on a session would break non-console clients. |
+| `/{route}/{path}` | The model gateway's data plane. It authenticates with a Winnie gateway key, not a console session, and injects the route's supplier key from `packages/winnie-llm/.env`; this is not a console surface and gating it on a session would break non-console clients. |
+
+Gateway keys are managed through the console API:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/gateway/keys` | List keys: id, label, allowlist, creation and revocation time. Never the secret or digest. |
+| `POST` | `/api/v1/gateway/keys` | Create a key; the response contains `secret` exactly once. An allowlist may only name configured routes. |
+| `DELETE` | `/api/v1/gateway/keys/{id}` | Revoke a key. The record stays for attribution; a second call is idempotent. |
 
 ## Deliberately not gated
 
 - **Phone routes** stay owner-scoped. Another workstream owns
   `packages/winnie-phone/**`; changing its authorization is out of scope here.
-- **Gateway data-plane routes** stay open (see the table above). Only route
-  inspection (`GET /routes`) is admin-only.
+- **Gateway data-plane routes** stay open (see the table above): a caller may
+  reach them without a session, because a key is the credential there. Only
+  route inspection (`GET /routes`) and key management are admin-only.
 - **Meetings, chat, assistant tasks, skills and account** stay available to
   normal users by product decision; they are owner-scoped rather than global.
 

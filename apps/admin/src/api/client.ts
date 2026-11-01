@@ -16,6 +16,9 @@ import type {
   AssistantStatus,
   AssistantTaskList,
   AssistantTaskRunList,
+  GatewayKeyCreated,
+  GatewayKeyDraft,
+  GatewayKeyList,
   Health,
   IndexConfigResponse,
   IndexEditableConfig,
@@ -220,6 +223,24 @@ export const api = {
 
   routes(): Promise<RouteList> {
     return request<RouteList>('/routes');
+  },
+
+  gatewayKeys(): Promise<GatewayKeyList> {
+    return request<GatewayKeyList>('/api/v1/gateway/keys');
+  },
+
+  createGatewayKey(payload: GatewayKeyDraft): Promise<GatewayKeyCreated> {
+    return request<GatewayKeyCreated>('/api/v1/gateway/keys', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  revokeGatewayKey(keyId: string): Promise<{ key: GatewayKeyCreated['key'] }> {
+    return request<{ key: GatewayKeyCreated['key'] }>(
+      `/api/v1/gateway/keys/${encodeURIComponent(keyId)}`,
+      { method: 'DELETE' },
+    );
   },
 
   indexStatus(): Promise<IndexStatus> {

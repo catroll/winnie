@@ -25,7 +25,7 @@ keys.
 | **AI providers** | Two tabs. **Suppliers** manages suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether `winnie-llm/.env` supplies the supplier key. **LLM usage** shows recorded model calls with token classes, latency, status and cost, breakdowns by day, feature and model, provider balances with a refresh, and the configured price table |
 | **Schedule** | One week of the owner's Markdown schedule: the seven day sections with their events, the week-level items, times, tags and links; add an event to a day or to the week list, check it off, edit text and time, delete it, and move between weeks. Pre-2024 files render read-only |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
-| **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, API base and proxy paths |
+| **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, proxy prefix and whether its supplier credential is present; plus the Winnie gateway keys that clients use, with a route allowlist, one-time secret and revocation |
 | **Users** | Admin-only account list with search, role/status filters, pagination, user creation with a one-time temporary password, password reset, role changes, and activate/deactivate. The last active admin and self-deactivation are protected |
 | **Account** | Profile, session expiry and password change |
 
@@ -139,10 +139,12 @@ There is no provider/endpoint dropdown in the feature table:
 | Meeting minutes | Structured summary, decisions and action items |
 
 A gateway route is a separate record with a `Gateway route` switch. It is
-reachable at `/{name}/v1/...` and forwards the client's vendor key; it is never
-a feature target. The supplier API is edited with **API**; its key is read by
+reachable at `/{name}/...` and injects that supplier's key; it is never a
+feature target. The supplier API is edited with **API**; its key is read by
 `winnie-llm` from `packages/winnie-llm/.env`, where the variable is derived from
-the supplier id. Seeded routes have no server-side key.
+the supplier id. A route whose variable is not set shows a warning and answers
+503. Callers authenticate with a **Winnie gateway key**, created on the Gateway
+routes page and stored as a digest in `data/gateway-keys.yaml`.
 
 **Sync models** fetches the supplier's `/models` list with that key; **Models**
 is the manual fallback. Supplier marks are inline SVGs adapted from the WLB
@@ -230,7 +232,8 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 - Vendor keys are not entered or stored here. The AI providers page shows the
   variable `winnie-llm` derives from each supplier and whether
   `packages/winnie-llm/.env` supplies it. Gateway routes show the configured
-  upstreams.
+  upstreams and the Winnie keys clients present; the key secret is shown once at
+  creation and only its digest is stored.
 
 ## LLM usage tab
 

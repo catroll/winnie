@@ -16,11 +16,37 @@ export interface GatewayRoute {
   protocol: 'openai' | 'anthropic';
   base_url: string;
   api_base: string;
-  paths: string[];
+  path_prefix: string;
+  vendor: string;
+  api_key_env: string;
+  credential_present: boolean;
 }
 
 export interface RouteList {
   routes: GatewayRoute[];
+}
+
+export interface GatewayKey {
+  id: string;
+  label: string;
+  created_at: string;
+  revoked_at: string | null;
+  routes: string[];
+}
+
+export interface GatewayKeyList {
+  keys: GatewayKey[];
+}
+
+export interface GatewayKeyCreated {
+  key: GatewayKey;
+  /** Shown once; never stored by the browser or the API. */
+  secret: string;
+}
+
+export interface GatewayKeyDraft {
+  label: string;
+  routes: string[];
 }
 
 export type UserRole = 'admin' | 'user';

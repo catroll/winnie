@@ -7,28 +7,32 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from winnie_gateway.routes import Route
-
 
 class RouteConfig(BaseModel):
+    """One route declared in ``config.yaml``.
+
+    ``vendor`` names the supplier credential the host injects. It is required
+    for a route to be usable: a route without it (or without a key in the
+    winnie-llm environment) answers ``503`` instead of forwarding an
+    unauthenticated request upstream.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     protocol: Literal["openai", "anthropic"]
     base_url: str
+    vendor: str = ""
 
 
 class GatewayConfig(BaseModel):
-    """Everything the gateway needs from the host."""
+    """Everything the gateway needs from the host.
+
+    Credentials do not live here: the host resolves each route's vendor key from
+    the winnie-llm environment and attaches it when it builds the table.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     routes: dict[str, RouteConfig] = Field(default_factory=dict)
     log_root: Path
     anthropic_version: str = "2023-06-01"
-    proxy_api_key: str = ""
-
-    def route_table(self) -> dict[str, Route]:
-        return {
-            name: Route(name=name, protocol=cfg.protocol, base_url=cfg.base_url)
-            for name, cfg in self.routes.items()
-        }

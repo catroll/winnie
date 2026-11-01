@@ -1,6 +1,6 @@
 # Winnie API
 
-FastAPI backend for Winnie. It ships the transparent LLM gateway, local
+FastAPI backend for Winnie. It ships the model gateway, local
 accounts, and the file-first meeting-notes backend; knowledge APIs are added
 incrementally.
 
@@ -25,6 +25,8 @@ incrementally.
 - Host settings: `config.yaml`; local overlay `config.local.yaml` (gitignored)
 - Supplier registry: `data/ai.yaml` (gitignored), owned by
   `packages/winnie-llm` and exposed by `src/winnie_api/ai/` for the console
+- Gateway keys: `data/gateway-keys.yaml` (gitignored, mode `0600`, digest only);
+  created and revoked through `src/winnie_api/gateway/`
 - Tests: `tests/`, using a fake upstream instead of real vendor keys
 
 ## Run
@@ -258,11 +260,12 @@ curl -s -X PUT http://[::1]:8000/api/v1/ai/features/assistant.chat \
 ```
 
 Set `"gateway": true` to expose an OpenAI/Anthropic endpoint at
-`/{name}/v1/...`; the client supplies its own vendor key on those paths. An
-internal-only endpoint takes its key from `packages/winnie-llm/.env`, where the
-variable is derived from the supplier id. The registry stores neither the key
-nor its variable name. A feature binding names a
-model from the supplier catalog; an unknown model is rejected. The supplier's
+`/{name}/...`. A caller reaches it with a Winnie gateway key (Gateway routes
+page, `data/gateway-keys.yaml`) and the gateway injects the supplier's
+`packages/winnie-llm/.env` key, where the variable is derived from the supplier
+id. The registry stores neither the key nor its variable name. A feature binding
+names a model from the supplier catalog; an unknown model is rejected. The
+supplier's
 internal API is the only thing used for a model call; gateway routes are
 separate. A change applies on the next model call, and the arq worker re-reads
 the file by modification time.
@@ -273,7 +276,8 @@ The console page is documented in
 
 Every internal model call and every call through the gateway appends one JSON
 line to a local ledger. The console's **LLM usage** page reads it for token
-classes, latency, estimated cost and provider balances. The ledger is switched
+classes, latency, estimated cost and provider balances. Gateway events also
+carry the Winnie key that made the call (`detail.key_id`). The ledger is switched
 by `usage.enabled`; prices are configuration, not stored per call, so a
 corrected price also corrects history.
 
@@ -300,8 +304,8 @@ example on OpenRouter) takes precedence.
 
 Balances are queried only for integrations whose supplier has a key in
 `packages/winnie-llm/.env`, and only when the vendor exposes an endpoint:
-DeepSeek, OpenRouter, Kimi/Moonshot and SiliconFlow. Gateway clients pass their own key, so proxied traffic is recorded
-but not covered by a server-side balance.
+DeepSeek, OpenRouter, Kimi/Moonshot and SiliconFlow. The gateway injects that
+same key, so proxied traffic is both recorded and covered by the balance.
 
 | Method | Path | Purpose |
 |---|---|---|

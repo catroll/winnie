@@ -21,6 +21,8 @@ from winnie_core.capability import Capability, WinnieFramework
 from winnie_core.jobs.queue import ArqJobQueue
 from winnie_core.usage.ledger import UsageLedger
 from winnie_gateway.capability import capability as gateway_capability
+from winnie_gateway.keystore import GatewayKeyStore
+from winnie_gateway.routes import Route
 from winnie_meetings.capability import capability as meetings_capability
 from winnie_news.capability import capability as news_capability
 from winnie_news.service import NewsService
@@ -30,8 +32,9 @@ from winnie_llm import ApiKeys, ProviderRegistry
 
 from winnie_api import __version__
 from winnie_api.ai.providers import DynamicChatModel
-from winnie_api.ai.routes import gateway_route_table
+from winnie_api.ai.routes import config_route_table, gateway_route_table
 from winnie_api.ai.seed import seed_input
+from winnie_api.gateway.router import router as gateway_admin_router
 from winnie_api.news.gateway import NewsGatewayAdapter
 from winnie_api.news.llm import DynamicNewsLLM
 from winnie_api.news.search import build_news_search
@@ -62,10 +65,13 @@ def create_app(
     usage_ledger = UsageLedger(
         resolved.resolve_usage_root(), enabled=resolved.usage.enabled
     )
+    # One loader for both roles a vendor key plays: the internal providers and
+    # the credential the gateway injects for a public route.
+    api_keys = ApiKeys.load()
     ai_settings = (
         ProviderRegistry(
             resolved.resolve_ai_path(),
-            keys=ApiKeys.load(),
+            keys=api_keys,
             seed=seed_input(resolved),
         )
         if resolved.ai.enabled
@@ -75,6 +81,15 @@ def create_app(
         # Seed or validate the file before any service is built: a broken
         # registry should fail startup loudly, not surface on the first chat.
         ai_settings.load()
+    gateway_config = resolved.gateway_config()
+    gateway_keys = GatewayKeyStore(resolved.resolve_gateway_keys_path())
+
+    def build_route_table() -> dict[str, Route]:
+        """The live route table, with each route's supplier credential."""
+        if ai_settings is not None:
+            return gateway_route_table(ai_settings, api_keys)
+        return config_route_table(gateway_config, api_keys)
+
     http_client = http or httpx.AsyncClient(
         timeout=httpx.Timeout(300.0, connect=30.0)
     )
@@ -120,12 +135,26 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.gateway = resolved.gateway_config()
-        app.state.routes_table = (
-            gateway_route_table(ai_settings)
-            if ai_settings is not None
-            else app.state.gateway.route_table()
+        app.state.gateway = gateway_config
+        app.state.gateway_keys = gateway_keys
+        app.state.routes_table = build_route_table()
+        app.state.rebuild_routes = build_route_table
+        # Both of these are startup failures that would otherwise surface as a
+        # 401 or 503 on a client that looks correctly configured.
+        if not gateway_keys.list():
+            logger.warning(
+                "no gateway keys exist; every gateway call answers 401 until a "
+                "key is created in the console"
+            )
+        missing = sorted(
+            name
+            for name, route in app.state.routes_table.items()
+            if not route.credential_present
         )
+        if missing:
+            logger.info(
+                "gateway routes without a server credential: %s", ", ".join(missing)
+            )
         app.state.ai_settings = ai_settings
         app.state.usage_ledger = usage_ledger
         app.state.usage_prices = resolved.usage.price_table()
@@ -244,7 +273,6 @@ def create_app(
 
     app = FastAPI(title="Winnie", version=__version__, lifespan=lifespan)
     framework = WinnieFramework(app)
-    framework.register(gateway_capability())
     if resolved.auth.enabled:
         framework.register(auth_capability())
     if resolved.meetings.enabled:
@@ -274,6 +302,12 @@ def create_app(
     # the auth capability is registered, because an auth-disabled deployment
     # still acts as an administrator.
     app.include_router(admin_users_router, prefix="/api/v1")
+    # Gateway keys are Winnie credentials, so the console owns them regardless
+    # of whether the AI registry is enabled.
+    app.include_router(gateway_admin_router, prefix="/api/v1")
+    # The gateway is registered last: its data plane is a catch-all under
+    # /{route}/{path}, so every concrete host route must be matched first.
+    framework.register(gateway_capability())
     app.state.capability_names = framework.capability_names
 
     @app.get("/healthz")

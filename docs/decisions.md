@@ -462,7 +462,10 @@ can be a public proxy route (`gateway: true`), an internal provider
 (`gateway: false`), or both. The first version of the seed matched a route by
 base URL and reused it as the internal LLM, which put the server-side key on a
 public route. v2 always creates a separate `internal-llm` record with
-`gateway: false`; the route stores no key and forwards the client's key. A v1 file is migrated in place on the next read. The alternative —
+`gateway: false`. (The gateway later began injecting the supplier's server-side
+key too — see "Gateway keys replace vendor-key passthrough" below — but the two
+records stay separate, because a route and a feature binding are still different
+roles.) A v1 file is migrated in place on the next read. The alternative —
 one record with a per-role key — was rejected because the two roles can use
 different keys, different owners and different lifetimes; a single `api_key_env`
 cannot express that, and combining them is what caused the original confusion.
@@ -544,11 +547,13 @@ field would have added a second thing to configure for every integration and
 would still not cover unknown hosts. An integration whose host has no adapter is
 shown as **not exposed** with a neutral explanation.
 
-**Balances use server-side keys only.** The gateway forwards the client's own
-vendor key and stores none, so a proxied call consumes the client's account and
-its balance is invisible here. The card states that limit instead of implying
-the number covers every request. The ledger still records proxied calls because
-usage comes from the response, not from the key.
+**Balances use server-side keys only.** The gateway now injects the same
+server-side supplier key, so a proxied call does consume the account shown here;
+the balance query still runs once per supplier, because that is the account the
+key belongs to. The ledger records each proxied call with the Winnie key that
+made it. (Before the key rework the gateway forwarded the caller's vendor key and
+this paragraph said the balance was invisible; see "Gateway keys replace
+vendor-key passthrough" below.)
 
 **Recording is best-effort.** A failed append is logged and swallowed; a
 telemetry disk error must never turn a successful model call into an error. The
@@ -1243,3 +1248,82 @@ panel. A normal user lands on `/chat` rather than the admin Dashboard at `/`;
 the Dashboard is an operator overview, not a user home. A second console
 application was rejected because it would duplicate auth, routing and the API
 client for a small page set.
+
+## Gateway keys replace vendor-key passthrough (2026-11-01)
+
+**The old gateway was "transparent" only for the paths it had handlers for.** It
+parsed the body, dispatched on a fixed path, and rebuilt the response. Measured
+against a recording upstream, a request through it lost its query string
+(`?api-version=…`), lost every header outside a five-name allowlist (so
+`Idempotency-Key`, `X-Client-Trace` and the caller's `User-Agent` never arrived),
+returned a 404 in FastAPI's `{"detail": …}` shape for `/v1/embeddings`,
+`/v1/responses` and `messages/count_tokens`, and dropped upstream response
+headers (`x-request-id`, `Retry-After`, processing-time). Each new endpoint
+needed a new handler, which is the opposite of a proxy.
+
+**The single `proxy_api_key` was unusable, not merely minimal.** Because the
+gateway key and the vendor key shared the same two headers, no request could
+satisfy both sides once the key was set: `Authorization: Bearer <vendor>` failed
+the gateway check, `Authorization: Bearer <gateway>` was forwarded to the vendor
+and failed there, and `x-api-key: <gateway>` with a vendor `Authorization` also
+returned 401 because the check prefers `Authorization`. On an Anthropic route the
+gateway secret was forwarded upstream verbatim. This was verified with a fake
+upstream before any code changed.
+
+**Forward bytes, do not speak the protocol.** The data plane is one catch-all
+under `/{route}/{path:path}` that builds the upstream request from the client's
+own method, raw path, raw query, bytes and (filtered) headers, then returns the
+upstream's status, bytes and headers. Streaming is detected from the response
+`Content-Type`, not from the body, and SSE frames are never re-serialised. The
+router is registered last so `/api/v1/*`, `/routes` and the other host paths are
+matched first; a small reserved-prefix list keeps a supplier endpoint from
+shadowing them. The old per-endpoint handlers, protocol adapters and
+`forward.py` are gone.
+
+**What the proxy keeps is a tee, not a gate.** Usage extraction and the
+ask/answer log observe the bytes on their way through; an unparseable body is
+logged as raw text and a missing `usage` field simply means no tokens. Nothing
+about observability can reject a call the vendor would accept.
+
+**Callers present a Winnie key; the server holds the vendor key.** A key is
+created in the console (`wsk_…`), shown once, and stored as a SHA-256 digest in
+`data/gateway-keys.yaml` (mode `0600`). The route's supplier key is read from the
+same `packages/winnie-llm/.env` the internal providers use and injected as
+`Authorization: Bearer` (OpenAI) or `x-api-key` (Anthropic). The client's
+credential headers are dropped, never forwarded. A route whose supplier key is
+missing answers `503` naming the variable, instead of sending an unauthenticated
+request upstream.
+
+**Keys live in a file, like the AI registry.** A gateway-only deployment has no
+accounts, no meetings and therefore no schema; a database table would make
+console-created keys impossible there. The file is atomic, `0600`, and re-read
+when its mtime changes, so one process sees another's write without a restart.
+Revocation is a timestamp, not a delete: the ledger can still say which key made
+an old call. A key may carry a route allowlist (empty = all), which turns a
+copied phone or build-agent credential into a scoped one.
+
+**`proxy_api_key` is removed rather than deprecated.** Keeping it would keep the
+broken header collision alive and give two ways to authenticate. A stale
+`proxy_api_key` in `config.yaml` now fails startup as an unknown key, which is a
+one-line fix and impossible to miss. A gateway key in `local.yaml` was the only
+alternative shape and was rejected because it is one more secret format to
+document for the same single operator.
+
+**Attribution is a field, not a new ledger.** `UsageEvent.detail` gains `key_id`
+and `key_label`; the provider stays the route name. A first-class column would
+have meant a schema migration and a new report dimension for a value that is
+diagnostic, not billable. The consequence is explicit: there is no per-key
+quota, spend cap or rate limit. A key identifies a caller and bounds where it may
+go; the ledger reports what it used.
+
+**Rejected: keep vendor-key passthrough and add `X-Winnie-Key`.** It would have
+been smaller, but it leaves the caller holding a vendor secret, which is exactly
+what the phone, the build agent and any future client must not do. It also keeps
+two accounts in play and makes the console's provider balance silently wrong for
+proxied traffic.
+
+**Rejected: forward `Accept-Encoding` and pass compressed bytes.** A compressed
+body cannot be parsed for usage, and a client's `br` would depend on a decoder
+this process may not have. The request's `Accept-Encoding` is dropped, the body
+is returned decoded with `Content-Encoding`/`Content-Length` removed, and the
+bandwidth cost of one local hop is accepted.

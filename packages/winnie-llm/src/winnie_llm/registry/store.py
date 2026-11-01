@@ -285,6 +285,7 @@ class ProviderRegistry:
                     name=integration.name,
                     protocol=integration.kind,
                     base_url=integration.base_url,
+                    vendor=integration.vendor,
                 )
             )
         return entries
