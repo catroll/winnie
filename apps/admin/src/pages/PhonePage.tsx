@@ -148,6 +148,47 @@ function formatBytes(value: unknown): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
+interface ScopeRead {
+  permission?: string;
+  rows?: number;
+  error?: string;
+}
+
+/**
+ * What the four provider scopes answered on the phone, as it reported them.
+ *
+ * A phone whose ROM keeps the grant but hands back blank rows looks identical
+ * to a phone with no data unless the device says so; this is what lets the page
+ * explain an empty tab instead of implying the owner never had contacts.
+ */
+function scopeReads(device: PhoneDevice): { scope: string; read: ScopeRead }[] {
+  const raw = device.info['scope_read'];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+  return Object.entries(raw as Record<string, unknown>)
+    .filter(([scope, value]) => scope !== 'uid' && scope !== 'package'
+      && scope !== 'data_dir' && Boolean(value) && typeof value === 'object')
+    .map(([scope, value]) => ({ scope, read: value as ScopeRead }));
+}
+
+const SCOPE_READ_LABELS: Record<string, string> = {
+  message: 'SMS',
+  call: 'Call log',
+  contact: 'Contacts',
+  calendar: 'Calendar',
+  calendars: 'Calendars',
+};
+
+function scopeReadValue(read: ScopeRead): string {
+  if (read.error === 'null_cursor') return tr('the system returned nothing');
+  if (read.error) return read.error;
+  if (read.permission === 'denied') return tr('no permission');
+  return tr('{{count}} rows', { count: read.rows ?? 0 });
+}
+
+function scopeReadBlocked(read: ScopeRead): boolean {
+  return Boolean(read.error) || read.permission === 'denied';
+}
+
 function commandDevices(summary: PhoneSummary | null): Record<string, string> {
   const names: Record<string, string> = {};
   for (const entry of summary?.devices ?? []) {
@@ -813,6 +854,23 @@ function DeviceCard({ entry, busy, onRevoke, onRestore, onWipe }: DeviceCardProp
               </span>
             ))}
           </div>
+
+          {scopeReads(device).length > 0 ? (
+            <div className="mt-2">
+              <span className="small text-secondary me-1">{tr('Scope reads:')}</span>
+              {scopeReads(device).map(({ scope, read }) => (
+                <span
+                  key={scope}
+                  className={`badge me-1 ${
+                    scopeReadBlocked(read) ? 'text-bg-warning' : 'text-bg-light'
+                  }`}
+                  title={read.error ?? ''}
+                >
+                  {tr(SCOPE_READ_LABELS[scope] ?? scope)}: {scopeReadValue(read)}
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           <div className="small text-secondary mt-2">
             {[
