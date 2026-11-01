@@ -552,10 +552,15 @@ phone database unless it asks for one.
   `calendar.create` and `calendar.delete` are confirmed on TAS-AL00: a proposed
   event executed on the phone (`Created event 5320 in 278895860@qq.com`), came
   back through the next sync, and a proposed delete removed it on both sides.
+  `sms.send` is confirmed as far as the app can see: TAS-AL00 answered
+  `Submitted the SMS to 15827082940. Delivery is not confirmed by the app.`
+  Delivery itself stays outside the app's knowledge — `SmsManager` does not
+  write the sent message into `content://sms` (that needs `WRITE_SMS`, which is
+  system-only and not grantable to a third-party app), and there is no delivery
+  report, so the synced message list cannot show an outgoing send either.
   The earlier "No writable calendar is available on this phone" was the same
   system app guard that blanked the reads — with `Calendars` answering zero rows
-  there was no writable calendar to find. An **SMS send** is still unverified on
-  hardware (it costs the owner a message).
+  there was no writable calendar to find.
 - A write with no explicit `device_id` goes to the **most recently seen**
   phone, while reads aggregate every device, and neither the tool schema nor
   the PENDING text names the device. With two phones the owner cannot tell
