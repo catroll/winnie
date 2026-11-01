@@ -307,15 +307,18 @@ async def calls(
 async def message_senders(
     since: datetime | None = None,
     until: datetime | None = None,
+    hide_service_numbers: bool = False,
+    origin: str = "",
     device_id: UUID | None = None,
     limit: int = Query(default=12, ge=1, le=100),
     service: PhoneService = Depends(get_service),
     user_id: str = Depends(get_user_id),
 ) -> list[MessageSenderRead]:
-    """The numbers that wrote most often, for the quick multi-select filter.
+    """The numbers that wrote most often, for the quick hide picker.
 
     Counted per normalised address, so ``+8613800138000`` and
-    ``13800138000`` are one entry rather than two.
+    ``13800138000`` are one entry rather than two. `hide_service_numbers` and
+    `origin` keep the picker in step with the list filters.
     """
     return [
         MessageSenderRead.model_validate(row)
@@ -323,6 +326,8 @@ async def message_senders(
             user_id,
             since=since,
             until=until,
+            hide_service_numbers=hide_service_numbers,
+            origin=origin,
             device_id=device_id,
             limit=limit,
         )
@@ -356,7 +361,7 @@ async def messages(
     address: str = "",
     exclude_addresses: list[str] | None = Query(default=None),
     hide_service_numbers: bool = False,
-    hide_short_codes: bool = False,
+    origin: str = "",
     direction: str = "",
     q: str = "",
     unread_only: bool = False,
@@ -374,7 +379,7 @@ async def messages(
             address=address,
             exclude_addresses=exclude_addresses,
             hide_service_numbers=hide_service_numbers,
-            hide_short_codes=hide_short_codes,
+            origin=origin,
             direction=direction,
             query=q,
             unread_only=unread_only,

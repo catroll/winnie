@@ -1583,30 +1583,48 @@ uploaded, because those rows are quoted back to the owner as they are.
 **The filter hides noise; it does not select messages to keep.** The SMS list's
 problem is the service numbers that write most often, not finding one of them.
 An include filter was tried first and was the wrong control: the owner would
-have had to enumerate the noise to remove it, and every new 106* sender would
-appear until selected. The server therefore takes the three rules the console
-needs — `hide_service_numbers` (address prefix `106`), `hide_short_codes`
-(exactly five characters) and repeated `exclude_addresses` — and applies them
-before the limit. `106` is safe as a prefix because no mobile number starts with
-those digits; five characters is how the provider stores `10086`/`10010`/`95566`
-and a personal number is longer. An explicit full number is matched anywhere so
-its `+86` spelling disappears too, while a shorter fragment is a prefix: hiding
-`106` must not catch a mobile that happens to contain `106` in the middle.
+have had to enumerate the noise to remove it, and every new `106*` sender would
+appear until selected. Pattern-matching two categories (`106`, five characters)
+then turned out to be too narrow: operator extensions such as `1181142200013`,
+`125200201211002424` and `10001885` are neither. The server therefore
+classifies the address: a normal user number is a Chinese mobile (11 digits
+starting `1[3-9]`), a Chinese landline (10–12 digits starting `0`) or an
+international number; everything else is a service number. `+86…`, `0086…` and
+`86…` are reduced to the national number first, and an address the rule cannot
+place is treated as a service number — the list is noisy by default. An
+explicit full number is matched anywhere so its `+86` spelling disappears too,
+while a shorter fragment is a prefix: hiding `106` must not catch a mobile that
+happens to contain `106` in the middle.
+
+**Domestic and international are a stored-prefix distinction, not a country
+lookup.** `+86`/`0086` is domestic, any other `+`/`00` prefix is international,
+and a number stored without a prefix is domestic. That is enough to split the
+list into the two views the owner asked for, and it needs no per-message carrier
+or numbering-plan data. Two limits are worth stating. An international address
+must fit E.164 (at most 15 digits after the prefix) and must not start with a
+second zero: real data already contains bulk senders stored as `+106…`,
+`+00…` or `0079…` with far too many digits, and those are domestic service
+numbers, not an international conversation. And an international number stored
+without its `+` cannot be distinguished from a Chinese one and shows as
+domestic. The same predicate drives the origin selector, the service
+classification and the senders picker, so all three agree.
 
 **SQL narrows, the normalised comparison decides.** There is no generated
 normalised column and no migration: the thread turns the number into its digits
 and matches them with `ILIKE` (which also matches the `+86` spelling, because
 the digits are contiguous inside it), then the service compares the normalised
-form. That keeps the schema unchanged and costs one pass over the narrow
-candidate set. It would be the wrong shape for millions of messages; this data
-set is one phone's history, and the list is capped at 500.
+form. The service/origin rules compile to `CASE`/`substr`/`length` expressions
+that SQLite and PostgreSQL both evaluate. That keeps the schema unchanged and
+costs one pass over the narrow candidate set. It would be the wrong shape for
+millions of messages; this data set is one phone's history, and the list is
+capped at 500.
 
 **The filters and the picker are server-side.** The console shows at most 500
 rows per request, so filtering a fetched page would leave a page that looks
 empty while more messages exist outside the window — and a picker built from
 the page would omit the number that only appears in older messages.
-`/messages?hide_service_numbers=&hide_short_codes=&exclude_addresses=&direction=`
-and `/messages/senders` do the work over the whole window instead. `direction`
+`/messages?hide_service_numbers=&origin=&exclude_addresses=&direction=` and
+`/messages/senders` do the work over the whole window instead. `direction`
 keeps the values the phone writes (`inbox`, `sent`); the console maps them to
 Received/Sent, and "Sent" means the phone stored a sent message, not that the
 carrier delivered it. Every exclusion is off by default: the list shows

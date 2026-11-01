@@ -111,29 +111,37 @@ the rest of the API.
 | `POST` | `/commands/{id}/approve`, `/cancel` | Approve or cancel a proposed write |
 | `GET` | `/commands?status=` | Command history |
 
-The message query also takes `direction=inbox|sent` and three exclusion filters,
-so the list can drop the numbers the owner never wants to read:
+The message query also takes `direction=inbox|sent`, the origin selector and the
+hide filters, so the list can drop the numbers the owner never wants to read:
 
-- `hide_service_numbers=true` removes every address starting with `106`, the
-  bulk/A2P range. No mobile number starts with those digits, so a prefix match
-  cannot hide a real conversation.
-- `hide_short_codes=true` removes five-character addresses (`10086`, `10010`,
-  `95566`), which is how the provider stores short codes. A personal number is
-  longer and survives.
-- `exclude_addresses=` (repeated) hides specific numbers. A full number
-  (`+8613800138000`) is matched anywhere, so the `+86` and plain spellings go
-  together; a shorter fragment (`106`, `955`) is a prefix, so hiding it cannot
-  catch a mobile that merely contains those digits. Normalisation strips
-  separators and the Chinese `+86`, and folds the case of alphanumeric sender
-  ids.
+- `hide_service_numbers=true` keeps only normal subscriber numbers: Chinese
+  mobiles (11 digits starting `1[3-9]`), Chinese landlines (10–12 digits
+  starting `0`) and international numbers. Everything else is a service number:
+  short codes (`10086`, `10010`, `95566`), `106` bulk senders, and operator
+  extensions such as `1181142200013`, `125200201211002424` and `10001885`.
+  Addresses stored as `+86…`, `0086…` or `86…` are reduced to the national
+  number first; the classification is deliberately conservative, so an address
+  it cannot place is treated as a service number.
+- `origin=domestic|international` splits the list by the stored country code:
+  `+86` and `0086` are domestic, any other `+`/`00` prefix is international, and
+  a number stored without a prefix is domestic. An international address must
+  fit E.164 (at most 15 digits after the prefix) and must not start with a
+  second zero; a malformed `+106…` or `+00…` bulk sender is treated as domestic
+  so the service filter can hide it instead of showing up as "international".
+  This is how the owner views domestic and international SMS separately.
+- `exclude_addresses=` (repeated) hides specific numbers on top of that. A full
+  number (`+8613800138000`) is matched anywhere, so the `+86` and plain
+  spellings go together; a shorter fragment (`106`, `955`) is a prefix, so
+  hiding it cannot catch a mobile that merely contains those digits.
 
-Nothing is hidden by default; the console exposes the two categories as
-checkboxes and the specific numbers as removable chips plus the recent-sender
-picker. `/messages/thread` is deliberately not filtered by these options: a
-conversation with a hidden number still opens if the owner asks for it another
-way. It uses the same normalised comparison, which is what keeps one
-conversation in one dialog instead of splitting it by country-code spelling.
-`/messages/senders` merges both spellings into one counted entry.
+Nothing is hidden by default; the console exposes one "service numbers"
+checkbox, a domestic/international selector, and the specific numbers as
+removable chips plus the recent-sender picker. `/messages/thread` is
+deliberately not filtered by these options: a conversation with a hidden number
+still opens if the owner asks for it another way. It uses the same normalised
+comparison, which is what keeps one conversation in one dialog instead of
+splitting it by country-code spelling. `/messages/senders` follows the service
+and origin filters, so the picker never offers a sender the list already hides.
 
 A sync request carries **one kind**:
 
@@ -486,10 +494,10 @@ operate view. It shows:
   **Revoke**, **Restore** and **Delete server data** actions;
 - a tab per kind (calendar, calls, SMS, contacts, notifications, location,
   apps) with a time window, a text filter, call direction, unread-only and a
-  result limit; the SMS tab adds a direction filter (received/sent) and a
-  **hide** block: checkboxes for `106` service numbers and five-digit short
-  numbers, plus removable chips for specific numbers or prefixes built from
-  the most frequent senders or typed by hand;
+  result limit; the SMS tab adds a received/sent direction filter, a
+  domestic/international selector, and a **hide** block with one checkbox for
+  all service numbers plus removable chips for specific numbers or prefixes
+  built from the most frequent senders or typed by hand;
 - clicking an SMS opens the whole conversation with that number, oldest first,
   scrolls to the clicked message and rings its bubble, with received and sent
   messages on opposite sides;

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from winnie_phone.addresses import normalize_address
@@ -202,6 +202,78 @@ def _address_terms(values: Sequence[str] | None) -> list[str]:
         if term not in terms:
             terms.append(term)
     return terms
+
+
+def _international_condition():
+    """A stored international address, not a Chinese service number.
+
+    ``+86…`` and ``0086…`` are China. A ``+``/``00`` address is treated as
+    international only when it fits E.164 (at most 15 digits after the
+    international prefix) and does not start with a second zero. Without that
+    check a bulk sender stored as ``+106…`` or a malformed ``+00…`` address
+    would look international and escape the service filter.
+    """
+    return or_(
+        and_(
+            PhoneMessage.address.like("+%"),
+            ~PhoneMessage.address.like("+86%"),
+            ~PhoneMessage.address.like("+00%"),
+            func.length(PhoneMessage.address) <= 16,
+        ),
+        and_(
+            PhoneMessage.address.like("00%"),
+            ~PhoneMessage.address.like("0086%"),
+            func.length(PhoneMessage.address) <= 17,
+        ),
+    )
+
+
+def _national_number():
+    """SQL expression for the digits of a Chinese number, without ``+86``.
+
+    The provider stores a Chinese number as plain digits, ``+86…``,
+    ``0086…`` or ``86…`` depending on the message direction. A leading ``86``
+    is stripped only when what follows starts like a Chinese number, so an
+    unrelated international address keeps its digits.
+    """
+    return case(
+        (PhoneMessage.address.like("+86%"), func.substr(PhoneMessage.address, 4)),
+        (PhoneMessage.address.like("0086%"), func.substr(PhoneMessage.address, 5)),
+        (
+            and_(
+                PhoneMessage.address.like("86%"),
+                func.length(PhoneMessage.address).between(12, 15),
+                func.substr(PhoneMessage.address, 3, 1).in_(("0", "1")),
+            ),
+            func.substr(PhoneMessage.address, 3),
+        ),
+        else_=PhoneMessage.address,
+    )
+
+
+def _normal_user_condition():
+    """A subscriber number: Chinese mobile, Chinese landline or international.
+
+    This is the rule behind "hide service numbers". Everything outside it ---
+    short codes (``10086``), bulk senders (``106…``), and operator extensions
+    (``118114…``, ``12520…``, ``10001885``) --- is a service number. The
+    classification is deliberately conservative: an address it cannot place is
+    treated as a service number, because the list is noisy, not because a
+    message is unimportant.
+    """
+    national = _national_number()
+    return or_(
+        _international_condition(),
+        and_(
+            func.length(national) == 11,
+            func.substr(national, 1, 1) == "1",
+            func.substr(national, 2, 1).in_(tuple("3456789")),
+        ),
+        and_(
+            func.length(national).between(10, 12),
+            func.substr(national, 1, 1) == "0",
+        ),
+    )
 
 
 class PhoneService:
@@ -978,7 +1050,7 @@ class PhoneService:
         address: str = "",
         exclude_addresses: Sequence[str] | None = None,
         hide_service_numbers: bool = False,
-        hide_short_codes: bool = False,
+        origin: str = "",
         direction: str = "",
         query: str = "",
         unread_only: bool = False,
@@ -1002,13 +1074,11 @@ class PhoneService:
                     PhoneMessage.address.ilike(_like(address), escape="\\")
                 )
             if hide_service_numbers:
-                # 106xxxxxxx is the bulk/A2P range. No mobile number starts
-                # with 106, so a prefix match cannot hide a real conversation.
-                conditions.append(~PhoneMessage.address.like(_like_prefix("106")))
-            if hide_short_codes:
-                # 10086/10010/95566: the provider stores these as five
-                # characters. A personal number is longer, so this is safe.
-                conditions.append(func.length(PhoneMessage.address) != 5)
+                conditions.append(_normal_user_condition())
+            if origin == "international":
+                conditions.append(_international_condition())
+            elif origin == "domestic":
+                conditions.append(~_international_condition())
             for term in _address_terms(exclude_addresses):
                 # A full number is matched anywhere, so +86… and the plain
                 # spelling are hidden together. A shorter fragment is a prefix,
@@ -1032,6 +1102,12 @@ class PhoneService:
                 )
             if unread_only:
                 conditions.append(PhoneMessage.is_read.is_(False))
+            stmt = (
+                select(PhoneMessage)
+                .where(*conditions)
+                .order_by(PhoneMessage.received_at.desc().nullslast())
+                .limit(limit)
+            )
             rows = await session.scalars(
                 select(PhoneMessage)
                 .where(*conditions)
@@ -1086,14 +1162,17 @@ class PhoneService:
         *,
         since: datetime | None = None,
         until: datetime | None = None,
+        hide_service_numbers: bool = False,
+        origin: str = "",
         device_id: uuid.UUID | None = None,
         limit: int = 12,
     ) -> list[dict]:
         """The numbers that wrote most often, counted per normalised address.
 
-        This is the quick picker's source: 106xxxxxx bulk senders and short
-        codes such as 10086 are exactly the numbers that repeat and are tedious
-        to type.
+        This is the quick picker's source: service numbers and the short codes
+        that repeat are exactly the numbers that are tedious to type. The
+        picker honours the service and origin filters, so it does not offer a
+        sender that the list already hides.
         """
         async with self._session() as session:
             conditions = [
@@ -1107,6 +1186,12 @@ class PhoneService:
                 conditions.append(PhoneMessage.received_at >= as_utc(since))
             if until is not None:
                 conditions.append(PhoneMessage.received_at <= as_utc(until))
+            if hide_service_numbers:
+                conditions.append(_normal_user_condition())
+            if origin == "international":
+                conditions.append(_international_condition())
+            elif origin == "domestic":
+                conditions.append(~_international_condition())
             rows = await session.execute(
                 select(
                     PhoneMessage.address,

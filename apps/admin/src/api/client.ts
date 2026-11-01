@@ -851,7 +851,7 @@ export const api = {
       address?: string;
       excludeAddresses?: string[];
       hideServiceNumbers?: boolean;
-      hideShortCodes?: boolean;
+      origin?: string;
       direction?: string;
       q?: string;
       unreadOnly?: boolean;
@@ -864,7 +864,7 @@ export const api = {
         address: params.address,
         exclude_addresses: params.excludeAddresses,
         hide_service_numbers: params.hideServiceNumbers ? 'true' : undefined,
-        hide_short_codes: params.hideShortCodes ? 'true' : undefined,
+        origin: params.origin,
         direction: params.direction,
         q: params.q,
         unread_only: params.unreadOnly ? 'true' : undefined,
@@ -875,12 +875,17 @@ export const api = {
   },
 
   phoneMessageSenders(
-    params: PhoneRangeQuery = {},
+    params: PhoneRangeQuery & {
+      hideServiceNumbers?: boolean;
+      origin?: string;
+    } = {},
   ): Promise<PhoneMessageSender[]> {
     return request(
       `/api/v1/phone/messages/senders${queryString({
         since: params.since,
         until: params.until,
+        hide_service_numbers: params.hideServiceNumbers ? 'true' : undefined,
+        origin: params.origin,
         device_id: params.deviceId,
         limit: params.limit,
       })}`,

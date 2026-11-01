@@ -225,8 +225,8 @@ export function PhonePage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [direction, setDirection] = useState('');
   const [messageDirection, setMessageDirection] = useState('');
+  const [messageOrigin, setMessageOrigin] = useState('');
   const [hideServiceNumbers, setHideServiceNumbers] = useState(false);
-  const [hideShortCodes, setHideShortCodes] = useState(false);
   const [excludedAddresses, setExcludedAddresses] = useState<string[]>([]);
   const [excludeInput, setExcludeInput] = useState('');
   const [openedMessage, setOpenedMessage] = useState<PhoneMessage | null>(null);
@@ -268,8 +268,8 @@ export function PhonePage() {
             q: appliedQuery,
             unreadOnly,
             direction: messageDirection || undefined,
+            origin: messageOrigin || undefined,
             hideServiceNumbers,
-            hideShortCodes,
             excludeAddresses:
               excludedAddresses.length > 0 ? excludedAddresses : undefined,
           }),
@@ -308,36 +308,29 @@ export function PhonePage() {
     unreadOnly,
     direction,
     messageDirection,
+    messageOrigin,
     hideServiceNumbers,
-    hideShortCodes,
     excludedAddresses,
     commandStatus,
   ]);
 
   // The quick picker only makes sense for SMS; on other tabs it is empty.
+  // It follows the service and origin filters, so a sender the list hides is
+  // not offered here. An explicitly excluded sender still appears, pressed,
+  // which is how it is turned back on.
   const senders = useApi<PhoneMessageSender[]>(
     () =>
       tab === 'message'
         ? api.phoneMessageSenders({
             since: windowSince,
             deviceId: deviceId === 'all' ? undefined : deviceId,
+            hideServiceNumbers,
+            origin: messageOrigin || undefined,
             limit: 12,
           })
         : Promise.resolve([]),
-    [tab, deviceId, days],
+    [tab, deviceId, days, hideServiceNumbers, messageOrigin],
   );
-
-  // Do not offer a sender that the category checkboxes already hide. An
-  // explicitly excluded sender stays in the list as a pressed chip, which is
-  // how it is turned back on.
-  const visibleSenders =
-    senders.status === 'success'
-      ? senders.data.filter((sender) => {
-          if (hideServiceNumbers && sender.address.startsWith('106')) return false;
-          if (hideShortCodes && sender.address.length === 5) return false;
-          return true;
-        })
-      : [];
 
   const search = useApi(
     () =>
@@ -737,6 +730,24 @@ export function PhonePage() {
                   </div>
                 ) : null}
 
+                {tab === 'message' ? (
+                  <div className="col-auto">
+                    <label className="form-label small mb-1" htmlFor="phone-message-origin">
+                      {tr('Domestic / international')}
+                    </label>
+                    <select
+                      id="phone-message-origin"
+                      className="form-select form-select-sm"
+                      value={messageOrigin}
+                      onChange={(event) => setMessageOrigin(event.target.value)}
+                    >
+                      <option value="">{tr('Any')}</option>
+                      <option value="domestic">{tr('Domestic')}</option>
+                      <option value="international">{tr('International')}</option>
+                    </select>
+                  </div>
+                ) : null}
+
                 {isSearchable(tab) ? (
                   <div className="col-12 col-md">
                     <label className="form-label small mb-1" htmlFor="phone-filter">
@@ -796,22 +807,19 @@ export function PhonePage() {
                           checked={hideServiceNumbers}
                           onChange={(event) => setHideServiceNumbers(event.target.checked)}
                         />
-                        <label className="form-check-label small" htmlFor="phone-hide-service">
-                          {tr('106 service numbers')}
+                        <label
+                          className="form-check-label small"
+                          htmlFor="phone-hide-service"
+                          title={tr(
+                            'Short codes, 106 bulk senders and service extensions such as 118114 or 12520. Mobile, landline and international numbers stay.',
+                          )}
+                        >
+                          {tr('Service numbers')}
                         </label>
                       </div>
-                      <div className="form-check">
-                        <input
-                          id="phone-hide-short"
-                          className="form-check-input"
-                          type="checkbox"
-                          checked={hideShortCodes}
-                          onChange={(event) => setHideShortCodes(event.target.checked)}
-                        />
-                        <label className="form-check-label small" htmlFor="phone-hide-short">
-                          {tr('5-digit short numbers')}
-                        </label>
-                      </div>
+                      <span className="small text-secondary">
+                        {tr('106, short codes and service extensions')}
+                      </span>
                     </div>
                     <label className="form-label small mb-1 mt-2" htmlFor="phone-numbers">
                       {tr('Numbers to hide')}
@@ -864,10 +872,10 @@ export function PhonePage() {
                         <span>{tr('Loading…')}</span>
                       ) : senders.status === 'error' ? (
                         <span>{tr('Could not load the senders.')}</span>
-                      ) : visibleSenders.length === 0 ? (
+                      ) : senders.data.length === 0 ? (
                         <span>{tr('none')}</span>
                       ) : (
-                        visibleSenders.map((sender) => {
+                        senders.data.map((sender) => {
                           const selected = excludedAddresses.some(
                             (entry) =>
                               entry.toLowerCase() === sender.address.toLowerCase(),

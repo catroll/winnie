@@ -220,50 +220,21 @@ async def test_message_filters_by_direction_and_hidden_numbers(
     ).json()
     assert len(only_inbox) == 4
 
-    # "Hide 5-digit short numbers" removes 10086 and 95566, not 106* or the
-    # mobile; the mobile is stored as +86… too, so that form must survive.
-    no_short = (
-        await phone_client.get(
-            "/api/v1/phone/messages", params={"hide_short_codes": "true"}
-        )
-    ).json()
-    assert [row["body"] for row in no_short] == [
-        "bulk promotion",
-        "reply to the mobile",
-        "received from the mobile",
-    ]
-    assert {row["address"] for row in no_short} == {
-        "1069000000001",
-        "13800138000",
-        "+8613800138000",
-    }
-
-    # "Hide 106 service numbers" removes the 106* bulk sender only.
-    no_bulk = (
+    # "Hide service numbers" removes 10086, 95566 and 106*; the mobile, in
+    # both stored spellings, is the only conversation left.
+    no_service = (
         await phone_client.get(
             "/api/v1/phone/messages", params={"hide_service_numbers": "true"}
         )
     ).json()
-    assert [row["body"] for row in no_bulk] == [
-        "bank notice",
-        "carrier confirmation",
-        "carrier notice",
+    assert [row["body"] for row in no_service] == [
         "reply to the mobile",
         "received from the mobile",
     ]
-
-    # Both categories toggled: a 106* number is not 5 characters and a short
-    # number does not start with 106, so the two rules stack without overlap.
-    no_services = (
-        await phone_client.get(
-            "/api/v1/phone/messages",
-            params={"hide_short_codes": "true", "hide_service_numbers": "true"},
-        )
-    ).json()
-    assert [row["body"] for row in no_services] == [
-        "reply to the mobile",
-        "received from the mobile",
-    ]
+    assert {row["address"] for row in no_service} == {
+        "13800138000",
+        "+8613800138000",
+    }
 
     # Several explicit numbers hide together (the multi-select).
     without_two = (
@@ -303,6 +274,156 @@ async def test_message_filters_by_direction_and_hidden_numbers(
         "reply to the mobile",
         "received from the mobile",
     ]
+
+
+@pytest.mark.asyncio
+async def test_message_service_and_origin_filters(
+    phone_client: httpx.AsyncClient,
+) -> None:
+    """Non-user numbers are one rule, and international is its own view."""
+    device = await register(phone_client)
+    device_id = device["id"]
+    shapes = [
+        ("401", "mobile inbox", "+8613800138000", "inbox", 50),
+        ("402", "mobile sent", "13800138000", "sent", 45),
+        ("403", "landline", "01012345678", "inbox", 40),
+        ("404", "us number", "+14155552671", "inbox", 35),
+        ("405", "uk number", "00447911123456", "inbox", 30),
+        ("406", "118114 extension", "1181142200013", "inbox", 35),
+        ("407", "12520 extension", "125200201211002424", "inbox", 30),
+        ("408", "carrier extension", "10001885", "inbox", 25),
+        ("409", "bulk sender", "1069000000001", "inbox", 20),
+        ("410", "short code", "10086", "inbox", 15),
+        ("411", "106 with plus", "+1069385100336405", "inbox", 10),
+        ("412", "long international", "00791345367763021483", "inbox", 5),
+        ("413", "+00 malformed", "+006287743828294", "inbox", 1),
+    ]
+    for batch in (shapes[:5], shapes[5:10], shapes[10:]):
+        response = await sync(
+            phone_client,
+            device_id,
+            "message",
+            [
+                message(
+                    external_id,
+                    body,
+                    address=address,
+                    direction=direction,
+                    received_at=iso(minutes=minutes),
+                )
+                for external_id, body, address, direction, minutes in batch
+            ],
+        )
+        assert response.status_code == 200, response.text
+
+    hidden = (
+        await phone_client.get(
+            "/api/v1/phone/messages",
+            params={"hide_service_numbers": "true", "limit": 50},
+        )
+    ).json()
+    assert [row["body"] for row in hidden] == [
+        "uk number",
+        "us number",
+        "landline",
+        "mobile sent",
+        "mobile inbox",
+    ]
+    assert "1181142200013" not in {row["address"] for row in hidden}
+    assert "125200201211002424" not in {row["address"] for row in hidden}
+    assert "10001885" not in {row["address"] for row in hidden}
+    # A bulk sender or a malformed number with an international-looking
+    # prefix is not an international user; E.164 bounds the international view.
+    assert "+1069385100336405" not in {row["address"] for row in hidden}
+    assert "006287743828294" not in {row["address"] for row in hidden}
+    assert "00791345367763021483" not in {row["address"] for row in hidden}
+
+    international = (
+        await phone_client.get(
+            "/api/v1/phone/messages",
+            params={"origin": "international", "limit": 50},
+        )
+    ).json()
+    assert [row["address"] for row in international] == [
+        "00447911123456",
+        "+14155552671",
+    ]
+
+    domestic = (
+        await phone_client.get(
+            "/api/v1/phone/messages", params={"origin": "domestic", "limit": 50}
+        )
+    ).json()
+    assert [row["body"] for row in domestic] == [
+        "+00 malformed",
+        "long international",
+        "106 with plus",
+        "short code",
+        "bulk sender",
+        "carrier extension",
+        "12520 extension",
+        "118114 extension",
+        "landline",
+        "mobile sent",
+        "mobile inbox",
+    ]
+
+    normal_domestic = (
+        await phone_client.get(
+            "/api/v1/phone/messages",
+            params={
+                "origin": "domestic",
+                "hide_service_numbers": "true",
+                "limit": 50,
+            },
+        )
+    ).json()
+    assert [row["body"] for row in normal_domestic] == [
+        "landline",
+        "mobile sent",
+        "mobile inbox",
+    ]
+
+    # The picker follows the same filters, so it does not offer a sender that
+    # the list already hides.
+    normal_senders = (
+        await phone_client.get(
+            "/api/v1/phone/messages/senders",
+            params={"hide_service_numbers": "true", "limit": 20},
+        )
+    ).json()
+    assert {row["address"] for row in normal_senders} == {
+        "13800138000",
+        "01012345678",
+        "14155552671",
+        "00447911123456",
+    }
+
+    international_senders = (
+        await phone_client.get(
+            "/api/v1/phone/messages/senders",
+            params={"origin": "international", "limit": 20},
+        )
+    ).json()
+    assert {row["address"] for row in international_senders} == {
+        "14155552671",
+        "00447911123456",
+    }
+
+    domestic_senders = (
+        await phone_client.get(
+            "/api/v1/phone/messages/senders",
+            params={
+                "origin": "domestic",
+                "hide_service_numbers": "true",
+                "limit": 20,
+            },
+        )
+    ).json()
+    assert {row["address"] for row in domestic_senders} == {
+        "13800138000",
+        "01012345678",
+    }
 
 
 @pytest.mark.asyncio
