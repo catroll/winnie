@@ -20,7 +20,7 @@ either unaffordable or dishonest. The useful decomposition is three modes:
 | Mode | Trigger | What happens | Latency |
 |---|---|---|---|
 | **Ambient** | always | the camera and the mic run locally; a detector turns "something happened" into an event; the event becomes a state signal | sub-second to the event, seconds to the state |
-| **On demand** | Winnie decides, or the owner asks | one snapshot or one short clip goes to a vision model; one audio window goes to ASR | 2–8 s |
+| **On demand** | Winnie decides, or the owner asks | one snapshot or one short clip goes to a vision model; one audio window goes to ASR | 2–5 s with a small local model, 15–30 s with a 3B one ([§6.1](#61-what-the-6900hx-can-actually-do-measured-2026-11-01)) |
 | **Conversation** | the owner says "winnie" | wake word opens a voice turn in that room, reply spoken there | 3–6 s |
 
 Everything else — recording, retention, review — is storage, not attention.
@@ -89,11 +89,29 @@ matter more than the model:
 
 - The lens looks at the *room*, not at a doorway only; a person walking in
   should be visible for longer than one frame.
-- No camera in a bathroom, and none pointed at a bed. That is not a legal
-  footnote, it is the difference between a tool and a surveillance system.
+- No camera in a bathroom; and see below for a room that is also used for
+  sleeping.
 - Privacy masks over windows and over the neighbours' side of the glass.
 - Power over Ethernet if there is any chance of running a cable; a Wi-Fi camera
   that drops for 30 s is a camera that missed the event.
+
+### The study that is also the bedroom
+
+The owner spends most of the day in the study and also sleeps there, which
+changes the placement rather than ruling the camera out:
+
+- **The camera covers the desk, not the bed.** Aim it at the chair, the monitor
+  and the door; keep the sleeping area outside the frame or behind a Frigate
+  privacy mask. A masked bed is invisible to recordings and to `look`, which is
+  the point.
+- **Night mode.** From bedtime to wake-up (`body=asleep`) the camera is off or
+  snapshot-only on an explicit request, recording pauses, and the mic stays
+  wake-word-only. The state layer already knows when that is, so the rule is
+  written over projections, not over a separate schedule.
+- **A physical shutter** on the camera, not only a software switch. The owner
+  must be able to make it blind without opening an app.
+- Sleep is then a *watch* signal, not a video one. Do not build sleep staging
+  on a camera, and do not record the bed to prove someone slept.
 
 ## 5. Microphones and speakers
 
@@ -125,16 +143,59 @@ order of preference:
 
 ## 6. The hub
 
-Frigate needs a machine that is on 24/7 and is not the workstation. Decoding
-and detecting continuously beside a development environment is how both become
-unreliable.
+The owner has one machine — a Ryzen 9 6900HX mini-PC, no discrete GPU — and
+wants the camera and the assistant on it. That is viable for **one room**, with
+two facts to design around: the iGPU accelerates decode but not detection, and
+the VLM shares the same RAM as everything else.
+
+### 6.1 What the 6900HX can actually do (measured 2026-11-01)
+
+| Fact | Measurement |
+|---|---|
+| iGPU | Radeon 680M, RDNA2, 12 CU, no dedicated VRAM; GTT 13.3 GiB of the 26 GiB system RAM |
+| Vulkan | Mesa RADV present (`libvulkan_radeon.so`, `radeon_icd.json`), so llama.cpp's Vulkan backend is the realistic path; ROCm support for Rembrandt APUs is unofficial at best |
+| Hardware decode | verified: 720p H.264 decoded through VAAPI at 44× realtime (`ffmpeg -hwaccel vaapi -hwaccel_device /dev/dri/renderD128`), so Frigate's decode is fine |
+| Memory bandwidth | **~46 GB/s** aggregate read (8 threads, 2 GiB buffer); 31–33 GB/s from one thread. DDR5-4800 dual channel peaks at 77 GB/s, so the measured efficiency is normal |
+| Free RAM at measurement | 26 GiB total, ~19 GiB already used by the desktop, the IDE and the services, **no swap** |
+| Free disk | 62 GB on `/` (93 % used) — recordings and models do not fit there |
+
+Two consequences that decide the architecture:
+
+1. **Frigate cannot use the AMD iGPU for object detection.** Its accelerators
+   are OpenVINO (Intel), TensorRT (NVIDIA), Coral/Hailo/MemryX add-ons, and CPU
+   ONNX. On this box detection runs on the 8 Zen 3+ cores. For one camera at
+   detect 5 fps that is affordable; for four it is not, and the CPU is also what
+   the assistant and the IDE use.
+2. **A vision model runs, but slowly, and competes for RAM.** Token generation
+   is bandwidth-bound, so the ceiling is `46 GB/s ÷ model size`.
+
+| Model (Q4) | Weights + vision encoder | Decode ceiling | Realistic decode | Prefill one 1280×720 frame | `look` end to end |
+|---|---|---|---|---|---|
+| SmolVLM-500M | ~0.5 GB | ~90 tok/s | 25–40 tok/s | < 1 s | **2–5 s** |
+| Moondream 2 (1.8B) | ~1.4 GB | ~33 tok/s | 12–20 tok/s | 2–4 s | **6–12 s** |
+| Qwen2.5-VL-3B | ~2.6 GB | ~18 tok/s | 6–10 tok/s | 4–8 s | **15–30 s** |
+
+Those are estimates from the measured bandwidth and the 680M's peak (12 CU ×
+128 lanes × 2.4 GHz ≈ 7.4 TFLOP/s FP16, of which a Vulkan backend realistically
+reaches 20–35 %); they are not a benchmark. The shape is what matters: a small
+model answers in seconds, a 3B model takes half a minute, and neither can watch
+video continuously.
+
+**Therefore:** `look` uses a small local VLM and a downscaled frame (640–960
+px), and a 3B model is a fallback for a hard question, not the default. Rich
+descriptions stay a cloud call the owner explicitly triggers, or wait for a
+discrete GPU. Also note that a first-token latency of 10–30 s is invisible in a
+push notification but is not a conversation.
+
+### 6.2 Parts
 
 | Part | ≈ Price | Why |
 |---|---|---|
-| x86 mini-PC, N100/N150, 16 GB RAM | ¥800–1,200 | Intel Quick Sync decode + OpenVINO detection is enough for 3–4 cameras at detect 5 fps |
-| 2 TB surveillance HDD (WD Purple / SkyHawk) | ¥350–450 | 24/7 write endurance; desktop drives die early here |
+| the existing 6900HX machine | ¥0 | decode + CPU detection for one camera; the VLM runs on demand |
+| 2 TB surveillance HDD (WD Purple / SkyHawk) | ¥350–450 | 24/7 write endurance; the system disk is at 93 % and desktop drives die early here |
+| an N100 mini-PC (only when a second room is added) | ¥800–1,200 | Quick Sync decode + OpenVINO detection takes Frigate off the workstation |
 | 4-port PoE switch (only if PoE cameras) | ¥150–250 | one cable per camera |
-| Coral USB (optional) | ¥500–700 | lowers CPU; not needed at 3 cameras on N100 |
+| Coral USB (optional) | ¥500–700 | lowers CPU; not needed for one camera |
 
 Storage arithmetic, so the disk is sized before the first clip is written: a
 2K camera at 2 Mbps is ~0.9 GB/hour, ~21 GB/day. Four cameras for 14 days is
@@ -150,10 +211,10 @@ frigate:
   shm_size: "256mb"
   volumes:
     - ./config:/config
-    - ./media:/media/frigate
+    - /mnt/recordings/frigate:/media/frigate   # the 2 TB disk, LUKS
     - /etc/localtime:/etc/localtime:ro
   ports: ["5000:5000", "8554:8554", "8555:8555/tcp"]
-  devices: ["/dev/dri:/dev/dri"]      # Quick Sync
+  devices: ["/dev/dri:/dev/dri"]      # VAAPI decode on the 680M
   environment:
     FRIGATE_MQTT_HOST: mqtt
     FRIGATE_GO2RTC_RESTART: "1"
@@ -229,7 +290,8 @@ not suggestions:
 | Configuration | Parts | ≈ Total | What it proves |
 |---|---|---|---|
 | **Zero** | spare phone + existing server | ¥0 | wake word, voice turn, speak, snapshot from the phone camera |
-| **Two rooms** | 2 × Tapo C220, N100 mini-PC, 2 TB HDD, 2 × ESP32-S3 | ¥2,300–2,900 | ambient events, `look`, `listen`, room voice |
+| **One room, this server** | 1 × Tapo C220, 2 TB HDD, spare phone as the mic | ¥600–750 | the study, end to end, on hardware the owner already has |
+| **Two rooms** | 2 × Tapo C220, N100 mini-PC, 2 TB HDD, 2 × ESP32-S3 | ¥2,300–2,900 | ambient events, `look`, `listen`, room voice, Frigate off the workstation |
 | **Four rooms, PoE** | 4 × Reolink PoE, PoE switch, N100, 4 TB, 3 satellites | ¥4,500–6,000 | the whole flat, no Wi-Fi dependency |
 
 ## 10. Phases
@@ -237,19 +299,21 @@ not suggestions:
 | Phase | Scope | Acceptance |
 |---|---|---|
 | S0 | spare phone as the first room node: wake word, dialogue, TTS reply, snapshot | say "winnie" in the room and get an answer from that speaker; `look` returns a description |
-| S1 | Frigate on the mini-PC, one camera, person events into `winnie-state` | "is anyone in the study" is answered from the state, not from a tool call the model had to invent |
-| S2 | two cameras, zones, `look`/`clip`, genai review summary | "what happened in the kitchen this afternoon" is answered from review items |
-| S3 | second room node, mic-gated `listen`, winnie-initiated speech | a state transition speaks in the room, and nothing is recorded when it does not fire |
+| S1 | Frigate on the existing server, one camera in the study, person events into `winnie-state` | "is anyone in the study" is answered from the state, not from a tool call the model had to invent |
+| S2 | zones, `look` with a small local VLM, `clip`, genai review summary | "what happened in the study this afternoon" is answered from review items; `look` returns in under 10 s |
+| S3 | ESP32 node, mic-gated `listen`, winnie-initiated speech, night mode | a state transition speaks in the room; at night the camera is off and nothing is recorded, and it comes back on when `body` says awake |
 
 ## 11. Open questions for the owner
 
 1. **Which Huawei watch**, and is it paired to Huawei Health on one of the two
    phones? That decides whether sleep data needs no purchase at all.
-2. **Is there a GPU** (desktop or server) that can host a local vision model, or
-   is a cloud VLM acceptable for `look`?
-3. **How many rooms**, and can Ethernet be run to them? PoE changes the purchase
-   list.
-4. **Who else lives in the flat**, and how should the camera and mic be
+2. **How many rooms**, and can Ethernet be run to them? PoE changes the purchase
+   list. One room is settled; a second is what forces a decision on Frigate's
+   machine.
+3. **Who else lives in the flat**, and how should the camera and mic be
    disclosed to them?
-5. **Where does the mini-PC live**, and is there a spot with power and a cable
-   to the router?
+4. **Where does the camera sit in the study**, so the desk is in frame and the
+   bed is not?
+5. **Cloud VLM or not**: with the 6900HX, a small local model is fine for "is
+   someone there / at the desk" and poor for reading a screen. Is a cloud call
+   for the hard questions acceptable, and if so with which provider?
