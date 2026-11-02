@@ -1159,3 +1159,104 @@ export interface ProactiveStatus {
   last_error: string;
   latest_update: string;
 }
+
+// -- mailbox settings ---------------------------------------------------
+
+export type MailSecurity = 'ssl' | 'starttls' | 'none';
+export type MailProtocol = 'imap' | 'pop3' | 'none';
+export type MailTestTarget = 'smtp' | 'receive';
+
+export interface MailSmtpView {
+  host: string;
+  port: number;
+  security: MailSecurity;
+  username: string;
+  from_address: string;
+  from_name: string;
+  password_set: boolean;
+}
+
+export interface MailReceiveView {
+  protocol: MailProtocol;
+  host: string;
+  port: number;
+  security: MailSecurity;
+  username: string;
+  use_send_credentials: boolean;
+  folder: string;
+  password_set: boolean;
+}
+
+export interface MailSettings {
+  enabled: boolean;
+  address: string;
+  display_name: string;
+  smtp: MailSmtpView;
+  receive: MailReceiveView;
+  max_messages: number;
+  timeout_seconds: number;
+  updated_at: string;
+  can_send: boolean;
+  can_receive: boolean;
+}
+
+export interface MailSmtpInput {
+  host: string;
+  port: number;
+  security: MailSecurity;
+  username: string;
+  /** Never rendered; null keeps the stored secret, "" clears it. */
+  password: string | null;
+  from_address: string;
+  from_name: string;
+}
+
+export interface MailReceiveInput {
+  protocol: MailProtocol;
+  host: string;
+  port: number;
+  security: MailSecurity;
+  username: string;
+  password: string | null;
+  use_send_credentials: boolean;
+  folder: string;
+}
+
+export interface MailSettingsInput {
+  enabled: boolean;
+  address: string;
+  display_name: string;
+  smtp: MailSmtpInput;
+  receive: MailReceiveInput;
+  max_messages: number;
+  timeout_seconds: number;
+}
+
+export interface MailTestResult {
+  ok: boolean;
+  target: MailTestTarget;
+  detail: string;
+}
+
+export interface MailSendResult {
+  ok: boolean;
+  receipt: string;
+}
+
+export interface MailMessage {
+  uid: string;
+  subject: string;
+  sender: string;
+  to: string;
+  date: string;
+  snippet: string;
+  body: string;
+  unread: boolean;
+  message_id: string;
+}
+
+export interface Mailbox {
+  protocol: MailProtocol;
+  folder: string;
+  messages: MailMessage[];
+}

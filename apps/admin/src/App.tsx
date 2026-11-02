@@ -19,6 +19,7 @@ import { PhonePage } from './pages/PhonePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RoutesPage } from './pages/RoutesPage';
 import { SchedulePage } from './pages/SchedulePage';
+import { SettingsPage } from './pages/SettingsPage';
 import { SkillsPage } from './pages/SkillsPage';
 import { TasksPage } from './pages/TasksPage';
 import { UsersPage } from './pages/UsersPage';
@@ -53,6 +54,7 @@ export function App() {
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/keys" element={<KeysPage />} />
             <Route path="/account" element={<AccountPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route element={<RequireAdmin />}>
               <Route path="/schedule" element={<SchedulePage />} />
               {/* The usage report is a section of the AI providers page now;

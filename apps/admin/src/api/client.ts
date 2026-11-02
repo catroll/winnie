@@ -57,6 +57,12 @@ import type {
   NewsSourceList,
   NewsStatus,
   Minutes,
+  MailSettings,
+  MailSettingsInput,
+  MailSendResult,
+  MailTestResult,
+  MailTestTarget,
+  Mailbox,
   ModelRuntime,
   Readiness,
   RouteList,
@@ -818,6 +824,37 @@ export const api = {
         `meeting.${format === 'markdown' ? 'md' : 'txt'}`,
       ),
     };
+  },
+
+  // -- mailbox settings -------------------------------------------------
+
+  mailSettings(): Promise<MailSettings> {
+    return request<MailSettings>('/api/v1/settings/mail');
+  },
+
+  saveMailSettings(payload: MailSettingsInput): Promise<MailSettings> {
+    return request<MailSettings>('/api/v1/settings/mail', {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+
+  testMail(target: MailTestTarget): Promise<MailTestResult> {
+    return request<MailTestResult>('/api/v1/settings/mail/test', {
+      method: 'POST',
+      body: { target },
+    });
+  },
+
+  sendMailTest(payload: { subject?: string; body?: string; to?: string }): Promise<MailSendResult> {
+    return request<MailSendResult>('/api/v1/settings/mail/send', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  mailMessages(limit = 10): Promise<Mailbox> {
+    return request<Mailbox>(`/api/v1/settings/mail/messages?limit=${limit}`);
   },
 
   // -- phone data ------------------------------------------------------
