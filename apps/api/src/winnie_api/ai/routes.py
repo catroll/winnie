@@ -13,8 +13,9 @@ winnie-llm env backup, because it has no registry to read.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 
+from winnie_gateway.catalog import ModelCatalog
 from winnie_gateway.config import GatewayConfig
 from winnie_gateway.routes import Route
 from winnie_llm import ApiKeys, ProviderRegistry, RouteEntry
@@ -69,3 +70,27 @@ def config_route_table(config: GatewayConfig, keys: ApiKeys) -> dict[str, Route]
             else ("", "")
         ),
     )
+
+
+def vendor_route_table(table: Mapping[str, Route]) -> dict[str, list[Route]]:
+    """Gateway routes grouped by the supplier they carry.
+
+    A model may resolve to a supplier other than the one whose prefix the client
+    called (an alias that the platform re-pointed, or a per-key override), so the
+    data plane needs to find that supplier's route by vendor rather than by name.
+    A vendor with two routes, one per protocol, keeps both.
+    """
+    grouped: dict[str, list[Route]] = {}
+    for route in table.values():
+        if route.vendor:
+            grouped.setdefault(route.vendor, []).append(route)
+    return grouped
+
+
+def published_models(registry: ProviderRegistry) -> ModelCatalog:
+    """The platform model names the gateway accepts, built from the registry.
+
+    This is a snapshot taken whenever the route table is rebuilt, so a console
+    edit to an alias or a target reaches the data plane without a restart.
+    """
+    return ModelCatalog.from_entries(registry.view()["virtual_models"])

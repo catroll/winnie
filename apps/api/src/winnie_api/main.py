@@ -22,6 +22,7 @@ from winnie_core.capability import Capability, WinnieFramework
 from winnie_core.jobs.queue import ArqJobQueue
 from winnie_core.usage.ledger import UsageLedger
 from winnie_gateway.capability import capability as gateway_capability
+from winnie_gateway.catalog import ModelCatalog
 from winnie_gateway.keystore import GatewayKeyStore
 from winnie_gateway.routes import Route
 from winnie_mail.cache import MailCache
@@ -39,7 +40,12 @@ from winnie_llm import ApiKeys, ProviderRegistry
 
 from winnie_api import __version__
 from winnie_api.ai.providers import DynamicChatModel
-from winnie_api.ai.routes import config_route_table, gateway_route_table
+from winnie_api.ai.routes import (
+    config_route_table,
+    gateway_route_table,
+    published_models,
+    vendor_route_table,
+)
 from winnie_api.ai.seed import seed_input
 from winnie_api.gateway.router import router as gateway_admin_router
 from winnie_api.news.gateway import NewsGatewayAdapter
@@ -131,6 +137,22 @@ def create_app(
             return gateway_route_table(ai_settings)
         return config_route_table(gateway_config, api_keys)
 
+    def publish_gateway(app: FastAPI) -> dict[str, Route]:
+        """Rebuild everything the data plane resolves, from one registry read.
+
+        Three pieces must agree: the routes, which supplier each route carries,
+        and which model names the platform publishes. Building them together is
+        what makes a console edit — a new route, a retargeted alias, a removed
+        model — take effect on the next call instead of after a restart.
+        """
+        table = build_route_table()
+        app.state.routes_table = table
+        app.state.vendor_routes = vendor_route_table(table)
+        app.state.model_catalog = (
+            published_models(ai_settings) if ai_settings is not None else ModelCatalog()
+        )
+        return table
+
     http_client = http or httpx.AsyncClient(
         timeout=httpx.Timeout(300.0, connect=30.0)
     )
@@ -178,8 +200,9 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.gateway = gateway_config
         app.state.gateway_keys = gateway_keys
-        app.state.routes_table = build_route_table()
-        app.state.rebuild_routes = build_route_table
+        publish_gateway(app)
+        # A console edit rebuilds all three pieces, not only the route table.
+        app.state.rebuild_routes = lambda: publish_gateway(app)
         # Both of these are startup failures that would otherwise surface as a
         # 401 or 503 on a client that looks correctly configured.
         if not gateway_keys.list():

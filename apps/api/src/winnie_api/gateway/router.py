@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from winnie_core.auth.dependencies import Principal, get_principal
 from winnie_core.auth.roles import ROLE_ADMIN
+from winnie_gateway.catalog import ModelCatalog, ModelTarget
 from winnie_gateway.keystore import (
     GatewayKey,
     GatewayKeyError,
@@ -35,6 +36,9 @@ class KeyDraft(BaseModel):
 
     label: str = Field(min_length=1, max_length=64)
     routes: list[str] = Field(default_factory=list, max_length=64)
+    # A published model name -> "vendor/model". This is how one caller reaches a
+    # different supplier than the platform default; it cannot invent a model.
+    overrides: dict[str, str] = Field(default_factory=dict, max_length=64)
 
 
 def _store(request: Request) -> GatewayKeyStore:
@@ -65,9 +69,58 @@ def _check_routes(request: Request, routes: list[str]) -> list[str]:
     return routes
 
 
+def _catalog(request: Request) -> ModelCatalog | None:
+    return getattr(request.app.state, "model_catalog", None)
+
+
+def _check_overrides(
+    request: Request, overrides: dict[str, str]
+) -> dict[str, str]:
+    """An override may only re-point a published model at a reachable supplier.
+
+    Validated here rather than at call time, because a key that silently answers
+    400 on its first real request is worse than a form that refuses to save it.
+    """
+    if not overrides:
+        return {}
+    catalog = _catalog(request)
+    published = ", ".join(catalog.names) if catalog is not None else ""
+    if catalog is None or catalog.empty:
+        raise HTTPException(
+            status_code=400,
+            detail="no platform models are published; configure AI suppliers first",
+        )
+    routes = getattr(request.app.state, "vendor_routes", {})
+    for name, raw in overrides.items():
+        if catalog.resolve(name) is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"unknown model {name!r} in overrides; "
+                    f"published models: {published or 'none'}"
+                ),
+            )
+        target = ModelTarget.parse(raw)
+        if target is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"override for {name!r} must be 'supplier/model', got {raw!r}",
+            )
+        if target.vendor not in routes:
+            available = ", ".join(sorted(routes)) or "none"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"override for {name!r} targets supplier {target.vendor!r}, "
+                    f"which has no gateway route; suppliers with a route: "
+                    f"{available}"
+                ),
+            )
+    return overrides
+
+
 def _is_admin(principal: Principal) -> bool:
     return principal.role == ROLE_ADMIN
-
 
 def _may_manage(key: GatewayKey, principal: Principal) -> bool:
     """Owners manage their keys; administrators manage every key."""
@@ -102,11 +155,16 @@ async def list_keys(
             )
     else:
         keys = [key for key in keys if _visible_to(key, principal)]
+    catalog = _catalog(request)
     return {
         "keys": [key.view() for key in keys],
         # Names only: the console needs them for the allowlist checkboxes, and
         # a route prefix is not secret.
         "routes": sorted(_known_routes(request)),
+        # The published model names, so the override editor offers real choices
+        # instead of a free-text field that fails on save.
+        "models": catalog.view() if catalog is not None else [],
+        "suppliers": sorted(getattr(request.app.state, "vendor_routes", {})),
     }
 
 
@@ -117,10 +175,12 @@ async def create_key(
     principal: Principal = Depends(get_principal),
 ) -> dict[str, Any]:
     routes = _check_routes(request, payload.routes)
+    overrides = _check_overrides(request, payload.overrides)
     try:
         key, secret = _store(request).create(
             label=payload.label,
             routes=routes,
+            overrides=overrides,
             owner_id=principal.user_id,
             owner_name=principal.username,
         )

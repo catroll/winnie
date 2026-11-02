@@ -128,6 +128,7 @@ class InteractionRecorder:
         key_label: str = "",
         credential_header: str = "",
         model: str = "",
+        requested_model: str = "",
         stream: bool = False,
         client_host: str = "",
         headers: Iterable[tuple[str, str]] | Mapping[str, str] | None = None,
@@ -153,22 +154,26 @@ class InteractionRecorder:
             "request": {
                 "headers": redact_headers(headers or ()),
                 "body_bytes": body_bytes,
+                # ``model`` is what went upstream, ``requested_model`` is what
+                # the caller asked for. They differ whenever the platform
+                # resolved an alias or a key override, and that difference is
+                # the first thing an operator needs when a client complains
+                # that "the same model answers differently".
                 "model": model,
+                "requested_model": requested_model,
                 "stream": stream,
                 "body": body,
             },
         }
-        self._write(
-            prefix,
-            "ask",
-            payload,
-            extra_headers={
-                "session": prefix,
-                "client_url": client_url,
-                "upstream_url": upstream_url,
-                "method": method,
-            },
-        )
+        headers = {
+            "session": prefix,
+            "client_url": client_url,
+            "upstream_url": upstream_url,
+            "method": method,
+        }
+        if requested_model and requested_model != model:
+            headers["model"] = f"{requested_model} -> {model}"
+        self._write(prefix, "ask", payload, extra_headers=headers)
         return prefix
 
     def end_json(

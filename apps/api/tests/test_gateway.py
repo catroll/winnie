@@ -13,9 +13,28 @@ from pydantic import ValidationError
 
 from winnie_api.main import create_app
 from winnie_api.settings import RouteConfig, Settings
+from winnie_gateway.catalog import ModelCatalog
+from winnie_gateway.routes import Route
 
 OPENAI_URL = "/fake-openai/v1/chat/completions"
 ANTHROPIC_URL = "/fake-anthropic/v1/messages"
+
+# The platform publishes one name for the model the fake upstream serves, plus
+# the two spellings clients still send for it.
+PUBLISHED = [
+    {
+        "id": "deepseek-flash",
+        "label": "DeepSeek Flash",
+        "aliases": ["deepseek-v4-flash", "deepseek-v4.1-flash"],
+        "vendor": "fake",
+        "model": "fake-model",
+    },
+    {
+        "id": "slow-chat",
+        "vendor": "other",
+        "model": "claude-x",
+    },
+]
 
 CHAT_BODY = {
     "model": "fake-model",
@@ -441,3 +460,108 @@ def test_settings_reject_unknown_keys() -> None:
     # The shared-key design is gone; a stale config must not be accepted.
     with pytest.raises(ValidationError):
         Settings.model_validate({"proxy_api_key": "secret"})
+
+
+# -- published model names -------------------------------------------------
+
+
+def _publish(app, entries: list[dict] | None = None) -> None:
+    """Give the app a platform catalog and a second supplier to reach."""
+    other = Route(
+        name="fake-other",
+        protocol="openai",
+        base_url="https://fake.openai",
+        vendor="other",
+        api_key="other-vendor-key",
+    )
+    app.state.routes_table["fake-other"] = other
+    app.state.vendor_routes["other"] = [other]
+    app.state.model_catalog = ModelCatalog.from_entries(entries or PUBLISHED)
+
+
+async def test_a_model_the_platform_does_not_publish_is_refused(
+    gateway_app,
+    gateway_client: httpx.AsyncClient,
+    upstream,
+    settings: Settings,
+) -> None:
+    """The key is valid; the model is not one the platform offers."""
+    _publish(gateway_app)
+    response = await gateway_client.post(
+        OPENAI_URL, json={"model": "gpt-5.5", "messages": []}
+    )
+
+    assert response.status_code == 400
+    message = response.json()["error"]["message"]
+    assert "not published" in message
+    # The message names what is available, so the caller can fix the request.
+    assert "deepseek-flash" in message
+    assert upstream.requests == []
+
+    record = _record_payload(
+        _rejected_files(settings.resolve_log_root(), "fake-openai")[-1]
+    )
+    assert record["rejection"]["status_code"] == 400
+    assert "gpt-5.5" in record["rejection"]["reason"]
+
+
+async def test_an_alias_is_forwarded_as_the_model_it_names(
+    gateway_app,
+    gateway_client: httpx.AsyncClient,
+    upstream,
+    settings: Settings,
+) -> None:
+    """Two old spellings and one new name all reach the same upstream model."""
+    _publish(gateway_app)
+    response = await gateway_client.post(
+        OPENAI_URL, json={"model": "deepseek-v4.1-flash", "messages": []}
+    )
+
+    assert response.status_code == 200
+    forwarded = json.loads(upstream.requests[-1].content)
+    assert forwarded["model"] == "fake-model"
+    assert forwarded["messages"] == []
+
+    ask = _record_payload(
+        _ask_files(settings.resolve_log_root(), "fake-openai")[-1]
+    )
+    assert ask["request"]["requested_model"] == "deepseek-v4.1-flash"
+    assert ask["request"]["model"] == "fake-model"
+
+
+async def test_a_keys_override_sends_a_model_to_another_supplier(
+    gateway_app,
+    upstream,
+) -> None:
+    """The same call name, followed by the key's policy, not the platform's."""
+    _publish(gateway_app)
+    _, secret = gateway_app.state.gateway_keys.create(
+        label="pinned", overrides={"deepseek-flash": "other/claude-x"}
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=gateway_app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {secret}"},
+    ) as client:
+        response = await client.post(
+            OPENAI_URL, json={"model": "deepseek-v4-flash", "messages": []}
+        )
+
+    assert response.status_code == 200
+    forwarded = upstream.requests[-1]
+    assert forwarded.headers["authorization"] == "Bearer other-vendor-key"
+    assert json.loads(forwarded.content)["model"] == "claude-x"
+
+
+async def test_without_a_catalog_the_model_travels_unchanged(
+    gateway_client: httpx.AsyncClient,
+    upstream,
+) -> None:
+    """A gateway-only deployment has no registry; it must keep working."""
+    response = await gateway_client.post(
+        OPENAI_URL, json={"model": "anything-goes", "messages": []}
+    )
+
+    assert response.status_code == 200
+    assert json.loads(upstream.requests[-1].content)["model"] == "anything-goes"
+

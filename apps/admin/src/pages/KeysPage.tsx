@@ -26,6 +26,9 @@ export function KeysPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [label, setLabel] = useState('');
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [overrideModel, setOverrideModel] = useState('');
+  const [overrideTarget, setOverrideTarget] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
@@ -34,7 +37,14 @@ export function KeysPage() {
   const keys = useApi(() => api.gatewayKeys(scope), [scope]);
 
   const availableRoutes = keys.data?.routes ?? [];
+  const publishedModels = keys.data?.models ?? [];
   const activeKeys = (keys.data?.keys ?? []).filter((key) => !key.revoked_at);
+
+  // Every published target, offered as a suggestion. The field stays free text
+  // because a supplier may serve a model the platform has not published yet.
+  const targetSuggestions = Array.from(
+    new Set(publishedModels.map((model) => `${model.vendor}/${model.model}`)),
+  ).sort();
 
   const toggleRoute = (name: string) => {
     setSelectedRoutes((current) =>
@@ -42,6 +52,24 @@ export function KeysPage() {
         ? current.filter((item) => item !== name)
         : [...current, name],
     );
+  };
+
+  const addOverride = () => {
+    const name = overrideModel.trim();
+    const target = overrideTarget.trim();
+    if (!name || !target) {
+      return;
+    }
+    setOverrides((current) => ({ ...current, [name]: target }));
+    setOverrideTarget('');
+  };
+
+  const removeOverride = (name: string) => {
+    setOverrides((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
   };
 
   const createKey = async (event: FormEvent<HTMLFormElement>) => {
@@ -52,11 +80,13 @@ export function KeysPage() {
       const created = await api.createGatewayKey({
         label: label.trim(),
         routes: selectedRoutes,
+        overrides,
       });
       setSecret(created.secret);
       setCreateOpen(false);
       setLabel('');
       setSelectedRoutes([]);
+      setOverrides({});
       keys.reload();
     } catch (error) {
       setActionError(messageOf(error));
@@ -239,6 +269,81 @@ export function KeysPage() {
                             {tr('Leave every box unchecked to allow all routes.')}
                           </div>
                         </div>
+                        <div className="col-12">
+                          <span className="form-label d-block">
+                            {tr('Model overrides')}
+                          </span>
+                          <div className="row g-2">
+                            <div className="col-md-5">
+                              <input
+                                className="form-control font-monospace"
+                                list="gateway-key-model-names"
+                                value={overrideModel}
+                                onChange={(event) => setOverrideModel(event.target.value)}
+                                placeholder={tr('Model name, e.g. deepseek-flash')}
+                                aria-label={tr('Published model name')}
+                              />
+                              <datalist id="gateway-key-model-names">
+                                {publishedModels.map((model) => (
+                                  <option key={model.id} value={model.id} />
+                                ))}
+                                {publishedModels.flatMap((model) =>
+                                  model.aliases.map((alias) => (
+                                    <option key={alias} value={alias} />
+                                  )),
+                                )}
+                              </datalist>
+                            </div>
+                            <div className="col-md-5">
+                              <input
+                                className="form-control font-monospace"
+                                list="gateway-key-model-targets"
+                                value={overrideTarget}
+                                onChange={(event) => setOverrideTarget(event.target.value)}
+                                placeholder={tr('supplier/model')}
+                                aria-label={tr('Supplier model')}
+                              />
+                              <datalist id="gateway-key-model-targets">
+                                {targetSuggestions.map((target) => (
+                                  <option key={target} value={target} />
+                                ))}
+                              </datalist>
+                            </div>
+                            <div className="col-md-2">
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary btn-sm w-100"
+                                onClick={addOverride}
+                                disabled={!overrideModel.trim() || !overrideTarget.trim()}
+                              >
+                                {tr('Add')}
+                              </button>
+                            </div>
+                          </div>
+                          <div className="form-text">
+                            {tr(
+                              'Send a published model name to another supplier for this key. The name itself must be one the platform publishes.',
+                            )}
+                          </div>
+                          {Object.keys(overrides).length > 0 ? (
+                            <ul className="list-unstyled small mt-2 mb-0">
+                              {Object.entries(overrides).map(([name, target]) => (
+                                <li key={name} className="d-flex align-items-center gap-2">
+                                  <code>{name}</code>
+                                  <i className="bi bi-arrow-right" aria-hidden="true" />
+                                  <code>{target}</code>
+                                  <button
+                                    type="button"
+                                    className="btn btn-link btn-sm p-0"
+                                    onClick={() => removeOverride(name)}
+                                  >
+                                    {tr('Remove')}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="d-flex justify-content-end gap-2 mt-3">
                         <button
@@ -307,6 +412,11 @@ export function KeysPage() {
                                     </code>
                                   ))
                                 )}
+                                {Object.entries(key.overrides).map(([name, target]) => (
+                                  <span className="d-block small text-secondary" key={name}>
+                                    {name} → <code>{target}</code>
+                                  </span>
+                                ))}
                               </td>
                               <td className="text-nowrap text-secondary">
                                 {formatDateTime(key.created_at)}

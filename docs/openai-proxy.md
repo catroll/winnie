@@ -72,6 +72,7 @@ without a restart.
 
 | Status | Meaning |
 |---|---|
+| `400` | The body names a model this platform does not publish, or one whose supplier has no gateway route. |
 | `401` | No key, or a key that is invalid/revoked. Also returned when a vendor key is sent by mistake. |
 | `403` | The key is valid but its allowlist does not include this route. |
 | `404` | The path prefix is not a configured route. |
@@ -106,13 +107,52 @@ One credential per supplier means rotating it cuts over every route for that
 supplier at once. A saved key reaches the next request without a restart; only a
 gateway-only deployment reading the environment file needs one.
 
+## Model names
+
+A client asks for a **platform model**, not a supplier model: the name in the
+body's `model` field is the one the console publishes under *Virtual models*
+(Admin → AI suppliers). The platform dereferences it twice, in this order:
+
+```
+deepseek-v4.1-flash    ← what the client sent (an alias)
+      ↓ alias table
+deepseek-flash         ← the published platform model
+      ↓ target (+ this key's override, if any)
+deepseek / deepseek-flash   ← supplier and upstream model id
+```
+
+* **Aliases** are other spellings of the same platform model. They exist because
+  suppliers rename models between releases while clients keep sending the old
+  name for a while. Two spellings, one upstream target, one row in the catalog.
+* **The target** is the supplier and upstream model id the platform chose. An
+  administrator changes it in the console; no client changes anything.
+* **Overrides** are per-key redirections: a published name mapped to a different
+  supplier's model for one key. They change *where* a name is served, never
+  *which* names exist, so the published list stays the complete answer to "what
+  may I call?".
+
+A body whose `model` is not published is refused with `400` before a byte leaves
+the process, and the message lists the names that are published. This is the gate
+that makes the catalog authoritative: a key cannot reach a supplier model the
+platform did not publish, even if the supplier would accept it.
+
+The body is re-serialised only when the upstream model id differs from the name
+the client sent, and only that one field changes. Requests with no JSON body, or
+no `model` field (model listings, multipart uploads), are forwarded untouched —
+those endpoints have nothing to resolve.
+
+A gateway-only deployment (`ai.enabled: false`) has no registry and therefore no
+catalog; there the model name travels through unchanged, which is the behaviour
+every earlier release had.
+
 ## What is forwarded
 
 * the method and the path (`GET /v1/models`, `POST /v1/embeddings`,
   `POST /v1/messages`, `POST /v1/chat/completions`, `DELETE /v1/files/…`, …);
 * the raw query string;
 * every request header except the ones listed below;
-* the request body byte for byte;
+* the request body byte for byte, except that a `model` field naming an alias is
+  rewritten to the supplier's own model id (see *Model names*);
 * the upstream response status, body and headers, including request ids,
   rate-limit headers and `Retry-After`.
 

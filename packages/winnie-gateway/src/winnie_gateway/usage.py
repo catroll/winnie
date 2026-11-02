@@ -77,6 +77,7 @@ def usage_observer(
     stream: bool,
     endpoint: str,
     key: GatewayKey,
+    requested_model: str = "",
 ) -> Callable[[UpstreamOutcome], None] | None:
     """Build the callback the forwarder invokes once per upstream call."""
     if usage is None:
@@ -100,6 +101,10 @@ def usage_observer(
                 "key_id": key.id,
                 "key_label": key.label,
                 "key_owner": key.owner_id,
+                # The name the caller used, when it differs from the upstream
+                # model. Billing follows ``model``; this is for tracing a
+                # complaint back to the platform name that produced it.
+                "requested_model": requested_model,
             },
         )
         try:

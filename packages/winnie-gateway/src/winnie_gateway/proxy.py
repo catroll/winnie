@@ -9,6 +9,10 @@ Only three things are taken over:
 
 * the credential — the caller's Winnie key is removed and the route's vendor key
   is injected;
+* the model name — the caller asks for a platform model, and the body is handed
+  to this module already rewritten to the supplier's own model id (the
+  resolution itself lives in :mod:`winnie_gateway.router` and
+  :mod:`winnie_gateway.catalog`);
 * observability — the request and the response are copied into the ask/answer
   log and the usage ledger, without altering the bytes that are forwarded;
 * framing headers — hop-by-hop headers, ``content-length`` and
@@ -258,15 +262,21 @@ async def forward(
     request: Request,
     route: Route,
     path: str,
+    body: bytes,
     default_anthropic_version: str,
     client: httpx.AsyncClient,
     recorder: InteractionRecorder,
     key: GatewayKey,
     credential_header: str,
     usage: UsageSink | None,
+    requested_model: str = "",
 ) -> Response:
-    """Forward one call to ``route`` and return the upstream's own answer."""
-    body = await request.body()
+    """Forward one call to ``route`` and return the upstream's own answer.
+
+    ``body`` is handed in already read, because the caller may have had to
+    resolve and rewrite the model name in it before any byte was sent upstream.
+    Everything else about the call still travels unchanged.
+    """
     parsed = _parse_json(body)
     url = _upstream_url(request, route, path)
     model = str(parsed.get("model") or "") if isinstance(parsed, dict) else ""
@@ -288,6 +298,7 @@ async def forward(
         key_label=key.label,
         credential_header=credential_header,
         model=model,
+        requested_model=requested_model,
         stream=stream_requested,
         client_host=request.client.host if request.client else "",
         headers=request.headers.items(),
@@ -301,6 +312,7 @@ async def forward(
         stream=stream_requested,
         endpoint=f"/{path.lstrip('/')}",
         key=key,
+        requested_model=requested_model,
     )
     started = time.perf_counter()
     try:

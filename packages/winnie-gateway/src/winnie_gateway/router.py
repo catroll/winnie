@@ -13,6 +13,7 @@ failure an operator cannot reconstruct after the caller reports it.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 from winnie_core.auth.dependencies import admin_required
+from winnie_gateway.catalog import ModelCatalog
 from winnie_gateway.keystore import GatewayKey, GatewayKeyStore
 from winnie_gateway.proxy import error_response, forward
 from winnie_gateway.record import (
@@ -60,6 +62,21 @@ class _Rejection:
     error_type: str = "api_error"
 
 
+@dataclass(frozen=True)
+class _Call:
+    """One call after the platform resolved the model name in its body.
+
+    ``route`` is where the bytes are actually sent: the entry route normally,
+    and a different supplier's route when the caller's key overrides the target.
+    ``requested_model`` is what the client wrote, which may be an alias.
+    """
+
+    route: Route
+    body: bytes
+    requested_model: str = ""
+    upstream_model: str = ""
+
+
 def _gateway_keys(request: Request) -> GatewayKeyStore:
     store = getattr(request.app.state, "gateway_keys", None)
     if store is None:
@@ -82,6 +99,21 @@ def _get_route(request: Request, route_name: str) -> Route:
 def _usage(request: Request):
     """The host's usage ledger, when recording is enabled."""
     return getattr(request.app.state, "usage_ledger", None)
+
+
+def _model_catalog(request: Request) -> ModelCatalog | None:
+    """The platform's published model names, when the host configured them.
+
+    A gateway-only deployment has no registry and therefore no catalog; it keeps
+    forwarding the model name the client sent, which is the pre-catalog
+    behaviour.
+    """
+    return getattr(request.app.state, "model_catalog", None)
+
+
+def _vendor_routes(request: Request) -> dict[str, list[Route]]:
+    """Gateway routes by supplier, so an override can reach another supplier."""
+    return getattr(request.app.state, "vendor_routes", {})
 
 
 def _recorder(request: Request, *, bucket: str, service: str) -> InteractionRecorder:
@@ -155,6 +187,78 @@ def _authenticate(
             "permission_error",
         )
     return record, None
+
+
+def _route_for_vendor(
+    request: Request, vendor: str, protocol: str
+) -> Route | None:
+    """The gateway route that serves ``vendor``, preferring the same protocol."""
+    options = _vendor_routes(request).get(vendor) or []
+    for route in options:
+        if route.protocol == protocol:
+            return route
+    return options[0] if options else None
+
+
+def _resolve_model(
+    request: Request,
+    catalog: ModelCatalog | None,
+    caller: GatewayKey,
+    body: bytes,
+    entry: Route,
+) -> _Call | _Rejection:
+    """Resolve the model name this call asks for, and rewrite it for the supplier.
+
+    A call is only forwarded when its body names a published platform model, so
+    a key cannot reach a supplier model that the platform did not publish. The
+    body is returned as-is when there is no JSON model field to resolve (a
+    listing call, a multipart upload), because those endpoints have nothing to
+    resolve and rewriting them would corrupt what the caller meant.
+    """
+    if catalog is None or catalog.empty:
+        return _Call(route=entry, body=body)
+    parsed = snapshot_body(body)
+    if not isinstance(parsed, dict):
+        return _Call(route=entry, body=body)
+    requested = str(parsed.get("model") or "").strip()
+    if not requested:
+        return _Call(route=entry, body=body)
+
+    target = catalog.target_for(requested, caller.overrides)
+    if target is None:
+        published = ", ".join(catalog.names) or "none"
+        return _Rejection(
+            400,
+            f"model {requested!r} is not published by this platform; "
+            f"published models: {published}",
+            "invalid_request_error",
+        )
+
+    route = entry
+    if target.vendor != entry.vendor:
+        route = _route_for_vendor(request, target.vendor, entry.protocol)
+        if route is None:
+            return _Rejection(
+                400,
+                f"model {requested!r} is served by supplier {target.vendor!r}, "
+                "which has no gateway route",
+                "invalid_request_error",
+            )
+
+    rewritten = body
+    if requested != target.model:
+        # The supplier must receive its own model id; only the one field changes
+        # and the rest of the document is re-serialised as it arrived.
+        parsed["model"] = target.model
+        rewritten = json.dumps(parsed, separators=(",", ":"), ensure_ascii=False).encode(
+            "utf-8"
+        )
+    return _Call(
+        route=route,
+        body=rewritten,
+        requested_model=requested,
+        upstream_model=target.model,
+    )
 
 
 async def _record_refusal(
@@ -263,14 +367,45 @@ async def proxy_path(route: str, path: str, request: Request) -> Response:
         )
         return error_response(resolved.protocol, 503, message)
 
+    body = await request.body()
+    call = _resolve_model(
+        request, _model_catalog(request), caller, body, resolved
+    )
+    if isinstance(call, _Rejection):
+        await _record_refusal(
+            request,
+            recorder=recorder,
+            status_code=call.status_code,
+            reason=call.message,
+            route_name=resolved.name,
+            protocol=resolved.protocol,
+            key_label=caller.label,
+        )
+        return error_response(
+            resolved.protocol,
+            call.status_code,
+            call.message,
+            error_type=call.error_type,
+        )
+    if call.route is not resolved:
+        logger.info(
+            "model %r is served by %s, not %s; forwarding to %s",
+            call.requested_model,
+            call.route.vendor,
+            resolved.vendor,
+            call.route.name,
+        )
+
     return await forward(
         request=request,
-        route=resolved,
+        route=call.route,
         path=path,
+        body=call.body,
         default_anthropic_version=request.app.state.gateway.anthropic_version,
         client=request.app.state.http,
         recorder=recorder,
         key=caller,
         credential_header=presented_header(request),
         usage=_usage(request),
+        requested_model=call.requested_model,
     )

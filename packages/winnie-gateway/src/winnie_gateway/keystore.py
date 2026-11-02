@@ -14,6 +14,11 @@ A key may be restricted to a set of route names. An empty ``routes`` list means
 "every gateway route", which is the convenient default for a personal
 deployment; a restriction is what makes a key that belongs to a phone or a
 build agent harmless when it is copied somewhere else.
+
+A key may also carry ``overrides``: a map from a published model name to
+``vendor/model``, used when this caller must reach a different supplier than the
+platform default. The name still has to be a published model — an override moves
+where it is served, it does not invent a model.
 """
 
 from __future__ import annotations
@@ -31,10 +36,13 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from winnie_gateway.catalog import ModelTarget
+
 SECRET_PREFIX = "wsk_"
 FILE_VERSION = 1
 MAX_LABEL = 64
 MAX_ROUTES = 64
+MAX_OVERRIDES = 64
 
 
 class GatewayKeyError(RuntimeError):
@@ -70,8 +78,32 @@ class GatewayKey(BaseModel):
     created_at: str
     revoked_at: str | None = None
     routes: list[str] = Field(default_factory=list)
+    # A published model name -> "vendor/model". Applied after the platform
+    # catalog resolves the name, so an override can only move a name that
+    # already exists (see ``ModelCatalog.target_for``).
+    overrides: dict[str, str] = Field(default_factory=dict)
     owner_id: str = ""
     owner_name: str = ""
+
+    @field_validator("overrides")
+    @classmethod
+    def _overrides(cls, value: dict[str, str]) -> dict[str, str]:
+        cleaned: dict[str, str] = {}
+        for name, target in value.items():
+            key = str(name).strip()
+            if not key:
+                raise ValueError("an override needs a model name")
+            if ModelTarget.parse(str(target)) is None:
+                raise ValueError(
+                    f"override for {key!r} must be written 'vendor/model', "
+                    f"got {target!r}"
+                )
+            cleaned[key] = str(target).strip()
+        if len(cleaned) > MAX_OVERRIDES:
+            raise ValueError(
+                f"a gateway key may override at most {MAX_OVERRIDES} models"
+            )
+        return cleaned
 
     @property
     def revoked(self) -> bool:
@@ -91,6 +123,7 @@ class GatewayKey(BaseModel):
             "created_at": self.created_at,
             "revoked_at": self.revoked_at,
             "routes": list(self.routes),
+            "overrides": dict(self.overrides),
             "owner_id": self.owner_id,
             "owner_name": self.owner_name,
         }
@@ -133,6 +166,28 @@ def _normalise_routes(routes: list[str] | tuple[str, ...] | None) -> list[str]:
     if len(seen) > MAX_ROUTES:
         raise GatewayKeyError(f"a gateway key may name at most {MAX_ROUTES} routes")
     return seen
+
+
+def _normalise_overrides(
+    overrides: dict[str, str] | None,
+) -> dict[str, str]:
+    cleaned: dict[str, str] = {}
+    for name, target in (overrides or {}).items():
+        key = str(name).strip()
+        if not key:
+            raise GatewayKeyError("an override needs a model name")
+        parsed = ModelTarget.parse(str(target))
+        if parsed is None:
+            raise GatewayKeyError(
+                f"override for {key!r} must be written 'vendor/model', "
+                f"got {target!r}"
+            )
+        cleaned[key] = parsed.key()
+    if len(cleaned) > MAX_OVERRIDES:
+        raise GatewayKeyError(
+            f"a gateway key may override at most {MAX_OVERRIDES} models"
+        )
+    return cleaned
 
 
 class GatewayKeyStore:
@@ -187,12 +242,14 @@ class GatewayKeyStore:
         *,
         label: str,
         routes: list[str] | tuple[str, ...] | None = None,
+        overrides: dict[str, str] | None = None,
         owner_id: str = "",
         owner_name: str = "",
     ) -> tuple[GatewayKey, str]:
         """Issue one key and return it with the secret, which is stored nowhere."""
         cleaned = _validate_label(label)
         allowed = _normalise_routes(routes)
+        override = _normalise_overrides(overrides)
         secret = f"{SECRET_PREFIX}{secrets.token_urlsafe(32)}"
         key = GatewayKey(
             id=secrets.token_hex(4),
@@ -200,6 +257,7 @@ class GatewayKeyStore:
             digest=digest_secret(secret),
             created_at=utcnow(),
             routes=allowed,
+            overrides=override,
             owner_id=owner_id.strip(),
             owner_name=owner_name.strip(),
         )
