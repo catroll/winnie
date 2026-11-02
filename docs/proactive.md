@@ -5,8 +5,12 @@ contact birthdays, the chat lookup, the memory guard, the engine
 (`winnie-proactive`) with planning, policy, ntfy/email channels, the ladder, the
 digest, the console Inbox, the acknowledgement endpoints, the Android notification
 actions and the optional model composer. Channels: push, ntfy and email are
-configured. Open: the `winnie` calendar alarm path (§6), a deep link into the
-conversation, and a physical-device run. Last updated: 2026-11-02.
+configured, and **email is proven end to end** (2026-11-02: the authorization
+code in `apps/api/.env` logged in to `smtp.126.com:465`, and
+`POST /api/v1/proactive/test {"channel": "email"}` came back
+`{"delivered": true, "receipt": "smtp ninedoors@126.com"}`). Open: the `winnie`
+calendar alarm path (§6), a deep link into the conversation, and a
+physical-device run. Last updated: 2026-11-02.
 
 Winnie today answers when asked and pushes only what a watch was already told to
 watch (weather, gold, scheduled-task results). This document plans the other
@@ -571,7 +575,18 @@ Prerequisite: the current debug APK
 4. **Email**: the 126 mailbox needs its **authorization code**, not the login
    password, in `WINNIE_SMTP_PASSWORD`. Without it the channel reports the
    missing variable and the ladder skips it. `POST /api/v1/proactive/test`
-   with `{"channel": "email"}` tests that rung alone.
+   with `{"channel": "email"}` tests that rung alone. The account is
+   `ninedoors@126.com`, `smtp.126.com:465` with implicit TLS.
+   **Editing `.env` needs a restart**: `make api` sources the file into the
+   shell that execs uvicorn, and `--reload` watches `*.py` only, so a running
+   process keeps the old environment. After restarting, confirm the worker has
+   it — `tr '\0' '\n' < /proc/<worker-pid>/environ | grep -c '^WINNIE_SMTP_PASSWORD='`
+   — otherwise the rung reports "are not set" while the file looks correct.
+   **The Sent folder is the proof, not the INBOX.** 126 archives a message
+   addressed to the account's own address in Sent and does not loop it back to
+   INBOX, so a self-addressed test that shows up nowhere in INBOX is delivered,
+   not lost. Checking INBOX over IMAP needs an `ID` command first; without it
+   126 answers `SELECT Unsafe Login. Please contact kefu@188.com for help`.
 5. **Escalation**: send a test and leave it. At +20 minutes the next rung is
    tried, at +60 the next, and what is left joins the digest.
 6. **Quiet hours** are bypassed by a manual test on purpose; real items are

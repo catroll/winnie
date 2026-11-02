@@ -799,3 +799,51 @@ process that owned it was gone; the 09:00 birthday reminder never fired, and on
 restart the still-planned item would have fired at 22:00. Dispatch now expires a
 P0/P1 item older than `catch_up_hours`; a late reminder is not a reminder. A
 self-hosted reminder engine is only as reliable as the process running it.
+
+## A mailbox you send to yourself proves SMTP, not delivery (2026-11-02)
+
+**Signal.** The email rung reported success — `receipt: smtp ninedoors@126.com` —
+and the message appeared in the account's Sent folder with a server-assigned
+`Message-Id`, yet the INBOX still held 46 messages and Junk still held 2. Read
+literally, that says the mail left and never arrived.
+
+**Cause.** 126 (Coremail) archives a message addressed to the account's own
+address in Sent and does not loop it back into INBOX. Nothing was lost: the SMTP
+`250`, the Sent copy and its `Message-Id` are the whole proof a self-addressed
+test can produce, and they are exactly what the channel can observe. "It is not
+in INBOX" is therefore not a delivery failure for this test — only a second
+mailbox settles inbox delivery.
+
+**Check.** Ask the account where the message is, not where you expected it:
+
+```
+imaplib.Commands['ID'] = ('NONAUTH', 'AUTH', 'SELECTED')
+M = imaplib.IMAP4_SSL('imap.126.com', 993)
+M.login(user, authorization_code)
+M._simple_command('ID', '("name" "winnie" "version" "0.1" "vendor" "catroll")')
+M.select('"&XfJT0ZAB-"')      # the Sent folder, modified UTF-7
+```
+
+The `ID` command is not optional on 126: without it `SELECT` answers
+`NO [b'SELECT Unsafe Login. Please contact kefu@188.com for help']` for every
+folder, which reads like "IMAP is disabled for this account" or "the
+authorization code is wrong" and is neither — it is the client-identification
+requirement NetEase imposes. `imaplib` has no `ID` verb, so it must be registered
+before use, and the failure without it is a `SELECT` error, not a login error.
+
+**Second trap, same afternoon.** An `.env` that gains `WINNIE_SMTP_PASSWORD`
+changes nothing until the API is restarted: `make api` sources the file into the
+shell that execs uvicorn, and `--reload` watches `*.py` only. The channel kept
+answering `WINNIE_SMTP_USER / WINNIE_SMTP_PASSWORD are not set` while the file
+plainly contained both. Confirm the *process*, not the file:
+
+```bash
+tr '\0' '\n' < /proc/$(pgrep -f 'uvicorn winnie_api' | head -1)/environ \
+  | grep -c '^WINNIE_SMTP_PASSWORD='
+```
+
+**Generalisable.** A delivery test only covers the half it can observe. When the
+sender and the recipient are the same account, the receiving side's archive is
+the only record; a missing copy in the expected mailbox is a property of the
+provider's routing, not of the send. Pick the second mailbox for the delivery
+assertion, and use the sender's Sent folder for the "did it leave" assertion.
