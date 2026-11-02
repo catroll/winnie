@@ -19,12 +19,14 @@ failures and are not:
 
 from __future__ import annotations
 
+import base64
+import binascii
 import html
 import imaplib
 import poplib
 import re
 import smtplib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from email import message_from_bytes, policy
 from email.header import decode_header, make_header
 from email.headerregistry import Address
@@ -61,6 +63,10 @@ class MailTransportError(MailError):
     """The server could not be reached, or answered with an error."""
 
 
+class MailUnavailable(MailError):
+    """The cache has no database, so browsing is not possible on this host."""
+
+
 @dataclass(frozen=True)
 class MailMessage:
     """One message as the console shows it: headers plus a short body preview."""
@@ -74,6 +80,74 @@ class MailMessage:
     body: str
     unread: bool
     message_id: str
+
+
+@dataclass(frozen=True)
+class FolderInfo:
+    """One mailbox folder. ``name`` is the server's spelling, not the label."""
+
+    name: str
+    display_name: str
+    delimiter: str = ""
+    selectable: bool = True
+
+
+@dataclass(frozen=True)
+class HeaderMessage:
+    """Headers only: what a sync stores before anyone opens the message."""
+
+    uid: str
+    subject: str
+    sender: str
+    to: str
+    date: str
+    message_id: str
+    unread: bool
+    size: int
+
+
+@dataclass
+class FolderSnapshot:
+    """One folder's answer to "what changed since the cursor".
+
+    ``fetched`` are new messages, ``flags`` is the unread state of messages
+    already cached, and ``removed`` lists uids the server no longer has. A
+    changed ``uid_validity`` sets ``reset``: every cached uid in that folder is
+    meaningless and must be dropped before applying the snapshot.
+    """
+
+    folder: FolderInfo
+    uid_validity: int = 0
+    total: int = 0
+    unread: int = 0
+    fetched: list[HeaderMessage] = field(default_factory=list)
+    flags: dict[str, bool] = field(default_factory=dict)
+    removed: list[str] = field(default_factory=list)
+    reset: bool = False
+    high_uid: int = 0
+
+
+@dataclass(frozen=True)
+class FolderPlan:
+    """One folder to visit, with the cursor the last sync left behind."""
+
+    folder: FolderInfo
+    known_uids: frozenset[str] = frozenset()
+    last_uid: int = 0
+    uid_validity: int = 0
+
+
+@dataclass
+class FolderResult:
+    """Either a folder's snapshot or the reason it could not be read.
+
+    One broken folder must not abandon the sweep: a folder the server refuses is
+    recorded, the rest are still synced, and the next pass retries it.
+    """
+
+    folder: FolderInfo
+    snapshot: FolderSnapshot | None = None
+    error: str = ""
 
 
 # -- helpers -------------------------------------------------------------
@@ -156,7 +230,7 @@ def _date_of(message) -> str:
         return raw
 
 
-def _parse(raw: bytes, *, uid: str, unread: bool) -> MailMessage:
+def _parse(raw: bytes, *, uid: str, unread: bool, body_limit: int = 4000) -> MailMessage:
     message = message_from_bytes(raw, policy=policy.default)
     text = _plain_text(message)
     return MailMessage(
@@ -166,10 +240,58 @@ def _parse(raw: bytes, *, uid: str, unread: bool) -> MailMessage:
         to=_addresses(message.get("To")),
         date=_date_of(message),
         snippet=_snippet(text),
-        body=text.strip()[:4000],
+        body=text.strip()[:body_limit],
         unread=unread,
         message_id=_header(message.get("Message-ID")),
     )
+
+
+def _parse_headers(raw: bytes, *, uid: str, unread: bool, size: int) -> HeaderMessage:
+    message = message_from_bytes(raw, policy=policy.default)
+    return HeaderMessage(
+        uid=uid,
+        subject=_header(message.get("Subject")) or "(no subject)",
+        sender=_addresses(message.get("From")),
+        to=_addresses(message.get("To")),
+        date=_date_of(message),
+        message_id=_header(message.get("Message-ID")),
+        unread=unread,
+        size=size,
+    )
+
+
+def _decode_modified_utf7(value: str) -> str:
+    """RFC 3501 modified UTF-7, e.g. ``&XfJT0ZAB-`` is the senders' folder.
+
+    IMAP spells non-ASCII folder names in this variant of UTF-7; the standard
+    library has no decoder, and showing ``&XfJT0ZAB-`` in a folder list is what
+    makes an IMAP client look broken.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char != "&":
+            out.append(char)
+            index += 1
+            continue
+        end = value.find("-", index)
+        if end == -1:
+            out.append(value[index:])
+            break
+        block = value[index + 1 : end]
+        if not block:
+            out.append("&")
+        else:
+            data = block.replace(",", "/")
+            try:
+                out.append(
+                    base64.b64decode(data + "=" * (-len(data) % 4)).decode("utf-16-be")
+                )
+            except (binascii.Error, UnicodeDecodeError):
+                out.append(value[index : end + 1])
+        index = end + 1
+    return "".join(out)
 
 
 def _characteristics(settings: MailSettings) -> list[str]:
@@ -293,41 +415,182 @@ def _imap_login(config: ReceiveSettings, settings: MailSettings, timeout: float)
     return client
 
 
-def _imap_fetch(settings: MailSettings, limit: int) -> list[MailMessage]:
-    config = settings.receive
-    client = _imap_login(config, settings, settings.timeout_seconds)
+def _imap_select(client: imaplib.IMAP4, folder: str) -> tuple[int, int]:
+    """Select one folder read-only. Returns the uid validity and the count."""
+    quoted = '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
     try:
-        folder = config.folder or "INBOX"
-        quoted = f'"{folder}"' if " " in folder else folder
+        status, data = client.select(quoted, readonly=True)
+    except imaplib.IMAP4.error as exc:
+        raise MailTransportError(f"imap select {folder} failed: {exc}") from exc
+    if status != "OK":
+        raise MailTransportError(f"imap select {folder} failed: {data!r}")
+    total = int(data[0]) if data and data[0] else 0
+    validity = 0
+    try:
+        kind, values = client.response("UIDVALIDITY")
+    except imaplib.IMAP4.error:
+        kind, values = None, None
+    if kind and values and values[0]:
         try:
-            status, data = client.select(quoted, readonly=True)
-        except imaplib.IMAP4.error as exc:
-            raise MailTransportError(f"imap select {folder} failed: {exc}") from exc
-        if status != "OK":
-            raise MailTransportError(f"imap select {folder} failed: {data!r}")
+            validity = int(values[0])
+        except (TypeError, ValueError):
+            validity = 0
+    return validity, total
+
+
+def _imap_open(settings: MailSettings, folder: str) -> tuple[imaplib.IMAP4, int, int]:
+    """Log in and select one folder read-only. Returns the client, validity, count."""
+    client = _imap_login(settings.receive, settings, settings.timeout_seconds)
+    try:
+        validity, total = _imap_select(client, folder)
+    except MailError:
         try:
-            status, data = client.search(None, "ALL")
-        except imaplib.IMAP4.error as exc:
-            raise MailTransportError(f"imap search failed: {exc}") from exc
-        if status != "OK":
-            raise MailTransportError(f"imap search failed: {data!r}")
-        ids = data[0].split()
-        messages: list[MailMessage] = []
-        for identifier in reversed(ids[-limit:]):
-            status, parts = client.fetch(identifier, "(FLAGS BODY.PEEK[])")
-            if status != "OK":
-                continue
-            raw = b""
-            flags = b""
-            for part in parts:
-                if isinstance(part, tuple):
-                    flags += part[0]
-                    raw = part[1]
-            uid = identifier.decode("ascii", "replace")
-            messages.append(
-                _parse(raw, uid=uid, unread=b"\\Seen" not in flags)
+            client.logout()
+        except (OSError, imaplib.IMAP4.error):
+            pass
+        raise
+    return client, validity, total
+
+
+def _imap_search_uids(client: imaplib.IMAP4) -> list[int]:
+    status, data = client.uid("SEARCH", None, "ALL")
+    if status != "OK":
+        raise MailTransportError(f"imap search failed: {data!r}")
+    raw = b" ".join(value for value in data or [] if isinstance(value, (bytes, bytearray)))
+    return [int(value) for value in raw.split() if value.isdigit()]
+
+
+def _fetch_units(parts) -> list[tuple[str, bytes, bytes, int]]:
+    """Split a batched FETCH answer into (uid, flags, raw, size) tuples.
+
+    The first number on a FETCH line is the *sequence number*, not the uid: only
+    ``UID`` in the requested items makes the server echo the real one. Asking for
+    it explicitly is the difference between a correct cursor and one that stores
+    1..N and then treats every message as both new and deleted on the next sync.
+    """
+    units = []
+    for part in parts or []:
+        if not isinstance(part, tuple) or len(part) < 2:
+            continue
+        prefix, raw = part[0], part[1]
+        if not isinstance(prefix, (bytes, bytearray)):
+            continue
+        match = re.search(rb"\bUID (\d+)", prefix)
+        if not match:
+            raise MailTransportError(
+                f"imap fetch answer has no UID: {bytes(prefix)[:120]!r}"
             )
-        return messages
+        flags = re.search(rb"FLAGS \(([^)]*)\)", prefix)
+        size = re.search(rb"RFC822\.SIZE (\d+)", prefix)
+        units.append(
+            (
+                match.group(1).decode("ascii", "replace"),
+                flags.group(1) if flags else b"",
+                raw if isinstance(raw, (bytes, bytearray)) else b"",
+                int(size.group(1)) if size else 0,
+            )
+        )
+    return units
+
+
+def _imap_headers(client: imaplib.IMAP4, uids: list[int]) -> list[HeaderMessage]:
+    """Fetch headers only, in batches of 20 uids (one round trip per batch)."""
+    messages: list[HeaderMessage] = []
+    for start in range(0, len(uids), 20):
+        batch = uids[start : start + 20]
+        status, parts = client.uid(
+            "FETCH",
+            ",".join(str(uid) for uid in batch),
+            "(UID FLAGS BODY.PEEK[HEADER] RFC822.SIZE)",
+        )
+        if status != "OK":
+            raise MailTransportError(f"imap fetch failed: {parts!r}")
+        for uid, flags, raw, size in _fetch_units(parts):
+            messages.append(
+                _parse_headers(
+                    raw, uid=uid, unread=b"\\Seen" not in flags, size=size
+                )
+            )
+    return messages
+
+
+def _imap_flags(client: imaplib.IMAP4, uids: list[int]) -> dict[str, bool]:
+    """Refresh the read state of messages already cached, without headers."""
+    flags: dict[str, bool] = {}
+    for start in range(0, len(uids), 20):
+        batch = uids[start : start + 20]
+        status, parts = client.uid(
+            "FETCH", ",".join(str(uid) for uid in batch), "(UID FLAGS)"
+        )
+        if status != "OK":
+            continue
+        for part in parts or []:
+            if not isinstance(part, (bytes, bytearray)):
+                continue
+            prefix = bytes(part)
+            match = re.search(rb"\bUID (\d+)", prefix)
+            value = re.search(rb"FLAGS \(([^)]*)\)", prefix)
+            if not match:
+                continue
+            flags[match.group(1).decode("ascii", "replace")] = (
+                b"\\Seen" not in (value.group(1) if value else b"")
+            )
+    return flags
+
+
+def _list_entry(entry: object) -> FolderInfo | None:
+    if not isinstance(entry, (bytes, bytearray)):
+        return None
+    text = bytes(entry).decode("utf-8", "replace")
+    match = re.match(
+        r'\((?P<flags>[^)]*)\)\s+(?:"(?P<delimiter>[^"]*)"|NIL)\s+(?P<name>.+)$',
+        text,
+        re.S,
+    )
+    if not match:
+        return None
+    name = match.group("name").strip()
+    if name.startswith('"') and name.endswith('"'):
+        name = name[1:-1].replace('\\"', '"')
+    elif name.startswith("{"):
+        # A literal mailbox name; take what follows the literal marker.
+        _, _, name = name.partition("}")
+    if not name:
+        return None
+    flags = match.group("flags") or ""
+    return FolderInfo(
+        name=name,
+        display_name=_decode_modified_utf7(name),
+        delimiter=match.group("delimiter") or "",
+        selectable="\\Noselect" not in flags and "\\NonExistent" not in flags,
+    )
+
+
+def _check_receive(settings: MailSettings, *, folder: str = "") -> None:
+    if not settings.receive.protocol or settings.receive.protocol == "none":
+        raise MailNotConfigured("receiving is not enabled")
+    if not settings.receive.host:
+        raise MailNotConfigured("receive.host is required")
+
+
+def list_folders(settings: MailSettings) -> list[FolderInfo]:
+    """Every folder the account has, not only the one the form names."""
+    _check_receive(settings)
+    if settings.receive.protocol == "pop3":
+        return [FolderInfo(name="INBOX", display_name="INBOX")]
+    client = _imap_login(settings.receive, settings, settings.timeout_seconds)
+    try:
+        try:
+            status, data = client.list()
+        except imaplib.IMAP4.error as exc:
+            raise MailTransportError(f"imap list failed: {exc}") from exc
+        if status != "OK":
+            raise MailTransportError(f"imap list failed: {data!r}")
+        folders = [info for info in (_list_entry(entry) for entry in data or []) if info]
+        # INBOX first, then the server's own order; a stable list keeps the
+        # console from reordering itself between syncs.
+        folders.sort(key=lambda info: (info.name.upper() != "INBOX", info.name))
+        return folders
     finally:
         try:
             client.logout()
@@ -335,7 +598,42 @@ def _imap_fetch(settings: MailSettings, limit: int) -> list[MailMessage]:
             pass
 
 
+def _imap_snapshot(
+    client: imaplib.IMAP4,
+    folder: FolderInfo,
+    *,
+    known_uids: set[str],
+    last_uid: int,
+    uid_validity: int,
+    limit: int,
+) -> FolderSnapshot:
+    """What changed in one folder, over an already selected-able session."""
+    validity, total = _imap_select(client, folder.name)
+    reset = bool(uid_validity) and bool(validity) and validity != uid_validity
+    all_uids = _imap_search_uids(client)
+    known = set() if reset else set(known_uids)
+    window = all_uids[-limit:]
+    known_numbers = {int(uid) for uid in known if uid.isdigit()}
+    to_fetch = [uid for uid in window if uid not in known_numbers]
+    cached_window = [uid for uid in window if uid in known_numbers]
+    removed = sorted(
+        uid for uid in known if uid.isdigit() and int(uid) not in set(all_uids)
+    )
+    return FolderSnapshot(
+        folder=folder,
+        uid_validity=validity,
+        total=total,
+        unread=0,
+        fetched=_imap_headers(client, to_fetch),
+        flags=_imap_flags(client, cached_window),
+        removed=removed,
+        reset=reset,
+        high_uid=all_uids[-1] if all_uids else last_uid,
+    )
+
+
 def _pop3_login(config: ReceiveSettings, settings: MailSettings, timeout: float):
+    """Log in to POP3. The server has one mailbox; the folder name is ignored."""
     username, password = settings.receive_login()
     try:
         if config.security == "ssl":
@@ -345,7 +643,9 @@ def _pop3_login(config: ReceiveSettings, settings: MailSettings, timeout: float)
             if config.security == "starttls":
                 client.stls()
     except (OSError, poplib.error_proto) as exc:
-        raise MailTransportError(f"pop3 connect failed: {type(exc).__name__}: {exc}") from exc
+        raise MailTransportError(
+            f"pop3 connect failed: {type(exc).__name__}: {exc}"
+        ) from exc
     try:
         client.user(username)
         client.pass_(password)
@@ -354,26 +654,87 @@ def _pop3_login(config: ReceiveSettings, settings: MailSettings, timeout: float)
     return client
 
 
-def _pop3_fetch(settings: MailSettings, limit: int) -> list[MailMessage]:
-    config = settings.receive
-    client = _pop3_login(config, settings, settings.timeout_seconds)
+def _pop3_listing(client) -> list[tuple[int, str]]:
     try:
+        _status, lines, _octets = client.uidl()
+    except poplib.error_proto as exc:
+        raise MailTransportError(f"pop3 uidl failed: {exc}") from exc
+    pairs = []
+    for line in lines:
+        parts = line.decode("ascii", "replace").split()
+        if len(parts) >= 2 and parts[0].isdigit():
+            pairs.append((int(parts[0]), parts[1]))
+    return pairs
+
+
+def _pop3_snapshot(
+    client, folder: FolderInfo, *, known_uids: set[str], limit: int
+) -> FolderSnapshot:
+    """What one POP3 mailbox gained since the cached uids, headers only.
+
+    POP3 has no per-folder view and no stable numeric ids, so the cursor is the
+    set of UIDLs already cached: anything absent from ``UIDL`` has been deleted
+    on the server, anything present that we have not seen is new.
+    """
+    pairs = _pop3_listing(client)
+    present = {uid for _, uid in pairs}
+    removed = sorted(known_uids - present)
+    fresh = [(index, uid) for index, uid in pairs if uid not in known_uids][-limit:]
+    fetched: list[HeaderMessage] = []
+    for index, uid in fresh:
         try:
-            count, _size = client.stat()
-        except poplib.error_proto as exc:
-            raise MailTransportError(f"pop3 stat failed: {exc}") from exc
-        messages: list[MailMessage] = []
-        for index in range(count, max(0, count - limit), -1):
+            _status, lines, _octets = client.top(index, 0)
+            raw = b"\r\n".join(lines)
+        except poplib.error_proto:
+            # TOP is optional in RFC 1939; a server without it costs a full
+            # RETR for the header, which is the best this protocol offers.
+            _status, lines, _octets = client.retr(index)
+            raw = b"\r\n".join(lines)
+        fetched.append(_parse_headers(raw, uid=uid, unread=False, size=len(raw)))
+    return FolderSnapshot(
+        folder=folder,
+        total=len(pairs),
+        fetched=fetched,
+        removed=removed,
+        high_uid=len(pairs),
+    )
+
+
+def sync_folder(
+    settings: MailSettings,
+    folder: FolderInfo,
+    *,
+    known_uids: set[str] | None = None,
+    last_uid: int = 0,
+    uid_validity: int = 0,
+    limit: int = 50,
+) -> FolderSnapshot:
+    """What changed in one folder since the cursor. Headers only, no bodies."""
+    _check_receive(settings)
+    if not folder.selectable:
+        return FolderSnapshot(folder=folder, total=0, high_uid=last_uid)
+    limit = max(1, min(limit, 200))
+    if settings.receive.protocol == "imap":
+        client = _imap_login(settings.receive, settings, settings.timeout_seconds)
+        try:
+            return _imap_snapshot(
+                client,
+                folder,
+                known_uids=known_uids or set(),
+                last_uid=last_uid,
+                uid_validity=uid_validity,
+                limit=limit,
+            )
+        finally:
             try:
-                _response, lines, _octets = client.retr(index)
-            except poplib.error_proto:
-                continue
-            try:
-                uid = client.uidl(index).decode("ascii", "replace").split()[-1]
-            except (poplib.error_proto, IndexError, AttributeError):
-                uid = str(index)
-            messages.append(_parse(b"\r\n".join(lines), uid=uid, unread=False))
-        return messages
+                client.logout()
+            except (OSError, imaplib.IMAP4.error):
+                pass
+    client = _pop3_login(settings.receive, settings, settings.timeout_seconds)
+    try:
+        return _pop3_snapshot(
+            client, folder, known_uids=known_uids or set(), limit=limit
+        )
     finally:
         try:
             client.quit()
@@ -381,16 +742,115 @@ def _pop3_fetch(settings: MailSettings, limit: int) -> list[MailMessage]:
             pass
 
 
-def fetch_recent(settings: MailSettings, *, limit: int = 20) -> list[MailMessage]:
-    """The newest messages, without marking anything read."""
-    if not settings.receive.protocol or settings.receive.protocol == "none":
-        raise MailNotConfigured("receiving is not enabled")
-    if not settings.receive.host:
-        raise MailNotConfigured("receive.host is required")
-    limit = max(1, min(limit, settings.max_messages, 200))
+def sync_all(
+    settings: MailSettings, plans: list[FolderPlan], *, limit: int = 50
+) -> list[FolderResult]:
+    """Walk every folder over one connection, newest ``limit`` messages each.
+
+    One login instead of one per folder matters: a mailbox with two dozen folders
+    otherwise opens two dozen TLS sessions in a row, which is slow and looks like
+    abuse to the provider (126 refuses further connections after a burst).
+    """
+    _check_receive(settings)
+    limit = max(1, min(limit, 200))
+    results: list[FolderResult] = []
     if settings.receive.protocol == "imap":
-        return _imap_fetch(settings, limit)
-    return _pop3_fetch(settings, limit)
+        client = _imap_login(settings.receive, settings, settings.timeout_seconds)
+        try:
+            for plan in plans:
+                if not plan.folder.selectable:
+                    results.append(FolderResult(plan.folder, FolderSnapshot(folder=plan.folder)))
+                    continue
+                try:
+                    results.append(
+                        FolderResult(
+                            plan.folder,
+                            _imap_snapshot(
+                                client,
+                                plan.folder,
+                                known_uids=set(plan.known_uids),
+                                last_uid=plan.last_uid,
+                                uid_validity=plan.uid_validity,
+                                limit=limit,
+                            ),
+                        )
+                    )
+                except MailError as exc:
+                    results.append(FolderResult(plan.folder, None, str(exc)))
+        finally:
+            try:
+                client.logout()
+            except (OSError, imaplib.IMAP4.error):
+                pass
+        return results
+    client = _pop3_login(settings.receive, settings, settings.timeout_seconds)
+    try:
+        for plan in plans:
+            try:
+                results.append(
+                    FolderResult(
+                        plan.folder,
+                        _pop3_snapshot(
+                            client,
+                            plan.folder,
+                            known_uids=set(plan.known_uids),
+                            limit=limit,
+                        ),
+                    )
+                )
+            except MailError as exc:
+                results.append(FolderResult(plan.folder, None, str(exc)))
+    finally:
+        try:
+            client.quit()
+        except (OSError, poplib.error_proto):
+            pass
+    return results
+
+
+def fetch_body(settings: MailSettings, *, folder: str, uid: str) -> MailMessage:
+    """Download one message and return it with its body, for the reading pane."""
+    _check_receive(settings)
+    folder = folder or (settings.receive.folder or "INBOX")
+    if settings.receive.protocol == "imap":
+        client, _validity, _total = _imap_open(settings, folder)
+        try:
+            status, parts = client.uid("FETCH", uid, "(UID FLAGS BODY.PEEK[])")
+            if status != "OK":
+                raise MailTransportError(f"imap fetch {uid} failed: {parts!r}")
+            units = _fetch_units(parts)
+            if not units:
+                raise MailTransportError(f"imap returned no message for uid {uid}")
+            unit_uid, flags, raw, _size = units[0]
+            return _parse(
+                raw,
+                uid=unit_uid,
+                unread=b"\\Seen" not in flags,
+                body_limit=20000,
+            )
+        except imaplib.IMAP4.error as exc:
+            raise MailTransportError(f"imap fetch {uid} failed: {exc}") from exc
+        finally:
+            try:
+                client.logout()
+            except (OSError, imaplib.IMAP4.error):
+                pass
+    client = _pop3_login(settings.receive, settings, settings.timeout_seconds)
+    try:
+        index = next(
+            (number for number, value in _pop3_listing(client) if value == uid), None
+        )
+        if index is None:
+            raise MailTransportError(f"pop3 no longer has message {uid}")
+        _status, lines, _octets = client.retr(index)
+        return _parse(b"\r\n".join(lines), uid=uid, unread=False, body_limit=20000)
+    except poplib.error_proto as exc:
+        raise MailTransportError(f"pop3 fetch {uid} failed: {exc}") from exc
+    finally:
+        try:
+            client.quit()
+        except (OSError, poplib.error_proto):
+            pass
 
 
 def test_receive(settings: MailSettings) -> str:

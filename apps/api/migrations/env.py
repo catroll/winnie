@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from winnie_core.auth import models as _auth_models  # noqa: F401
 from winnie_core.db import Base
+from winnie_mail import models as _mail_models  # noqa: F401
 from winnie_meetings import models as _meeting_models  # noqa: F401
 from winnie_phone import models as _phone_models  # noqa: F401
 from winnie_proactive import models as _proactive_models  # noqa: F401

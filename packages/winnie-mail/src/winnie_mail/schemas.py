@@ -147,19 +147,55 @@ class MailSendResult(BaseModel):
     receipt: str
 
 
-class MailMessageView(BaseModel):
+class MailStats(BaseModel):
+    messages: int = 0
+    unread: int = 0
+    folders: int = 0
+
+
+class MailFolderView(BaseModel):
+    name: str
+    display_name: str
+    delimiter: str = ""
+    selectable: bool = True
+    protocol: str = "imap"
+    uid_validity: int = 0
+    last_uid: int = 0
+    total: int = 0
+    unread: int = 0
+    last_synced_at: str = ""
+    last_error: str = ""
+
+
+class MailFolderList(BaseModel):
+    protocol: Protocol = "imap"
+    folders: list[MailFolderView] = []
+    stats: MailStats = Field(default_factory=MailStats)
+
+
+class MailCacheMessage(BaseModel):
+    """A cached message; ``body`` is empty until someone opens it."""
+
+    id: str
+    folder: str
+    folder_display: str = ""
+    protocol: str
     uid: str
     subject: str
     sender: str
-    to: str
-    date: str
-    snippet: str
-    body: str
-    unread: bool
-    message_id: str
+    recipients: str = ""
+    date: str = ""
+    snippet: str = ""
+    unread: bool = False
+    size: int = 0
+    has_body: bool = False
+    message_id: str = ""
+    body: str = ""
 
 
-class MailboxView(BaseModel):
-    protocol: Protocol
-    folder: str
-    messages: list[MailMessageView]
+class MailSyncResult(BaseModel):
+    protocol: Protocol = "imap"
+    folders: int = 0
+    fetched: int = 0
+    errors: list[dict[str, str]] = []
+    stats: MailStats = Field(default_factory=MailStats)

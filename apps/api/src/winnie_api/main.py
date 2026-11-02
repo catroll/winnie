@@ -24,6 +24,7 @@ from winnie_core.usage.ledger import UsageLedger
 from winnie_gateway.capability import capability as gateway_capability
 from winnie_gateway.keystore import GatewayKeyStore
 from winnie_gateway.routes import Route
+from winnie_mail.cache import MailCache
 from winnie_mail.capability import capability as mail_capability
 from winnie_mail.service import MailService
 from winnie_mail.settings import MailSettingsStore
@@ -221,6 +222,7 @@ def create_app(
             app.state.mail_service = MailService(
                 MailSettingsStore(resolved.resolve_mail_root()),
                 timeout_seconds=resolved.mail.default_timeout_seconds,
+                per_folder_limit=resolved.mail.per_folder_limit,
             )
         if runtime is not None:
             await runtime.startup()
@@ -228,6 +230,12 @@ def create_app(
             app.state.meeting_service = runtime.meeting_service
             app.state.phone_service = runtime.phone_service
             app.state.push_service = runtime.push_service
+            if app.state.mail_service is not None:
+                # The cache lives in the application database; without one the
+                # account still sends and tests, but browsing answers 503.
+                app.state.mail_service.attach_cache(
+                    MailCache(runtime.session_factory)
+                )
             # User management needs a database but not necessarily accounts:
             # with auth disabled the local operator may still create accounts for
             # a deployment that enables login later.
