@@ -161,6 +161,8 @@ export function AIPage() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [modelsEditor, setModelsEditor] = useState<AIVendor | null>(null);
   const [modelsError, setModelsError] = useState('');
+  const [keyEditor, setKeyEditor] = useState<AIVendor | null>(null);
+  const [keyError, setKeyError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AIIntegration | null>(null);
   const [bindings, setBindings] = useState<Record<string, BindingState>>({});
   const [runtimeDraft, setRuntimeDraft] = useState<ModelRuntime | null>(null);
@@ -403,6 +405,28 @@ export function AIPage() {
     }
   };
 
+  const saveVendorKey = async (vendor: AIVendor, apiKey: string) => {
+    setBusy(`key:${vendor.id}`);
+    setKeyError('');
+    try {
+      const response = await api.setAIVendorKey(vendor.id, apiKey);
+      setMessage({
+        kind: 'success',
+        text: response.vendor.api_key_present
+          ? tr('Saved the {{label}} key. Every call uses it immediately.', {
+              label: response.vendor.label,
+            })
+          : tr('Cleared the {{label}} key.', { label: response.vendor.label }),
+      });
+      setKeyEditor(null);
+      result.reload();
+    } catch (error) {
+      setKeyError(describe(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const syncVendor = async (vendor: AIVendor) => {
     setBusy(`sync:${vendor.id}`);
     setMessage(null);
@@ -442,7 +466,7 @@ export function AIPage() {
     (integration) => integration.gateway_paths.length > 0,
   ).length;
   // A gateway route forwards the caller's key, so only an internal endpoint
-  // reads one from winnie-llm/.env.
+  // uses the supplier key the registry stores.
   const keyed = integrations.filter((integration) => !integration.gateway);
   const keysPresent = keyed.filter((integration) => integration.api_key_present);
   const disabled = busy !== null;
@@ -535,10 +559,15 @@ export function AIPage() {
                       '. Changes take effect on the next model call without restarting the API. This registry is the only model choice:',
                     )}{' '}
                     <code>config.yaml</code> {tr('has no')} <code>llm</code>{' '}
-                    {tr('block. API keys are')} <strong>{tr('not')}</strong>{' '}
-                    {tr('stored here:')} <code>winnie-llm</code>{' '}
-                    {tr('reads them from')} <code>{data.env_path}</code>{' '}
-                    {tr('and derives the variable from the supplier id.')}
+                    {tr('block. Each supplier key is')}{' '}
+                    <strong>{tr('stored here with its models')}</strong>
+                    {tr(
+                      ' and also mirrored into the backup file',
+                    )}{' '}
+                    <code>{data.env_path}</code>
+                    {tr(
+                      '. The registry wins; editing only the backup does not change the key.',
+                    )}
                   </div>
 
                   <div className="row g-3 mb-3">
@@ -611,7 +640,7 @@ export function AIPage() {
                           {keyed.length === 0
                             ? tr('No provider reads a server-side key')
                             : tr(
-                                '{{present}} of {{total}} internal endpoints have a key in winnie-llm/.env',
+                                '{{present}} of {{total}} internal endpoints have a supplier key',
                                 {
                                   present: keysPresent.length,
                                   total: keyed.length,
@@ -695,21 +724,27 @@ export function AIPage() {
                                           {tr('no API endpoint')}
                                         </span>
                                       )}
-                                      {vendor.api_key_env ? (
-                                        <span
-                                          className={`badge ${
-                                            vendor.api_key_present
-                                              ? 'text-bg-success'
-                                              : 'text-bg-warning'
-                                          }`}
-                                        >
-                                          {vendor.api_key_present
-                                            ? vendor.api_key_env
-                                            : tr('{{env}} missing', {
-                                                env: vendor.api_key_env,
-                                              })}
-                                        </span>
-                                      ) : null}
+                                      <span
+                                        className={`badge ${
+                                          vendor.api_key_present
+                                            ? 'text-bg-success'
+                                            : 'text-bg-warning'
+                                        }`}
+                                        title={tr(
+                                          'The key is stored with this supplier and mirrored into {{env}}',
+                                          { env: vendor.api_key_env },
+                                        )}
+                                      >
+                                        <i
+                                          className="bi bi-key me-1"
+                                          aria-hidden="true"
+                                        />
+                                        {vendor.api_key_present
+                                          ? tr('key {{hint}}', {
+                                              hint: vendor.api_key_hint,
+                                            })
+                                          : tr('no key')}
+                                      </span>
                                     </div>
                                     <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
                                       {vendor.models.length === 0 ? (
@@ -732,6 +767,25 @@ export function AIPage() {
                                         </span>
                                       ) : null}
                                       <div className="ms-auto d-flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline-secondary"
+                                          onClick={() => {
+                                            setMessage(null);
+                                            setKeyError('');
+                                            setKeyEditor(vendor);
+                                          }}
+                                          disabled={disabled}
+                                          title={tr(
+                                            'Store or replace the supplier API key',
+                                          )}
+                                        >
+                                          <i
+                                            className="bi bi-key me-1"
+                                            aria-hidden="true"
+                                          />
+                                          {tr('API key')}
+                                        </button>
                                         {vendor.internal_integration_id ? (
                                           <>
                                             <button
@@ -1156,6 +1210,19 @@ export function AIPage() {
           onCancel={() => {
             setModelsError('');
             setModelsEditor(null);
+          }}
+        />
+      ) : null}
+
+      {keyEditor ? (
+        <KeyEditor
+          vendor={keyEditor}
+          error={keyError}
+          busy={busy === `key:${keyEditor.id}`}
+          onSave={saveVendorKey}
+          onCancel={() => {
+            setKeyError('');
+            setKeyEditor(null);
           }}
         />
       ) : null}
@@ -2161,6 +2228,137 @@ function IntegrationEditor({
                   tr('Add endpoint')
                 ) : (
                   tr('Save changes')
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function KeyEditor({
+  vendor,
+  error,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  vendor: AIVendor;
+  error: string;
+  busy: boolean;
+  onSave: (vendor: AIVendor, apiKey: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const [revealed, setRevealed] = useState(false);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onSave(vendor, value.trim());
+  };
+
+  return (
+    <>
+      <div
+        className="modal fade show d-block"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-key-title"
+      >
+        <div className="modal-dialog modal-dialog-centered">
+          <form className="modal-content" onSubmit={submit}>
+            <div className="modal-header">
+              <h5 className="modal-title" id="ai-key-title">
+                {tr('API key for {{vendor}}', { vendor: vendor.label })}
+              </h5>
+              <button
+                type="button"
+                className="btn-close"
+                aria-label={tr('Close')}
+                onClick={onCancel}
+                disabled={busy}
+              />
+            </div>
+            <div className="modal-body">
+              {error ? (
+                <div className="alert alert-danger" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              <p className="small text-secondary">
+                {tr(
+                  'The key is stored on this supplier, next to its models, and every call uses it. A copy is also written to',
+                )}{' '}
+                <code>{vendor.api_key_backup_path}</code>
+                {tr(
+                  ' as a backup; the registry wins if the two differ. Leave the field empty to clear the key.',
+                )}
+              </p>
+              <label className="form-label" htmlFor="ai-key-value">
+                {tr('Key')}
+                {vendor.api_key_present ? (
+                  <span className="text-secondary">
+                    {' '}
+                    {tr('(currently {{hint}})', { hint: vendor.api_key_hint })}
+                  </span>
+                ) : null}
+              </label>
+              <div className="input-group">
+                <input
+                  id="ai-key-value"
+                  className="form-control font-monospace"
+                  type={revealed ? 'text' : 'password'}
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  placeholder={tr('Paste the supplier API key')}
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary"
+                  onClick={() => setRevealed((current) => !current)}
+                  disabled={busy}
+                  aria-label={
+                    revealed ? tr('Hide the key') : tr('Show the key')
+                  }
+                >
+                  <i
+                    className={`bi ${revealed ? 'bi-eye-slash' : 'bi-eye'}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+              <div className="form-text">
+                {tr(
+                  'The console never reads the stored value back; it shows only the last four characters.',
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={onCancel}
+                disabled={busy}
+              >
+                {tr('Cancel')}
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-1"
+                      aria-hidden="true"
+                    />
+                    {tr('Saving…')}
+                  </>
+                ) : (
+                  tr('Save key')
                 )}
               </button>
             </div>

@@ -1,8 +1,9 @@
 # Developer entry points for Winnie.
 #
 # `make api` sources apps/api/.env when it exists for non-secret local settings
-# (the Android default URL). Vendor API keys are read only by winnie-llm from
-# packages/winnie-llm/.env; no other module sees them.
+# (the Android default URL). Vendor API keys are stored per supplier in the AI
+# registry (data/ai.yaml) and mirrored into packages/winnie-llm/.env; no other
+# module sees them.
 
 SHELL := /usr/bin/env bash
 

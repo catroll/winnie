@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class VolcengineASRConfig(BaseModel):
     """Doubao speech-to-text endpoint options.
 
-    The API key is not here: it lives in ``packages/winnie-llm/.env`` and is
-    resolved by the registry from the supplier id.
+    The API key is not here: it is stored on the supplier record in the
+    registry.
     """
 
     model_config = ConfigDict(extra="forbid")

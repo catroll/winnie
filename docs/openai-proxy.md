@@ -17,9 +17,9 @@ deployment.
 1. **Path routing**: the first segment after `/` selects an upstream.
 2. **Caller credentials**: a Winnie key from `data/gateway-keys.yaml`, sent as
    `Authorization: Bearer …`, `x-api-key`, or `x-winnie-key`.
-3. **Vendor credentials**: resolved per route from
-   `packages/winnie-llm/.env` (`DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, …) and
-   injected as `Authorization: Bearer` (OpenAI) or `x-api-key` (Anthropic).
+3. **Vendor credentials**: the key stored on the route's supplier in the AI
+   registry, injected as `Authorization: Bearer` (OpenAI) or `x-api-key`
+   (Anthropic).
 4. **Transparent forwarding**: every path, method, query string and header that
    is not listed under [What is not forwarded](#what-is-not-forwarded) reaches
    the upstream unchanged; the upstream's status, body and headers come back
@@ -75,7 +75,7 @@ without a restart.
 | `401` | No key, or a key that is invalid/revoked. Also returned when a vendor key is sent by mistake. |
 | `403` | The key is valid but its allowlist does not include this route. |
 | `404` | The path prefix is not a configured route. |
-| `503` | The route exists but its vendor key is missing from `packages/winnie-llm/.env`. |
+| `503` | The route exists but its supplier has no stored key. |
 
 Bodies follow the route's protocol: `{"error": {"message", "type"}}` for OpenAI,
 `{"type": "error", "error": {"type", "message"}}` for Anthropic, so vendor SDKs
@@ -183,9 +183,8 @@ It never includes a credential.
 
 ## Calling it
 
-Create a key on the API keys page, put the vendor key in
-`packages/winnie-llm/.env`, then point any OpenAI-compatible client at
-`http://[::1]:8000/{route}`:
+Create a key on the API keys page, set the supplier key on the AI providers
+page, then point any OpenAI-compatible client at `http://[::1]:8000/{route}`:
 
 ```bash
 curl -s 'http://[::1]:8000/deepseek-openai/v1/chat/completions' \
@@ -211,8 +210,8 @@ cd apps/api
 uv run python scripts/smoke_test.py
 ```
 
-The script reads a Winnie key from `WINNIE_GATEWAY_KEY` (or asks for one) and a
-vendor key from `packages/winnie-llm/.env`.
+The script reads a Winnie key from `WINNIE_GATEWAY_KEY` (or asks for one); the
+vendor key is the one stored on the supplier and never reaches the caller.
 
 ## Limits
 

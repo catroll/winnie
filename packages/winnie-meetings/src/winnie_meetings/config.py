@@ -2,7 +2,7 @@
 
 The ASR endpoint options belong to the vendor adapter, so they are defined in
 ``winnie_llm.asr`` and only referenced here. No key is part of meeting config:
-keys live in ``packages/winnie-llm/.env``.
+a supplier key is stored in the AI registry.
 """
 
 from __future__ import annotations

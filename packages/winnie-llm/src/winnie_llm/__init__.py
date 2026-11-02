@@ -1,10 +1,12 @@
 """Winnie's single model-access module.
 
 Every call to a model vendor — chat completion, tool calling, recording-file
-speech recognition and live captions — is built here, and the credentials for
-all of them come from ``packages/winnie-llm/.env``. Capability packages receive
-a client or a small protocol; they never read a key, name a key variable, or
-issue a vendor HTTP request themselves.
+speech recognition and live captions — is built here. Each supplier's
+credential is stored with its model catalog in the registry, and capability
+packages receive a client or a small protocol; they never read a key, name a key
+variable, or issue a vendor HTTP request themselves. The console mirrors every
+key into ``packages/winnie-llm/.env`` as a backup, which is also the fallback for
+a gateway-only deployment that has no registry.
 
 The :class:`winnie_llm.registry.ProviderRegistry` owns the supplier/model
 selection that used to live in the API host: it persists ``data/ai.yaml``,

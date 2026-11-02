@@ -278,10 +278,8 @@ def _assistant_settings(tmp_path: Path, ai_path: Path) -> Settings:
 
 async def test_assistant_chat_uses_the_bound_integration(
     tmp_path: Path,
-    monkeypatch,
     upstream,
 ) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     settings = _assistant_settings(tmp_path, tmp_path / "ai.yaml")
     async with _open(settings, upstream) as client:
         seeded = await client.get("/api/v1/ai/config")
@@ -299,6 +297,11 @@ async def test_assistant_chat_uses_the_bound_integration(
         )
         assert created.status_code == 201, created.text
         integration_id = created.json()["integration"]["id"]
+        # The key is stored on the supplier, not in the process environment.
+        stored = await client.put(
+            "/api/v1/ai/vendors/openai/key", json={"api_key": "secret-key"}
+        )
+        assert stored.status_code == 200, stored.text
         bound = await client.put(
             "/api/v1/ai/features/assistant.chat",
             json={"integration_id": integration_id},
@@ -331,12 +334,10 @@ async def test_assistant_chat_uses_the_bound_integration(
     assert body["model"] == "fake-openai-model"
 
 
-async def test_assistant_reports_a_missing_api_key_environment(
+async def test_assistant_reports_a_missing_supplier_key(
     tmp_path: Path,
-    monkeypatch,
     upstream,
 ) -> None:
-    monkeypatch.delenv("MISSING_KEY_API_KEY", raising=False)
     settings = _assistant_settings(tmp_path, tmp_path / "ai.yaml")
     async with _open(settings, upstream) as client:
         created = await client.post(
@@ -359,7 +360,8 @@ async def test_assistant_reports_a_missing_api_key_environment(
             "/api/v1/assistant/chat", json={"message": "ping"}
         )
         assert reply.status_code == 502, reply.text
-        assert "MISSING_KEY_API_KEY" in reply.json()["detail"]
+        assert "missing-key" in reply.json()["detail"]
+        assert "no API key" in reply.json()["detail"]
 
 
 async def test_meeting_translation_uses_the_bound_integration(
@@ -393,7 +395,6 @@ async def test_meeting_translation_uses_the_bound_integration(
                 )
         return httpx.Response(500, json={"error": "unexpected request"})
 
-    monkeypatch.setenv("OPENAI_API_KEY", "secret-key")
     settings = Settings(
         log_root=str(tmp_path / "logs"),
         routes={},
@@ -423,6 +424,10 @@ async def test_meeting_translation_uses_the_bound_integration(
             },
         )
         integration_id = created.json()["integration"]["id"]
+        stored = await client.put(
+            "/api/v1/ai/vendors/openai/key", json={"api_key": "secret-key"}
+        )
+        assert stored.status_code == 200, stored.text
         await client.put(
             "/api/v1/ai/features/meetings.translate",
             json={"integration_id": integration_id},
@@ -637,10 +642,11 @@ bindings:
         routes = (await client.get("/routes")).json()["routes"]
 
     stored = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert stored["version"] == 6
+    assert stored["version"] == 7
     # Version 6 removed the stored key variable; the derived name is only a
-    # view, never part of the file.
+    # view, never part of the file. Version 7 stores the key on the supplier.
     assert all("api_key_env" not in item for item in stored["integrations"])
+    assert all("api_key" in item for item in stored["vendors"])
     by_name = {item["name"]: item for item in config["integrations"]}
     vendors = {item["id"]: item for item in config["vendors"]}
     assert "fake" not in by_name
@@ -882,10 +888,7 @@ async def test_feature_binding_is_a_model_reference(tmp_path: Path) -> None:
         assert feature["integration_name"] == "deepseek-internal"
 
 
-async def test_supplier_model_sync_fetches_the_model_list(
-    tmp_path: Path, monkeypatch
-) -> None:
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "secret")
+async def test_supplier_model_sync_fetches_the_model_list(tmp_path: Path) -> None:
     calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -920,6 +923,10 @@ async def test_supplier_model_sync_fetches_the_model_list(
             },
         )
         assert created.status_code == 201, created.text
+        stored = await client.put(
+            "/api/v1/ai/vendors/deepseek/key", json={"api_key": "secret"}
+        )
+        assert stored.status_code == 200, stored.text
 
         synced = await client.post("/api/v1/ai/vendors/deepseek/models/sync")
         assert synced.status_code == 200, synced.text
@@ -932,3 +939,60 @@ async def test_supplier_model_sync_fetches_the_model_list(
         assert models[0]["created"] == 1
 
     assert calls == ["https://api.deepseek.com/v1/models"]
+
+
+async def test_the_console_key_is_stored_with_the_supplier_and_mirrored(
+    tmp_path: Path, monkeypatch
+) -> None:
+    backup = tmp_path / "winnie-llm.env"
+    backup.write_text("# keys\nDEEPSEEK_API_KEY=\n", encoding="utf-8")
+    monkeypatch.setenv("WINNIE_LLM_ENV_FILE", str(backup))
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        created = await client.post(
+            "/api/v1/ai/vendors",
+            json={"id": "deepseek", "label": "DeepSeek", "models": []},
+        )
+        assert created.status_code == 201, created.text
+
+        saved = await client.put(
+            "/api/v1/ai/vendors/deepseek/key", json={"api_key": "sk-secret-9876"}
+        )
+        assert saved.status_code == 200, saved.text
+        vendor = saved.json()["vendor"]
+        assert vendor["api_key_present"] is True
+        assert vendor["api_key_hint"] == "…9876"
+        assert vendor["api_key_env"] == "DEEPSEEK_API_KEY"
+        # The value is write-only: the response never carries it.
+        assert "sk-secret-9876" not in saved.text
+
+        config = (await client.get("/api/v1/ai/config")).json()
+        assert "sk-secret-9876" not in json.dumps(config)
+
+        cleared = await client.put(
+            "/api/v1/ai/vendors/deepseek/key", json={"api_key": ""}
+        )
+        assert cleared.json()["vendor"]["api_key_present"] is False
+        assert cleared.json()["vendor"]["api_key_hint"] == ""
+
+    # The backup file keeps the mirrored copy, comments and all.
+    assert backup.read_text(encoding="utf-8") == "# keys\nDEEPSEEK_API_KEY=\n"
+
+
+async def test_the_registry_imports_the_env_backup_once(tmp_path: Path, monkeypatch) -> None:
+    backup = tmp_path / "winnie-llm.env"
+    backup.write_text("OPENAI_API_KEY=from-backup\n", encoding="utf-8")
+    monkeypatch.setenv("WINNIE_LLM_ENV_FILE", str(backup))
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        config = (await client.get("/api/v1/ai/config")).json()
+    openai = next(item for item in config["vendors"] if item["id"] == "openai")
+    assert openai["api_key_present"] is True
+    assert openai["api_key_hint"] == "…ckup"
+
+    # Changing the file afterwards is not read again: the registry owns it.
+    backup.write_text("OPENAI_API_KEY=second-value\n", encoding="utf-8")
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        config = (await client.get("/api/v1/ai/config")).json()
+    openai = next(item for item in config["vendors"] if item["id"] == "openai")
+    assert openai["api_key_hint"] == "…ckup"

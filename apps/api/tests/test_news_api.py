@@ -394,8 +394,8 @@ async def test_a_missing_supplier_key_blocks_a_run(tmp_path: Path) -> None:
         assert status["ready"] is False
         assert status["model"]["ready"] is False
         errors = [entry["error"] for entry in status["model"]["features"]]
-        assert any("KEYLESS_API_KEY" in error for error in errors)
+        assert any("no API key" in error for error in errors)
 
         refused = await client.post("/api/v1/news/runs", json={})
         assert refused.status_code == 503
-        assert "KEYLESS_API_KEY" in refused.json()["detail"]
+        assert "no API key" in refused.json()["detail"]

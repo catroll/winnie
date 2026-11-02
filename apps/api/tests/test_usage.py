@@ -578,9 +578,6 @@ async def test_balances_query_the_four_supported_providers(
         tmp_path,
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
     )
-    for env in ("DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "MOONSHOT_API_KEY", "SILICONFLOW_API_KEY"):
-        monkeypatch.setenv(env, "secret-key")
-
     async with _open(settings, _balance_handler(calls)) as client:
         inputs = [
             ("deepseek", "https://api.deepseek.com", "DEEPSEEK_API_KEY"),
@@ -588,7 +585,7 @@ async def test_balances_query_the_four_supported_providers(
             ("moonshot", "https://api.moonshot.ai", "MOONSHOT_API_KEY"),
             ("siliconflow", "https://api.siliconflow.cn", "SILICONFLOW_API_KEY"),
         ]
-        for name, base_url, env in inputs:
+        for name, base_url, _env in inputs:
             created = await client.post(
                 "/api/v1/ai/integrations",
                 json={
@@ -601,6 +598,11 @@ async def test_balances_query_the_four_supported_providers(
                 },
             )
             assert created.status_code == 201, created.text
+            # A balance query reads the supplier key from the registry.
+            saved = await client.put(
+                f"/api/v1/ai/vendors/{name}/key", json={"api_key": "secret-key"}
+            )
+            assert saved.status_code == 200, saved.text
 
         response = await client.get("/api/v1/usage/balances")
         assert response.status_code == 200, response.text
@@ -641,7 +643,6 @@ async def test_balances_report_a_missing_key(
         tmp_path,
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
     )
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     async with _open(settings, _balance_handler({})) as client:
         await client.post(
             "/api/v1/ai/integrations",
@@ -660,7 +661,7 @@ async def test_balances_report_a_missing_key(
     )
     assert item["supported"] is True
     assert item["total"] == ""
-    assert "DEEPSEEK_API_KEY" in item["error"]
+    assert "no API key" in item["error"]
 
 
 # -- dynamic adapters ------------------------------------------------------
@@ -673,7 +674,6 @@ async def test_dynamic_translator_records_the_bound_integration(
         tmp_path,
         ai=AIConfig(enabled=True, path=str(tmp_path / "ai.yaml")),
     )
-    monkeypatch.setenv("BOUND_LLM_API_KEY", "secret")
     ai = ProviderRegistry(settings.resolve_ai_path(), keys=ApiKeys.load())
     ai.load()
     record = ai.create_integration(
@@ -686,6 +686,7 @@ async def test_dynamic_translator_records_the_bound_integration(
             gateway=False,
         )
     )
+    ai.set_api_key("bound-llm", "secret")
     ai.set_binding(
         "meetings.translate",
         BindingDraft(integration_id=record.id, model=""),

@@ -2,13 +2,15 @@
 
 One small YAML file keeps the state. It is read on demand (a changed mtime is
 picked up automatically, so an arq worker sees a console change without a
-restart) and written atomically. The file holds no credentials: API keys live in
-``packages/winnie-llm/.env`` and are resolved from the supplier id when a client
-is built.
+restart) and written atomically. Each supplier holds its own API key next to its
+model catalog, so an internal model call reads the credential from the same
+record that names its endpoint. The console mirrors every saved key into
+``packages/winnie-llm/.env`` as a backup; that file is not a source.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tempfile
@@ -27,7 +29,7 @@ from winnie_llm.asr.realtime import RealtimeASRProvider
 from winnie_llm.asr.volcengine import VolcengineASRProvider
 from winnie_llm.asr.volcengine_stream import VolcengineRealtimeASR
 from winnie_llm.chat import ChatClient
-from winnie_llm.keys import ApiKeys, MissingApiKey
+from winnie_llm.keys import ApiKeys
 from winnie_llm.registry.errors import AIConflict, AINotFound, AIProviderError
 from winnie_llm.registry.schema import (
     AIState,
@@ -51,12 +53,25 @@ from winnie_llm.registry.schema import (
 from winnie_llm.registry.seed import SeedInput, migrate_state, seed_state
 from winnie_llm.runtime import ModelRuntimeConfig
 
+logger = logging.getLogger(__name__)
+
 _HEADER = (
     "# Winnie AI suppliers and feature bindings.\n"
     "# Written by the admin console at /api/v1/ai; use the console rather than\n"
-    "# editing this file. API keys are never stored here: they live in\n"
-    "# packages/winnie-llm/.env and are derived from the supplier id.\n"
+    "# editing this file. Each supplier's api_key is stored here with its models,\n"
+    "# and the console mirrors it into packages/winnie-llm/.env as a backup.\n"
 )
+
+
+def _key_hint(value: str) -> str:
+    """The last four characters of a key, for telling two keys apart."""
+    cleaned = value.strip()
+    if not cleaned:
+        return ""
+    if len(cleaned) <= 8:
+        return "…"
+    return f"…{cleaned[-4:]}"
+
 
 
 class ProviderRegistry:
@@ -83,6 +98,10 @@ class ProviderRegistry:
         with self._lock:
             if not self.path.is_file():
                 state = seed_state(self.seed)
+                # A first start after the upgrade (or a fresh registry on a host
+                # whose env backup already holds keys) imports them once, so
+                # deleting data/ai.yaml does not lose the credentials.
+                self._import_backup_keys(state)
                 self._write(state)
                 return
             self._read()
@@ -127,7 +146,15 @@ class ProviderRegistry:
             raise AIProviderError(
                 f"invalid AI settings at {self.path}: {exc}"
             ) from exc
-        if migrate_state(state, legacy_keys):
+        changed = migrate_state(state, legacy_keys)
+        if state.version < 7:
+            # The first read after the upgrade: keys used to live only in the
+            # env backup, so move them onto their supplier once. This is the
+            # only time the backup is read as a source.
+            self._import_backup_keys(state)
+            state.version = 7
+            changed = True
+        if changed:
             try:
                 state = AIState.model_validate(state.model_dump(mode="json"))
             except ValidationError as exc:
@@ -138,6 +165,13 @@ class ProviderRegistry:
             return
         self._state = state
         self._mtime_ns = self.path.stat().st_mtime_ns
+
+    def _import_backup_keys(self, state: AIState) -> None:
+        """Copy each supplier key from the env backup onto its record."""
+        for vendor in state.vendors:
+            if vendor.api_key:
+                continue
+            vendor.api_key = self.keys.get(vendor.id)
 
     def _refresh(self) -> None:
         """Pick up an external edit without holding stale state forever."""
@@ -303,11 +337,57 @@ class ProviderRegistry:
 
     # -- clients ---------------------------------------------------------
 
-    def _key(self, provider: ResolvedProvider) -> str:
+    def vendor_key(self, vendor_id: str) -> str:
+        """The supplier's stored credential, or ``""`` when it has none."""
+        vendor = self.state().vendor(vendor_id)
+        return vendor.api_key if vendor is not None else ""
+
+    def key_present(self, vendor_id: str) -> bool:
+        return bool(self.vendor_key(vendor_id))
+
+    def key_env(self, vendor_id: str) -> str:
+        """The env variable the console mirrors this supplier's key into."""
+        return self.keys.env_name(vendor_id)
+
+    def _require_key(self, vendor_id: str) -> str:
+        value = self.vendor_key(vendor_id)
+        if not value:
+            raise AIProviderError(
+                f"supplier {vendor_id!r} has no API key; set it in "
+                "Admin -> AI suppliers"
+            )
+        return value
+
+    def _mirror_key(self, vendor_id: str, value: str) -> None:
+        """Keep the env backup equal to the stored key.
+
+        The registry is authoritative, so a failed mirror is logged rather than
+        failing the save: losing the backup is recoverable, losing the key the
+        owner just pasted is not.
+        """
         try:
-            return self.keys.require(provider.vendor)
-        except MissingApiKey as exc:
-            raise AIProviderError(str(exc)) from exc
+            self.keys.set(vendor_id, value)
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "cannot mirror the %s key into %s: %s",
+                vendor_id,
+                self.keys.path,
+                exc,
+            )
+
+    def set_api_key(self, vendor_id: str, api_key: str) -> VendorRecord:
+        """Store a supplier key with its record and refresh the env backup."""
+        value = api_key.strip()
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            vendor = state.vendor(vendor_id)
+            if vendor is None:
+                raise AINotFound(f"supplier not found: {vendor_id}")
+            vendor.api_key = value
+            vendor.updated_at = utcnow()
+            self._commit(state)
+        self._mirror_key(vendor_id, value)
+        return vendor
 
     def chat_for(
         self,
@@ -326,7 +406,7 @@ class ProviderRegistry:
         runtime = self.runtime()
         return ChatClient(
             base_url=_openai_base(provider.base_url),
-            api_key=self._key(provider),
+            api_key=self._require_key(provider.vendor),
             model=provider.model,
             timeout_seconds=runtime.timeout_seconds,
             max_output_tokens=runtime.max_output_tokens,
@@ -356,7 +436,7 @@ class ProviderRegistry:
             )
         config = _volcengine_config(provider)
         return VolcengineASRProvider(
-            api_key=self._key(provider),
+            api_key=self._require_key(provider.vendor),
             base_url=config.base_url,
             resource_id=config.resource_id,
             model_name=config.model_name,
@@ -378,7 +458,7 @@ class ProviderRegistry:
             )
         config = _volcengine_config(provider)
         return VolcengineRealtimeASR(
-            api_key=self._key(provider),
+            api_key=self._require_key(provider.vendor),
             endpoint=config.stream_endpoint,
             resource_id=config.stream_resource_id,
             model_name=config.model_name,
@@ -403,10 +483,7 @@ class ProviderRegistry:
             raise AIProviderError(
                 f"supplier {vendor.label!r} needs a base URL for model sync"
             )
-        try:
-            api_key = self.keys.require(vendor.id)
-        except MissingApiKey as exc:
-            raise AIProviderError(str(exc)) from exc
+        api_key = self._require_key(vendor.id)
         base = _openai_base(integration.base_url)
         url = f"{base}/models"
         own_client = http is None
@@ -501,8 +578,8 @@ class ProviderRegistry:
         state = self.state()
         return {
             "path": str(self.path),
-            # Where the key values live. The console shows this instead of
-            # asking anyone to paste a key into the registry.
+            # The env backup the console mirrors every supplier key into. The
+            # values themselves are stored in this registry.
             "env_path": str(self.keys.path),
             "runtime": state.runtime.model_dump(mode="json"),
             "vendors": [
@@ -552,15 +629,22 @@ class ProviderRegistry:
             ),
             None,
         )
+        # The key itself never leaves the server; the console only needs to
+        # know whether one is set and which one it is.
+        stored = vendor.model_dump(mode="json", exclude={"api_key"})
         return {
-            **vendor.model_dump(mode="json"),
+            **stored,
             "integration_count": len(endpoints),
             "gateway_count": sum(1 for integration in endpoints if integration.gateway),
             "internal_integration_id": internal.id if internal is not None else "",
             "kind": internal.kind if internal is not None else "",
             "base_url": internal.base_url if internal is not None else "",
+            # The variable the backup copy is written under, so an operator can
+            # still find the key in packages/winnie-llm/.env.
             "api_key_env": self.keys.env_name(vendor.id),
-            "api_key_present": self.keys.present(vendor.id),
+            "api_key_present": bool(vendor.api_key),
+            "api_key_hint": _key_hint(vendor.api_key),
+            "api_key_backup_path": str(self.keys.path),
             "enabled": internal.enabled if internal is not None else False,
         }
 
@@ -591,7 +675,7 @@ class ProviderRegistry:
             "kind_label": kind.label,
             "vendor_label": vendor.label if vendor is not None else integration.vendor,
             "api_key_env": self.keys.env_name(integration.vendor),
-            "api_key_present": self.keys.present(integration.vendor),
+            "api_key_present": bool(vendor.api_key) if vendor is not None else False,
             "used_by": sorted(used_by),
             "gateway_paths": paths,
         }

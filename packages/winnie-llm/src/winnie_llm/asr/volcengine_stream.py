@@ -88,8 +88,8 @@ class VolcengineRealtimeASR:
     ) -> AsyncIterator[RealtimeEvent]:
         if not self.api_key:
             raise RealtimeASRError(
-                "Volcengine streaming ASR key is missing; add "
-                "VOLCENGINE_ASR_API_KEY to packages/winnie-llm/.env"
+                "Volcengine streaming ASR key is missing; set it for the "
+                "supplier in Admin -> AI suppliers"
             )
 
         headers = {

@@ -405,12 +405,12 @@ class Summarizer(Protocol):
 - **Config** supplies only the ASR seed. `meetings.asr_provider` and
   `meetings.volcengine` seed the first ASR integration/binding; translation,
   minutes and the assistant are bound on the AI providers page. There is no
-  `llm`, `translator` or `summarizer` key in `config.yaml`. Credentials come from
-  `packages/winnie-llm/.env` (`VOLCENGINE_ASR_API_KEY`, and the variable derived
-from each supplier id;
-  integration), never from YAML committed to Git. The Doubao key is a single
-  new-console API key sent as `X-Api-Key`; the old APP ID + Access Token pair is
-  not supported.
+  `llm`, `translator` or `summarizer` key in `config.yaml`. Credentials are
+  stored per supplier in the AI registry (`data/ai.yaml`), never in YAML
+  committed to Git; the console mirrors them into
+  `packages/winnie-llm/.env` as a backup. The Doubao key is a single new-console
+  API key sent as `X-Api-Key`; the old APP ID + Access Token pair is not
+  supported.
 - **Cost**: every file ASR, translation and summarization call writes a
   `usage_records` row (audio seconds, tokens, characters). The live-caption
   stream does not, so a realtime meeting is currently billed twice for ASR but
@@ -483,10 +483,10 @@ jobs:
 With the shipped `ai.enabled: true`, the `meetings.asr_provider` and
 `meetings.volcengine` values above are first-start seeds for `data/ai.yaml`;
 afterwards the AI suppliers page selects the live ASR binding. Translation and
-minutes start unbound and must be bound to a supplier model there. Secrets
-(`VOLCENGINE_ASR_API_KEY` and the key derived from each supplier id) come from
-`packages/winnie-llm/.env`, read by `winnie-llm` rather than the capability and
-environment. Unknown YAML keys are rejected at startup. Production should use
+minutes start unbound and must be bound to a supplier model there. Supplier
+keys are stored in `data/ai.yaml` with their models; a key that predates the
+change is imported from `packages/winnie-llm/.env` once. Unknown YAML keys are
+rejected at startup. Production should use
 PostgreSQL and run `uv run alembic upgrade head` with the same `WINNIE_CONFIG`
 before setting `database.auto_create_tables: false`. A database created by
 `auto_create_tables` has no `alembic_version`; back it up and `alembic stamp

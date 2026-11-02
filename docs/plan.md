@@ -136,10 +136,10 @@ durability rather than new surface area.
 - Every path and method under `/{route}/` is forwarded unchanged; there is no
   per-endpoint handler and no protocol translation, so embeddings, models,
   count-tokens and future endpoints work without new code.
-- Callers authenticate with a Winnie gateway key; the server injects the route's
-  supplier key from `packages/winnie-llm/.env`. A key belongs to the account that
-  created it, can be limited to a set of routes, and is revoked, never
-  recovered.
+- Callers authenticate with a Winnie gateway key; the server injects the
+  supplier key stored with that supplier in the AI registry. A Winnie key
+  belongs to the account that created it, can be limited to a set of routes, and
+  is revoked, never recovered.
 - Keys live in `data/gateway-keys.yaml` (digest only, mode `0600`) and are
   managed on the console's API keys page, separately for each account.
 - SSE streaming is passed through chunk by chunk; each ask/answer pair is
@@ -417,7 +417,8 @@ Working:
 - `make start`, `make status`, `make stop`, `make restart` manage the API,
   index and admin console as one stack; `make api`, `make index-serve` and
   `make admin` remain foreground development commands.
-- Vendor keys live in `packages/winnie-llm/.env`; `winnie-llm` is the only
+- Vendor keys are stored per supplier in the AI registry (`data/ai.yaml`) and
+  mirrored into `packages/winnie-llm/.env` as a backup; `winnie-llm` is the only
   reader. `make api` loads the gitignored `apps/api/.env` for non-secret local
   settings such as the Android default URL.
 
@@ -779,15 +780,17 @@ Local settings are in `apps/api/.env` (gitignored):
 
 - `WINNIE_PUBLIC_URL` — build-time default server address for the APK.
 
-Vendor keys are in `packages/winnie-llm/.env` (gitignored), the only file
-anything reads a key from:
+Vendor keys are stored per supplier in `data/ai.yaml` (gitignored, mode `0600`)
+and set on the console's AI providers page; `packages/winnie-llm/.env` is a
+mirrored backup of the same values:
 
-- `VOLCENGINE_ASR_API_KEY` — file and streaming Doubao ASR.
-- `DEEPSEEK_API_KEY` — read by the DeepSeek supplier API; only needed when a
-  feature is bound to it.
+- the `volcengine` supplier's key — file and streaming Doubao ASR;
+- the `deepseek` supplier's key — only needed when a feature is bound to it.
 
-Changing either file requires `make restart`; `uvicorn --reload` watches Python
-files, not the environment files.
+A key change needs no restart: the next model call reads the new value, and the
+running API refreshes its gateway credential at the same time. Editing
+`apps/api/.env` still needs `make restart`; `uvicorn --reload` watches Python
+files, not environment files.
 
 ## 10. References
 

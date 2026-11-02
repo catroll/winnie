@@ -5,8 +5,8 @@ recording-file API, then polls the query endpoint until the result is ready.
 The credential is a single API key issued by the current console and sent as
 ``X-Api-Key``; the older console's APP ID + Access Token pair
 (``X-Api-App-Key`` + ``X-Api-Access-Key``) is not supported. The key is resolved
-by :mod:`winnie_llm.registry` from ``packages/winnie-llm/.env`` and passed to
-this adapter; the adapter never reads the environment.
+by :mod:`winnie_llm.registry` from the supplier record and passed to this
+adapter; the adapter never reads the environment.
 
 The endpoint and header names are vendor-specific. Keep the request/response
 mapping in this module so a future vendor can be added behind the same port
@@ -144,8 +144,8 @@ class VolcengineASRProvider(ASRProvider):
     def _require_credentials(self) -> None:
         if not self.api_key:
             raise ASRError(
-                "Volcengine ASR API key is missing; add VOLCENGINE_ASR_API_KEY "
-                "to packages/winnie-llm/.env"
+                "Volcengine ASR API key is missing; set it for the supplier "
+                "in Admin -> AI suppliers"
             )
 
     def _headers(

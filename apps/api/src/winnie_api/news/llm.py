@@ -69,7 +69,7 @@ class DynamicNewsLLM:
                 )
                 continue
             needs_key = provider.kind != "fake"
-            key_ready = not needs_key or self.registry.keys.present(provider.vendor)
+            key_ready = not needs_key or self.registry.key_present(provider.vendor)
             features.append(
                 {
                     "feature": feature,
@@ -84,9 +84,8 @@ class DynamicNewsLLM:
                         ""
                         if key_ready
                         else (
-                            f"{provider.key_env} is not set for supplier "
-                            f"{provider.vendor!r}; add it to "
-                            f"{self.registry.keys.path}"
+                            f"supplier {provider.vendor!r} has no API key; "
+                            "set it in Admin -> AI suppliers"
                         )
                     ),
                 }

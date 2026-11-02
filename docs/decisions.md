@@ -3,6 +3,53 @@
 Architecture and dependency choices that are not obvious from the code. Each
 entry records the alternative that was rejected and why.
 
+## A supplier key is stored with its models, and the env file becomes a backup (2026-11-02)
+
+**Decision.** Each supplier's API key is stored on its record in `data/ai.yaml`,
+next to its model catalog, and every internal model call — assistant, meeting
+translation, minutes, news, ASR — reads it from there. The console writes a copy
+into `packages/winnie-llm/.env` after every save and keeps the file's comments
+and unrelated lines; that file is a **backup**, not a source. `PUT
+/api/v1/ai/vendors/{id}/key` is the only write path, the value is never returned
+(the console sees `api_key_present` and the last four characters), and the file
+stays mode `0600`.
+
+**Why.** The previous rule split one concept across two stores: the console
+managed the supplier while the key lived in a file the console could not write,
+so saving a key meant editing `.env` by hand and restarting the API — while the
+gateway, balances and internal jobs each re-derived the variable name. A key
+whose value and record live in different places drifts: the record says the
+supplier is configured, the file says it is not, and the first call fails with a
+message about a variable. Storing the key with the model it pays for makes "is
+this supplier usable" a single read, and lets a key change take effect on the
+next call without a restart.
+
+**Rejected: keep `.env` as the source and add a console editor for it.** The
+console would still be editing a second document that the registry has to
+re-read, and a running process would still not notice a change. The mirror is
+one-way (registry → file), so there is exactly one writer and no reconciliation.
+
+**Rejected: encrypt the key with a master key.** The key would protect against a
+stolen `data/ai.yaml` only if the master key were stored somewhere else; on a
+single-user host that means an environment variable and a key-rotation
+migration, and the file is already `0600` inside the same trust boundary as
+`data/gateway-keys.yaml` and the meeting database. Revisit if the registry is
+ever served by a multi-tenant deployment.
+
+**The env file is kept, unchanged in shape.** It still holds one annotated line
+per supplier, so a human can read the state of the deployment, and a
+gateway-only deployment (`ai.enabled: false`) still injects from it because it
+has no registry. A key that predates this change is imported onto its supplier
+once, on the first read of a `version: 6` file (or on a fresh seed), which is the
+only remaining read of the file as a source. The process environment is no
+longer consulted for internal calls at all.
+
+**Verified.** `packages/winnie-llm/tests/test_registry.py` covers the one-time
+import, the mirror in both directions of a save, clearing a key, and that no view
+contains the value; `apps/api/tests/test_ai_admin.py` covers the console
+endpoint, the write-only response, the `…last4` hint and a restart-free key
+change in the route table.
+
 ## An ambiguous birthday is reminded twice, not refused (2026-11-02)
 
 **Decision.** When one person has two dates in the synced data — `圆圆两岁生日`
@@ -753,17 +800,16 @@ endpoints. The trade-off is that a supplier can have only one internal API for a
 given protocol; that is intentional, because multiple credentials for the same
 supplier would be a second account, not a second model.
 
-**Keys moved to the winnie-llm environment (superseding the earlier
-`api_key_env` rule).** The key-value file is `packages/winnie-llm/.env`, read
-only by `winnie-llm`; the variable name is derived from the supplier id, so the
-registry stores neither the key nor its name. The alternative — keeping a key
-variable per integration — was rejected because a typo became a runtime "variable
-is empty", the console had to ask the owner to invent a name, and capability
-packages had no way to know which environment the host would load. The old
-alternative, encrypting keys in the registry, stays rejected for the same
-reasons as before: a master-key lifecycle and a re-encryption migration are too
-much for a single-user instance. A key still never appears in an API response or
-in a browser. The cost is unchanged: rotating a key needs an API restart.
+**Keys moved out of the integration records (2026-11-01).** The variable name is
+derived from the supplier id, so an endpoint stores neither the key nor its name;
+a per-integration `api_key_env` was rejected because a typo became a runtime
+"variable is empty", the console had to ask the owner to invent a name, and
+capability packages had no way to know which environment the host would load.
+The value lived in `packages/winnie-llm/.env` at the time; **superseded on
+2026-11-02** by "A supplier key is stored with its models, and the env file
+becomes a backup" above, which moved the value onto the supplier record and made
+the file a one-way mirror. A key still never appears in an API response or in a
+browser, and rotating it no longer needs a restart.
 
 **Resolution is per call, not per process.** The assistant, meeting service and
 worker are built once, but their provider ports are thin wrappers that resolve

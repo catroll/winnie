@@ -130,12 +130,11 @@ async def proxy_path(route: str, path: str, request: Request) -> Response:
     if isinstance(caller, JSONResponse):
         return caller
     if not resolved.credential_present:
-        env = resolved.api_key_env or "<VENDOR>_API_KEY"
         return error_response(
             resolved.protocol,
             503,
-            f"route {resolved.name!r} has no server credential; set {env} "
-            "in packages/winnie-llm/.env and restart the API",
+            f"route {resolved.name!r} has no server credential; set the API key "
+            "of its supplier in Admin -> AI suppliers",
         )
     return await forward(
         request=request,

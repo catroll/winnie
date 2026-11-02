@@ -195,20 +195,22 @@ curl -s 'http://[::1]:8000/routes'
 
 Point any OpenAI-compatible client at `http://[::1]:8000/<route>` (or
 `API_HOST=0.0.0.0 make api` for IPv4) and authenticate with a Winnie gateway
-key, created on the console's API keys page. The vendor key is injected by
-the server from `packages/winnie-llm/.env`; clients never hold it. Routing,
-configuration and request examples are in
+key, created on the console's API keys page. The supplier key is injected by
+the server from the AI registry, where it is stored with the supplier's models;
+clients never hold it. Routing, configuration and request examples are in
 [docs/openai-proxy.md](./docs/openai-proxy.md).
 
 Accounts and meeting notes are mounted under `/api/v1` when enabled in
 `apps/api/config.yaml`. The first account can register, then login to receive a
 bearer token. Every model vendor call — chat, transcription and live captions — is made by
-`packages/winnie-llm`, and every vendor key lives in
-`packages/winnie-llm/.env` (gitignored; start from
-`packages/winnie-llm/.env.example`). No other module reads or stores a key. To
-transcribe with Doubao, put `VOLCENGINE_ASR_API_KEY` there; to use a real model
-for the assistant, translation or minutes, add an OpenAI-compatible provider on
-the AI providers page and put its key in the same file, then restart the API.
+`packages/winnie-llm`, and every supplier key is stored with its models in the
+AI registry (`data/ai.yaml`, gitignored, mode `0600`). No other module stores a
+key. To transcribe with Doubao, set the `volcengine` supplier's key on the AI
+providers page; to use a real model for the assistant, translation or minutes,
+add an OpenAI-compatible provider there and set its key too. The console also
+mirrors every key into `packages/winnie-llm/.env` (gitignored; start from
+`packages/winnie-llm/.env.example`) as a backup, so no restart is needed after
+a change.
 Provider selection and first-start behaviour are in
 [docs/ai-providers.md](./docs/ai-providers.md); the meeting integration design
 and endpoint list are in [docs/meetings.md](./docs/meetings.md).

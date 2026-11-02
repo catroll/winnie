@@ -39,9 +39,9 @@ IPv6, and sources an optional `apps/api/.env`; `make help` lists the overridable
 variables. Use `API_HOST=0.0.0.0` for an IPv4-only network. `make start`
 starts the API, index and admin console; `make stop` and `make restart` manage
 that whole stack. Scope a command to the API with `SERVICES=api`, for example
-`make stop SERVICES=api`. Restart after editing `apps/api/.env` or
-`packages/winnie-llm/.env`: `uvicorn --reload` watches Python files, not the
-environment files.
+`make stop SERVICES=api`. Restart after editing `apps/api/.env`: `uvicorn
+--reload` watches Python files, not the environment file. A supplier key saved
+on the console needs no restart.
 
 ```bash
 # Edit config.yaml as needed.
@@ -206,13 +206,14 @@ gateway route and an internal API, and bindings are repointed. A `version: 2`
 file is grouped under suppliers and its models are collected. A `version: 3`
 file is converted to `{vendor, model}` bindings; a `version: 4` file drops the
 seeded fake supplier and clears its bindings; a `version: 5` file loses the
-stored key variable and becomes `version: 6`. Removing a model that a binding or
-endpoint default still uses is rejected.
+stored key variable and becomes `version: 6`; a `version: 6` file imports each
+supplier key from `packages/winnie-llm/.env` and becomes `version: 7`. Removing a
+model that a binding or endpoint default still uses is rejected.
 
 The registry and every vendor client belong to `packages/winnie-llm`. The
-console API here is only the HTTP surface. Keys are not part of the registry:
-`winnie-llm` derives the variable from the supplier id and reads it from
-`packages/winnie-llm/.env`.
+console API here is only the HTTP surface. Each supplier's API key is part of
+its registry record, stored with its models and written from this console; the
+same key is mirrored into `packages/winnie-llm/.env` as a backup.
 
 Shared model limits (timeout, token cap, temperature, retries, chunk sizes) live
 in the registry's `runtime` section and are edited from the console. They apply
@@ -232,6 +233,7 @@ Endpoints (bearer session required):
 | `GET` | `/api/v1/ai/config` | Suppliers, models, endpoints, bindings, runtime, kind metadata |
 | `POST` | `/api/v1/ai/vendors` | Create a supplier |
 | `PUT` | `/api/v1/ai/vendors/{id}` | Update a supplier label/models |
+| `PUT` | `/api/v1/ai/vendors/{id}/key` | Store `{api_key}` (empty clears); mirrors the env backup |
 | `POST` | `/api/v1/ai/vendors/{id}/models/sync` | Fetch the supplier's `/models` list |
 | `POST` | `/api/v1/ai/integrations` | Create the supplier API or a gateway route |
 | `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
@@ -253,6 +255,11 @@ curl -s -X POST http://[::1]:8000/api/v1/ai/integrations \
   -d '{"name":"deepseek-internal","label":"DeepSeek API","vendor":"deepseek",
        "kind":"openai","base_url":"https://api.deepseek.com","gateway":false}'
 
+curl -s -X PUT http://[::1]:8000/api/v1/ai/vendors/deepseek/key \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"api_key":"sk-..."}'
+
 curl -s -X POST http://[::1]:8000/api/v1/ai/vendors/deepseek/models/sync \
   -H "Authorization: Bearer $TOKEN"
 
@@ -264,9 +271,8 @@ curl -s -X PUT http://[::1]:8000/api/v1/ai/features/assistant.chat \
 
 Set `"gateway": true` to expose an OpenAI/Anthropic endpoint at
 `/{name}/...`. A caller reaches it with a Winnie gateway key (Gateway routes
-page, `data/gateway-keys.yaml`) and the gateway injects the supplier's
-`packages/winnie-llm/.env` key, where the variable is derived from the supplier
-id. The registry stores neither the key nor its variable name. A feature binding
+page, `data/gateway-keys.yaml`) and the gateway injects the supplier key stored in
+the registry. A feature binding
 names a model from the supplier catalog; an unknown model is rejected. The
 supplier's
 internal API is the only thing used for a model call; gateway routes are
@@ -305,8 +311,8 @@ rates cannot be expressed in one row. An unlisted model is counted as unpriced
 instead of estimated at zero. A provider-reported cost (`usage.cost`, for
 example on OpenRouter) takes precedence.
 
-Balances are queried only for integrations whose supplier has a key in
-`packages/winnie-llm/.env`, and only when the vendor exposes an endpoint:
+Balances are queried only for integrations whose supplier has a stored key, and
+only when the vendor exposes an endpoint:
 DeepSeek, OpenRouter, Kimi/Moonshot and SiliconFlow. The gateway injects that
 same key, so proxied traffic is both recorded and covered by the balance.
 
@@ -332,19 +338,13 @@ binding. It does not seed a model: translation and minutes start unbound.
 After that first start, choose models on the AI suppliers page; there is no YAML
 fallback for a model feature.
 
-For Doubao ASR, put the key in `packages/winnie-llm/.env`:
+For Doubao ASR, set the `volcengine` supplier's key on the AI providers page
+(**API key**). This is the API key from the current Volcengine console, sent as
+`X-Api-Key`; the legacy APP ID + Access Token pair is no longer accepted.
 
-```bash
-# packages/winnie-llm/.env
-VOLCENGINE_ASR_API_KEY=...
-```
-
-This is the API key from the current Volcengine console, sent as `X-Api-Key`.
-The legacy APP ID + Access Token pair is no longer accepted.
-
-For real translation and structured minutes, add a supplier API and a model,
-put the supplier's key in `packages/winnie-llm/.env`, sync its models, and bind
-both `meetings.translate` and `meetings.summarize` to the model. Timeouts,
+For real translation and structured minutes, add a supplier API and a model, set
+the supplier's key on the same page, sync its models, and bind both
+`meetings.translate` and `meetings.summarize` to the model. Timeouts,
 retries and chunk sizes come from the registry's **Model runtime** card, not
 from `config.yaml`.
 
@@ -379,8 +379,8 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ## Smoke test
 
-The same `DEEPSEEK_API_KEY` (from `packages/winnie-llm/.env`) exercises both
-protocol routes for internal calls; gateway routes still take the client's key:
+The script presents one Winnie gateway key and exercises both wire protocols;
+the gateway injects the DeepSeek supplier key it stores:
 
 | Route | Protocol | Path |
 |-------|----------|------|
@@ -388,7 +388,7 @@ protocol routes for internal calls; gateway routes still take the client's key:
 | `deepseek-anthropic` | anthropic | `/deepseek-anthropic/v1/messages` |
 
 ```bash
-# scripts/.env contains DEEPSEEK_API_KEY
+# scripts/.env contains WINNIE_GATEWAY_KEY
 uv run python scripts/smoke_test.py
 uv run python scripts/smoke_test.py --only openai
 uv run python scripts/smoke_test.py --only anthropic

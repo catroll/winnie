@@ -2,8 +2,10 @@
 
 Mounted at ``/api/v1/ai`` when ``ai.enabled`` is true. Every mutation refreshes
 the in-process gateway route table, so a provider added in the console is
-reachable at ``/{name}/v1/...`` without a restart. The registry itself, its
-credentials and every vendor client belong to ``winnie-llm``; this module is
+reachable at ``/{name}/v1/...`` without a restart. That includes a supplier key
+saved here: it is stored on the supplier record, mirrored into the winnie-llm
+env backup, and used by both internal calls and the gateway immediately. The
+registry itself and every vendor client belong to ``winnie-llm``; this module is
 only the HTTP surface.
 """
 
@@ -12,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from winnie_core.auth.dependencies import admin_required
 from winnie_llm import (
@@ -30,6 +33,14 @@ router = APIRouter(
     tags=["ai"],
     dependencies=[Depends(admin_required)],
 )
+
+
+class ApiKeyDraft(BaseModel):
+    """A supplier key. Write-only: no endpoint returns it in full."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: str = Field(default="", max_length=4096)
 
 
 def _service(request: Request) -> ProviderRegistry:
@@ -120,6 +131,26 @@ async def update_vendor(
         vendor = service.update_vendor(vendor_id, payload)
     except AIProviderError as exc:
         raise _error(exc) from exc
+    return {"vendor": _vendor_view(service, vendor.id)}
+
+
+@router.put("/vendors/{vendor_id}/key")
+async def set_vendor_key(
+    request: Request,
+    vendor_id: str,
+    payload: ApiKeyDraft,
+) -> dict[str, Any]:
+    """Store the supplier key and refresh the gateway credential.
+
+    An empty value clears the key. The response reports only whether a key is
+    set and its last four characters.
+    """
+    service = _service(request)
+    try:
+        vendor = service.set_api_key(vendor_id, payload.api_key)
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    _refresh_routes(request, service)
     return {"vendor": _vendor_view(service, vendor.id)}
 
 

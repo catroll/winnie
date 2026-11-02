@@ -17,7 +17,7 @@ export function RoutesPage() {
           <div className="alert alert-info" role="note">
             <i className="bi bi-info-circle-fill me-2" aria-hidden="true" />
             {tr(
-              'Every path under a route prefix is forwarded unchanged. Callers authenticate with a Winnie key; the route vendor key is read from packages/winnie-llm/.env and injected on the server, so clients never see it.',
+              'Every path under a route prefix is forwarded unchanged. Callers authenticate with a Winnie key; the supplier key stored in the AI registry is injected on the server, so clients never see it.',
             )}{' '}
             {tr('Clients reach a route with a Winnie key; create and revoke keys on')}{' '}
             <Link to="/keys">{tr('API keys')}</Link>.
@@ -93,7 +93,7 @@ export function RoutesPage() {
                                 </span>
                                 <div className="small text-secondary mt-1">
                                   {tr(
-                                    'Set it in packages/winnie-llm/.env and restart the API; this route answers 503 until then.',
+                                    'Set the key on its supplier in AI providers; this route answers 503 until then.',
                                   )}
                                 </div>
                               </>

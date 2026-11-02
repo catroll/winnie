@@ -1,6 +1,6 @@
-# Winnie API configuration. Vendor credentials live in
-# packages/winnie-llm/.env and are never written here; callers authenticate to
-# the gateway with a Winnie key created in the console.
+# Winnie API configuration. Vendor credentials are stored per supplier in the
+# AI registry (see ai.path below), not in this file; callers authenticate to the
+# gateway with a Winnie key created in the console.
 
 # Root directory for local conversation logs; files go to {log_root}/{route}/
 # Relative paths are resolved against apps/api/. A file holds the ask/answer
@@ -16,10 +16,11 @@ anthropic_version: "2023-06-01"
 gateway_keys_path: ../../data/gateway-keys.yaml
 
 # Path prefix -> upstream. Any path under /{name}/ is forwarded unchanged.
-# `vendor` names the supplier whose credential is injected; the key itself is
-# read from packages/winnie-llm/.env (DEEPSEEK_API_KEY, OPENAI_API_KEY, ...).
-# These entries seed the admin registry; when ai.enabled is true the registry
-# is authoritative and this block only matters for a gateway-only deployment.
+# `vendor` names the supplier whose credential is injected; the key is the one
+# stored on that supplier in the AI registry. These entries seed the admin
+# registry; when ai.enabled is true the registry is authoritative and this block
+# only matters for a gateway-only deployment, which reads
+# packages/winnie-llm/.env instead.
 routes:
   openai:
     protocol: openai
@@ -49,9 +50,9 @@ routes:
 # Admin-managed AI providers and the feature bindings that use them. On the
 # first start the routes, LLM, ASR and assistant values above are imported
 # into the registry file; afterwards the console (Admin -> AI providers) is
-# authoritative and this block only says where that file lives. API keys are
-# never written there: winnie-llm derives the variable from the supplier id and
-# reads it from packages/winnie-llm/.env.
+# authoritative and this block only says where that file lives. Each supplier's
+# API key is stored in that file with its models; the console also mirrors it
+# into packages/winnie-llm/.env as a backup.
 ai:
   enabled: true
   path: ../../data/ai.yaml
@@ -111,16 +112,16 @@ meetings:
   # This seeds the first ASR binding; the AI providers page owns it afterwards.
   asr_provider: volcengine
   prompt_version: v1
-  # Doubao big-model recording-file ASR. The API key comes from
-  # packages/winnie-llm/.env (VOLCENGINE_ASR_API_KEY, the new-console API key,
-  # sent as X-Api-Key); appid/access-token from the old console are not
-  # supported. This block only supplies endpoint defaults for the first seed.
+  # Doubao big-model recording-file ASR. The API key is stored on the
+  # volcengine supplier in the AI registry (the new-console API key, sent as
+  # X-Api-Key); appid/access-token from the old console are not supported. This
+  # block only supplies endpoint defaults for the first seed.
   volcengine:
     base_url: https://openspeech.bytedance.com
     # The model line: volc.seedasr.auc (2.0, current), volc.bigasr.auc (1.0).
     resource_id: volc.seedasr.auc
     # Streaming 2.0 uses the bidirectional SAUC WebSocket and its own
-    # resource id. The same VOLCENGINE_ASR_API_KEY is sent as X-Api-Key.
+    # resource id. The same supplier key is sent as X-Api-Key.
     stream_endpoint: wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
     stream_resource_id: volc.seedasr.sauc.duration
     model_name: bigmodel

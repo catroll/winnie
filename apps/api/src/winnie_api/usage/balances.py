@@ -1,9 +1,8 @@
 """Provider balance snapshots for the console.
 
 Only vendors with a documented balance or credits endpoint are queried, and
-only with a server-side key from the environment. The gateway never stores a
-vendor key, so these snapshots cover internal jobs and the assistant, not
-client traffic through a proxy route.
+only with the key the registry stores for that supplier. These snapshots cover
+internal jobs and the assistant, not client traffic through a proxy route.
 
 The adapters are chosen by the integration's host, not by a new registry
 field: the endpoint is a property of the vendor, and an unknown host is shown
@@ -329,14 +328,13 @@ class BalanceService:
                 ),
             )
         base = replace(base, endpoint=f"{_origin(integration.base_url)}{adapter.path}")
-        key_name = self.ai.keys.env_name(integration.vendor)
-        api_key = self.ai.keys.get(integration.vendor)
+        api_key = self.ai.vendor_key(integration.vendor)
         if not api_key:
             return replace(
                 base,
                 error=(
-                    f"{key_name} is not set for supplier "
-                    f"{integration.vendor!r}; add it to {self.ai.keys.path}"
+                    f"supplier {integration.vendor!r} has no API key; "
+                    "set it in Admin -> AI suppliers"
                 ),
             )
         try:

@@ -1,35 +1,33 @@
 """Build the gateway's route table, including each route's server credential.
 
 A route is a supplier endpoint plus the Winnie key policy in front of it. The
-vendor credential is resolved here, once per table build, from the same
-winnie-llm environment the internal providers use: the gateway no longer asks
-the caller for a vendor key.
+vendor credential comes from the supplier record in the registry, the same
+place an internal model call reads it from, so there is one credential per
+supplier rather than one per role.
 
 Two sources can produce routes. The admin registry is authoritative when it is
 enabled; ``config.yaml`` is the fallback for a gateway-only deployment, which is
-why a ``RouteConfig`` can name a vendor too.
+why a ``RouteConfig`` can name a vendor too. Only that fallback reads the
+winnie-llm env backup, because it has no registry to read.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from winnie_gateway.config import GatewayConfig
 from winnie_gateway.routes import Route
 from winnie_llm import ApiKeys, ProviderRegistry, RouteEntry
 
-
-def _credential(entry: RouteEntry, keys: ApiKeys) -> tuple[str, str]:
-    """``(key, variable name)`` for a route, empty when it has no supplier."""
-    if not entry.vendor:
-        return "", ""
-    return keys.get(entry.vendor), keys.env_name(entry.vendor)
+# Returns ``(key, variable name)`` for a route's supplier, both empty when the
+# route names no supplier.
+Credential = Callable[[RouteEntry], "tuple[str, str]"]
 
 
-def _table(entries: Iterable[RouteEntry], keys: ApiKeys) -> dict[str, Route]:
+def _table(entries: Iterable[RouteEntry], credential: Credential) -> dict[str, Route]:
     table: dict[str, Route] = {}
     for entry in entries:
-        api_key, api_key_env = _credential(entry, keys)
+        api_key, api_key_env = credential(entry)
         table[entry.name] = Route(
             name=entry.name,
             protocol=entry.protocol,
@@ -41,9 +39,16 @@ def _table(entries: Iterable[RouteEntry], keys: ApiKeys) -> dict[str, Route]:
     return table
 
 
-def gateway_route_table(registry: ProviderRegistry, keys: ApiKeys) -> dict[str, Route]:
-    """Routes the admin registry exposes, with their supplier credentials."""
-    return _table(registry.route_entries(), keys)
+def gateway_route_table(registry: ProviderRegistry) -> dict[str, Route]:
+    """Routes the admin registry exposes, with their stored supplier keys."""
+    return _table(
+        registry.route_entries(),
+        lambda entry: (
+            (registry.vendor_key(entry.vendor), registry.key_env(entry.vendor))
+            if entry.vendor
+            else ("", "")
+        ),
+    )
 
 
 def config_route_table(config: GatewayConfig, keys: ApiKeys) -> dict[str, Route]:
@@ -58,5 +63,9 @@ def config_route_table(config: GatewayConfig, keys: ApiKeys) -> dict[str, Route]
             )
             for name, route in config.routes.items()
         ],
-        keys,
+        lambda entry: (
+            (keys.get(entry.vendor), keys.env_name(entry.vendor))
+            if entry.vendor
+            else ("", "")
+        ),
     )

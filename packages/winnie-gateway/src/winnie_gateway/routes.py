@@ -19,10 +19,12 @@ class Route:
     protocol: Protocol
     base_url: str
     # Which supplier credential to inject. The key itself is held by the host
-    # and resolved from the winnie-llm environment; ``repr=False`` keeps it out
-    # of tracebacks and log lines that format a route.
+    # and read from the supplier record in the AI registry; ``repr=False``
+    # keeps it out of tracebacks and log lines that format a route.
     vendor: str = ""
     api_key: str = field(default="", repr=False)
+    # The env variable the console mirrors this supplier key into. It names the
+    # backup copy, never the source.
     api_key_env: str = ""
 
     def api_base(self) -> str:

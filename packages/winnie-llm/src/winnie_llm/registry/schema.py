@@ -321,6 +321,16 @@ class VendorDraft(BaseModel):
 class VendorRecord(VendorDraft):
     created_at: str = Field(default_factory=utcnow)
     updated_at: str = Field(default_factory=utcnow)
+    # The supplier credential, stored with the supplier and its models. It is
+    # write-only on the console API: a view reports whether one is set and its
+    # last four characters, never the value. The console mirrors it into the
+    # winnie-llm env file as a backup.
+    api_key: str = Field(default="", repr=False)
+
+    @field_validator("api_key")
+    @classmethod
+    def _strip_key(cls, value: str) -> str:
+        return value.strip()
 
 
 class IntegrationInput(BaseModel):
@@ -436,9 +446,9 @@ class AIState(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    version: int = 6
-    # Shared tuning only; provider base URL/model belong to an integration and
-    # the key belongs to winnie-llm/.env.
+    version: int = 7
+    # Shared tuning only; a supplier's base URL belongs to an integration and
+    # its key is stored on the supplier record.
     runtime: ModelRuntimeConfig = Field(default_factory=ModelRuntimeConfig)
     # Supplier -> endpoints -> models. The same vendor can contribute several
     # endpoint records (protocol/role), but it is one supplier in the console.
@@ -448,7 +458,7 @@ class AIState(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> AIState:
-        if self.version not in (1, 2, 3, 4, 5, 6):
+        if self.version not in (1, 2, 3, 4, 5, 6, 7):
             raise ValueError(f"unsupported ai settings version: {self.version}")
 
         vendor_ids: set[str] = set()
@@ -597,9 +607,8 @@ class ResolvedProvider:
     vendor_label: str
     kind: IntegrationKind
     base_url: str
-    # The variable name is derived from the supplier; the value stays in
-    # packages/winnie-llm/.env and is read by the registry when it builds a
-    # client.
+    # The env variable the console mirrors the supplier key into. It is a
+    # backup location, not a source: the registry holds the value.
     key_env: str
     model: str
     options: dict[str, Any]

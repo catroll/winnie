@@ -213,7 +213,7 @@ export function DashboardPage() {
               <div className="alert alert-info" role="note">
                 <i className="bi bi-info-circle-fill me-2" aria-hidden="true" />
                 {tr(
-                  'This console reads the same API as the Android client. Vendor API keys are never stored here; the gateway expects them on each request.',
+                  'This console reads the same API as the Android client. Vendor API keys are stored on the server, with each supplier in the AI registry, and injected by the gateway; clients never send them.',
                 )}
               </div>
             </div>

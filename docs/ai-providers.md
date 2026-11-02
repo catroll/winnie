@@ -15,19 +15,20 @@ model list. A feature never selects a supplier or an endpoint.
 - State file: `data/ai.yaml` by default (gitignored)
 - Owner: `packages/winnie-llm` (`winnie_llm.registry`); `apps/api` only exposes
   the HTTP console below
-- No vendor keys are stored here: they live in `packages/winnie-llm/.env` and
-  the variable is derived from the supplier id
+- Each supplier's API key is stored in this file with its models. The console
+  mirrors every saved key into `packages/winnie-llm/.env` as a backup; that file
+  is not a source, except for a gateway-only deployment and a one-time import
 
 ## Concepts
 
 A **supplier** is the vendor (`deepseek`, `openai`, `qwen`, `anthropic`,
 `volcengine`) and owns:
 
-- one **API endpoint** for internal calls: base URL and protocol (the key is
-  not part of the record);
+- one **API endpoint** for internal calls: base URL and protocol;
+- one **API key**, stored on the supplier record (write-only on the console API);
 - a **model catalog**;
 - zero or more **gateway routes** — public `/{name}/...` proxy paths that inject
-  the supplier's server-side key for a caller holding a Winnie gateway key.
+  the supplier's key for a caller holding a Winnie gateway key.
 
 The API endpoint and the gateway routes are different roles, but they are not
 separate suppliers and they are not feature targets. The console shows one
@@ -166,13 +167,26 @@ A `version: 5` registry is migrated to `version: 6`: the stored `api_key_env`
 field is removed from every endpoint, and the variable name is derived from the
 supplier id at call time. The file becomes `version: 6`.
 
+A `version: 6` registry is migrated to `version: 7`: each supplier's key is
+imported from `packages/winnie-llm/.env` onto its record and internal calls stop
+reading the environment. The backup file is left exactly as it was. A fresh
+registry (a first start, or a deleted `data/ai.yaml`) imports the same backup
+once, so wiping the file does not lose the credentials.
+
 ## API keys
 
-The registry never stores a key and no longer names a variable either. All
-vendor credentials live in `packages/winnie-llm/.env`, which is read only by the
-`winnie-llm` package:
+Every supplier credential is stored in `data/ai.yaml`, on the supplier record,
+next to its model catalog. It is written by the console (**AI providers → API
+key**, or `PUT /api/v1/ai/vendors/{id}/key`) and read by every internal model
+call, the gateway and the balance report from that one place.
 
-| Supplier | Variable |
+The console never returns the value: `GET /api/v1/ai/config` reports
+`api_key_present` and `api_key_hint` (the last four characters), which is enough
+to tell two keys apart. The value is not in any JSON response or log line.
+
+The variable each supplier is mirrored under:
+
+| Supplier | Backup variable |
 |---|---|
 | `deepseek` | `DEEPSEEK_API_KEY` |
 | `openai` | `OPENAI_API_KEY` |
@@ -184,24 +198,29 @@ vendor credentials live in `packages/winnie-llm/.env`, which is read only by the
 
 A key belongs to a **supplier**, not a feature or a feature binding: every model
 of that supplier shares it. To use a second account for the same vendor, add a
-supplier such as `deepseek-work` and put `DEEPSEEK_WORK_API_KEY` in the same
-file.
+supplier such as `deepseek-work` and set its key in the console; it is mirrored
+as `DEEPSEEK_WORK_API_KEY`.
 
-Start from `packages/winnie-llm/.env.example`. The console shows the derived
-variable name and whether it is set, but never renders the value; a pasted key
-in the registry JSON is rejected as an unknown field. Restart the API or worker
-after editing the file: a running process does not re-read it.
+### The environment backup
 
-A process-environment variable of the same name overrides the file, which keeps
-CI and one-off runs possible. `WINNIE_LLM_ENV_FILE` points the loader at another
-file; the API tests use it so the checkout's real keys never reach a test.
+Saving a key also writes a copy into `packages/winnie-llm/.env`, keeping the
+file's comments, ordering and unrelated lines. The two are kept equal by the
+console, but they are not equal in authority:
+
+- **The registry wins.** Editing only the backup changes nothing; the next
+  console save overwrites that line again.
+- **The backup is readable.** It is the file an operator inspects (mode `0600`)
+  and the one a gateway-only deployment (`ai.enabled: false`) injects, because
+  that deployment has no registry to read.
+- **A pre-upgrade key is imported once.** On the first read of a `version: 6`
+  file, each supplier without a stored key takes the backup's value.
+
+`WINNIE_LLM_ENV_FILE` points the backup path elsewhere; the API tests use it so
+the checkout's real keys never reach a test.
 
 A gateway route uses the same supplier key: the gateway injects it for a caller
-that presents a Winnie gateway key (created on the API keys page). The
-environment file is therefore the single place a supplier credential lives, for
-internal jobs and proxied traffic alike; editing it needs an API restart. A
-gateway-only record is never a feature target; the internal API button/config is
-separate.
+that presents a Winnie gateway key (created on the API keys page). A gateway-only
+record is never a feature target; the internal API button/config is separate.
 
 ## Changes take effect without a restart
 
@@ -212,12 +231,11 @@ assistant turn, the next meeting pipeline stage and the next live-caption
 connection.
 
 The gateway route table is refreshed in the API process on every CRUD request,
-including the supplier key attached to each route. An OpenAI or Anthropic gateway
-route makes `/{name}/...` reachable immediately; turning it off, disabling or
-deleting it removes the path. The separate arq worker reads the file by
-modification time, so it also sees the change without a restart. The environment
-file is different: its keys are read once at startup, so rotating a vendor key
-still needs an API restart.
+including a saved supplier key. An OpenAI or Anthropic gateway route makes
+`/{name}/...` reachable immediately; turning it off, disabling or deleting it
+removes the path. The separate arq worker reads the file by modification time,
+so it also sees a new key without a restart. Rotating a key needs no restart at
+all: the next internal call and the next gateway request use the new value.
 
 ## HTTP API
 
@@ -228,6 +246,7 @@ All endpoints require the same bearer session as the rest of the console.
 | `GET` | `/api/v1/ai/config` | Suppliers, models, endpoints, bindings, runtime |
 | `POST` | `/api/v1/ai/vendors` | Create a supplier |
 | `PUT` | `/api/v1/ai/vendors/{id}` | Update a supplier label/models |
+| `PUT` | `/api/v1/ai/vendors/{id}/key` | Store `{api_key}`; empty clears it; mirrors the env backup |
 | `POST` | `/api/v1/ai/vendors/{id}/models/sync` | Fetch the model list from the supplier |
 | `POST` | `/api/v1/ai/integrations` | Create the supplier API or a gateway route |
 | `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
@@ -235,7 +254,7 @@ All endpoints require the same bearer session as the rest of the console.
 | `PUT` | `/api/v1/ai/features/{feature}` | Bind `{vendor, model}`; empty vendor unbinds |
 | `PUT` | `/api/v1/ai/runtime` | Update the shared model limits |
 
-Create a supplier, sync its models, then bind a feature to a model:
+Create a supplier, set its key, sync its models, then bind a feature to a model:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/ai/vendors \
@@ -255,6 +274,11 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/ai/integrations \
     "gateway": false
   }'
 
+curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/vendors/deepseek/key \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"api_key":"sk-..."}'
+
 curl -s -X POST http://127.0.0.1:8000/api/v1/ai/vendors/deepseek/models/sync \
   -H "Authorization: Bearer $TOKEN"
 
@@ -270,12 +294,14 @@ supplier.
 
 ## Operational notes
 
-- Back up `data/ai.yaml` with the rest of `data/`. It is small and human-readable.
+- Back up `data/ai.yaml` with the rest of `data/`. It is small and
+  human-readable, and it now holds the supplier credentials: treat it like a
+  secrets file, which is why it is written with mode `0600` and gitignored.
 - A manually edited file is validated on the next read; an invalid file fails
   loudly with the path and the validation error instead of silently falling
   back. Use the console for normal changes.
 - The file is written atomically (temporary file plus rename) with mode `0600`.
-- The file is `version: 6`. A `version: 1`–`5` file is migrated in place on the
+- The file is `version: 7`. A `version: 1`–`6` file is migrated in place on the
   next read; back it up first if it contains manual edits.
 - Multiple API processes share the file. The process that handled the console
   write refreshes its gateway table immediately; another process only re-reads

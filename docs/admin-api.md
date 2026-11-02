@@ -84,7 +84,7 @@ data, not the instance:
 | `GET /healthz`, `GET /readyz` | Liveness and readiness probes. |
 | `POST /api/v1/auth/register` | Bootstrap. The first account can always register even when `auth.allow_registration` is false; later registrations are refused with `403`. |
 | `POST /api/v1/auth/login` | Obtain a session. Rate-limited by `login_throttles`. |
-| `/{route}/{path}` | The model gateway's data plane. It authenticates with a Winnie gateway key, not a console session, and injects the route's supplier key from `packages/winnie-llm/.env`; this is not a console surface and gating it on a session would break non-console clients. |
+| `/{route}/{path}` | The model gateway's data plane. It authenticates with a Winnie gateway key, not a console session, and injects the supplier key stored in the AI registry; this is not a console surface and gating it on a session would break non-console clients. |
 
 Gateway keys are managed through the console API. Every signed-in account sees
 its own keys; `scope=all` is administrator-only:

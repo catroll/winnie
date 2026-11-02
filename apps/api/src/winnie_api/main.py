@@ -101,8 +101,8 @@ def create_app(
     usage_ledger = UsageLedger(
         resolved.resolve_usage_root(), enabled=resolved.usage.enabled
     )
-    # One loader for both roles a vendor key plays: the internal providers and
-    # the credential the gateway injects for a public route.
+    # The env backup the console mirrors supplier keys into. Internal providers
+    # read the registry; only a gateway-only deployment reads this file.
     api_keys = ApiKeys.load()
     ai_settings = (
         ProviderRegistry(
@@ -123,7 +123,7 @@ def create_app(
     def build_route_table() -> dict[str, Route]:
         """The live route table, with each route's supplier credential."""
         if ai_settings is not None:
-            return gateway_route_table(ai_settings, api_keys)
+            return gateway_route_table(ai_settings)
         return config_route_table(gateway_config, api_keys)
 
     http_client = http or httpx.AsyncClient(

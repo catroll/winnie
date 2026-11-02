@@ -6,10 +6,9 @@ status are in [plan.md](./plan.md).
 
 ## P0 — first real meeting and bilingual fixture
 
-> `VOLCENGINE_ASR_API_KEY` is configured in the gitignored
-> `packages/winnie-llm/.env` for this checkout; `winnie-llm` is the only reader.
-> Restart the API after changing it (`make restart`): `uvicorn --reload` watches
-> Python files, not the environment file.
+> The `volcengine` supplier key is configured in the gitignored `data/ai.yaml`
+> for this checkout, with a mirrored copy in `packages/winnie-llm/.env`;
+> `winnie-llm` is the only reader. A change needs no restart.
 
 - [x] Verify the new-console API-key auth against the live endpoint: a valid
       `X-Api-Key` is accepted, while a bogus one returns

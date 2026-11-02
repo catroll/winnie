@@ -145,7 +145,7 @@ def seed_state(seed: SeedInput) -> AIState:
         )
 
     return AIState(
-        version=6,
+        version=7,
         vendors=list(vendors.values()),
         integrations=integrations,
         bindings=bindings,
@@ -192,9 +192,10 @@ def migrate_state(
     """Upgrade an old registry in place; return whether it must be written back.
 
     ``legacy_keys`` maps an integration name to the ``api_key_env`` an older
-    file stored there. Version 6 removed that field: keys now live in
-    ``packages/winnie-llm/.env`` and are derived from the supplier id, so the
-    value is only needed to recognise a v1 file's combined internal route.
+    file stored there. Version 6 removed that field, so the value is only
+    needed to recognise a v1 file's combined internal route. Version 7 stores
+    each supplier's key on its record; the caller imports the env backup at
+    that point because this function has no access to the file.
     """
     legacy_keys = legacy_keys or {}
     changed = False

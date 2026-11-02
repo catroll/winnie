@@ -22,7 +22,7 @@ keys.
 | **Meeting detail** | Overview, processing error and stage; transcript with translations; structured minutes; Markdown/TXT export; regenerate minutes; delete |
 | **Scheduled tasks** | Assistant-created tasks with schedule, active/paused state, next and last run, last result and error, prompt and webhook target; ignored definitions; scheduler state; a Run history card with every recorded execution (newest first, filterable by task, paginated) showing duration, conversation and errors |
 | **Skills** | Registered chat skills with title, description, tools, permissions, prompt instructions, availability and scheduled-run safety. Enable or disable a skill; a disabled skill's tools and instructions are absent from the next chat turn. The core skill is always on |
-| **AI providers** | Two tabs. **Suppliers** manages suppliers, their internal API and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier; see whether `winnie-llm/.env` supplies the supplier key. **LLM usage** shows recorded model calls with token classes, latency, status and cost, breakdowns by day, feature and model, provider balances with a refresh, and the configured price table |
+| **AI providers** | Two tabs. **Suppliers** manages suppliers, their internal API, their stored API key and model catalog, and gateway routes; choose one model per assistant/transcription/translation/minutes/news feature; sync models from the supplier. **LLM usage** shows recorded model calls with token classes, latency, status and cost, breakdowns by day, feature and model, provider balances with a refresh, and the configured price table |
 | **Schedule** | One week of the owner's Markdown schedule: the seven day sections as tabs with their events, times, tags and links, plus the week-level items; the add form sits in each day's tab (week items keep their own), its content is a textarea whose first line is the title and whose remaining lines become the event's Markdown note; check items off, edit text and time, delete them, and move between weeks. Pre-2024 files render read-only |
 | **Document index** | Status and a search test (chunk-level hits, why a miss happened), editable roots and limits, dry run, build now, skill install, failures |
 | **Gateway routes** | Every OpenAI/Anthropic provider exposed as a route, with protocol, upstream, proxy prefix and whether its supplier credential is present. Administrator-only |
@@ -181,11 +181,12 @@ There is no provider/endpoint dropdown in the feature table:
 
 A gateway route is a separate record with a `Gateway route` switch. It is
 reachable at `/{name}/...` and injects that supplier's key; it is never a
-feature target. The supplier API is edited with **API**; its key is read by
-`winnie-llm` from `packages/winnie-llm/.env`, where the variable is derived from
-the supplier id. A route whose variable is not set shows a warning and answers
-503. Callers authenticate with a **Winnie gateway key**, created on the Gateway
-routes page and stored as a digest in `data/gateway-keys.yaml`.
+feature target. The supplier API is edited with **API**, and its key with
+**API key**: the value is stored on the supplier record, next to its models, and
+mirrored into `packages/winnie-llm/.env` as a backup. A route without a key
+shows a warning and answers 503. Callers authenticate with a **Winnie gateway
+key**, created on the Gateway routes page and stored as a digest in
+`data/gateway-keys.yaml`.
 
 **Sync models** fetches the supplier's `/models` list with that key; **Models**
 is the manual fallback. Supplier marks are inline SVGs adapted from the WLB
@@ -195,11 +196,10 @@ The **Model runtime** card edits the shared timeout, token cap, temperature,
 retry and chunk limits. They apply to the next call. A model/supplier change
 takes effect on the next model call; no API restart is needed. Removing the
 supplier API unbinds its features; there is no `config.yaml` fallback, so choose
-a replacement before using them again. The page never receives or stores a
-vendor key: `winnie-llm` derives the variable from the supplier id, reads it from
-`packages/winnie-llm/.env`, and the header shows the variable and whether it is
-set. The full model, first-start behaviour (including the `version: 1`–`6`
-migration) and the HTTP API are in
+a replacement before using them again. A pasted key is stored server-side with
+the supplier and never returned: the header shows only whether a key is set and
+its last four characters. The full model, first-start behaviour (including the
+`version: 1`–`7` migration) and the HTTP API are in
 [docs/ai-providers.md](../../docs/ai-providers.md).
 
 ## Quick start
@@ -270,10 +270,11 @@ API has no CORS middleware; adding it would be a separate, deliberate change.
 - Changing the password revokes every server-side session, including the one in
   the browser, so the console returns to the login page with a notice.
 - Meeting text is rendered as text, not HTML.
-- Vendor keys are not entered or stored here. The AI providers page shows the
-  variable `winnie-llm` derives from each supplier and whether
-  `packages/winnie-llm/.env` supplies it. The API keys page shows the caller's
-  own keys; the secret is shown once at creation and only its digest is stored.
+- A supplier key is entered on the AI providers page (**API key**) and stored
+  server-side in the AI registry with that supplier; only a hint of the last four
+  characters is ever read back. The API keys page shows the caller's own Winnie
+  gateway keys; the secret is shown once at creation and only its digest is
+  stored.
   A key can only be revoked by its owner or an administrator.
 
 ## LLM usage tab
@@ -312,9 +313,9 @@ Deliberately not part of this app yet:
 - Editing the AI provider registry outside the console. `data/ai.yaml` is
   written atomically and validated on load, but the console is the supported
   editor; a hand-edited file is only read.
-- Entering vendor API keys in the browser. They stay in
-  `packages/winnie-llm/.env` and are read only by `winnie-llm`; the console can
-  only show whether the derived variable is set.
+- Reading a stored vendor key back. The console writes it once, and afterwards
+  shows only whether it is set and its last four characters; the value is not in
+  any response.
 - Browsing the raw gateway request logs (they stay on disk under `data/logs/`).
   The assistant history is a different record: the conversation Markdown the
   assistant wrote, not a proxy request log. **LLM usage** is a third record:

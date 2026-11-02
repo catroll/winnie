@@ -225,7 +225,8 @@ async def test_a_route_without_a_vendor_key_answers_503(
             response = await client.post("/ghost/v1/chat/completions", json=CHAT_BODY)
 
     assert response.status_code == 503
-    assert "MISSING_API_KEY" in response.json()["error"]["message"]
+    assert "no server credential" in response.json()["error"]["message"]
+    assert "Admin -> AI suppliers" in response.json()["error"]["message"]
 
 
 async def test_upstream_errors_keep_their_status_body_and_headers(

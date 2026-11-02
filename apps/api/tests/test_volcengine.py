@@ -92,7 +92,7 @@ async def test_volcengine_requires_credentials(tmp_path: Path) -> None:
     audio = tmp_path / "sample.wav"
     audio.write_bytes(b"fake")
     provider = VolcengineASRProvider(api_key="")
-    with pytest.raises(RuntimeError, match="VOLCENGINE_ASR_API_KEY"):
+    with pytest.raises(RuntimeError, match="API key is missing"):
         await provider.transcribe(AudioRef(key="sample.wav", local_path=audio))
 
 

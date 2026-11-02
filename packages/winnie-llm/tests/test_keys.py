@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from winnie_llm import ApiKeys, MissingApiKey, env_name_for
+from winnie_llm.keys import write_env_value
 
 
 def test_known_suppliers_map_to_the_documented_variables() -> None:
@@ -66,3 +67,43 @@ def test_env_file_variable_selects_another_file(tmp_path: Path) -> None:
     keys = ApiKeys.load(environ={"WINNIE_LLM_ENV_FILE": str(path)})
     assert keys.path == path
     assert keys.get("openai") == "custom"
+
+
+def test_writing_a_key_keeps_the_rest_of_the_env_file(tmp_path: Path) -> None:
+    path = tmp_path / ".env"
+    path.write_text(
+        "# vendor keys\n"
+        "OPENAI_API_KEY=old\n"
+        "UNRELATED=keep # a note\n",
+        encoding="utf-8",
+    )
+    write_env_value(path, "OPENAI_API_KEY", "new-value")
+    assert path.read_text(encoding="utf-8") == (
+        "# vendor keys\n"
+        "OPENAI_API_KEY=new-value\n"
+        "UNRELATED=keep # a note\n"
+    )
+    # A missing variable is appended, and the round trip reads back the value.
+    write_env_value(path, "ZHIPU_API_KEY", "zhipu-value")
+    assert ApiKeys.load(path, environ={}).get("zhipu") == "zhipu-value"
+    # The file holds credentials, so it is not world-readable.
+    assert (path.stat().st_mode & 0o777) == 0o600
+
+
+def test_writing_a_key_preserves_an_export_prefix_and_quotes_spaces(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / ".env"
+    path.write_text("export OPENAI_API_KEY=old\n", encoding="utf-8")
+    write_env_value(path, "OPENAI_API_KEY", "new value")
+    text = path.read_text(encoding="utf-8")
+    assert text == 'export OPENAI_API_KEY="new value"\n'
+    assert ApiKeys.load(path, environ={}).get("openai") == "new value"
+
+
+def test_api_keys_set_updates_the_file_and_the_snapshot(tmp_path: Path) -> None:
+    path = tmp_path / ".env"
+    keys = ApiKeys.load(path, environ={})
+    keys.set("deepseek-work", "abc")
+    assert path.read_text(encoding="utf-8") == "DEEPSEEK_WORK_API_KEY=abc\n"
+    assert keys.get("deepseek-work") == "abc"

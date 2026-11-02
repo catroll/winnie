@@ -5,8 +5,8 @@
 - ``deepseek-anthropic`` -> POST /deepseek-anthropic/v1/messages
 
 The caller only needs a Winnie gateway key; the vendor credential is injected by
-the server from ``packages/winnie-llm/.env``. The key is read from
-``WINNIE_GATEWAY_KEY``, ``scripts/.env``, or an interactive prompt.
+the server from the supplier record in the AI registry. The gateway key is read
+from ``WINNIE_GATEWAY_KEY``, ``scripts/.env``, or an interactive prompt.
 
 Usage (the API must be running):
   cd apps/api

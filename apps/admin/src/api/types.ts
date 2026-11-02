@@ -414,8 +414,13 @@ export interface AIVendor {
   internal_integration_id: string;
   kind: AIProviderKind | '';
   base_url: string;
+  /** The env variable the key is mirrored into (a backup, not the source). */
   api_key_env: string;
   api_key_present: boolean;
+  /** The last four characters of the stored key, or an empty string. */
+  api_key_hint: string;
+  /** Where the backup copy lives on this host. */
+  api_key_backup_path: string;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -496,7 +501,7 @@ export interface AIKind {
 
 export interface AIProviderConfig {
   path: string;
-  /** Where supplier key values are read from (packages/winnie-llm/.env). */
+  /** The env backup the console mirrors every supplier key into. */
   env_path: string;
   runtime: ModelRuntime;
   vendors: AIVendor[];

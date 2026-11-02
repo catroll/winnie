@@ -71,7 +71,7 @@ def _keys(tmp_path: Path, **values: str) -> ApiKeys:
     return ApiKeys.load(env, environ={})
 
 
-def test_v5_file_is_migrated_and_the_key_variable_is_removed(
+def test_v5_file_is_migrated_and_the_env_backup_key_moves_to_the_supplier(
     tmp_path: Path,
 ) -> None:
     path = _write_v5(tmp_path)
@@ -81,18 +81,23 @@ def test_v5_file_is_migrated_and_the_key_variable_is_removed(
     registry.load()
 
     stored = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert stored["version"] == 6
+    assert stored["version"] == 7
     assert all("api_key_env" not in item for item in stored["integrations"])
+    # The one-time import moves the old env value onto the supplier record; the
+    # backup file itself is left as it was.
+    by_id = {vendor["id"]: vendor for vendor in stored["vendors"]}
+    assert by_id["deepseek"]["api_key"] == "secret"
+    assert (tmp_path / ".env").read_text(encoding="utf-8") == "DEEPSEEK_API_KEY=secret\n"
 
     provider = registry.resolve("assistant.chat")
     assert provider.vendor == "deepseek"
     assert provider.model == "deepseek-chat"
-    # The name is derived from the supplier, not read from the file.
+    # The name the console mirrors the key under is derived from the supplier.
     assert provider.key_env == "DEEPSEEK_API_KEY"
 
 
 @pytest.mark.asyncio
-async def test_chat_client_sends_the_key_from_the_package_env(
+async def test_chat_client_sends_the_key_from_the_supplier_record(
     tmp_path: Path,
 ) -> None:
     path = _write_v5(tmp_path)
@@ -100,6 +105,9 @@ async def test_chat_client_sends_the_key_from_the_package_env(
         path, keys=_keys(tmp_path, DEEPSEEK_API_KEY="secret-key")
     )
     registry.load()
+    # The key now lives on the supplier, so a change to the backup file alone
+    # must not affect the next call.
+    (tmp_path / ".env").write_text("DEEPSEEK_API_KEY=stale-backup\n", encoding="utf-8")
 
     seen: list[httpx.Request] = []
 
@@ -139,8 +147,8 @@ async def test_missing_key_is_reported_before_a_request(tmp_path: Path) -> None:
             [{"role": "user", "content": "ping"}]
         )
     message = str(raised.value)
-    assert "DEEPSEEK_API_KEY" in message
-    assert str(tmp_path / ".env") in message
+    assert "supplier 'deepseek' has no API key" in message
+    assert "Admin -> AI suppliers" in message
 
 
 def test_asr_client_uses_the_supplier_key(tmp_path: Path) -> None:
@@ -202,6 +210,9 @@ def _zhipu_registry(tmp_path: Path) -> ProviderRegistry:
             models=[ModelRecord(id="glm-4.6")],
         )
     )
+    # A supplier added after the migration gets its key from the console, not
+    # from an env file that happened to already hold it.
+    registry.set_api_key("zhipu", "zhipu-key")
     registry.create_integration(
         IntegrationDraft(
             name="zhipu-internal",
@@ -263,3 +274,69 @@ def test_chat_client_appends_v1_to_an_unversioned_base(tmp_path: Path) -> None:
     registry.load()
     client = registry.chat_for("assistant.chat")
     assert client.base_url == "https://api.deepseek.com/v1"
+
+
+def test_set_api_key_stores_it_and_mirrors_the_env_backup(tmp_path: Path) -> None:
+    path = _write_v5(tmp_path)
+    env = tmp_path / ".env"
+    env.write_text(
+        "# vendor keys\n"
+        "DEEPSEEK_API_KEY=\n"
+        "UNRELATED=keep-me # a comment stays\n",
+        encoding="utf-8",
+    )
+    keys = ApiKeys.load(env, environ={})
+    registry = ProviderRegistry(path, keys=keys)
+    registry.load()
+
+    vendor = registry.set_api_key("deepseek", "  sk-new-value  ")
+
+    assert vendor.api_key == "sk-new-value"
+    assert registry.vendor_key("deepseek") == "sk-new-value"
+    assert registry.key_present("deepseek") is True
+    stored = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert {item["id"]: item["api_key"] for item in stored["vendors"]}[
+        "deepseek"
+    ] == "sk-new-value"
+    # The backup is updated in place and unrelated lines survive.
+    assert env.read_text(encoding="utf-8") == (
+        "# vendor keys\n"
+        "DEEPSEEK_API_KEY=sk-new-value\n"
+        "UNRELATED=keep-me # a comment stays\n"
+    )
+    # The in-memory snapshot keeps up, so a second save does not need a reload.
+    assert keys.get("deepseek") == "sk-new-value"
+
+
+def test_views_never_return_the_key(tmp_path: Path) -> None:
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(path, keys=_keys(tmp_path))
+    registry.load()
+    registry.set_api_key("deepseek", "sk-0123456789abcd")
+
+    config = registry.view()
+    vendor = next(item for item in config["vendors"] if item["id"] == "deepseek")
+    assert "api_key" not in vendor
+    assert vendor["api_key_present"] is True
+    assert vendor["api_key_hint"] == "…abcd"
+    assert vendor["api_key_env"] == "DEEPSEEK_API_KEY"
+    assert vendor["api_key_backup_path"].endswith(".env")
+    integration = next(
+        item for item in config["integrations"] if item["vendor"] == "deepseek"
+    )
+    assert integration["api_key_present"] is True
+    assert "api_key" not in integration
+    assert "sk-0123456789abcd" not in json.dumps(config)
+
+
+def test_clearing_a_key_updates_the_backup(tmp_path: Path) -> None:
+    path = _write_v5(tmp_path)
+    env = tmp_path / ".env"
+    env.write_text("DEEPSEEK_API_KEY=secret\n", encoding="utf-8")
+    registry = ProviderRegistry(path, keys=ApiKeys.load(env, environ={}))
+    registry.load()
+
+    registry.set_api_key("deepseek", "")
+
+    assert registry.key_present("deepseek") is False
+    assert env.read_text(encoding="utf-8") == "DEEPSEEK_API_KEY=\n"

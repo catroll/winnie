@@ -353,6 +353,16 @@ export const api = {
     });
   },
 
+  setAIVendorKey(
+    vendorId: string,
+    apiKey: string,
+  ): Promise<{ vendor: AIVendor }> {
+    return request(
+      `/api/v1/ai/vendors/${encodeURIComponent(vendorId)}/key`,
+      { method: 'PUT', body: { api_key: apiKey } },
+    );
+  },
+
   syncAIVendor(vendorId: string): Promise<{ vendor: AIVendor }> {
     return request(
       `/api/v1/ai/vendors/${encodeURIComponent(vendorId)}/models/sync`,
