@@ -1243,20 +1243,57 @@ export interface MailSendResult {
   receipt: string;
 }
 
-export interface MailMessage {
+export interface MailStats {
+  messages: number;
+  unread: number;
+  folders: number;
+}
+
+/** A folder as the last sync saw it, with the cursor that drives the next one. */
+export interface MailFolder {
+  name: string;
+  display_name: string;
+  delimiter: string;
+  selectable: boolean;
+  protocol: string;
+  uid_validity: number;
+  last_uid: number;
+  total: number;
+  unread: number;
+  last_synced_at: string;
+  last_error: string;
+}
+
+export interface MailFolderList {
+  protocol: MailProtocol;
+  folders: MailFolder[];
+  stats: MailStats;
+}
+
+/** A cached message. `body` is empty until the reading pane opens it. */
+export interface MailCachedMessage {
+  id: string;
+  folder: string;
+  /** The folder's human label; ``folder`` is the raw modified-UTF-7 name. */
+  folder_display: string;
+  protocol: string;
   uid: string;
   subject: string;
   sender: string;
-  to: string;
+  recipients: string;
   date: string;
   snippet: string;
-  body: string;
   unread: boolean;
+  size: number;
+  has_body: boolean;
   message_id: string;
+  body: string;
 }
 
-export interface Mailbox {
+export interface MailSyncResult {
   protocol: MailProtocol;
-  folder: string;
-  messages: MailMessage[];
+  folders: number;
+  fetched: number;
+  errors: { folder: string; error: string }[];
+  stats: MailStats;
 }

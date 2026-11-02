@@ -16,6 +16,7 @@ import { MeetingDetailPage } from './pages/MeetingDetailPage';
 import { MeetingsPage } from './pages/MeetingsPage';
 import { NewsPage } from './pages/NewsPage';
 import { PhonePage } from './pages/PhonePage';
+import { MailPage } from './pages/MailPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { RoutesPage } from './pages/RoutesPage';
 import { SchedulePage } from './pages/SchedulePage';
@@ -54,6 +55,7 @@ export function App() {
             <Route path="/skills" element={<SkillsPage />} />
             <Route path="/keys" element={<KeysPage />} />
             <Route path="/account" element={<AccountPage />} />
+            <Route path="/mail" element={<MailPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route element={<RequireAdmin />}>
               <Route path="/schedule" element={<SchedulePage />} />

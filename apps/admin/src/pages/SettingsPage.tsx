@@ -1,15 +1,16 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
+import { Link } from 'react-router-dom';
+
 import { ApiError, api } from '../api/client';
 import type {
-  MailMessage,
   MailProtocol,
   MailSecurity,
   MailSettings,
   MailSettingsInput,
   MailTestTarget,
 } from '../api/types';
-import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
+import { ErrorBlock, LoadingBlock } from '../components/AsyncContent';
 import { PageHeader } from '../components/PageHeader';
 import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
@@ -155,8 +156,6 @@ export function SettingsPage() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [messages, setMessages] = useState<MailMessage[] | null>(null);
-  const [mailboxFolder, setMailboxFolder] = useState('');
 
   useEffect(() => {
     if (loaded.status === 'success') {
@@ -247,14 +246,23 @@ export function SettingsPage() {
     }
   };
 
-  const loadMessages = async () => {
+  const syncMailbox = async () => {
     setError('');
     setNotice('');
-    setBusy('messages');
+    setBusy('sync');
     try {
-      const box = await api.mailMessages(10);
-      setMessages(box.messages);
-      setMailboxFolder(box.folder || 'INBOX');
+      // Saving happens before a sync, so this walks the folders the form above
+      // just stored. Browsing lives on the Mail page; this only refreshes it.
+      const result = await api.syncMail();
+      const failed = result.errors.length
+        ? ' ' + tr('{{failed}} folders failed.', { failed: String(result.errors.length) })
+        : '';
+      setNotice(
+        tr('Synced {{folders}} folders, {{fetched}} new messages.', {
+          folders: String(result.folders),
+          fetched: String(result.fetched),
+        }) + failed,
+      );
     } catch (caught) {
       setError(messageOf(caught));
     } finally {
@@ -626,11 +634,14 @@ export function SettingsPage() {
                 <button
                   className="btn btn-outline-secondary"
                   type="button"
-                  onClick={loadMessages}
+                  onClick={syncMailbox}
                   disabled={busy !== '' || form.protocol === 'none'}
                 >
-                  {busy === 'messages' ? tr('Loading…') : tr('Load recent messages')}
+                  {busy === 'sync' ? tr('Syncing…') : tr('Sync mailbox')}
                 </button>
+                <Link className="btn btn-outline-secondary" to="/mail">
+                  {tr('Browse mail')}
+                </Link>
                 <span className="ms-auto small text-secondary">
                   {status.updated_at
                     ? tr('Saved {{when}}', { when: formatDateTime(status.updated_at) })
@@ -639,55 +650,6 @@ export function SettingsPage() {
               </div>
             </div>
           </form>
-
-          <div className="card mb-4">
-            <div className="card-header">
-              <h3 className="card-title">
-                {tr('Recent messages')}
-                {mailboxFolder ? <span className="text-secondary"> · {mailboxFolder}</span> : null}
-              </h3>
-            </div>
-            <div className="card-body p-0">
-              {messages === null ? (
-                <div className="p-3 text-secondary small">
-                  {tr('Load the newest messages to check the receiving side.')}
-                </div>
-              ) : messages.length === 0 ? (
-                <EmptyState message={tr('The mailbox is empty')} />
-              ) : (
-                <div className="table-responsive">
-                  <table className="table table-sm table-hover mb-0 align-middle">
-                    <thead>
-                      <tr>
-                        <th scope="col">{tr('From')}</th>
-                        <th scope="col">{tr('Subject')}</th>
-                        <th scope="col">{tr('Received')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {messages.map((message) => (
-                        <tr key={message.uid}>
-                          <td className="text-nowrap small">{message.sender}</td>
-                          <td>
-                            {message.unread ? (
-                              <span className="badge text-bg-primary me-2">{tr('New')}</span>
-                            ) : null}
-                            <div>{message.subject}</div>
-                            <div className="small text-secondary text-truncate" style={{ maxWidth: '42rem' }}>
-                              {message.snippet}
-                            </div>
-                          </td>
-                          <td className="text-nowrap small text-secondary">
-                            {message.date ? formatDateTime(message.date) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
     </>

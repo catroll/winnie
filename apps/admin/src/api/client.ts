@@ -62,7 +62,9 @@ import type {
   MailSendResult,
   MailTestResult,
   MailTestTarget,
-  Mailbox,
+  MailCachedMessage,
+  MailFolderList,
+  MailSyncResult,
   ModelRuntime,
   Readiness,
   RouteList,
@@ -511,6 +513,8 @@ export const api = {
     message: string;
     conversation_id?: string;
     channel: 'admin' | 'web' | 'api';
+    // A dictated turn is answered for the ear; omitted means typed.
+    input?: 'text' | 'voice';
   }): Promise<AssistantChatResponse> {
     return request<AssistantChatResponse>('/api/v1/assistant/chat', {
       method: 'POST',
@@ -853,8 +857,30 @@ export const api = {
     });
   },
 
-  mailMessages(limit = 10): Promise<Mailbox> {
-    return request<Mailbox>(`/api/v1/settings/mail/messages?limit=${limit}`);
+  mailFolders(): Promise<MailFolderList> {
+    return request<MailFolderList>('/api/v1/mail/folders');
+  },
+
+  syncMail(): Promise<MailSyncResult> {
+    return request<MailSyncResult>('/api/v1/mail/sync', { method: 'POST' });
+  },
+
+  mailMessages(
+    params: { folder?: string; q?: string; unread?: boolean; limit?: number; offset?: number } = {},
+  ): Promise<MailCachedMessage[]> {
+    return request(
+      `/api/v1/mail/messages${queryString({
+        folder: params.folder,
+        q: params.q,
+        unread: params.unread,
+        limit: params.limit,
+        offset: params.offset,
+      })}`,
+    );
+  },
+
+  mailMessage(id: string): Promise<MailCachedMessage> {
+    return request<MailCachedMessage>(`/api/v1/mail/messages/${id}`);
   },
 
   // -- phone data ------------------------------------------------------
