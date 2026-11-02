@@ -92,6 +92,7 @@ Success for the current phase:
 | State | Owner state (`place`/`body`/`focus`/`availability`): signal ingest, TTL projections, the every-turn digest and a `state` skill | `winnie-state` | Planned |
 | Senses | Room cameras and microphones: ambient detection plus `look`/`listen`/`speak` | Frigate + senses tools | Planned |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
+| Self-repair | Failure detection, isolated worktree, evidence-based diagnosis and a gated, verified diff | `winnie-devloop` (planned) | Planned |
 
 ## 4. Milestones
 
@@ -111,6 +112,7 @@ Success for the current phase:
 | M12 | State sensing | A signal ingest, TTL projections, the every-turn digest and a `state` skill answer "where am I", "what am I doing" and "did I sleep", each correct or `unknown` with a reason | Planned |
 | M13 | Room senses | A camera and a room microphone feed the same signals without a vendor cloud, on an isolated VLAN, with encrypted storage and a visible indicator | Planned |
 | M14 | Mail | One mailbox per account, send and receive, configured in the console; the proactive email rung reads it | **Core done** — send/receive, settings API, console page, the incremental message cache, the Mail page and the assistant's read-only `search_mail`/`read_mail` verified against 126 |
+| M15 | Self-repair | A failure is detected and recovered, reproduced in an isolated worktree, diagnosed from evidence and — for a named narrow class — repaired as a verified diff the owner approves | Planned — design in [self-repair.md](./self-repair.md) |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 Rows are grouped by delivery phase, which is why M12/M13 (planned) and M14

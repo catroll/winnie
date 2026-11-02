@@ -2309,3 +2309,43 @@ bounded options with automatic and four rates; Preview spoke. Edge: 321 voices,
 Chinese preview used it and was audible (sink peak RMS 5,658). The prompt change
 is covered by a unit test on `build_system_prompt` and the wire field by an API
 test (`input: "voice"` accepted, an unknown modality is a 422).
+
+## The self-repair worker is an out-of-process `dsh` subprocess (2026-11-03)
+
+**Decision.** Code-level self-repair, when it is built, runs as one pinned `dsh`
+subprocess per incident (`--profile headless --json` first, `--profile acp` when
+a repair needs cancellation or progress), started with its working directory set
+to a `git worktree` on a `fix/<id>` branch. Winnie owns the incident record, the
+reproduction, the verification, the budget and the approval gate; the harness
+owns only the model↔tool loop. The full design and its phases are in
+[self-repair.md](./self-repair.md).
+
+**Why out of process.** Winnie is Python and the harness is Node; there is no
+supported in-process binding, and a sidecar library would put the harness's
+lifecycle, crash domain and version inside the API the owner is talking to. A
+subprocess is a narrower contract than a library: argv, stdin, newline-delimited
+events on stdout, exit code.
+
+**Why the loop stays ours.** No harness supplies the parts that make the
+difference between repair and damage: reproduce before editing, isolate in a
+worktree, treat the repo's own check as the definition of "fixed", cap the
+budget, and never apply a diff without the owner. Those are code paths, not
+prompt instructions — the same rule the `LocalExecutor` confirmation gate
+already follows.
+
+**Rejected.** Letting `LocalExecutor` repair code inline (no reproduction, no
+test gate, no worktree, no reviewable diff); a SaaS autofix service (it cannot
+see this repo's tests, services or deploy, and moves incident data off the
+host); building our own model↔tool loop (a solved problem with a mature
+harness already installed).
+
+**Pinned and provisional.** `dsh` is `0.2.0-rc.2`, a prerelease, so the
+dependency is the exact version and the subprocess contract, never its plugin
+tree. Note that PyPI `deepseek-harness` is an unrelated third-party client;
+nothing here depends on that name.
+
+**Verified.** `dsh --profile headless --json` runs a one-shot task and emits
+`session`/`status`/`thinking`/`text`/`final`; its `write` and `read` tools act
+inside the invoking directory; a failing command surfaces `[exit code: 3]` in
+the `tool_result`. Commands and output are in
+[self-repair.md § 11](./self-repair.md#11-verification-log).
