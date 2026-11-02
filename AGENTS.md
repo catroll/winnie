@@ -105,6 +105,12 @@ session was working.
   `apps/admin/src/i18n/locales/*.json`, `README.md`) usually contains both.
 - If a commit fails on `index.lock`, another session is committing. Wait a
   second and retry — do not delete the lock.
+- A commit takes the whole index, not just the paths one session passed. Staging
+  hunks in a shared file and leaving them there means the next session's
+  `git add <that file>` + commit sweeps your hunks into its commit — that is how
+  a streaming change once landed under a message about memory tidy. The content
+  is safe; the attribution is not. Commit promptly, and after a commit you did
+  not make, read `git show --stat` to see whose work rode along.
 - A clean tree at the start of your turn is not a promise it stays clean. If
   your change is gone when you return to it, check `git log` before redoing it.
 
