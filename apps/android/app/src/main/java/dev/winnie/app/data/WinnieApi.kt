@@ -168,9 +168,13 @@ class WinnieApi(
      * Sends one turn. A null [conversationId] starts a new conversation and the
      * reply carries the id to continue it.
      */
-    suspend fun assistantChat(message: String, conversationId: String?): AssistantChatReply {
+    suspend fun assistantChat(
+        message: String,
+        conversationId: String?,
+        input: String = "text",
+    ): AssistantChatReply {
         val body = json.encodeToString(
-            AssistantChatRequest(message, conversationId, channel = "api"),
+            AssistantChatRequest(message, conversationId, channel = "api", input = input),
         )
         return decode(
             execute(

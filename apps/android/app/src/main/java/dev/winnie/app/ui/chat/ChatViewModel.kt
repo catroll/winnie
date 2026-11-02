@@ -137,9 +137,10 @@ class ChatViewModel(
     /**
      * Sends one completed turn. The composer's text is the source for a typed
      * message; a voice turn arrives here as text after the server transcribed
-     * the recording, so both paths share the transcript bookkeeping.
+     * the recording, so both paths share the transcript bookkeeping. [input]
+     * tells the server which it was: a dictated turn is answered for the ear.
      */
-    fun sendText(message: String) {
+    fun sendText(message: String, input: String = "text") {
         val current = _ui.value
         if (message.isEmpty() || current.sending || current.loading || current.readOnly) return
 
@@ -155,7 +156,7 @@ class ChatViewModel(
         viewModelScope.launch {
             try {
                 val reply = sessions.requireApi()
-                    .assistantChat(message, current.conversationId)
+                    .assistantChat(message, current.conversationId, input = input)
                 val replyKey = nextKey++
                 _ui.update {
                     it.copy(
@@ -269,7 +270,7 @@ class ChatViewModel(
                     }
                 } else {
                     _ui.update { it.copy(voice = VoiceState.Idle) }
-                    sendText(transcript.text)
+                    sendText(transcript.text, input = "voice")
                 }
             } catch (e: UnauthorizedException) {
                 _ui.update { it.copy(voice = VoiceState.Idle) }

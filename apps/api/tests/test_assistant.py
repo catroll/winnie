@@ -165,6 +165,23 @@ async def test_tasks_are_created_and_run_through_chat(
     assert payload["tasks"] == []
 
 
+async def test_a_voice_turn_is_accepted_and_an_unknown_modality_is_not(
+    assistant_client: httpx.AsyncClient,
+) -> None:
+    voice = await assistant_client.post(
+        "/api/v1/assistant/chat",
+        json={"message": "今天天气怎么样", "input": "voice", "channel": "admin"},
+    )
+    assert voice.status_code == 200, voice.text
+    assert voice.json()["reply"].startswith("Fake reply")
+
+    rejected = await assistant_client.post(
+        "/api/v1/assistant/chat",
+        json={"message": "今天天气怎么样", "input": "audio"},
+    )
+    assert rejected.status_code == 422
+
+
 async def test_conversation_channels_are_recorded_and_filtered(
     assistant_client: httpx.AsyncClient,
 ) -> None:

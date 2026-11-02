@@ -263,6 +263,8 @@ class WinnieApiTest {
         assertTrue(
             request.body.contains("\"conversation_id\":\"20261101T021500Z-3f9a\""),
         )
+        // A typed turn omits the default: the server's own default is "text".
+        assertTrue(!request.body.contains("\"input\""))
     }
 
     @Test
@@ -279,6 +281,24 @@ class WinnieApiTest {
         // explicitNulls = false: the server must see no conversation_id at all,
         // not a JSON null it would have to special-case.
         assertTrue(!received.single().body.contains("conversation_id"))
+    }
+
+    @Test
+    fun aVoiceTurnTellsTheServerItWasDictated() = runBlocking {
+        respond = {
+            StubResponse(
+                200,
+                """{"conversation_id":"c3","reply":"好","tools_used":[]}""",
+            )
+        }
+
+        api(token = "abc").assistantChat(
+            message = "今天天气怎么样",
+            conversationId = null,
+            input = "voice",
+        )
+
+        assertTrue(received.single().body.contains("\"input\":\"voice\""))
     }
 
     @Test

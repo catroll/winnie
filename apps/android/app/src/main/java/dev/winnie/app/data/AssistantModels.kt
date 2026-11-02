@@ -69,6 +69,12 @@ internal data class AssistantChatRequest(
      * channel must be on the wire rather than left to the server's default.
      */
     val channel: String,
+    /**
+     * How the owner produced this turn. A voice turn asks the server for a
+     * reply written to be heard rather than read. Defaulted to "text" so a
+     * typed turn omits it from the wire and older servers keep working.
+     */
+    val input: String = "text",
 )
 
 /** The transcript of one recorded voice turn. */

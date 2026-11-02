@@ -68,6 +68,10 @@ class ChatTurn:
     pending: str = ""
     scheduled: bool = False
     channel: str = "api"
+    # How the owner produced this message: "text" or "voice". A dictated turn
+    # asks for a reply that can be read aloud, so the prompt changes even though
+    # the rest of the turn is identical.
+    modality: str = "text"
 
 
 @dataclass(frozen=True)

@@ -118,6 +118,7 @@ class AssistantService:
         channel: str = "api",
         task_id: str = "",
         title: str | None = None,
+        modality: str = "text",
     ) -> ChatReply:
         reply = await self.agent.chat(
             text,
@@ -126,6 +127,7 @@ class AssistantService:
             channel=channel,
             task_id=task_id,
             title=title,
+            modality=modality,
         )
         if self.builder is not None and self.config.memory.auto_distill:
             self._schedule_distill()

@@ -91,6 +91,7 @@ async def chat(
             payload.message.strip(),
             conversation_id=payload.conversation_id,
             channel=payload.channel,
+            modality=payload.input,
         )
     except (InvalidConversationId, ConversationNotFound) as exc:
         raise HTTPException(status_code=404, detail="conversation not found") from exc

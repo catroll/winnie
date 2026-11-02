@@ -2247,3 +2247,65 @@ check — acceptable because both want the same two-day window.
 same `fetched_at` and the same message. Tests cover the TTL, the day rollover, a
 different place, and a corrupt file being ignored.
 
+
+## A spoken reply needs a provider-scoped voice and a dictated turn (2026-11-02)
+
+**Decision.** Voice output becomes a first-class console feature rather than a
+side effect of the voice loop: every assistant message has a play button, the
+chat header owns a Voice / Rate / Preview menu, and the saved choice is
+`{provider, voice, rate}`. A turn that came from speech carries
+`input: "voice"` on `POST /assistant/chat`, and the host adds a concision
+instruction to that turn's system prompt.
+
+**Why per message, not only per conversation.** The voice loop already spoke the
+reply, but that only helped while the loop was running: an old transcript, a
+reply read after Cancel, or a typed turn had no audio at all. The play button
+reuses the same Markdown-to-speech reduction as the loop and gives every message
+a deterministic replay, which is also how a misheard sentence is checked.
+
+**Why the voice identity is provider-scoped.** A voice name is not unique across
+engines, and the two catalogs that exist today are qualitatively different: a
+browser voice is device-local (`voiceURI`, present only on the machine that
+enumerated it) while a supplier voice will be a server-side catalog entry. A bare
+name saved today would be ambiguous the moment a second provider exists, and a
+name saved on the desktop would be sent to a vendor that has never heard of it.
+`{provider, voice}` makes the future binding additive: a new provider is a new
+value plus its own catalog, and a missing browser voice falls back to automatic
+by language instead of going silent. The setting stays in the browser because a
+browser voice is meaningless on another device; a server-side preference would
+be wrong for the only provider that exists.
+
+**Why the picker is bounded.** Edge/Linux reports 321 voices (14 Chinese online
+ones). Firefox's speech-dispatcher backend reports **14,805**, 945 of them
+English and none tagged `zh`, because it expands every espeak language into all
+of its variants. A `<select>` with 14,805 options froze the page in testing. The
+picker therefore keeps up to 50 voices for the console's languages (English and
+Chinese) and one representative for every other language, and always includes
+the saved voice. Automatic selection is untouched: `utterance.lang` still gets a
+voice for whatever language the reply is written in. The alternative — a
+searchable combobox over 14k entries — is more UI than this one-owner console
+needs, and the cap is reversible when a curated catalog (a vendor binding)
+replaces speech-dispatcher.
+
+**Why a dictated turn is marked.** The server cannot infer modality: the
+transcript is ordinary text, and a phone turn and a typed turn are identical on
+the wire. Without the marker the model writes a document for a question the
+owner asked by voice, and a document is unlistenable. The prompt instruction is
+per-turn and deliberately does not change the conversation file: the user and
+assistant blocks stay the same Markdown, so history, search and the phone keep
+working. The phone sends the same field from its wake turn.
+
+**Rejected.** A vendor TTS binding now (a second bill, credential and catalog for
+something the browser already does, with Edge's online voices as the quality
+baseline); a global "always speak" switch (unexpected audio for typed chat, and
+the voice loop's own switch already covers the conversation case); storing the
+voice server-side (browser voices are machine-local); persisting the modality in
+the transcript (a file-format change with no reader that needs it).
+
+**Verified.** Firefox: a dictated turn reached the API as `input: "voice"`; the
+play button spoke the reply and a second click stopped it; the menu showed 169
+bounded options with automatic and four rates; Preview spoke. Edge: 321 voices,
+14 Chinese, choosing 晓北 persisted `{provider: "browser", voice: …}` and the
+Chinese preview used it and was audible (sink peak RMS 5,658). The prompt change
+is covered by a unit test on `build_system_prompt` and the wire field by an API
+test (`input: "voice"` accepted, an unknown modality is a 422).

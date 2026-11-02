@@ -301,7 +301,9 @@ Working:
   turn is shown as typed. A microphone button runs a hands-free voice
   conversation: the browser records 16 kHz mono WAV, the server transcribes it on
   the phone's ASR binding, the transcript is sent, and the reply is spoken with
-  the platform's own voices before the microphone reopens.
+  the platform's own voices before the microphone reopens. Any assistant message
+  can be replayed from its speaker button, and a Voice / Rate menu picks the
+  voice; a dictated turn is marked so the model answers for the ear.
 - Meetings: paginated list; detail with stage, processing error, transcript and
   translations, structured minutes, Markdown/TXT export, minutes regeneration
   and deletion.

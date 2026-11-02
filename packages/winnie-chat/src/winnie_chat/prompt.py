@@ -26,6 +26,21 @@ def build_system_prompt(turn: ChatTurn, skills: list[Skill]) -> str:
                 "Local file and command tools are not available in this turn.",
             ]
         )
+    if turn.modality == "voice":
+        # The reply is spoken by a text-to-speech engine, not read on a screen.
+        # Markdown that is pleasant to look at is noise to listen to, and a long
+        # answer is worse than a short one when it cannot be skimmed.
+        lines.extend(
+            [
+                "",
+                "This message was dictated and the reply will be read aloud.",
+                "Answer as speech: two or three short sentences in plain language,",
+                "direct answer first. No tables, headings, code blocks or long",
+                "lists; turn a short list into one sentence. The transcript may",
+                "contain recognition errors, so answer the intent; ask one short",
+                "question only when the request is genuinely ambiguous.",
+            ]
+        )
     lines.extend(
         [
             "",

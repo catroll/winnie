@@ -133,6 +133,19 @@ speech off.
   speech-optimised reduction of the Markdown reply (code blocks and URLs are
   dropped); the full reply stays on screen and the Stop button ends the speech
   without ending the conversation.
+- A dictated turn is sent with `input: "voice"`, so the model answers for the
+  ear — a short spoken answer instead of a Markdown document.
+
+**Playback is not limited to a voice turn.** Every assistant message carries a
+speaker button next to the name: click to read it, click again to stop. The
+volume button in the chat header opens **Voice / Rate / Preview**. The saved
+choice is provider-scoped (`{provider, voice, rate}`): `browser` is the only
+provider today, and a supplier TTS binding will add its voices as another
+provider rather than reinterpreting a saved browser voice. The picker is bounded
+on purpose — speech-dispatcher can expose 14,805 voice variants — keeping up to
+50 choices for English and Chinese and one for every other language, plus the
+voice already saved. A saved voice that does not exist on this machine falls
+back to automatic selection.
 
 The conversation is recorded under the **Console** channel like any other, so a
 voice turn can be reopened later from the history.

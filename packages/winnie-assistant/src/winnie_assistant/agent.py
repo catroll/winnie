@@ -64,6 +64,7 @@ class AssistantAgent:
         task_id: str = "",
         title: str | None = None,
         owner: str = "local",
+        modality: str = "text",
     ) -> ChatReply:
         conversation = await self.store.get_or_create(
             first_message=text,
@@ -122,6 +123,7 @@ class AssistantAgent:
             pending=self.toolbox.pending_summary(conversation.id),
             scheduled=source == "task",
             channel=channel,
+            modality=modality,
         )
 
         async def on_tool(name: str, output: str) -> None:

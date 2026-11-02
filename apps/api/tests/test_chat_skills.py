@@ -66,7 +66,9 @@ class _FakeSkill:
         return f"echo:{arguments['text']}"
 
 
-def _turn(*, scheduled: bool = False, pending: str = "") -> ChatTurn:
+def _turn(
+    *, scheduled: bool = False, pending: str = "", modality: str = "text"
+) -> ChatTurn:
     return ChatTurn(
         conversation_id="conv",
         user_message="say hi",
@@ -75,6 +77,7 @@ def _turn(*, scheduled: bool = False, pending: str = "") -> ChatTurn:
         timezone="UTC",
         pending=pending,
         scheduled=scheduled,
+        modality=modality,
     )
 
 
@@ -345,3 +348,15 @@ def test_prompt_omits_the_recall_section_when_nothing_matched() -> None:
 
     prompt = build_system_prompt(_turn(), [])
     assert "matched by wording" not in prompt
+
+
+def test_prompt_asks_for_a_spoken_answer_only_on_a_voice_turn() -> None:
+    from winnie_chat import build_system_prompt
+
+    typed = build_system_prompt(_turn(), [])
+    assert "read aloud" not in typed
+
+    voice = build_system_prompt(_turn(modality="voice"), [])
+    assert "This message was dictated and the reply will be read aloud." in voice
+    assert "two or three short sentences" in voice
+    assert "recognition errors" in voice

@@ -14,6 +14,11 @@ class ChatRequest(BaseModel):
     # Where the turn arrived. `task` is reserved for the scheduler; a chat
     # client cannot claim to be one. The default keeps older clients working.
     channel: Literal["admin", "web", "api"] = "api"
+    # How the message was produced. A dictated turn is answered for the ear:
+    # the host adds a concision instruction to the system prompt, because a
+    # Markdown answer that is pleasant to read is noise to listen to. Older
+    # clients omit it and mean text.
+    input: Literal["text", "voice"] = "text"
 
 
 class ChatResponse(BaseModel):

@@ -168,6 +168,38 @@ is that voice quality and availability are the platform's, and a long reply is
 spoken for as long as the platform takes — the bar has a Stop button and the
 transcript is on screen. `docs/decisions.md` records why no vendor was added.
 
+**Every reply can be played, not only inside a voice turn.** A speaker button
+next to the assistant's name reads that message aloud; a second click stops it.
+This is the manual half of the same module, so it shares the Markdown reduction
+and the Stop semantics. It is also the only way to hear an old conversation.
+
+**The voice and the rate are settings, and the identity is provider-scoped.**
+The volume button in the chat header opens Voice / Rate / Preview. The saved
+value is `{provider, voice, rate}`, not a bare voice name: a name is not unique
+across engines, a browser voice exists only on the machine that enumerated it,
+and a supplier voice is a server-side catalog entry. `browser` is the only
+provider implemented; when a TTS binding is added, its voices join the same
+structure as another provider and the saved choice is never sent to the wrong
+engine. A saved browser voice that is missing on this machine falls back to
+automatic rather than failing, and the menu clears it once the catalog is known.
+
+**The catalogs are not comparable, so the picker is bounded.** Edge/Linux
+exposes 321 voices, including 14 Chinese "Online (Natural)" ones; Firefox's
+speech-dispatcher backend expands every espeak language into all of its variants
+— 14,805 voices, 945 of them English. Rendering that would freeze the page, so
+the picker keeps up to 50 voices for the console's two languages (English and
+Chinese) and one representative for every other language, always including the
+saved voice. Automatic selection is not restricted: `utterance.lang` still gets
+a voice for any language the reply is written in, whether or not it is pinnable.
+
+**A dictated turn says so.** The chat request carries `input: "voice"`; the host
+adds a concision instruction to the system prompt for that turn — answer as
+speech, two or three short sentences, direct answer first, no tables, headings,
+code blocks or long lists, and tolerate recognition errors by answering the
+intent. The transcript still stores ordinary user and assistant blocks; the
+modality is a property of the turn, not a new file format. The phone sends the
+same field from its wake turn, so both clients get the spoken-answer shape.
+
 Two behaviours are deliberate and easy to mistake for bugs:
 
 - The transcript is **sent automatically**, not inserted into the composer. A
@@ -190,6 +222,14 @@ driven over WebDriver BiDi:
 - A refused permission, a quiet turn and a stalled stream each end with their
   own message, and neither the quiet nor the stalled turn uploads anything.
 - The Chinese UI and the dark theme render the bar.
+- The dictated turn reached `POST /assistant/chat` with `input: "voice"`; the
+  per-message play button spoke the reply and a second click stopped it; the
+  settings menu offered automatic voice selection and four rates, and Preview
+  produced speech.
+- In headless Edge, the same menu listed 321 voices with 14 Chinese ones; a
+  chosen voice (晓北) was persisted as `{provider: "browser", voice: …}` and the
+  Chinese preview was spoken with that voice and audible on the sink monitor
+  (peak RMS 5,658).
 
 **What is not verified.** The owner's own voice and how often the vendor
 mishears it; spoken-reply quality on this host (Firefox exposes no voice list
@@ -274,6 +314,11 @@ Console (same document, previous section):
   "Read replies aloud" switch, a Markdown-to-speech reduction and a Stop button.
 - Distinct messages for a refused, missing, busy or insecure microphone, a turn
   with no speech, an ASR outage and a speech-synthesis failure.
+- A speaker button on every assistant message, a Voice/Rate/Preview menu with a
+  provider-scoped saved choice, and a bounded catalog that survives
+  speech-dispatcher's 14,805 variants.
+- A dictated turn is marked `input: "voice"`, so the model answers for the ear
+  instead of writing a document.
 
 ## What was measured, without a phone
 

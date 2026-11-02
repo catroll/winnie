@@ -57,9 +57,17 @@ const REPLIES_KEY = 'winnie.admin.voice.replies';
 
 interface Options {
   onUtterance: (text: string) => Promise<string | null>;
+  /** Provider-scoped voice for the spoken reply; empty means automatic. */
+  voice?: string;
+  /** Synthesis rate for the spoken reply. */
+  rate?: number;
 }
 
-export function useVoiceConversation({ onUtterance }: Options): VoiceConversation {
+export function useVoiceConversation({
+  onUtterance,
+  voice = '',
+  rate = 1,
+}: Options): VoiceConversation {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [repliesEnabled, setRepliesEnabledState] = useState(readReplies);
@@ -69,6 +77,8 @@ export function useVoiceConversation({ onUtterance }: Options): VoiceConversatio
   const handle = useRef<RecordingHandle | null>(null);
   const utterance = useRef(onUtterance);
   const replies = useRef(repliesEnabled);
+  const voiceRef = useRef(voice);
+  const rateRef = useRef(rate);
   const speechAvailable = canSpeak();
 
   useEffect(() => {
@@ -77,6 +87,12 @@ export function useVoiceConversation({ onUtterance }: Options): VoiceConversatio
   useEffect(() => {
     replies.current = repliesEnabled;
   }, [repliesEnabled]);
+  useEffect(() => {
+    voiceRef.current = voice;
+  }, [voice]);
+  useEffect(() => {
+    rateRef.current = rate;
+  }, [rate]);
 
   const setRepliesEnabled = useCallback((value: boolean) => {
     setRepliesEnabledState(value);
@@ -194,7 +210,10 @@ export function useVoiceConversation({ onUtterance }: Options): VoiceConversatio
       if (reply && replies.current) {
         setPhase('speaking');
         try {
-          await speak(reply);
+          await speak(reply, {
+            voiceURI: voiceRef.current || undefined,
+            rate: rateRef.current,
+          });
         } catch {
           if (token !== session.current) {
             return;

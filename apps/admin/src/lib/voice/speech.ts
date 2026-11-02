@@ -12,15 +12,28 @@
  * macOS), so a spoken reply costs nothing and works offline. A vendor TTS
  * binding would be a separate, billable decision — `docs/decisions.md` records
  * why it was not taken here.
+ *
+ * Voice selection is provider-scoped (`./settings.ts`). This module implements
+ * the browser provider: a saved `voiceURI` that no longer exists on this machine
+ * falls back to the engine's choice for the reply's language instead of failing.
  */
+
+export interface SpeakOptions {
+  /** Provider-scoped voice id; for the browser this is `voiceURI`. */
+  voiceURI?: string;
+  /** Synthesis rate, 0.5–2.0. */
+  rate?: number;
+}
 
 const MAX_SPEECH_CHARS = 6_000;
 const MAX_CHUNK_CHARS = 220;
 const MIN_SENTENCE_CHARS = 30;
 const START_TIMEOUT_MS = 3_000;
+const VOICES_TIMEOUT_MS = 2_000;
 
 let generation = 0;
 const waiters = new Set<() => void>();
+let voicesPromise: Promise<SpeechSynthesisVoice[]> | null = null;
 
 export function canSpeak(): boolean {
   return (
@@ -28,6 +41,50 @@ export function canSpeak(): boolean {
     typeof window.speechSynthesis !== 'undefined' &&
     typeof SpeechSynthesisUtterance !== 'undefined'
   );
+}
+
+/**
+ * Return the browser's voices, waiting briefly for an asynchronous catalog.
+ *
+ * Chromium populates `getVoices()` after the first call and fires
+ * `voiceschanged`; on Edge/Linux that means 0 voices become ~320, so reading
+ * the list once and caching it would leave the voice picker permanently empty.
+ * Firefox may report no voices at all and still speak through
+ * speech-dispatcher, so an empty result is not an error — the caller proceeds
+ * with `utterance.lang` and lets the platform choose.
+ */
+export function ensureVoices(timeoutMs = VOICES_TIMEOUT_MS): Promise<SpeechSynthesisVoice[]> {
+  if (!canSpeak()) {
+    return Promise.resolve([]);
+  }
+  const current = window.speechSynthesis.getVoices();
+  if (current.length > 0) {
+    return Promise.resolve(current);
+  }
+  if (voicesPromise) {
+    return voicesPromise;
+  }
+  voicesPromise = new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timer);
+      window.speechSynthesis.removeEventListener('voiceschanged', onChange);
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) {
+        // Let a later call retry; the catalog may arrive after this timeout.
+        voicesPromise = null;
+      }
+      resolve(voices);
+    };
+    const onChange = () => finish();
+    const timer = window.setTimeout(finish, timeoutMs);
+    window.speechSynthesis.addEventListener('voiceschanged', onChange);
+  });
+  return voicesPromise;
 }
 
 /** Stop a reply that is being spoken, and resolve the promise that awaited it. */
@@ -51,7 +108,7 @@ export function stopSpeaking(): void {
  */
 export async function speak(
   markdown: string,
-  options: { rate?: number } = {},
+  options: SpeakOptions = {},
 ): Promise<void> {
   if (!canSpeak()) {
     throw new Error('this browser cannot speak replies');
@@ -62,13 +119,27 @@ export async function speak(
   }
   stopSpeaking();
   const token = generation;
-  const lang = speechLanguage(text);
+  // Only a chosen voice needs the catalog. Waiting for it when the reply is
+  // spoken automatically would add up to two seconds before every sentence on
+  // an engine (Firefox/speech-dispatcher) that reports no voices at all.
+  let voice: SpeechSynthesisVoice | null = null;
+  if (options.voiceURI) {
+    const voices = await ensureVoices();
+    if (token !== generation) {
+      return;
+    }
+    voice =
+      voices.find((candidate) => candidate.voiceURI === options.voiceURI) ?? null;
+  }
+  // A chosen voice carries its own language; otherwise the reply's script
+  // decides and the engine picks a default voice for it.
+  const lang = voice?.lang || speechLanguage(text);
   const chunks = splitForSpeech(text);
   for (const chunk of chunks) {
     if (token !== generation) {
       return;
     }
-    await speakChunk(chunk, lang, options.rate ?? 1);
+    await speakChunk(chunk, lang, options.rate ?? 1, voice);
   }
 }
 
@@ -152,12 +223,16 @@ function splitForSpeech(text: string): string[] {
   return chunks;
 }
 
-function speakChunk(chunk: string, lang: string, rate: number): Promise<void> {
+function speakChunk(
+  chunk: string,
+  lang: string,
+  rate: number,
+  voice: SpeechSynthesisVoice | null,
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const utterance = new SpeechSynthesisUtterance(chunk);
     utterance.lang = lang;
     utterance.rate = rate;
-    const voice = pickVoice(lang);
     if (voice) {
       utterance.voice = voice;
     }
@@ -201,22 +276,4 @@ function speakChunk(chunk: string, lang: string, rate: number): Promise<void> {
     }, START_TIMEOUT_MS);
     window.speechSynthesis.speak(utterance);
   });
-}
-
-function pickVoice(lang: string): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length === 0) {
-    return null;
-  }
-  const prefix = lang.toLowerCase().split('-')[0];
-  const matching = voices.filter((voice) =>
-    voice.lang.toLowerCase().startsWith(prefix),
-  );
-  // A default-language voice reading a Chinese reply produces nothing useful;
-  // no voice at all is better than a wrong one, and `utterance.lang` still
-  // lets the platform choose.
-  if (matching.length === 0) {
-    return null;
-  }
-  return matching.find((voice) => voice.localService) ?? matching[0];
 }

@@ -12,10 +12,17 @@ import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent
 import { Markdown } from '../components/Markdown';
 import { PageHeader } from '../components/PageHeader';
 import { VoiceBar } from '../components/VoiceBar';
+import { VoiceSettingsMenu } from '../components/VoiceSettingsMenu';
 import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 import { conversationChannel } from '../lib/status';
+import {
+  readVoiceSettings,
+  saveVoiceSettings,
+  type VoiceOutputSettings,
+} from '../lib/voice/settings';
+import { speak, stopSpeaking } from '../lib/voice/speech';
 import { useVoiceConversation } from '../lib/voice/useVoiceConversation';
 
 const PAGE_SIZE = 50;
@@ -52,7 +59,17 @@ function Avatar({ assistant }: { assistant: boolean }) {
   );
 }
 
-function Message({ message }: { message: AssistantMessage }) {
+function Message({
+  message,
+  speaking = false,
+  onSpeak,
+}: {
+  message: AssistantMessage;
+  /** True while this message is being read aloud. */
+  speaking?: boolean;
+  /** Present only for assistant messages. */
+  onSpeak?: () => void;
+}) {
   if (message.role === 'tool') {
     return (
       <details className="border rounded bg-body-tertiary p-2 mb-3">
@@ -76,6 +93,20 @@ function Message({ message }: { message: AssistantMessage }) {
       <div className="direct-chat-infos clearfix">
         <span className={`direct-chat-name ${outgoing ? 'float-end' : 'float-start'}`}>
           {outgoing ? tr('You') : 'Winnie'}
+          {onSpeak ? (
+            <button
+              type="button"
+              className="btn btn-link btn-sm p-0 ms-2 align-baseline text-secondary text-decoration-none"
+              onClick={onSpeak}
+              aria-label={speaking ? tr('Stop reading') : tr('Read aloud')}
+              title={speaking ? tr('Stop reading') : tr('Read aloud')}
+            >
+              <i
+                className={`bi ${speaking ? 'bi-stop-circle' : 'bi-volume-up'}`}
+                aria-hidden="true"
+              />
+            </button>
+          ) : null}
         </span>
         <span className={`direct-chat-timestamp ${outgoing ? 'float-start' : 'float-end'}`}>
           {formatDateTime(message.at)}
@@ -179,6 +210,9 @@ export function ChatPage() {
   const [sending, setSending] = useState(false);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [voiceSettings, setVoiceSettings] = useState(readVoiceSettings);
+  const [speakingKey, setSpeakingKey] = useState<string | null>(null);
+  const [speakError, setSpeakError] = useState<string | null>(null);
 
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -193,6 +227,8 @@ export function ChatPage() {
   }, [conversation?.messages.length, pendingUser, sending, conversationId]);
 
   useEffect(() => {
+    stopSpeaking();
+    setSpeakingKey(null);
     setDraft('');
     setPendingUser(null);
     setSendError(null);
@@ -217,11 +253,16 @@ export function ChatPage() {
     Boolean(conversationId) && !activeConversation && !conversationError;
   const composerBlocked = sending || (Boolean(conversationId) && !activeConversation);
 
-  const submit = async (text?: string): Promise<string | null> => {
+  const submit = async (
+    text?: string,
+    input: 'text' | 'voice' = 'text',
+  ): Promise<string | null> => {
     const message = (text ?? draft).trim();
     if (!message || composerBlocked || readOnly) {
       return null;
     }
+    stopSpeaking();
+    setSpeakingKey(null);
     setSending(true);
     setSendError(null);
     setPendingUser(message);
@@ -231,6 +272,7 @@ export function ChatPage() {
         message,
         conversation_id: conversationId,
         channel: 'admin',
+        input,
       });
       setPendingUser(null);
       setHistoryRevision((value) => value + 1);
@@ -254,9 +296,46 @@ export function ChatPage() {
     }
   };
 
+  const updateVoiceSettings = (patch: Partial<VoiceOutputSettings>) => {
+    setVoiceSettings(saveVoiceSettings(patch));
+  };
+
+  /**
+   * Read one message aloud, or stop it if it is already the one speaking.
+   *
+   * The key identifies the rendered message; matching on text alone would make
+   * two identical replies share a stop button and would fight the voice loop,
+   * which speaks through the hook rather than through this path.
+   */
+  const toggleSpeak = (key: string, text: string) => {
+    if (speakingKey === key) {
+      stopSpeaking();
+      setSpeakingKey(null);
+      return;
+    }
+    setSpeakError(null);
+    setSpeakingKey(key);
+    void speak(text, {
+      voiceURI: voiceSettings.voice || undefined,
+      rate: voiceSettings.rate,
+    })
+      .catch(() => setSpeakError(tr('The reply could not be played aloud.')))
+      .finally(() => {
+        setSpeakingKey((current) => (current === key ? null : current));
+      });
+  };
+
+  // Nothing may keep talking after the page goes away.
+  useEffect(() => () => stopSpeaking(), []);
+
   // A voice turn is a normal chat turn whose text came from the microphone, so
   // it goes through the same submit path and the reply comes back for speaking.
-  const voice = useVoiceConversation({ onUtterance: submit });
+  // The modality reaches the server so the reply is written for the ear.
+  const voice = useVoiceConversation({
+    onUtterance: (text) => submit(text, 'voice'),
+    voice: voiceSettings.voice,
+    rate: voiceSettings.rate,
+  });
 
   const loadedHistory = history.status === 'success' ? history.data : null;
   const items = loadedHistory?.items ?? [];
@@ -434,18 +513,24 @@ export function ChatPage() {
                       </span>
                     </>
                   ) : null}
-                  <div className="ms-auto small text-secondary">
-                    {activeConversation
-                      ? activeConversation.messages.length === 1
-                        ? tr('{{count}} message', {
-                            count: activeConversation.messages.length,
-                          })
-                        : tr('{{count}} messages', {
-                            count: activeConversation.messages.length,
-                          })
-                      : status.status === 'success' && status.data
-                        ? tr('Model {{model}}', { model: status.data.model })
-                        : ''}
+                  <div className="ms-auto d-flex align-items-center gap-2">
+                    <VoiceSettingsMenu
+                      settings={voiceSettings}
+                      onChange={updateVoiceSettings}
+                    />
+                    <span className="small text-secondary">
+                      {activeConversation
+                        ? activeConversation.messages.length === 1
+                          ? tr('{{count}} message', {
+                              count: activeConversation.messages.length,
+                            })
+                          : tr('{{count}} messages', {
+                              count: activeConversation.messages.length,
+                            })
+                        : status.status === 'success' && status.data
+                          ? tr('Model {{model}}', { model: status.data.model })
+                          : ''}
+                    </span>
                   </div>
                 </div>
 
@@ -494,12 +579,27 @@ export function ChatPage() {
                     ) : activeConversation && activeConversation.messages.length === 0 ? (
                       <EmptyState message="This conversation has no messages yet." />
                     ) : (
-                      activeConversation?.messages.map((message, index) => (
-                        <Message
-                          key={`${message.at}-${message.role}-${index}`}
-                          message={message}
-                        />
-                      ))
+                      activeConversation?.messages.map((message, index) => {
+                        const key = `${message.at}-${message.role}-${index}`;
+                        return (
+                          <Message
+                            key={key}
+                            message={message}
+                            speaking={
+                              message.role === 'assistant' && speakingKey === key
+                            }
+                            onSpeak={
+                              // Reading a message while the voice loop holds
+                              // the microphone would feed the reply back into
+                              // the next turn; the loop has its own speaking
+                              // state and its own Stop.
+                              message.role === 'assistant' && voice.phase === 'idle'
+                                ? () => toggleSpeak(key, message.text)
+                                : undefined
+                            }
+                          />
+                        );
+                      })
                     )}
 
                     {pendingUser ? (
@@ -515,6 +615,23 @@ export function ChatPage() {
                     {sending ? <Thinking /> : null}
                   </div>
                 </div>
+
+                {speakError ? (
+                  <div
+                    className="alert alert-warning m-0 rounded-0 d-flex align-items-center gap-2"
+                    role="alert"
+                  >
+                    <i className="bi bi-volume-mute-fill" aria-hidden="true" />
+                    <span className="flex-grow-1">{speakError}</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => setSpeakError(null)}
+                    >
+                      {tr('Dismiss')}
+                    </button>
+                  </div>
+                ) : null}
 
                 {sendError ? (
                   <div className="alert alert-danger m-0 rounded-0" role="alert">

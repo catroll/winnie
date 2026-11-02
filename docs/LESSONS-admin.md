@@ -434,3 +434,72 @@ device, not on the speaker.
 the whole signal: a DC step or sub-80 Hz rumble is loud enough to pass any floor
 and carries no speech. And an "I heard something" decision taken in the first
 100 ms of a capture stream is a decision about the hardware, not about the user.
+
+## `getVoices()` is asynchronous, and the catalog size is browser-specific
+
+**Signal 1.** A Firefox probe that called `speechSynthesis.getVoices()` once
+returned `[]`, and the same call in a loop returned **14,805** voices half a
+second later. A voice picker built from the first read therefore showed only
+"Automatic" forever. Edge behaved similarly: the first read was `[]`, then 321
+voices after `voiceschanged`.
+
+**Cause.** Speech synthesis initializes lazily when the page subscribes to
+`voiceschanged` (or, depending on the browser, after the first `speak`). The
+first read is not the catalog. Chromium on Linux *does* support the Web Speech
+API through speech-dispatcher; the old assumption that it has no voices is wrong
+here.
+
+**Fix.** `ensureVoices()` registers the listener and waits briefly (2 s) before
+giving up; the menu loads from it, and `speak()` only waits when an explicit
+voice was chosen, so automatic speech never pays the timeout on engines that
+report nothing.
+
+**Check.**
+
+```javascript
+speechSynthesis.addEventListener('voiceschanged', () => console.log(speechSynthesis.getVoices().length), { once: true });
+// Edge/Linux: 321 (14 Chinese). Firefox/speechd: 14,805 (945 English, none tagged zh).
+```
+
+**Signal 2.** Rendering that catalog produced a `<select>` with 14,806
+`<option>` elements; the page froze. Firefox's speechd backend expands every
+espeak language into all of its variants, so this is not a one-off.
+
+**Fix.** Bound the picker: up to 50 voices for English and Chinese, one
+representative voice for every other language, always including the saved voice.
+Automatic selection stays language-based, so no reply loses its voice.
+
+## A synthetic audio stream must reuse its AudioContext, or the browser runs out
+
+**Signal.** After several browser scenarios the console reported `无法打开麦克风`
+("the microphone could not be opened") even though the fake `getUserMedia`
+should have succeeded. The page was fresh; the browser process was not.
+
+**Cause.** The test double created a new `AudioContext` on every fake
+`getUserMedia` and never closed it. Browsers cap the number of audio contexts
+(per process or per document depending on the engine), so the fifth or sixth
+scenario exhausted it and the app's own `new AudioContext()` failed inside
+`startRecording`, which the UI correctly reported as a microphone failure.
+
+**Fix.** Create the fake context once per page and reuse it
+(`state.ctx ??= new AudioContext()`), closing it on `pagehide`. Give each call a
+fresh `MediaStreamAudioDestinationNode`; sources may accumulate harmlessly.
+
+**Check.** When a microphone error appears in a test that injects its own
+stream, ask what the fake did to shared browser resources before blaming the
+recorder.
+
+## A localized UI defeats selectors written against English labels
+
+**Signal.** An Edge check selected the first Chinese voice, persisted it, and
+then failed with `Cannot read properties of undefined (reading 'click')` while
+clicking "Preview". The same menu in Firefox (English) worked.
+
+**Cause.** The fresh Edge profile reported `navigator.language: "zh-CN"`, so the
+console rendered `试听` and `中文` instead of `Preview` and `Chinese`. The
+selector searched for the English text and found nothing.
+
+**Fix.** Target the control, not its translated label: the Preview button is
+`.winnie-voice-settings .btn-primary`; the language group matched both labels
+(`/Chinese|中文/`). In a bilingual console, any selector by visible text is a
+translation bug waiting to happen.
