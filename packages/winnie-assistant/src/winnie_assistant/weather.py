@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 SOURCE_NAME = "Open-Meteo"
+# A repeat question inside this window gains nothing from a refetch: the model
+# runs that back the forecast refresh a few times a day, not every 30 minutes.
+CACHE_TTL = timedelta(minutes=30)
+CACHE_MAX_ENTRIES = 8
 
 # WMO weather interpretation codes.
 RAIN_CODES = frozenset({51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82})
@@ -117,6 +121,129 @@ class WeatherCheck:
     fingerprint: str
 
 
+def forecast_cache_key(
+    latitude: float, longitude: float, location: str, now: datetime
+) -> str:
+    """The question, not the wording: place, rounded coordinates, local date."""
+    return (
+        f"{round(latitude, 2):.2f}|{round(longitude, 2):.2f}|"
+        f"{location.strip()}|{now.date().isoformat()}"
+    )
+
+
+class ForecastCache:
+    """Forecasts kept in one JSON file, shared by conversations and restarts.
+
+    The local date is part of the key, so "today" can never be answered with
+    yesterday's forecast. ``CACHE_TTL`` bounds the age; expired entries are
+    dropped on write and the file is capped at ``CACHE_MAX_ENTRIES``.
+    """
+
+    def __init__(self, path: Path, ttl: timedelta = CACHE_TTL) -> None:
+        self.path = path
+        self.ttl = ttl
+
+    def get(self, key: str, *, now: datetime) -> WeatherReport | None:
+        entry = self._load().get(key)
+        if not isinstance(entry, dict):
+            return None
+        try:
+            report = _report_from_json(entry["report"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        # A clock skew or an NTP step can make the entry look a few
+        # microseconds in the future; that is not a reason to refetch.
+        age = now - report.fetched_at
+        if age < timedelta(0):
+            age = timedelta(0)
+        if age > self.ttl:
+            return None
+        return report
+
+    def put(self, key: str, report: WeatherReport, *, now: datetime) -> None:
+        entries = self._load()
+        for stored, entry in list(entries.items()):
+            try:
+                age = now - _report_from_json(entry["report"]).fetched_at
+            except (KeyError, TypeError, ValueError):
+                del entries[stored]
+                continue
+            if age < timedelta(0) or age > self.ttl:
+                del entries[stored]
+        entries[key] = {"report": _report_to_json(report)}
+        while len(entries) > CACHE_MAX_ENTRIES:
+            oldest = min(entries, key=lambda name: entries[name]["report"].get("fetched_at", ""))
+            del entries[oldest]
+        atomic_write(
+            self.path,
+            json.dumps({"version": 1, "entries": entries}, ensure_ascii=False),
+        )
+
+    def _load(self) -> dict[str, Any]:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        entries = data.get("entries") if isinstance(data, dict) else None
+        return dict(entries) if isinstance(entries, dict) else {}
+
+
+def _report_to_json(report: WeatherReport) -> dict[str, Any]:
+    def day(value: ForecastDay | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        return {
+            "date": value.date,
+            "code": value.code,
+            "temperature_max": value.temperature_max,
+            "temperature_min": value.temperature_min,
+            "precipitation": value.precipitation,
+            "precipitation_probability": value.precipitation_probability,
+            "snowfall": value.snowfall,
+            "wind_max": value.wind_max,
+        }
+
+    return {
+        "location": report.location,
+        "fetched_at": report.fetched_at.isoformat(),
+        "yesterday": day(report.yesterday),
+        "today": day(report.today),
+        "tomorrow": day(report.tomorrow),
+    }
+
+
+def _report_from_json(data: Any) -> WeatherReport:
+    if not isinstance(data, dict):
+        raise ValueError("a cached report is not an object")
+    fetched_at = datetime.fromisoformat(str(data["fetched_at"]))
+
+    def day(value: Any) -> ForecastDay | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError("a cached day is not an object")
+        return ForecastDay(
+            date=str(value["date"]),
+            code=int(value["code"]),
+            temperature_max=float(value["temperature_max"]),
+            temperature_min=float(value["temperature_min"]),
+            precipitation=float(value["precipitation"]),
+            precipitation_probability=int(value["precipitation_probability"]),
+            snowfall=float(value["snowfall"]),
+            wind_max=float(value["wind_max"]),
+        )
+
+    if day(data["today"]) is None or day(data["tomorrow"]) is None:
+        raise ValueError("a cached report needs today and tomorrow")
+    return WeatherReport(
+        location=str(data["location"]),
+        fetched_at=fetched_at,
+        yesterday=day(data["yesterday"]),
+        today=day(data["today"]),
+        tomorrow=day(data["tomorrow"]),
+    )
+
+
 class WeatherService:
     """Fetch one forecast and turn it into advisories."""
 
@@ -126,10 +253,12 @@ class WeatherService:
         *,
         http: httpx.AsyncClient,
         timezone: ZoneInfo,
+        cache: ForecastCache | None = None,
     ) -> None:
         self.config = config
         self.http = http
         self.timezone = timezone
+        self.cache = cache
 
     async def check(
         self,
@@ -226,6 +355,13 @@ class WeatherService:
     # -- data ------------------------------------------------------------
 
     async def _fetch(self, latitude: float, longitude: float, location: str) -> WeatherReport:
+        now = datetime.now(self.timezone)
+        key = forecast_cache_key(latitude, longitude, location, now)
+        if self.cache is not None:
+            cached = self.cache.get(key, now=now)
+            if cached is not None:
+                logger.debug("weather cache hit for %s", key)
+                return cached
         params = {
             "latitude": latitude,
             "longitude": longitude,
@@ -254,7 +390,10 @@ class WeatherService:
             payload = response.json()
         except ValueError as exc:
             raise WeatherError("weather response was not JSON") from exc
-        return parse_open_meteo(payload, location, self.timezone)
+        report = parse_open_meteo(payload, location, self.timezone)
+        if self.cache is not None:
+            self.cache.put(key, report, now=now)
+        return report
 
     # -- rules -----------------------------------------------------------
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -14,10 +14,12 @@ from winnie_assistant.search import FakeSearchProvider
 from winnie_assistant.tools import ToolBox
 from winnie_assistant.weather import (
     Advisory,
+    ForecastCache,
     WeatherCheck,
     WeatherError,
     WeatherService,
     WeatherWatch,
+    forecast_cache_key,
     parse_open_meteo,
 )
 
@@ -151,6 +153,57 @@ async def test_fetch_requests_open_meteo_and_parses_it() -> None:
     assert seen[0].url.params["timezone"] == "Asia/Shanghai"
     assert check.fingerprint == "2026-11-01:rain,temperature_drop"
     assert "带伞" in check.message
+
+
+async def test_a_repeat_forecast_is_served_from_the_cache(tmp_path) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=FORECAST)
+
+    cache = ForecastCache(tmp_path / "weather-cache.json")
+    service = WeatherService(
+        WeatherConfig(), http=_service(handler).http, timezone=TZ, cache=cache
+    )
+    first = await service.check()
+    second = await service.check()
+
+    assert len(seen) == 1
+    assert second.report.fetched_at == first.report.fetched_at
+    assert second.message == first.message
+    assert cache.path.exists()
+
+
+def test_forecast_cache_expires_and_is_scoped_to_the_day(tmp_path) -> None:
+    cache = ForecastCache(tmp_path / "weather-cache.json")
+    now = datetime.now(TZ)
+    report = _report()
+    key = forecast_cache_key(31.23, 121.47, "上海", now)
+
+    cache.put(key, report, now=now)
+    assert cache.get(key, now=now) is not None
+    # The same question 31 minutes later is a refetch.
+    assert cache.get(key, now=now + timedelta(minutes=31)) is None
+    # Tomorrow's key is a different question, even with the same coordinates.
+    assert cache.get(forecast_cache_key(31.23, 121.47, "上海", now + timedelta(days=1)),
+                     now=now) is None
+    # A different place does not share the entry.
+    assert cache.get(forecast_cache_key(30.59, 114.31, "武汉", now), now=now) is None
+
+
+async def test_a_corrupt_cache_file_is_ignored(tmp_path) -> None:
+    path = tmp_path / "weather-cache.json"
+    path.write_text("{not json", encoding="utf-8")
+    service = WeatherService(
+        WeatherConfig(),
+        http=_service().http,
+        timezone=TZ,
+        cache=ForecastCache(path),
+    )
+    check = await service.check()
+    assert check.report.tomorrow.date == "2026-11-02"
+    assert path.read_text(encoding="utf-8").startswith("{")
 
 
 async def test_fetch_errors_are_reported() -> None:

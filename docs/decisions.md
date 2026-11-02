@@ -2185,3 +2185,65 @@ queued for speech and the loop reopened the microphone; Cancel released every
 track. The real microphone opens through the app's recorder. Permission denial,
 a quiet turn and a stalled stream each produce their own message. The owner's
 own voice, the recognition rate on it, and Safari/Chromium remain unmeasured.
+
+## A whitelisted read neither asks nor needs the owner's yes (2026-11-02)
+
+**Symptom.** The owner asked for tomorrow's hourly rain; the assistant answered
+"我准备执行一条只读命令……回复「确认」我就执行". He had already told it, twice,
+that weather queries need no confirmation — and the rule was genuinely stored and
+pinned: `procedures.md` holds "获取天气预报信息（含逐小时降水数据）无需每次向
+他确认，可直接执行只读查询", and `MemoryStore.digest()` puts exactly that line in
+the system prompt of every turn.
+
+**Cause.** The rule was in the prompt; the gate was in the code.
+`LocalExecutor._command` put *every* `run_command` into `PendingActions`,
+including whitelisted ones, and the pending text tells the model "ask the user to
+reply with an explicit confirmation". The model could not obey the memory note:
+`confirm_action` refuses a token created in the same turn, so the only path to
+running the command was a new user message saying "确认". A prompt-level
+instruction cannot override a code-level gate, which is why repeating it never
+worked.
+
+**Fix.** Two rules, one gate:
+1. A whitelisted action is read-only by construction, so it runs immediately —
+   no review, no confirmation. `local.whitelist.unattended: false` restores the
+   old behaviour if an owner wants the confirmation for reads too.
+2. `curl` joins the whitelist for a *read-only* GET only: `http(s)`, public host,
+   no `-o`/`-O`/`-d`/`-F`/`-T`/`-H`/`-b`/`-u`/`-x`, no verb change. The
+   classifier rejects loopback, private, link-local, reserved, credential-bearing
+   and dotless-intranet URLs, so a "read-only fetch" cannot touch a local
+   service. It is still a guardrail, not a sandbox: it cannot stop a request
+   whose query string the model fills with data it already has.
+
+**Rejected.** Teaching the model to say "已确认" itself: `confirm_action` compares
+the *user* message, so self-confirmation is exactly what the turn boundary
+exists to prevent. Also rejected: adding curl to `local.whitelist.commands` only
+— that skips the reviewer but still pends, which is the bug that produced the
+"回复确认" reply.
+
+## A forecast that is fetched twice in a minute is a forecast fetched once (2026-11-02)
+
+**Symptom.** "明天有雨么？" and "明天什么时间下雨？" 90 seconds apart produced two
+full Open-Meteo round trips, and the second reply quoted a different temperature
+  maximum than the first because the provider had rolled its model.
+
+**Cause.** `WeatherService._fetch` did one HTTP request per call. The number is
+deterministic and cheap, but nothing carried it across the two turns, and nothing
+survives a restart.
+
+**Decision.** Cache the parsed report in `.state/weather-cache.json` with a
+30-minute TTL. The key is `coordinates|label|local date`, not the question text,
+so a rephrase hits the same entry and a new day cannot reuse an old "today". An
+entry carries its `fetched_at`, which the existing render already prints
+("数据：Open-Meteo，11-02 23:01"), so a cached answer is honestly labelled rather
+than passed off as live.
+
+**Not done.** No stale-while-revalidate and no negative caching: a failed fetch
+is still an error, and the cache is only consulted when the network was not. The
+watcher and the tool share the entry, so a 06:50 question also warms the 07:00
+check — acceptable because both want the same two-day window.
+
+**Verification.** A live pair of checks: cold 1.43 s, second call 0.000 s with the
+same `fetched_at` and the same message. Tests cover the TTL, the day rollover, a
+different place, and a corrupt file being ignored.
+
