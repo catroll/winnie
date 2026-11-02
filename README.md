@@ -14,6 +14,7 @@ infrastructure below it exists to serve the assistant.
 | **Android client** | Assistant chat with Markdown, on-device "winnie" wake word into a hands-free voice turn, 5-second change-checked phone sync, record with live captions, reminders, remembered sign-in, English/Chinese UI | **MVP implemented; wake word not yet measured on a device** |
 | **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
+| **Mail** | One mailbox per account: send, receive, list and test, configured in the console; the proactive email rung reads it | **Core implemented** |
 | **Proactive assistance** | Notices birthdays and work items without being asked, decides whether to interrupt, says what to do, and escalates until acknowledged; the console lists every item it sent and why | **Core implemented; physical-device run pending** |
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat — typed or as a hands-free voice conversation with spoken replies — and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs, drafts and digests, AI providers (suppliers and LLM usage) and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
@@ -216,6 +217,9 @@ Provider selection and first-start behaviour are in
 and endpoint list are in [docs/meetings.md](./docs/meetings.md).
 
 ## Roadmap
+
+Next: the knowledge base (2), then state and senses (8). Everything else below
+is validation and hardening on capabilities that already run.
 
 1. **Meeting notes** — validate and tune the Doubao and LLM provider paths on
    real recordings; evaluate a second ASR vendor on bilingual audio; run the

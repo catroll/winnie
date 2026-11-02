@@ -81,6 +81,7 @@ Success for the current phase:
 | News | Six-stage pipeline from public sources to a sourced, reviewed draft | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
 | Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
 | Push | Durable notification backlog, WebSocket stream to the phone, assistant reminder tool, scheduled-task and phone-command events | `winnie-push` + `apps/android` + `notify` skill | Core done |
+| Mail | One mailbox per account: send, receive, list and test, configured in the console; the proactive email rung reads it | `winnie-mail` + console Settings page | Core done |
 | Proactive | Detection, policy, composition and tracked delivery of interventions the owner did not ask for | `winnie-proactive` + console inbox | Core done — Android action, alarm path and device run open |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
 | Console | Browser console: assistant chat — typed or as a voice conversation with spoken replies — and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
@@ -109,7 +110,12 @@ Success for the current phase:
 | M11 | Proactive assistance | A birthday on the phone becomes dated interventions at the configured stages, arrives over a channel whose delivery is tracked, escalates when unacknowledged, and appears in the digest; the same question in chat answers from the data with its source | **Partial** — engine, push/ntfy/email ladder, digest, console Inbox, acknowledgement (console, email/ntfy link, Android actions) and the optional model composer implemented and tested; the `winnie` alarm path, the deep link and a device run are open |
 | M12 | State sensing | A signal ingest, TTL projections, the every-turn digest and a `state` skill answer "where am I", "what am I doing" and "did I sleep", each correct or `unknown` with a reason | Planned |
 | M13 | Room senses | A camera and a room microphone feed the same signals without a vendor cloud, on an isolated VLAN, with encrypted storage and a visible indicator | Planned |
+| M14 | Mail | One mailbox per account, send and receive, configured in the console; the proactive email rung reads it | **Core done** — send/receive, settings API and console page verified; an assistant tool and a local message cache are in flight |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
+
+Rows are grouped by delivery phase, which is why M12/M13 (planned) and M14
+precede M7: production readiness closes the sequence, and an ID is allocated
+when a milestone is defined, not by order.
 
 **M9** adds the phone as a data source: the Android client uploads the scopes
 its owner enables, `winnie-phone` merges them by device and record id, and the
@@ -121,13 +127,11 @@ through a bounded ladder, and records whether the owner acknowledged. The
 design, the evidence that the data was already present, and the delivery ladder
 are in [proactive.md](./proactive.md).
 
-The current work is **M3/M4 hardening** plus the first slice of **M6**: the
-meeting capability is usable on the happy path, and the assistant now has a
-working chat, search, memory and scheduling path. **M8** added a second content
-capability on the same foundations — the news pipeline uses the AI registry,
-the assistant's search provider and the console, and ends in a reviewed file
-rather than a published post. Remaining work in all three is validation and
-durability rather than new surface area.
+The current phase is **phase 2, the knowledge base (M5)**. Phases 0 and 1 are
+complete enough to build on: the gateway, accounts, assistant, meetings, news,
+phone data, push and the proactive engine are implemented and tested, and what
+remains in them is validation on real hardware and real model keys rather than
+new surface area. The full sequence is §8.
 
 ## 5. Completion by capability
 
@@ -404,8 +408,8 @@ Open:
 - `winnie-knowledge` writes a Markdown note for finished minutes, with
   summary/decisions/actions only.
 - The Git commit/versioning layer, browse/edit/classify/search UI, re-indexing
-  and retrieval are not implemented.
-- This is the next product milestone after meeting hardening (M5).
+  and retrieval are not implemented. This is the next deliverable (M5); the
+  sequence is §8.
 
 ### 5.8 Operations — Partial
 
@@ -645,6 +649,28 @@ Open:
 - No notification actions, quiet hours or deep link into a conversation.
 - The gold watcher publishes through the assistant notifier; meetings, news and the weather watcher still do not.
 
+### 5.13 Mail — Core done
+
+Working:
+
+- `packages/winnie-mail` owns one mailbox per account: SMTP send and IMAP
+  receive, with the account in `data/mail/<user_id>.yaml` (mode `0600`) read
+  fresh on every operation.
+- The console's **Settings** page edits the account and runs a send and a
+  receive test; the API exposes get, put, test and messages under
+  `/api/v1/settings/mail`.
+- The proactive `email` rung is built from the same mailbox and is registered
+  only when a saved account can send, so an empty form does not add a rung that
+  fails on every item; the old environment settings remain a fallback.
+- Verified against the owner's 126 account: the SMTP and IMAP tests returned
+  `ok`, and the ten newest INBOX messages decoded with subject and sender.
+
+Open:
+
+- An assistant `mail` tool and a local message cache are in flight; until they
+  land the mailbox is operated from the console and the API.
+- One mailbox per user, no folders, rules or attachments beyond listing.
+
 ## 6. Verification snapshot
 
 | Check | Command or path | Result |
@@ -707,47 +733,70 @@ Not yet verified:
 | A news run is not worker-backed | A restart loses an in-flight run and leaves its record `running` | Move runs into the arq worker and add a recovery sweep |
 | No speaker diarization or export/share on Android | Limited usefulness for multi-speaker meetings | Follow-ups after M4 hardening |
 
-## 8. Next development plan
+## 8. Development plan
 
-Confirmed 2026-11-02: the next phase is the **M5 knowledge base MVP**, then the
-**state/senses sensing layer**. The meeting-notes hardening (M4), the bilingual
-validation (M3) and the proactive/phone/push device runs stay on the backlog and
-are picked up opportunistically — a physical-device session, a real model key —
-rather than blocking M5.
+The sequence, not the backlog. Each phase is a checkable deliverable, and a
+later phase depends on the data model and index the earlier one builds.
 
-1. **M5 knowledge base MVP — next.**
-   - Git-backed Markdown: a per-user repository (or directory tree); every write
-     is a commit whose message records the source (`ui-edit`, `auto-extract`,
-     `reindex`).
-   - Browse, edit, classify and tag in the console; version history and diff;
-     revert then re-index.
-   - Derived vector index aligned to Git HEAD, served to the assistant through
-     `winnie-index`; automatic single-category + multi-tag classification with a
-     low-confidence `unsorted` bucket. The meeting note sink and the assistant's
-     memory files become ordinary knowledge documents without changing their
-     on-disk format.
-   - Exit criteria: a meeting note is browsed, edited, reverted and searched in
-     the console, and a chat answer cites a knowledge line it was built from.
+| Phase | Milestones | Status | Exit criteria |
+|---|---|---|---|
+| 0 — Foundation | M0, M1, M2 | Done | Packages, host, migrations, gateway and accounts verified |
+| 1 — Capabilities | M3, M4, M6, M8, M9, M10, M11, M14 | Core done | Each capability works end to end; device runs, real-model quality and the M11 alarm path open |
+| **2 — Knowledge base (next)** | M5 | Planned | A note is browsed, edited, reverted and searched; a chat answer cites a line of it |
+| 3 — Senses | M12, M13 | Planned | State answers carry freshness; a room event reaches the assistant without a vendor cloud |
+| 4 — Release | M6 remainder, M7 | Partial | Streaming and a worker run out of process; a clean deploy is backed up and restored |
 
-2. **State sensing and room senses — the phase after M5.**
-   - `packages/winnie-state`: ingest, TTL projections (`place`, `body`, `focus`,
-     `availability`), the every-turn prompt digest, and a `state` skill. Phone
-     `motion`/`screen`/`place` scopes and the PC agent come first
-     ([state.md](./state.md) §9 P0); the Health Kit sleep spike runs as a gate
-     before anything is built on it.
-   - Room cameras and microphones stay behind their own gates ([senses.md](./senses.md)
-     §8, §10): no vendor cloud, isolated VLAN, encrypted storage, a visible
-     indicator, no bathroom or bedroom camera.
-   - Both remain proposals until the owner answers [state.md](./state.md) §10;
-     the answers gate the first collected signal.
+Phase 1 is complete enough to build on. The gateway, accounts, assistant,
+meetings, news, phone data, push, mail and the proactive engine are implemented
+and tested; what remains there is validation, and none of it blocks phase 2.
 
-3. **Remaining backlog, not sequenced above.**
-   - M4/M9/M10/M11 device runs, the M3 bilingual fixture and the M8 real-model
-     news comparison (see [todo.md](./todo.md)).
-   - M6 assistant: SSE streaming, vector retrieval, an out-of-process worker,
-     task editing.
-   - M7 production readiness: TLS, PostgreSQL, Redis/arq, reverse proxy,
-     backups with a restore rehearsal, deployment guide.
+### Phase 2 — knowledge base (M5), next
+
+- Git-backed Markdown: a per-user repository (or directory tree); every write is
+  a commit whose message records the source (`ui-edit`, `auto-extract`,
+  `reindex`).
+- Browse, edit, classify and tag in the console; version history and diff;
+  revert then re-index.
+- A derived vector index aligned to Git HEAD and served through `winnie-index`;
+  automatic single-category + multi-tag classification with a low-confidence
+  `unsorted` bucket.
+- The meeting note sink and the assistant's memory files become ordinary
+  knowledge documents without changing their on-disk format — the finished
+  meeting note is the first real document this phase is tested on.
+
+Exit criteria: the meeting note is browsed, edited, reverted and searched in the
+console, and a chat answer cites a knowledge line it was built from.
+
+### Phase 3 — senses (M12, M13), after phase 2
+
+- `packages/winnie-state`: ingest, TTL projections (`place`, `body`, `focus`,
+  `availability`), the every-turn prompt digest, and a `state` skill. The phone
+  `motion`/`screen`/`place` scopes and the PC agent come first
+  ([state.md](./state.md) §9 P0); the Health Kit sleep spike runs as a gate
+  before anything is built on it.
+- Room cameras and microphones stay behind their own gates
+  ([senses.md](./senses.md) §8, §10): no vendor cloud, isolated VLAN, encrypted
+  storage, a visible indicator, no bathroom or bedroom camera.
+- Both remain proposals until the owner answers [state.md](./state.md) §10; the
+  answers gate the first collected signal.
+
+### Phase 4 — release (M6 remainder, M7)
+
+- M6 remaining: SSE streaming, vector retrieval in the index, an out-of-process
+  worker, task editing.
+- M7: TLS, PostgreSQL, Redis/arq, reverse proxy, backups with a restore
+  rehearsal, deployment guide and structured logs.
+
+### Cross-cutting backlog
+
+Not a phase; picked up when a device or a real model key is available. The full
+list is [todo.md](./todo.md).
+
+- Device runs: M4 live captions with a foreground service and reconnect, M9
+  phone permission flows, M10 push under Doze, M11 proactive acknowledgement,
+  the voice wake word.
+- Validation: the M3 bilingual fixture with real translation and minutes, the M8
+  real-model news comparison.
 
 ## 9. Running and verifying
 
