@@ -90,3 +90,21 @@ config, never the wording of the prompt.
 
 It is plain JSON on disk (outside git). No tokens, no auth headers, no mailbox
 credentials.
+
+## Other sessions edit this checkout at the same time
+
+The owner often runs several DSH sessions against this directory, and they do
+not coordinate. Observed on 2026-11-02: one session's `docs/decisions.md` edit
+replaced another's new section heading, and two commits landed while a third
+session was working.
+
+- Read `git status` before you edit and again before you commit. Work that was
+  not there a minute ago is not yours.
+- Stage files, or hunks, that belong to your change. Never `git add -A` or
+  `git add .`; a shared file (`docs/decisions.md`, `docs/plan.md`,
+  `apps/admin/src/i18n/locales/*.json`, `README.md`) usually contains both.
+- If a commit fails on `index.lock`, another session is committing. Wait a
+  second and retry — do not delete the lock.
+- A clean tree at the start of your turn is not a promise it stays clean. If
+  your change is gone when you return to it, check `git log` before redoing it.
+
