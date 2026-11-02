@@ -55,6 +55,9 @@ from winnie_api.phone.gateway import PhoneGatewayAdapter
 from winnie_api.push.notify import PushNotifierAdapter
 from winnie_api.ai.router import router as ai_router
 from winnie_api.assistant_voice import router as assistant_voice_router
+from winnie_api.devloop.capture import ErrorCaptureMiddleware
+from winnie_api.devloop.router import router as errors_router
+from winnie_api.devloop.setup import build_devloop, chat_reader, start_devloop, stop_devloop
 from winnie_api.index_router import router as index_router
 from winnie_api.mail_gateway import MailGatewayAdapter
 from winnie_api.runtime import AppRuntime, build_runtime
@@ -163,6 +166,20 @@ def create_app(
         usage=usage_ledger,
     )
 
+    # Error collection is a host concern: it observes every capability's loggers
+    # and the whole ASGI app, so it is built here rather than registered as one
+    # more capability. It needs the database, because an incident is a row.
+    devloop = (
+        build_devloop(resolved, runtime)
+        if resolved.devloop.enabled and runtime is not None
+        else None
+    )
+    if resolved.devloop.enabled and runtime is None:
+        logger.warning(
+            "devloop.enabled is true but there is no database; "
+            "errors will only reach the log"
+        )
+
     async def resolve_owner() -> str:
         """Whose phone and notifications the assistant may use.
 
@@ -240,6 +257,10 @@ def create_app(
         app.state.proactive_service = None
         app.state.proactive_error = ""
         app.state.mail_service = None
+        app.state.devloop_service = devloop.service if devloop is not None else None
+        app.state.devloop_config = resolved.devloop
+        app.state.devloop_sources = devloop.sources if devloop is not None else None
+        app.state.devloop_diagnoser = None
         if resolved.mail.enabled:
             # A file-backed per-user store, so it starts without the database and
             # is available to the console and to the proactive email rung.
@@ -250,6 +271,20 @@ def create_app(
             )
         if runtime is not None:
             await runtime.startup()
+            if devloop is not None:
+                # The diagnoser is the same configured chat model the assistant
+                # uses; a deployment without an AI registry simply has none, and
+                # the console reports diagnosis as unavailable instead of failing
+                # the whole feature.
+                if resolved.devloop.diagnose.enabled and ai_settings is not None:
+                    diagnosis_model = DynamicChatModel(
+                        ai_settings, http_client, usage_ledger
+                    )
+                    app.state.devloop_diagnoser = (
+                        chat_reader(diagnosis_model),
+                        getattr(diagnosis_model, "name", "") or "configured",
+                    )
+                await start_devloop(devloop)
             app.state.auth_service = runtime.auth_service
             app.state.meeting_service = runtime.meeting_service
             app.state.phone_service = runtime.phone_service
@@ -409,9 +444,12 @@ def create_app(
             if assistant is not None:
                 await assistant.shutdown()
                 app.state.assistant_service = None
+            if devloop is not None:
+                await stop_devloop(devloop)
             if runtime is not None:
                 await runtime.shutdown()
                 app.state.runtime = None
+            app.state.devloop_service = None
             if owns_http:
                 await http_client.aclose()
 
@@ -446,6 +484,11 @@ def create_app(
     # Recording telemetry is a host concern: it spans the gateway and every
     # capability's internal model calls, so it is not owned by one capability.
     app.include_router(usage_router, prefix="/api/v1")
+    # Errors are the same kind of host concern, and the console reads them
+    # through this router whether or not any capability is switched on. It is
+    # mounted even when collection is disabled so the console gets a 503 with a
+    # reason instead of a 404 that looks like a broken deployment.
+    app.include_router(errors_router, prefix="/api/v1")
     # The schedule is a host concern: it owns a filesystem tree outside the
     # repository rather than a capability's service object.
     if resolved.schedule.enabled:
@@ -461,6 +504,14 @@ def create_app(
     # /{route}/{path}, so every concrete host route must be matched first.
     framework.register(gateway_capability())
     app.state.capability_names = framework.capability_names
+    # Outermost so it also sees failures raised by other middleware and by the
+    # router itself; it is inert until the lifespan installs the service.
+    if devloop is not None:
+        app.add_middleware(
+            ErrorCaptureMiddleware,
+            repo_root=str(devloop.sources.repo_root),
+            capture_client_errors=resolved.devloop.capture_client_errors,
+        )
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

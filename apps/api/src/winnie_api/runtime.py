@@ -32,6 +32,9 @@ from winnie_phone.service import PhoneService
 from winnie_push.models import PushNotification  # noqa: F401  (metadata)
 from winnie_push.service import PushService
 
+# Imported for its table: `create_all` builds metadata from every imported model.
+from winnie_api.devloop.models import ErrorIncident  # noqa: F401
+
 from winnie_api.ai.providers import (
     DynamicASRProvider,
     DynamicRealtimeASR,
@@ -88,6 +91,9 @@ def build_runtime(
         or settings.meetings.enabled
         or settings.phone.enabled
         or settings.push.enabled
+        # Error collection stores incidents, so it needs the same engine even
+        # when no capability that owns data is switched on.
+        or settings.devloop.enabled
     ):
         return None
 

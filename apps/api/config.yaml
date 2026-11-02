@@ -524,3 +524,33 @@ push:
   max_queue: 100
   # How often the retention pass runs while the API is up.
   prune_interval_seconds: 3600
+
+# Error collection: one row per distinct failure shape, triaged in the console
+# (Administration -> Errors). The API records unhandled exceptions, 5xx answers
+# and every ERROR-level log record; the detector polls the services the API does
+# not own, and scripts/watchdog.py drops what it sees into spool_dir while the
+# API is down. A diagnosis is a read-only model call over bounded evidence and
+# never changes the repository.
+devloop:
+  enabled: true
+  # 4xx answers are usually the caller's mistake; recording them by default
+  # would bury a real 500 under validation noise.
+  capture_client_errors: false
+  # Resolved and ignored incidents older than this are pruned daily.
+  retention_days: 30
+  # Relative paths resolve against apps/api/.
+  log_dir: ../../.cache/logs
+  spool_dir: ../../data/devloop/spool
+  # The services the API does not run in-process. The API itself is the
+  # watchdog's job, because a process cannot observe its own death.
+  service_urls:
+    index: http://127.0.0.1:8790/healthz
+    admin: http://127.0.0.1:5173/
+  detector:
+    enabled: true
+    interval_seconds: 30
+    probe_timeout_seconds: 3
+  diagnose:
+    enabled: true
+    timeout_seconds: 45
+    max_evidence_bytes: 24000

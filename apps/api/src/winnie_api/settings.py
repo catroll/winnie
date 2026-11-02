@@ -21,6 +21,8 @@ from winnie_phone.config import PhoneConfig
 from winnie_proactive.config import ProactiveConfig
 from winnie_push.config import PushConfig
 
+from winnie_api.devloop.config import DevloopConfig
+
 _API_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -91,6 +93,7 @@ class Settings(BaseModel):
     ai: AIConfig = Field(default_factory=AIConfig)
     usage: UsageConfig = Field(default_factory=UsageConfig)
     mail: MailConfig = Field(default_factory=MailConfig)
+    devloop: DevloopConfig = Field(default_factory=DevloopConfig)
 
     def gateway_config(self) -> GatewayConfig:
         return GatewayConfig(
@@ -137,6 +140,16 @@ class Settings(BaseModel):
 
     def resolve_proactive_root(self) -> Path:
         return _resolve_path(self.proactive.root)
+
+    def resolve_devloop_log_dir(self) -> Path:
+        return _resolve_path(self.devloop.log_dir)
+
+    def resolve_devloop_spool_dir(self) -> Path:
+        return _resolve_path(self.devloop.spool_dir)
+
+    def resolve_repo_root(self) -> Path:
+        """The checkout root, for read-only evidence (git state, log tails)."""
+        return _API_ROOT.parents[1]
 
     def resolve_database_url(self) -> str:
         """Make relative SQLite paths absolute; leave server URLs untouched."""
