@@ -1235,3 +1235,31 @@ a silently dropped fact is not.
 that matters is the *store*, not the prompt view. Ask which read path the
 writer was given: a digest capped for tokens will always be the wrong answer for
 a writer whose job is "do not repeat what you already have".
+
+## A copy trimmed for a log must never decide anything (2026-11-03)
+
+**Signal.** The gateway had to answer "which model did this call ask for?" and
+had two ways to read the body: `await request.body()` and the recorder's
+`snapshot_body()`. The second one is what sits next to the code — it already
+returns a dict, exactly the shape the check wanted — so the model gate was
+written against it.
+
+**Why it was wrong.** `snapshot_body` caps at `_MAX_RECORDED_BODY_BYTES = 8 * 1024`
+and returns `{"truncated": True, "bytes": …, "text": …}` past that. That object
+is still a `dict`, so `isinstance(parsed, dict)` passed and `parsed.get("model")`
+was `None`: a 20 KB prompt naming any model at all went straight through to the
+supplier, unchecked. No error, no log line — the gate simply was not there.
+
+**Check.** Ask of every parsed copy: *what does it drop, and does the decision
+survive the drop?* A recorder, a token-capped digest, or a truncated sample is
+an artifact **about** the request, never the request. Read the decision from the
+full value (`json.loads(body)`) and let the trimmed copy stay where it belongs,
+next to the human reading the file. The regression test
+(`test_a_long_prompt_does_not_hide_an_unpublished_model`) posts a 20 KB prompt
+naming an unpublished model and asserts `400` plus an empty upstream list, so the
+gate cannot regress to "works for short prompts".
+
+**Generalisable.** A helper that returns a familiar type invites being used for a
+different purpose than it was built for. When two reads of the same input exist —
+one complete, one friendly — the friendly one is almost always the one that gets
+picked by accident, and the failure is silent by construction.
