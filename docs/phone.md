@@ -16,8 +16,10 @@ That needs two directions:
 - **Read.** The phone uploads what it can read to the server, where it becomes
   searchable and quotable by the assistant.
 - **Write.** The server cannot reach a phone, so a write is a command the phone
-  claims on its next sync. The owner confirms it in chat first; the assistant
-  never executes an unconfirmed write.
+  claims on its next sync. Creating an event is submitted without asking, and
+  the assistant reports exactly what it submitted (the owner corrects it
+  afterwards); changing or deleting an event, and sending SMS, are proposed and
+  only executed after the owner confirms.
 
 Success for this slice means:
 
@@ -25,8 +27,8 @@ Success for this slice means:
    within one sync.
 2. A question about a call, a text, an event or a notification is answered from
    the synced copy, with the sync time stated.
-3. "Put it in my calendar" produces a proposal, an explicit confirmation and a
-   command the phone executes, with the result reported back.
+3. "Put it in my calendar" produces a command the phone executes, with the
+   event read back to the owner; "move it to 4pm" still asks first.
 4. Deleting the server copies from the phone really removes them, and turning a
    scope off stops future uploads.
 
@@ -341,7 +343,19 @@ Supported kinds and payloads:
 | `calendar.delete` | `event_id` |
 | `sms.send` | `address`, `body` |
 
-## 5. The write path and what confirmation buys
+## 5. The write path, and where confirmation is spent
+
+Creating an event skips the question — the owner asked for that on 2026-11-03,
+because a wrong event costs one message to fix while a confirmation costs a turn
+on every correct one:
+
+```
+owner: "put 图图's class in my calendar tomorrow at 15:50"
+assistant: phone_calendar_create(...)      → proposed and approved at once
+assistant: "已提交「带图图上课」，11-04 15:50–16:50，光谷金融港，手机下次同步写入。"
+```
+
+Changing or deleting an event, and sending SMS, still ask first:
 
 ```
 owner: "move my 3pm to 4"
@@ -351,6 +365,10 @@ owner: "yes"
 assistant: phone_confirm(id)               → approved
 phone (next sync): claims it, writes the event, reports the result
 ```
+
+The unattended set is `winnie_assistant.phone_tools.UNATTENDED_WRITES` — one
+constant, checked in the code that writes, not in the prompt. Everything else
+there stays behind the gate.
 
 Consequences that must not be smoothed over in the assistant's wording:
 

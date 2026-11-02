@@ -2457,3 +2457,35 @@ nothing here depends on that name.
 inside the invoking directory; a failing command surfaces `[exit code: 3]` in
 the `tool_result`. Commands and output are in
 [self-repair.md § 11](./self-repair.md#11-verification-log).
+
+## Creating a calendar event is submitted, not proposed (2026-11-03)
+
+**Decision.** `phone_calendar_create` now queues and approves the command in the
+same turn. The owner is told what was submitted — title, local start and end
+time, place — and corrects it in the next message if it is wrong. Changing or
+deleting an event, and sending SMS, still wait for an explicit "确认".
+
+**Why.** The confirmation was being spent on the one write that a second message
+can undo. The owner's own words: 不用我回复确认，直接提交，然后告诉我日程是什么样子，
+我发现不对，再沟通修改. A proposal costs a full round trip on every correct
+event and buys nothing on the wrong one — the correction path (update/delete)
+still exists and still asks.
+
+**Where the policy lives.** `winnie_assistant.phone_tools.UNATTENDED_WRITES`,
+a module constant checked by `_phone_propose`, which is the function that talks
+to the gateway. Not in the prompt: the skill instructions and the tool schema
+were rewritten to *describe* the new behaviour, but the code is what decides,
+and a test (`test_creating_an_event_is_submitted_without_asking`) fails if the
+gate comes back.
+
+**Consequences.** Approval is still not execution — the phone writes the event on
+its next sync (seconds with a push wake, otherwise the periodic interval), which
+every tool output still says. The proposal-then-approve row remains in the
+audit trail, so the console shows the same two steps; only the conversational
+turn between them is gone.
+
+**Rejected.** Removing the gate for every phone write: `sms.send` leaves the
+phone and cannot be taken back, and `calendar.delete` destroys data the owner
+did not mention in that message. Also rejected: a config key per kind — one
+constant is easier to audit than a YAML list that can silently disagree with
+the tool schema.

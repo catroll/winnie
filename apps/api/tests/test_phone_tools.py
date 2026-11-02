@@ -23,6 +23,7 @@ class StubPhone:
 
     def __init__(self) -> None:
         self.proposals: list[tuple[str, dict[str, Any]]] = []
+        self.approved: list[str] = []
 
     async def summary(self) -> dict[str, Any]:
         return {
@@ -177,6 +178,7 @@ class StubPhone:
         }
 
     async def approve_command(self, command_id):
+        self.approved.append(command_id)
         return {
             "id": command_id,
             "kind": "sms.send",
@@ -319,11 +321,54 @@ async def test_naive_calendar_time_uses_the_assistant_zone(
         starts_at="2026-11-02T15:00",
         location="Clinic",
     )
-    assert "PENDING cmd-1" in text
     kind, payload = phone.proposals[0]
     assert kind == "calendar.create"
     assert payload["starts_at"] == "2026-11-02T15:00:00+08:00"
     assert payload["location"] == "Clinic"
+    # A naive time is the assistant's zone, and the report says which zone the
+    # owner will see on the phone.
+    assert "2026-11-02 15:00 (Asia/Shanghai)" in text
+
+
+@pytest.mark.asyncio
+async def test_creating_an_event_is_submitted_without_asking(
+    toolbox: ToolBox, phone: StubPhone
+) -> None:
+    """The owner asked on 2026-11-03 for creation to skip the confirmation.
+
+    A wrong event costs one message to fix; a "确认" round trip cost a turn on
+    every correct one. The proposal is still recorded and approved here — what
+    changes is that the tool does not come back PENDING, and its report names
+    the title, local time and place the owner is about to see on the phone.
+    """
+    text = await call(
+        toolbox,
+        "phone_calendar_create",
+        title="带图图上课",
+        starts_at="2026-11-03T15:50+08:00",
+        ends_at="2026-11-03T16:50+08:00",
+        location="光谷金融港",
+    )
+    assert text.startswith("SUBMITTED cmd-1")
+    assert "PENDING" not in text
+    assert "phone_confirm" not in text
+    assert "带图图上课" in text
+    assert "2026-11-03 15:50–16:50 (Asia/Shanghai)" in text
+    assert "光谷金融港" in text
+    assert phone.approved == ["cmd-1"]
+
+
+@pytest.mark.asyncio
+async def test_updating_an_event_still_waits_for_the_owner(
+    toolbox: ToolBox, phone: StubPhone
+) -> None:
+    """Only creation is unattended; acting on an event the owner did not just
+    ask for stays behind the gate."""
+    text = await call(
+        toolbox, "phone_calendar_update", event_id="501", title="新标题"
+    )
+    assert "PENDING" in text
+    assert phone.approved == []
 
 
 @pytest.mark.asyncio

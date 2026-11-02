@@ -225,21 +225,28 @@ PHONE_WRITE = SkillManifest(
     name="phone_write",
     title="Phone writes",
     description=(
-        "Propose calendar changes and SMS sends; the owner confirms in chat and "
-        "the phone executes them on its next sync."
+        "Create calendar events directly, and propose calendar changes and SMS "
+        "sends for the owner to confirm; the phone executes them on its next "
+        "sync."
     ),
     instructions="""\
-Writing to the phone is a two-step, owner-approved action. First call the
-proposal tool and read the exact action back to the owner: title, date, start
-and end time, location, or the recipient and the full message text. Wait for
-an explicit yes in their next message. Only then call phone_confirm with the
-id from the PENDING line. If they decline or change their mind, call
-phone_cancel instead.
+Creating a calendar event is submitted directly and needs no confirmation.
+Call phone_calendar_create, then tell the owner exactly what you submitted:
+title, date, the local start and end time, and the place. Say that the phone
+writes it at its next sync. If any detail is wrong they will say so, and you
+can update or delete the event then.
 
-Never approve a proposal on your own initiative, from an earlier message, or
-because the action seems obviously fine. Never claim an SMS was sent or an
-event created: the phone runs it on its next sync, so report it as confirmed
-and pending until the owner sees the result.
+Everything else is still a two-step, owner-approved action: changing or
+deleting an event, and sending an SMS. First call the proposal tool and read
+the exact action back to the owner: title, date, start and end time, location,
+or the recipient and the full message text. Wait for an explicit yes in their
+next message. Only then call phone_confirm with the id from the PENDING line.
+If they decline or change their mind, call phone_cancel instead.
+
+Never approve a proposal of that second kind on your own initiative, from an
+earlier message, or because the action seems obviously fine. Never claim an
+SMS was sent or an event was created: the phone runs it on its next sync, so
+report it as approved and pending until the owner sees the result.
 
 Do not send SMS in a scheduled task; a task run has no live owner to confirm.
 """,

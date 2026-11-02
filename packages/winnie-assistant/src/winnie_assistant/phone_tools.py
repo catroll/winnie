@@ -2,9 +2,10 @@
 
 The tools follow two rules that the model cannot be trusted to infer:
 
-1. A phone is a *remote* writer. Every write is a proposal until the owner
-   confirms it in chat, and even then the phone executes it on its next sync.
-   So a tool never claims an action happened.
+1. A phone is a *remote* writer. Every write reaches it as a command that it runs
+   on its next sync. Creating an event is submitted without asking (see
+   ``UNATTENDED_WRITES``); every other write is a proposal until the owner
+   confirms it in chat. Either way a tool never claims the phone has run it.
 2. Synced data is a snapshot, not the live phone. Every answer carries the last
    sync time so the model can say how fresh it is.
 
@@ -29,6 +30,16 @@ logger = logging.getLogger(__name__)
 
 class PhoneToolError(RuntimeError):
     """A phone tool call that cannot be completed for a reportable reason."""
+
+
+# Writes the assistant submits without asking first.
+#
+# The owner asked for this on 2026-11-03: an event the assistant got slightly
+# wrong costs one message to correct, while a "确认" round trip costs a turn on
+# every correct one, and the confirmation was being spent on a write that a
+# second message can undo. Creation only — update, delete and sms.send still
+# wait, because those act on something the owner did not just ask for.
+UNATTENDED_WRITES = frozenset({"calendar.create"})
 
 
 PHONE_KINDS = (
@@ -327,10 +338,12 @@ PHONE_TOOL_SCHEMAS: list[dict[str, Any]] = [
     _schema(
         "phone_calendar_create",
         (
-            "PROPOSE creating a calendar event on the phone. Nothing is written "
-            "yet. Use an ISO-8601 start time with an offset, for example "
-            "2026-11-02T15:00:00+08:00, and restate the local time when you ask "
-            "for confirmation. After an explicit yes, call phone_confirm."
+            "CREATE a calendar event on the phone. It is submitted immediately, "
+            "without asking the owner first. Use an ISO-8601 start time with an "
+            "offset, for example 2026-11-02T15:00:00+08:00, then tell the owner "
+            "exactly what was submitted: title, local date and time range, place. "
+            "They correct it afterwards if it is wrong, so do not ask them to "
+            "confirm before calling this."
         ),
         {
             "title": {"type": "string", "description": "Event title."},
@@ -888,6 +901,8 @@ class PhoneToolMixin:
         self, gateway: PhoneGateway, kind: str, payload: dict[str, Any]
     ) -> str:
         command = await gateway.propose_command(kind, payload)
+        if kind in UNATTENDED_WRITES:
+            return await self._phone_submit(gateway, command, payload)
         command_id = command.get("id")
         summary = command.get("summary") or kind
         expires = self._fmt(command.get("expires_at"))
@@ -900,6 +915,44 @@ class PhoneToolMixin:
             + (f"; the proposal expires at {expires}" if expires else "")
             + "."
         )
+
+    async def _phone_submit(
+        self,
+        gateway: PhoneGateway,
+        command: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> str:
+        """Approve a write the owner asked to have submitted, and report it.
+
+        The proposal is still created and approved — the audit trail stays — but
+        no turn is spent asking. What comes back has to be the submitted event
+        in the owner's own terms (title, local time, place), because that text is
+        what their next message corrects.
+        """
+        approved = await gateway.approve_command(str(command.get("id")))
+        title = str(payload.get("title") or "").strip()
+        starts = self._fmt(payload.get("starts_at"))
+        ends = self._fmt(payload.get("ends_at"))
+        if starts and ends:
+            window = (
+                f"{starts}–{ends[11:]}" if ends[:10] == starts[:10] else f"{starts}–{ends}"
+            )
+        else:
+            window = starts
+        lines = [f"SUBMITTED {approved.get('id')}: {title or approved.get('summary') or 'calendar event'}"]
+        if window:
+            lines.append(f"  time: {window} ({self.timezone.key})")
+        if payload.get("location"):
+            lines.append(f"  place: {payload['location']}")
+        if payload.get("all_day"):
+            lines.append("  all day")
+        lines.append(
+            "No confirmation was asked or needed. The phone writes it at its "
+            "next sync, so it may take a few minutes. Tell the owner exactly this "
+            "title, time and place; if any of it is wrong they will say so and "
+            "you can update or delete it."
+        )
+        return "\n".join(lines)
 
     async def _phone_confirm(
         self, gateway: PhoneGateway, arguments: dict[str, Any]
