@@ -31,7 +31,12 @@ logic: the FastAPI `/api/v1` contract is the source of truth.
   posts alerts, and wakes the phone to run a confirmed command immediately
 - Wake word: say "winnie" and the chat opens a hands-free turn. The keyword is
   detected on the phone by an offline model; only the utterance after the wake
-  is uploaded for transcription. See [docs/voice-wake.md](../../docs/voice-wake.md)
+  is uploaded for transcription.
+- Voice output: a dictated turn's reply is spoken as soon as it arrives, and
+  every reply has a speaker button to read it again or stop it. Account → Voice
+  output holds the on/off switch, four rates and a preview. The speaking is done
+  by the phone's own text-to-speech engine — no vendor and no network — and its
+  engine and voice are chosen in the system's accessibility settings. See [docs/voice-wake.md](../../docs/voice-wake.md)
 
 Not implemented yet: streaming assistant replies (one response per turn),
 attachments in chat, foreground-service recording (a backgrounded

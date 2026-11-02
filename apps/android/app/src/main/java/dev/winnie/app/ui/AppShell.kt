@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.winnie.app.AppContainer
 import dev.winnie.app.R
+import dev.winnie.app.audio.AndroidSpeaker
 import dev.winnie.app.audio.WakeWordController
 import dev.winnie.app.data.Session
 import dev.winnie.app.ui.account.AccountScreen
@@ -71,6 +72,8 @@ fun SignedInFlow(
     var showAlerts by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var wakeEnabled by remember { mutableStateOf(container.wakePrefs.enabled) }
+    var voiceOutput by remember { mutableStateOf(container.settings.voiceOutput) }
+    val appContext = LocalContext.current.applicationContext
 
     // A conversation must not be shared with another account on the same
     // phone, so the view models are keyed by the signed-in user.
@@ -82,6 +85,7 @@ fun SignedInFlow(
                     sessions = container.sessions,
                     settings = container.settings,
                     newRecorder = container::newRecorder,
+                    speaker = AndroidSpeaker(appContext, container.settings),
                 )
             }
         },
@@ -96,7 +100,6 @@ fun SignedInFlow(
     )
     val accountUi by accountViewModel.ui.collectAsStateWithLifecycle()
     val voiceRequest by container.voiceRequests.collectAsStateWithLifecycle()
-    val appContext = LocalContext.current.applicationContext
 
     // Opening the app is the one moment Android allows this service to start,
     // so a listening owner gets it back after a reboot or a process death.
@@ -131,8 +134,36 @@ fun SignedInFlow(
     LaunchedEffect(chatUi.voice) {
         val previous = previousVoice
         previousVoice = chatUi.voice
-        if (previous != VoiceState.Idle && chatUi.voice == VoiceState.Idle) {
+        if (
+            previous != VoiceState.Idle &&
+            chatUi.voice == VoiceState.Idle &&
+            !chatUi.speaking
+        ) {
             WakeWordController.resume(appContext)
+        }
+    }
+
+    // A spoken reply goes out of the loudspeaker and back into the microphone,
+    // which is the one thing the wake detector must not hear: the answer can
+    // contain the wake word, and then the phone answers itself. The microphone
+    // is given back when the reply has been read.
+    //
+    // `pausedForSpeech` is what makes this a hand-over rather than a reflex: a
+    // resume on the first composition (speaking starts false) would start the
+    // service behind the owner's back, and a resume while a turn is recording
+    // would take the microphone from the recorder — the two-captures-one-winner
+    // rule again. The voice state's own effect is the fallback that gives
+    // listening back if a turn was already running here.
+    var pausedForSpeech by remember { mutableStateOf(false) }
+    LaunchedEffect(chatUi.speaking) {
+        if (chatUi.speaking) {
+            pausedForSpeech = true
+            WakeWordController.pause(appContext)
+        } else if (pausedForSpeech) {
+            pausedForSpeech = false
+            if (chatUi.voice == VoiceState.Idle) {
+                WakeWordController.resume(appContext)
+            }
         }
     }
 
@@ -215,6 +246,7 @@ fun SignedInFlow(
                     onStartVoice = { chatViewModel.startVoiceTurn() },
                     onCancelVoice = chatViewModel::cancelVoiceTurn,
                     onDismissVoiceFailure = chatViewModel::dismissVoiceFailure,
+                    onSpeak = chatViewModel::speak,
                     // With the keyboard open the navigation bar would sit
                     // between the composer and the cursor; hide it while typing.
                     bottomBar = { if (!WindowInsets.isImeVisible) navBar() },
@@ -258,6 +290,15 @@ fun SignedInFlow(
                             recordPermission.launch(Manifest.permission.RECORD_AUDIO)
                         }
                     },
+                    voiceOutput = voiceOutput,
+                    onVoiceOutputChange = { next ->
+                        voiceOutput = next
+                        container.settings.voiceOutput = next
+                        // Turning reading off is also the way to silence a reply
+                        // that is being read right now.
+                        if (!next.enabled) chatViewModel.stopSpeaking()
+                    },
+                    onPreviewVoice = chatViewModel::previewVoice,
                     onSignOut = onSignOut,
                     bottomBar = navBar,
                 )

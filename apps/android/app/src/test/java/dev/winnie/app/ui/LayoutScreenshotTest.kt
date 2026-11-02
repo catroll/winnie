@@ -5,6 +5,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -13,6 +16,7 @@ import dev.winnie.app.WinnieApplication
 import dev.winnie.app.data.AssistantConversationSummary
 import dev.winnie.app.data.DEFAULT_SERVER_URL
 import dev.winnie.app.data.User
+import dev.winnie.app.data.VoiceOutput
 import dev.winnie.app.ui.account.AccountScreen
 import dev.winnie.app.ui.chat.ChatHistoryScreen
 import dev.winnie.app.ui.chat.ChatMessage
@@ -115,6 +119,7 @@ class LayoutScreenshotTest {
                     onStartVoice = {},
                     onCancelVoice = {},
                     onDismissVoiceFailure = {},
+                    onSpeak = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -136,6 +141,7 @@ class LayoutScreenshotTest {
                     onStartVoice = {},
                     onCancelVoice = {},
                     onDismissVoiceFailure = {},
+                    onSpeak = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -161,6 +167,7 @@ class LayoutScreenshotTest {
                     onStartVoice = {},
                     onCancelVoice = {},
                     onDismissVoiceFailure = {},
+                    onSpeak = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -194,6 +201,7 @@ class LayoutScreenshotTest {
                     onStartVoice = {},
                     onCancelVoice = {},
                     onDismissVoiceFailure = {},
+                    onSpeak = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -271,6 +279,9 @@ class LayoutScreenshotTest {
                     onOpenAlerts = {},
                     wakeEnabled = false,
                     onWakeChange = {},
+                    voiceOutput = VoiceOutput(),
+                    onVoiceOutputChange = {},
+                    onPreviewVoice = {},
                     onSignOut = {},
                     bottomBar = { navBar(SignedInTab.Account) },
                 )
@@ -319,6 +330,7 @@ class LayoutScreenshotTest {
                     onStartVoice = {},
                     onCancelVoice = {},
                     onDismissVoiceFailure = {},
+                    onSpeak = {},
                     bottomBar = { navBar(SignedInTab.Chat) },
                 )
             }
@@ -371,6 +383,9 @@ class LayoutScreenshotTest {
                     onOpenAlerts = {},
                     wakeEnabled = false,
                     onWakeChange = {},
+                    voiceOutput = VoiceOutput(),
+                    onVoiceOutputChange = {},
+                    onPreviewVoice = {},
                     onSignOut = {},
                     bottomBar = { navBar(SignedInTab.Account) },
                 )
@@ -396,11 +411,17 @@ class LayoutScreenshotTest {
                     onOpenAlerts = {},
                     wakeEnabled = false,
                     onWakeChange = {},
+                    voiceOutput = VoiceOutput(),
+                    onVoiceOutputChange = {},
+                    onPreviewVoice = {},
                     onSignOut = {},
                     bottomBar = { navBar(SignedInTab.Account) },
                 )
             }
         }
+        // The account list scrolls: the voice-output card pushed the sign-out
+        // button below the fold, so it is not composed until it is reached.
+        compose.onNodeWithTag("accountList").performScrollToNode(hasTestTag("signOut"))
         compose.onNodeWithText("Sign out").performClick()
         capture("account-signout-dialog")
     }

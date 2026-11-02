@@ -280,6 +280,12 @@ Open:
   transcription endpoint) but **not measured on a device** — wake rate, false
   accepts, battery and microphone contention are open, see
   [voice-wake.md](./voice-wake.md).
+- Android voice output: replies are spoken by the platform's text-to-speech
+  engine (a dictated turn's answer automatically, any reply from its speaker
+  button, with a switch and four rates on the Account tab, and the wake service
+  paused while speaking). Unit tested and screenshotted, but **not heard on a
+  device** — the engine's voice choice, its Chinese pronunciation and whether the
+  paused detector stops hearing the loudspeaker are open.
 - Measure the 5-second loop's battery cost on a real phone and tune the
   per-scope cadences from the measurement rather than from intuition.
 - Chinese copy review by a native speaker; the parity test only proves coverage.

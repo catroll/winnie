@@ -2351,6 +2351,73 @@ Chinese preview used it and was audible (sink peak RMS 5,658). The prompt change
 is covered by a unit test on `build_system_prompt` and the wire field by an API
 test (`input: "voice"` accepted, an unknown modality is a 422).
 
+## The phone speaks with its own engine, and pauses the microphone to do it (2026-11-03)
+
+**Decision.** The Android client reads replies with the platform's
+`android.speech.tts.TextToSpeech`, auto-speaks only a dictated turn's reply, and
+puts the on/off switch plus four rates in Account → Voice output. It does not
+offer a voice picker. While the phone speaks, the wake-word service pauses and
+resumes when it finishes.
+
+**Why the platform engine.** The console's reasoning applies unchanged: the paid
+call is one ASR call per turn, voice *output* does not need to leave the device,
+and every Android phone already ships a synthesizer that works offline. A vendor
+TTS binding would be a second bill and a second credential for quality the
+console cannot beat with Edge's online voices either. The engine's own limits are
+accepted: which languages it can speak depends on what the ROM installed, and a
+missing one is reported to the owner instead of failing silently.
+
+**Why no in-app voice picker.** Android already owns this choice in
+`Settings > Accessibility > Text-to-speech output`, including per-language
+defaults, engine downloads and a preview. A second picker inside the app would
+let the two disagree about which voice an answer is spoken in — the app would win
+for its own window and lose everywhere the engine is used by other apps. What the
+app does own is whether to speak at all and how fast, because those are
+conversation-level choices the system cannot know. A saved `voice` field remains
+in the settings structure, so a name pinned by a future build (or a supplier
+provider, which *would* need its own picker) is honoured when the engine reports
+it and ignored when it does not.
+
+**Why only a dictated turn is spoken, and why the switch is not in the chat.**
+The console's "Read replies aloud" switch lives inside the voice bar, because
+there it only controls the loop; the loop itself is the decision to listen. The
+phone has no bar to hang it on — a wake turn is a normal chat turn — so the
+switch moves to Account → Voice output and defaults to on. A wake turn asked out
+loud gets an answer out loud; a typed turn stays silent because the owner is
+looking at the screen, and every reply keeps a speaker button for replay.
+Speaking typed chats by default would make the phone talk in a meeting for a
+message that was deliberately typed.
+
+**Why the microphone pauses.** A spoken answer goes out of the loudspeaker and
+comes back through the microphone. The assistant's replies are text about the
+owner's day, and "Winnie" can appear in them; the detector would then start a
+turn from the phone's own voice, with the answer's tail transcribed as a new
+question. The console's equivalent is that its recorder is closed while
+`SpeechSynthesis` speaks. On Android the detector lives in a foreground service,
+so the hand-over is an `ACTION_PAUSE` that stops the engine but keeps the
+service, the notification and the setting alive, and `ACTION_RESUME` when
+speech ends. Pausing costs nothing when the loudspeaker is not used.
+
+**Rejected.** A vendor TTS binding (same reasons as the console); a per-message
+engine selector (the system screen owns it); streaming the reply into speech
+sentence by sentence while the answer is still being generated (replies arrive as
+one response today — the streaming work in `docs/plan.md` comes first); keeping
+the detector listening while speaking and relying on the keyword score (the
+reply is full-band, loud and close, which is exactly what the detector is tuned
+to accept).
+
+**Verified.** 168 JVM tests pass, including the Kotlin Markdown reduction
+(identical rules to `speech.ts`, with the table/URL/code cases), the settings
+round trip and rate clamp, the speaker button on a reply (one button, callback
+with the message text, a stop control while that reply is read), the Account
+card's switch/rate/preview, and the "no engine" path: an engine that never
+answers produces the localized message and `speaking == false` instead of a
+silent crash. Layout screenshots reviewed in both locales. The APK builds. **Not
+verified:** speech on real hardware — no phone or emulator is attached to this
+machine — so the engine's voice choice, its Chinese pronunciation, and the pause
+actually silencing its own voice are device checks, listed in
+`docs/voice-wake.md`.
+
 ## The self-repair worker is an out-of-process `dsh` subprocess (2026-11-03)
 
 **Decision.** Code-level self-repair, when it is built, runs as one pinned `dsh`

@@ -71,6 +71,16 @@ class WakeWordService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_PAUSE) {
+            // The app is speaking; its own voice must not be heard as a wake
+            // word. The service stays alive so one resume brings listening back.
+            handler.removeCallbacks(resumeListening)
+            worker.execute {
+                detector?.stop()
+                detector = null
+            }
+            return START_STICKY
+        }
         if (intent?.action == ACTION_RESUME) {
             handler.removeCallbacks(resumeListening)
             worker.execute { startDetector() }
@@ -174,6 +184,7 @@ class WakeWordService : Service() {
     companion object {
         const val ACTION_STOP = "dev.winnie.app.action.WAKE_STOP"
         const val ACTION_RESUME = "dev.winnie.app.action.WAKE_RESUME"
+        const val ACTION_PAUSE = "dev.winnie.app.action.WAKE_PAUSE"
 
         /**
          * Two seconds of 16 kHz mono. Long enough for the detector's 320 ms

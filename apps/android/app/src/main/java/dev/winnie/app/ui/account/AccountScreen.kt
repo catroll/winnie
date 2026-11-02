@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +45,8 @@ import androidx.annotation.DrawableRes
 import dev.winnie.app.BuildConfig
 import dev.winnie.app.R
 import dev.winnie.app.data.User
+import dev.winnie.app.data.VoiceOutput
+import java.util.Locale
 
 /**
  * The account tab: who is signed in, where the app points, the two settings that
@@ -63,6 +66,9 @@ fun AccountScreen(
     onOpenAlerts: () -> Unit,
     wakeEnabled: Boolean,
     onWakeChange: (Boolean) -> Unit,
+    voiceOutput: VoiceOutput,
+    onVoiceOutputChange: (VoiceOutput) -> Unit,
+    onPreviewVoice: () -> Unit,
     onSignOut: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -135,6 +141,14 @@ fun AccountScreen(
                         }
                     }
                 }
+            }
+
+            item {
+                VoiceOutputCard(
+                    output = voiceOutput,
+                    onChange = onVoiceOutputChange,
+                    onPreview = onPreviewVoice,
+                )
             }
 
             item {
@@ -228,6 +242,108 @@ fun AccountScreen(
         )
     }
 }
+
+/**
+ * Whether replies are read aloud, and how fast.
+ *
+ * It does not offer a voice picker: the engine and the voice are chosen in the
+ * phone's own text-to-speech settings (`Settings > Accessibility > Text-to-speech
+ * output`), which already has per-language defaults, downloads and a preview. A
+ * second picker here would let the app and the system disagree about which voice
+ * an answer is spoken in. What the app does own is whether to speak at all and
+ * how fast, because those are per-conversation choices the system cannot know.
+ */
+@Composable
+private fun VoiceOutputCard(
+    output: VoiceOutput,
+    onChange: (VoiceOutput) -> Unit,
+    onPreview: () -> Unit,
+) {
+    SectionCard(title = stringResource(R.string.voice_output)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.voice_read_aloud),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(R.string.voice_read_aloud_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = output.enabled,
+                onCheckedChange = { onChange(output.copy(enabled = it)) },
+                modifier = Modifier.testTag("readAloudSwitch"),
+            )
+        }
+        HorizontalDivider()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.voice_rate),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                VoiceOutput.RATES.forEach { rate ->
+                    FilterChip(
+                        selected = rate == output.rate,
+                        onClick = { onChange(output.copy(rate = rate)) },
+                        enabled = output.enabled,
+                        label = { Text(rateLabel(rate)) },
+                        modifier = Modifier.testTag("voiceRate"),
+                    )
+                }
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.voice_engine_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = onPreview,
+                enabled = output.enabled,
+                modifier = Modifier.testTag("voicePreview"),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_volume_up),
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.voice_preview))
+            }
+        }
+    }
+}
+
+/** The four rates are shown the way a rate is written, not as a raw float. */
+private fun rateLabel(rate: Float): String =
+    if (rate == rate.toInt().toFloat()) {
+        "${rate.toInt()}×"
+    } else {
+        String.format(Locale.getDefault(), "%.1f×", rate)
+    }
 
 @Composable
 private fun IdentityCard(user: User, serverUrl: String) {

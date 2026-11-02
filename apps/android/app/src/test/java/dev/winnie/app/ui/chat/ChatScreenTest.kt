@@ -3,9 +3,12 @@ package dev.winnie.app.ui.chat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -39,6 +42,7 @@ class ChatScreenTest {
     private var voiceStarts = 0
     private var voiceCancels = 0
     private var voiceDismissals = 0
+    private var spoken = mutableListOf<String>()
 
     private fun render() {
         compose.setContent {
@@ -53,6 +57,7 @@ class ChatScreenTest {
                     onStartVoice = { voiceStarts++ },
                     onCancelVoice = { voiceCancels++ },
                     onDismissVoiceFailure = { voiceDismissals++ },
+                    onSpeak = { spoken += it.text },
                     bottomBar = {},
                 )
             }
@@ -175,6 +180,35 @@ class ChatScreenTest {
 
         compose.onNodeWithText("New chat").performClick()
         assertEquals(1, newChats)
+    }
+
+    @Test
+    fun everyReplyCanBeReadAloud() {
+        state = ChatUiState(
+            messages = listOf(
+                ChatMessage(0, role = "user", text = "Weather?"),
+                ChatMessage(1, role = "assistant", text = "It is **sunny**."),
+            ),
+        )
+        render()
+
+        // The user's own line has no speaker: reading the owner's question back
+        // to them is not an answer.
+        compose.onAllNodesWithTag("chatSpeak").assertCountEquals(1)
+        compose.onAllNodesWithTag("chatSpeak")[0].performClick()
+        assertEquals(listOf("It is **sunny**."), spoken)
+    }
+
+    @Test
+    fun theReplyBeingReadShowsTheStopControl() {
+        state = ChatUiState(
+            messages = listOf(ChatMessage(7, role = "assistant", text = "It is sunny.")),
+            speakingKey = 7,
+            speaking = true,
+        )
+        render()
+
+        compose.onNodeWithContentDescription("Stop reading").assertIsDisplayed()
     }
 
     @Test

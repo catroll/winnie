@@ -50,6 +50,23 @@ object WakeWordController {
      * Gives the microphone back to the listening service after a voice turn.
      * Called from a visible screen, so a plain `startService` is allowed.
      */
+    /**
+     * Takes the microphone away while the app is speaking a reply.
+     *
+     * A spoken answer leaves through the loudspeaker and returns through the
+     * microphone; if it contains the wake word the phone starts a turn of its
+     * own. The service stays alive, so [resume] is all that gives listening back.
+     */
+    fun pause(context: Context) {
+        if (!WakePrefs(context).enabled) return
+        runCatching {
+            context.startService(
+                Intent(context, WakeWordService::class.java)
+                    .setAction(WakeWordService.ACTION_PAUSE),
+            )
+        }.onFailure { Log.w(TAG, "could not pause wake word service", it) }
+    }
+
     fun resume(context: Context) {
         if (!WakePrefs(context).enabled) return
         runCatching {

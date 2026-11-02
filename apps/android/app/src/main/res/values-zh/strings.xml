@@ -306,6 +306,17 @@
     <string name="voice_dismiss">关闭</string>
     <string name="voice_no_speech">没有识别到语音，请再试一次。</string>
     <string name="chat_voice_description">语音输入</string>
+    <string name="voice_play">朗读</string>
+    <string name="voice_stop">停止朗读</string>
+    <string name="voice_output">语音输出</string>
+    <string name="voice_output_subtitle">用手机自带的语音引擎朗读回答</string>
+    <string name="voice_read_aloud">朗读回复</string>
+    <string name="voice_read_aloud_subtitle">语音提问的回答到达后立即朗读。</string>
+    <string name="voice_rate">语速</string>
+    <string name="voice_preview">试听</string>
+    <string name="voice_preview_sample">这就是 Winnie 朗读回答的声音。</string>
+    <string name="voice_output_unavailable">这台手机无法朗读这条回答：没有安装对应语言的语音引擎。</string>
+    <string name="voice_engine_note">引擎和音色在手机系统的语音设置里选择。</string>
     <string name="proactive_ack">收到</string>
     <string name="proactive_snooze">一小时后</string>
 </resources>

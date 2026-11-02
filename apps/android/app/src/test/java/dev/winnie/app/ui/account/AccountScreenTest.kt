@@ -3,12 +3,14 @@ package dev.winnie.app.ui.account
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import dev.winnie.app.data.User
+import dev.winnie.app.data.VoiceOutput
 import dev.winnie.app.ui.theme.WinnieTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -27,6 +29,8 @@ class AccountScreenTest {
     private var forgot = 0
     private var signedOut = 0
     private var alerts = 0
+    private var previews = 0
+    private var voiceOutput = VoiceOutput()
 
     private fun render(savedPassword: Boolean = true) {
         compose.setContent {
@@ -44,6 +48,9 @@ class AccountScreenTest {
                     onOpenAlerts = { alerts++ },
                     wakeEnabled = false,
                     onWakeChange = {},
+                    voiceOutput = voiceOutput,
+                    onVoiceOutputChange = { voiceOutput = it },
+                    onPreviewVoice = { previews++ },
                     onSignOut = { signedOut++ },
                     bottomBar = {},
                 )
@@ -96,6 +103,34 @@ class AccountScreenTest {
         compose.onNodeWithTag("confirmSignOut").performClick()
 
         assertEquals(1, signedOut)
+    }
+
+    @Test
+    fun theVoiceSwitchAndRateAreSaved() {
+        render()
+
+        compose.onNodeWithTag("accountList")
+            .performScrollToNode(hasTestTag("readAloudSwitch"))
+        compose.onNodeWithTag("readAloudSwitch").performClick()
+        assertEquals(false, voiceOutput.enabled)
+
+        // The rate chips are disabled while reading is off, so turn it back on
+        // before choosing one: a rate nobody will hear is not a setting.
+        compose.onNodeWithTag("readAloudSwitch").performClick()
+        compose.onAllNodesWithTag("voiceRate")[3].performScrollTo().performClick()
+        assertEquals(1.5f, voiceOutput.rate)
+        assertEquals(true, voiceOutput.enabled)
+    }
+
+    @Test
+    fun thePreviewButtonAsksForASample() {
+        render()
+
+        compose.onNodeWithTag("accountList")
+            .performScrollToNode(hasTestTag("voicePreview"))
+        compose.onNodeWithTag("voicePreview").performClick()
+
+        assertEquals(1, previews)
     }
 
     @Test

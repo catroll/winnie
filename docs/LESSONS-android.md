@@ -497,3 +497,60 @@ the send leave the app*, not that anything was delivered, and the delay is the
 owner's tap, not the transport. Verify a send from the receiving handset; the
 app's own message list cannot show it, because `SmsManager` never writes the
 sent row into `content://sms` (`WRITE_SMS` is system-only).
+
+## Robolectric has no `TextToSpeech` shadow, so the engine's success path is a device check
+
+**Signal.** A JVM test for the speech engine needs to know what the owner would
+hear. Robolectric looks like the place to ask, and the API surface seems to
+exist: `android.speech.tts.TextToSpeech` comes from the `android-all` jar.
+
+**Check before writing the test.** Look for the shadow by name:
+
+```bash
+J=$(find .gradle-home -name 'shadows-framework-*.jar' | head -1)
+unzip -l "$J" | grep -i speech    # no output at all in Robolectric 4.17
+```
+
+No shadow means the real framework class runs. Its constructor calls
+`Context.bindService` for a synthesiser service, which Robolectric records but
+never connects, so `OnInitListener` is never called and the engine looks dead.
+`getVoices()` is null, `speak()` queues nothing, and no `UtteranceProgressListener`
+callback ever fires.
+
+**What to test instead.** The failure path, which is also the one that matters on
+a ROM with no engine installed: a bounded wait on initialisation turns "no
+answer" into a localized message and `speaking == false`, and that is
+reproducible in the JVM. Put the interesting text logic (the Markdown reduction,
+the sentence chunking, the script-to-language choice) in a pure Kotlin object and
+test it without Android at all. The device check that remains is: which voice the
+engine picks, how it pronounces a Chinese reply, and whether a *paused* wake
+detector really stops hearing the loudspeaker.
+
+**Generalisable.** Before writing an Android test against a platform service,
+confirm the shadow exists — `unzip -l shadows-framework-*.jar | grep -i <name>`.
+A test that "passes" against a service that never answers is testing the mock
+you assumed was there.
+
+## A card added to a `LazyColumn` breaks a test that clicks below it
+
+**Signal.** `LayoutScreenshotTest.signOutConfirmation` failed with
+`Expected exactly '1' node but could not find any node that satisfies:
+(Text ... contains 'Sign out')` after a new card was added to the Account tab.
+Nothing about the button changed.
+
+**Cause.** The account screen is a `LazyColumn`; the extra card pushed "Sign out"
+past the viewport, and a lazy list does not compose off-screen items. A node that
+does not exist cannot be clicked.
+
+**Fix, and the rule to keep.** Any Compose test that touches a control at the
+bottom of a scrolling list must reach it first:
+
+```kotlin
+compose.onNodeWithTag("accountList").performScrollToNode(hasTestTag("signOut"))
+compose.onNodeWithText("Sign out").performClick()
+```
+
+`AccountScreenTest` already did this and passed while the screenshot test, which
+clicked `onNodeWithText("Sign out")` directly, failed. Two tests of one screen
+that scroll differently is how the same break reaches one and not the other:
+scroll in both, or assert on a `testTag` that the list exposes.

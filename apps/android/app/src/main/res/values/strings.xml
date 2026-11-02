@@ -310,6 +310,17 @@
     <string name="voice_dismiss">Dismiss</string>
     <string name="voice_no_speech">Nothing was recognized. Try again.</string>
     <string name="chat_voice_description">Voice input</string>
+    <string name="voice_play">Read aloud</string>
+    <string name="voice_stop">Stop reading</string>
+    <string name="voice_output">Voice output</string>
+    <string name="voice_output_subtitle">Read answers with this phone\'s speech engine</string>
+    <string name="voice_read_aloud">Read replies aloud</string>
+    <string name="voice_read_aloud_subtitle">A voice turn is answered out loud as soon as the reply arrives.</string>
+    <string name="voice_rate">Speed</string>
+    <string name="voice_preview">Preview</string>
+    <string name="voice_preview_sample">This is how Winnie will read an answer.</string>
+    <string name="voice_output_unavailable">This phone cannot read that reply aloud: no speech engine is installed for its language.</string>
+    <string name="voice_engine_note">The engine and voice are chosen in the phone\'s own text-to-speech settings.</string>
     <string name="proactive_ack">Received</string>
     <string name="proactive_snooze">In 1 hour</string>
 </resources>

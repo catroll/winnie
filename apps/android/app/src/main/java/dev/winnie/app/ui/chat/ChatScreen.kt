@@ -81,6 +81,7 @@ fun ChatScreen(
     onStartVoice: () -> Unit,
     onCancelVoice: () -> Unit,
     onDismissVoiceFailure: () -> Unit,
+    onSpeak: (ChatMessage) -> Unit,
     bottomBar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -156,7 +157,9 @@ fun ChatScreen(
                     else -> MessageList(
                         messages = ui.messages,
                         thinking = ui.sending,
+                        speakingKey = ui.speakingKey,
                         listState = listState,
+                        onSpeak = onSpeak,
                     )
                 }
             }
@@ -230,7 +233,9 @@ private fun ReadOnlyNotice(onNewChat: () -> Unit) {
 private fun MessageList(
     messages: List<ChatMessage>,
     thinking: Boolean,
+    speakingKey: Long?,
     listState: androidx.compose.foundation.lazy.LazyListState,
+    onSpeak: (ChatMessage) -> Unit,
 ) {
     LazyColumn(
         state = listState,
@@ -242,7 +247,11 @@ private fun MessageList(
             when {
                 message.isTool -> ToolMessage(message)
                 message.fromUser -> UserMessage(message)
-                else -> AssistantMessage(message)
+                else -> AssistantMessage(
+                    message = message,
+                    speaking = message.key == speakingKey,
+                    onSpeak = onSpeak,
+                )
             }
         }
         if (thinking) {
@@ -276,8 +285,18 @@ private fun UserMessage(message: ChatMessage) {
     }
 }
 
+/**
+ * A reply, with the one action this tab adds to the text: read it aloud.
+ *
+ * The console has the same button per message, so a reply can be heard whether
+ * it was typed, dictated, or read back from an old conversation.
+ */
 @Composable
-private fun AssistantMessage(message: ChatMessage) {
+private fun AssistantMessage(
+    message: ChatMessage,
+    speaking: Boolean,
+    onSpeak: (ChatMessage) -> Unit,
+) {
     Row(modifier = Modifier.fillMaxWidth()) {
         Surface(
             modifier = Modifier.weight(1f),
@@ -311,6 +330,32 @@ private fun AssistantMessage(message: ChatMessage) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                if (message.text.isNotBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        IconButton(
+                            onClick = { onSpeak(message) },
+                            modifier = Modifier.testTag("chatSpeak"),
+                        ) {
+                            Icon(
+                                painter = painterResource(
+                                    if (speaking) {
+                                        R.drawable.ic_stop_speaking
+                                    } else {
+                                        R.drawable.ic_volume_up
+                                    },
+                                ),
+                                contentDescription = stringResource(
+                                    if (speaking) R.string.voice_stop else R.string.voice_play,
+                                ),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
                 }
             }
         }

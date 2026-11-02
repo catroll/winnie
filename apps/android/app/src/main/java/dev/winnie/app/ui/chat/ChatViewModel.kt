@@ -6,9 +6,11 @@ import dev.winnie.app.AppStrings
 import dev.winnie.app.R
 import dev.winnie.app.audio.AudioRecorder
 import dev.winnie.app.audio.EndpointDetector
+import dev.winnie.app.audio.Speaker
 import dev.winnie.app.data.AppSettings
 import dev.winnie.app.data.AssistantConversationSummary
 import dev.winnie.app.data.SessionManager
+import dev.winnie.app.data.VoiceOutput
 import dev.winnie.app.data.UnauthorizedException
 import dev.winnie.app.data.friendlyMessage
 import kotlinx.coroutines.CancellationException
@@ -69,6 +71,10 @@ data class ChatUiState(
     val historyLoading: Boolean = false,
     val historyError: String? = null,
     val voice: VoiceState = VoiceState.Idle,
+    /** The reply currently being read aloud, if any. */
+    val speakingKey: Long? = null,
+    /** True while the engine is speaking, including a preview from the settings. */
+    val speaking: Boolean = false,
 )
 
 /**
@@ -84,6 +90,7 @@ class ChatViewModel(
     private val sessions: SessionManager,
     private val settings: AppSettings,
     private val newRecorder: () -> AudioRecorder,
+    private val speaker: Speaker,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(ChatUiState())
@@ -94,14 +101,72 @@ class ChatViewModel(
     private var voiceGuard: Job? = null
     private var voiceUpload: Job? = null
 
-    private companion object {
+    internal companion object {
         /** One hands-free turn never lasts longer than this. */
         const val VOICE_TURN_LIMIT_MS = 30_000L
+
+        /** The wire value that marks a dictated turn; see `AssistantChatRequest`. */
+        const val VOICE_INPUT = "voice"
+
+        /**
+         * Whether a reply is spoken without being asked.
+         *
+         * A dictated turn was asked out loud, so its answer is spoken as soon as
+         * it arrives — unless reading is switched off. A typed turn stays silent:
+         * the owner is looking at the screen, and a phone that starts talking in
+         * a meeting for a message that was deliberately typed is worse than one
+         * that waits to be asked. Every reply can still be read on demand.
+         */
+        fun speaksUnasked(input: String, output: VoiceOutput): Boolean =
+            input == VOICE_INPUT && output.enabled
     }
 
     init {
         // Resume the conversation that was open when the app was last used.
         settings.lastConversationId?.let { openConversation(it) }
+        viewModelScope.launch {
+            speaker.speaking.collect { speaking ->
+                _ui.update {
+                    it.copy(
+                        speaking = speaking,
+                        speakingKey = if (speaking) it.speakingKey else null,
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            speaker.failures.collect { message -> _ui.update { it.copy(error = message) } }
+        }
+    }
+
+    /**
+     * Reads one reply aloud, or stops it when it is the one being read.
+     *
+     * The button is a toggle because a long answer is the case where the owner
+     * most needs silence, and that is the same tap.
+     */
+    fun speak(message: ChatMessage) {
+        if (_ui.value.speakingKey == message.key) {
+            stopSpeaking()
+            return
+        }
+        if (message.text.isBlank()) return
+        _ui.update { it.copy(speakingKey = message.key) }
+        speaker.speak(message.text)
+    }
+
+    fun stopSpeaking() {
+        speaker.stop()
+        _ui.update { it.copy(speakingKey = null, speaking = false) }
+    }
+
+    /**
+     * Says one sentence in the configured voice so the rate can be judged
+     * without sending a turn. It belongs to the chat because the engine does.
+     */
+    fun previewVoice() {
+        _ui.update { it.copy(speakingKey = null) }
+        speaker.speak(AppStrings.get(R.string.voice_preview_sample))
     }
 
     fun onInputChange(value: String) {
@@ -115,6 +180,7 @@ class ChatViewModel(
     fun newChat() {
         val current = _ui.value
         if (current.sending) return
+        stopSpeaking()
         settings.lastConversationId = null
         _ui.update {
             it.copy(
@@ -144,6 +210,10 @@ class ChatViewModel(
         val current = _ui.value
         if (message.isEmpty() || current.sending || current.loading || current.readOnly) return
 
+        // A new turn interrupts the previous answer: leaving it reading means
+        // the owner cannot hear the reply they just asked for.
+        stopSpeaking()
+
         val userKey = nextKey++
         _ui.update {
             it.copy(
@@ -171,6 +241,19 @@ class ChatViewModel(
                     )
                 }
                 settings.lastConversationId = reply.conversationId
+                // A dictated turn is answered for the ear: the owner asked out
+                // loud, so the answer is spoken as soon as it arrives. A typed
+                // turn stays silent — the screen is already in front of them.
+                if (speaksUnasked(input, settings.voiceOutput)) {
+                    speak(
+                        ChatMessage(
+                            key = replyKey,
+                            role = "assistant",
+                            text = reply.reply,
+                            tools = reply.toolsUsed,
+                        ),
+                    )
+                }
             } catch (e: UnauthorizedException) {
                 // The session is gone, but this view model outlives the login
                 // screen: leaving `sending` set would disable the composer after
@@ -207,6 +290,9 @@ class ChatViewModel(
         val current = _ui.value
         if (current.voice != VoiceState.Idle) return
         if (current.sending || current.loading || current.readOnly) return
+
+        // The owner is talking, so the previous answer must stop.
+        stopSpeaking()
 
         val recorder = newRecorder()
         val endpoint = EndpointDetector()
@@ -270,7 +356,7 @@ class ChatViewModel(
                     }
                 } else {
                     _ui.update { it.copy(voice = VoiceState.Idle) }
-                    sendText(transcript.text, input = "voice")
+                    sendText(transcript.text, input = VOICE_INPUT)
                 }
             } catch (e: UnauthorizedException) {
                 _ui.update { it.copy(voice = VoiceState.Idle) }
@@ -288,6 +374,7 @@ class ChatViewModel(
     override fun onCleared() {
         recorder?.cancel()
         recorder = null
+        speaker.release()
         super.onCleared()
     }
 
@@ -295,6 +382,9 @@ class ChatViewModel(
     fun openConversation(conversationId: String) {
         val current = _ui.value
         if (current.sending || (current.loading && current.conversationId == conversationId)) return
+        // The transcript is about to be replaced, so a reply being read from it
+        // must not keep talking over the one that is about to appear.
+        stopSpeaking()
         _ui.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
             try {

@@ -237,6 +237,47 @@ yet speaks through speech-dispatcher — see the lessons doc); Safari and
 Chromium; and a real HTTPS deployment, where the origin must be secure for
 `getUserMedia` to exist at all (the bar says so when it is not).
 
+## The phone talks back
+
+The Android client reads replies with the phone's own engine
+(`android.speech.tts.TextToSpeech`, part of the platform since API 1). Like the
+console's browser voices this is no vendor and no network: the engine ships with
+the device, works offline and costs nothing per reply. The paid call stays the
+one ASR call per turn.
+
+```
+voice turn reply → ChatViewModel.sendText(input = "voice")
+  └─ settings.voiceOutput.enabled ? speak(reply)
+       └─ SpeakableText.reduce — the console's Markdown-to-speech rules
+            └─ SpeakableText.chunk — sentence-sized utterances
+                 └─ AndroidSpeaker: setLanguage / setVoice, setSpeechRate, speak
+                      └─ UtteranceProgressListener → speaking = false
+```
+
+Three decisions are worth knowing before changing this:
+
+- **The rate and the on/off switch are the app's; the engine and the voice are
+  the system's.** Android already has a text-to-speech settings screen with
+  per-language defaults, downloads, and a preview, so the app does not
+  reimplement a voice picker that could disagree with it: it honours the
+  selected voice and only overrides it when a saved name matches one the engine
+  reports. This is the one place where the phone deliberately offers less than
+  the console, whose voices are per-browser and have no system equivalent.
+- **Only a dictated turn is spoken automatically.** A typed turn stays silent —
+  the screen is already in front of the owner — and it can still be read on
+  demand with the speaker button on the reply, which is also how an old
+  transcript or a reply after Cancel is heard.
+- **The wake service is paused while the phone speaks.** A reply leaves through
+  the loudspeaker and returns through the microphone; an answer that contains
+  "winnie" would otherwise start a turn of its own. `ACTION_PAUSE` stops the
+  detector, `ACTION_RESUME` brings it back when speech ends, and the service
+  stays alive so the notification and the setting do not flicker.
+
+The settings structure is `{provider, voice, rate, enabled}` — the console's
+`{provider, voice, rate}` plus the switch — so a future supplier TTS binding
+adds a provider rather than a second settings shape. It lives in
+`SharedPreferences` on the phone because the voices it names exist only there.
+
 ## What Android allows, and what it does not
 
 This is the part that decides how "always listening" really behaves. None of it
@@ -281,7 +322,7 @@ can be fixed in the app.
 | Per wake | 0 — no network, no vendor |
 | APK growth | ~5.3 MB model + ~15 MB native library per ABI |
 | Voice turn | one ASR call on the `meetings.transcribe` binding (paid) |
-| Spoken reply | 0 — the browser's own voices, no vendor |
+| Spoken reply | 0 — the browser's and the phone's own voices, no vendor |
 | Battery | the real price; unmeasured on a device (see below) |
 
 The wake detector and the voice turn are deliberately separate costs: the part
@@ -311,7 +352,8 @@ Console (same document, previous section):
 - Browser capture through an AudioWorklet to a 16 kHz mono WAV, with the phone's
   endpointing rules and a 3 s stall / 25 s length guard.
 - Spoken replies through the platform's `SpeechSynthesis`, with a persisted
-  "Read replies aloud" switch, a Markdown-to-speech reduction and a Stop button.
+  "Read replies aloud" switch, a Markdown-to-speech reduction and a play/stop
+  button on every reply.
 - Distinct messages for a refused, missing, busy or insecure microphone, a turn
   with no speech, an ASR outage and a speech-synthesis failure.
 - A speaker button on every assistant message, a Voice/Rate/Preview menu with a
@@ -319,6 +361,17 @@ Console (same document, previous section):
   speech-dispatcher's 14,805 variants.
 - A dictated turn is marked `input: "voice"`, so the model answers for the ear
   instead of writing a document.
+
+Android, on top of the wake turn:
+
+- The phone reads a dictated turn's reply aloud with the platform's
+  `TextToSpeech`, through the same Markdown reduction in Kotlin
+  (`audio/SpeakableText.kt`) as the console.
+- A speaker button on every reply: read it, stop it, and hear an old transcript
+  or a typed turn.
+- A Voice output card on the Account tab: read replies aloud (on by default),
+  four rates, and a preview sentence.
+- The wake word service pauses while the phone speaks and resumes when it stops.
 
 ## What was measured, without a phone
 
@@ -381,6 +434,15 @@ following are implementation claims, not measurements:
 5. **The model loads from the APK.** The desktop run proves the files and the
    keyword file; loading them through `AssetManager` inside the AAR's JNI is
    still a device-only check.
+6. **The speech engine actually speaks.** The phone's voices are a device
+   property, and Robolectric cannot bind to a synthesiser service, so the
+   JVM tests prove the text reduction and the "no engine" failure path only.
+   Which Chinese voice the phone picks, whether it speaks at all when the
+   engine is missing its language data, and whether the paused detector really
+   stops hearing the loudspeaker are device checks: plug in a phone, open
+   Account → Voice output → Preview, and then ask a question by voice and watch
+   the microphone indicator. A ROM with no Chinese voice is the case to try
+   deliberately.
 
 Until those five are done, this feature is "implemented, not validated on a
 phone", and the README says so.
@@ -393,7 +455,11 @@ phone", and the README says so.
 - `audio/WakeNotifications.kt` — service notification and detection alert.
 - `audio/PcmRingBuffer.kt`, `audio/EndpointDetector.kt` — the two pure pieces.
 - `audio/WakePrefs.kt` — the setting.
-- `ui/chat/ChatViewModel.kt` — the voice turn state machine.
+- `ui/chat/ChatViewModel.kt` — the voice turn state machine and spoken replies.
+- `audio/AndroidSpeaker.kt` — the platform `TextToSpeech` engine and its state.
+- `audio/SpeakableText.kt` — Markdown-to-speech, the console's rules in Kotlin.
+- `audio/Speaker.kt` — the interface the chat speaks through.
+- `data/VoiceOutput.kt` — `{provider, voice, rate, enabled}` and the four rates.
 - `apps/api/src/winnie_api/assistant_voice.py` — the transcription endpoint.
 - `apps/admin/src/lib/voice/recorder.ts` — browser capture, resample, WAV encode.
 - `apps/admin/src/lib/voice/endpoint.ts` — the endpointer, the phone's rules.
