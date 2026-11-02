@@ -84,20 +84,27 @@ Bearer`.
 
 ## Upstream credentials
 
-Each route names a supplier. The key comes from the same environment the
-internal assistant and meeting pipelines use, so there is one place to rotate
-it:
+Each route names a supplier, and the gateway injects **that supplier's stored
+key**. The caller never brings a vendor credential and cannot override the one
+injected: `Authorization`, `x-api-key` and `x-winnie-key` are dropped from the
+request before it is forwarded, so a client that sends its own `sk-…` gets a
+`401` from the key check rather than a call billed to someone else.
 
-| Supplier | Variable |
+In the registry (the normal case) the key is the one set on the supplier in
+Admin → AI suppliers and stored in `data/ai.yaml`. The console mirrors it into
+`packages/winnie-llm/.env` with mode `0600`, which is both the operator-visible
+backup and the source a gateway-only deployment (`ai.enabled: false`) reads:
+
+| Supplier | Backup variable |
 |---|---|
 | `deepseek` | `DEEPSEEK_API_KEY` |
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `qwen` | `DASHSCOPE_API_KEY` |
 
-Editing the file requires an API restart; the process loads it at startup.
-Rotating the key therefore cuts over every route for that supplier at once,
-which is the point of one variable per supplier.
+One credential per supplier means rotating it cuts over every route for that
+supplier at once. A saved key reaches the next request without a restart; only a
+gateway-only deployment reading the environment file needs one.
 
 ## What is forwarded
 
@@ -148,11 +155,30 @@ working without a database. A route without `vendor`, or whose supplier has no
 key in the environment file, answers `503` rather than forwarding unauthenticated
 traffic.
 
-## Logs and usage
+## Session records
 
-`data/logs/{route}/` holds a `*-ask.txt` / `*-answer.txt` pair per call. The ask
-file records the client URL, the upstream URL, the parsed body, and metadata
-including `key_id`; neither the Winnie secret nor the vendor key is written.
+Every call leaves a record under `data/logs/{route}/`, named by a session id that
+the pair below shares. A forwarded call writes an `-ask` / `-answer` pair; a call
+the gateway itself refuses writes one `-rejected` file, because a `401` with
+nothing on disk is the one failure nobody can reconstruct after the caller
+reports it.
+
+| File | Contents |
+|---|---|
+| `…-ask.txt` | session id, route, protocol and upstream URL; caller `key_id`, `key_label` and which header carried the key; method, client URL, client host and the raw path and query; every header that will be forwarded; the body (JSON, or truncated text), its size, the model and the stream flag |
+| `…-answer.txt` | status code, `duration_ms`, upstream response headers, the upstream body — or the streamed text with its raw SSE frames — and the normalized token counts, or the error |
+| `…-rejected.txt` | the same request detail plus the status, the reason, the body that was refused, and a digest of the presented key |
+
+Credential values are never written. `Authorization`, `x-api-key`,
+`x-winnie-key`, `cookie`, `set-cookie` and `proxy-authorization` are stored as
+`<redacted>`, so the record can be handed to someone without handing over a key.
+A digest of a refused key is enough to prove "the client is still sending the old
+one" without storing it.
+
+An unknown route prefix is recorded under `data/logs/_unmapped/`: a path segment
+from the caller never chooses a directory. Refusals are capped at 500 records per
+route per process, so a probe flood is bounded while the first few hundred
+attempts — exactly where the answer lives — are still kept.
 
 Each call also appends one line to `data/usage/` with token classes, latency and
 the estimated cost, attributed to `key_id` in `detail`. See

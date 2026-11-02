@@ -31,6 +31,16 @@ def _ask_files(root: Path, route: str) -> list[Path]:
     return sorted((root / route).glob("*-ask.txt"))
 
 
+def _rejected_files(root: Path, route: str) -> list[Path]:
+    return sorted((root / route).glob("*-rejected.txt"))
+
+
+def _record_payload(path: Path) -> dict:
+    """The JSON body of a record file, past its ``#`` header lines."""
+    _, _, body = path.read_text(encoding="utf-8").partition("\n\n")
+    return json.loads(body)
+
+
 async def test_healthz(client: httpx.AsyncClient) -> None:
     response = await client.get("/healthz")
     assert response.status_code == 200
@@ -295,6 +305,120 @@ async def test_every_path_and_method_is_forwarded(
     models = await gateway_client.get("/fake-openai/v1/models")
     assert models.status_code == 200
     assert models.json()["data"][0]["id"] == "fake-openai-model"
+
+
+async def test_the_record_explains_the_whole_call(
+    gateway_client: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    """Who called, with what, and what came back — all of it on disk."""
+    response = await gateway_client.post(
+        f"{OPENAI_URL}?trace=1",
+        headers={"X-Client-Trace": "trace-abc", "User-Agent": "probe/1.0"},
+        json=CHAT_BODY,
+    )
+    assert response.status_code == 200
+
+    ask = _record_payload(_ask_files(settings.resolve_log_root(), "fake-openai")[0])
+    assert ask["client"]["method"] == "POST"
+    assert "trace=1" in ask["client"]["url"]
+    assert ask["route"] == {
+        "name": "fake-openai",
+        "protocol": "openai",
+        "upstream_url": "https://fake.openai/v1/chat/completions?trace=1",
+    }
+    assert ask["caller"]["key_id"]
+    assert ask["caller"]["credential_header"] == "authorization"
+    # Every forwarded header is kept, and the credential is present only as a
+    # marker: the record must never become a second copy of the key.
+    assert ask["request"]["headers"]["x-client-trace"] == "trace-abc"
+    assert ask["request"]["headers"]["user-agent"] == "probe/1.0"
+    assert ask["request"]["headers"]["authorization"] == "<redacted>"
+    assert ask["request"]["model"] == "fake-model"
+    assert ask["request"]["body"] == CHAT_BODY
+    assert ask["request"]["body_bytes"] == len(
+        json.dumps(CHAT_BODY, separators=(",", ":"))
+    )
+
+    answer = _record_payload(
+        _answer_files(settings.resolve_log_root(), "fake-openai")[0]
+    )
+    assert answer["status_code"] == 200
+    assert answer["duration_ms"] >= 0
+    assert answer["upstream_headers"]["x-upstream-request-id"] == "req-fake-1"
+    assert answer["body"]["choices"][0]["message"]["content"] == "pong"
+
+
+async def test_the_record_keeps_the_token_counts(
+    gateway_client: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    response = await gateway_client.post(
+        "/fake-openai/v1/embeddings",
+        json={"model": "text-embedding-3-small", "input": "ping"},
+    )
+    assert response.status_code == 200
+
+    answer = _record_payload(
+        _answer_files(settings.resolve_log_root(), "fake-openai")[0]
+    )
+    assert answer["tokens"]["input_tokens"] == 4
+    assert answer["tokens"]["total_tokens"] == 4
+
+
+async def test_a_refused_call_is_recorded_without_its_key(
+    gateway_client: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    """A 401 with nothing on disk is the one failure nobody can debug."""
+    presented = "sk-not-a-winnie-key"
+    response = await gateway_client.post(
+        OPENAI_URL,
+        headers={"Authorization": f"Bearer {presented}", "X-Client-Trace": "probe-7"},
+        json=CHAT_BODY,
+    )
+    assert response.status_code == 401
+
+    files = _rejected_files(settings.resolve_log_root(), "fake-openai")
+    assert len(files) == 1
+    record = _record_payload(files[0])
+    assert record["rejection"]["status_code"] == 401
+    assert "invalid or revoked" in record["rejection"]["reason"]
+    assert record["rejection"]["body"] == CHAT_BODY
+    assert record["client"]["headers"]["x-client-trace"] == "probe-7"
+    assert record["client"]["headers"]["authorization"] == "<redacted>"
+    # The digest identifies the key the client keeps sending; the key itself is
+    # never written down.
+    assert record["caller"]["presented_key_digest"]
+    assert presented not in files[0].read_text(encoding="utf-8")
+
+
+async def test_an_unknown_route_is_recorded_under_one_bucket(
+    client: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    response = await client.post("/missing/v1/models", json={})
+    assert response.status_code == 404
+
+    root = settings.resolve_log_root()
+    files = _rejected_files(root, "_unmapped")
+    assert len(files) == 1
+    record = _record_payload(files[0])
+    assert record["rejection"]["status_code"] == 404
+    assert "unknown route" in record["rejection"]["reason"]
+
+
+async def test_a_callers_route_name_can_not_choose_a_log_directory(
+    client: httpx.AsyncClient,
+    settings: Settings,
+) -> None:
+    """The bucket is fixed; a name from the URL never becomes a path."""
+    response = await client.post("/%2E%2E/v1/models", json={})
+    assert response.status_code in (404, 405)
+
+    root = settings.resolve_log_root().resolve()
+    assert not (root.parent / "v1").exists()
+    assert _rejected_files(root, "_unmapped")
 
 
 def test_settings_reject_unknown_keys() -> None:

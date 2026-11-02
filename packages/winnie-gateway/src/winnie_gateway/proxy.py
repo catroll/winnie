@@ -262,12 +262,14 @@ async def forward(
     client: httpx.AsyncClient,
     recorder: InteractionRecorder,
     key: GatewayKey,
+    credential_header: str,
     usage: UsageSink | None,
 ) -> Response:
     """Forward one call to ``route`` and return the upstream's own answer."""
     body = await request.body()
     parsed = _parse_json(body)
     url = _upstream_url(request, route, path)
+    model = str(parsed.get("model") or "") if isinstance(parsed, dict) else ""
     stream_requested = bool(
         isinstance(parsed, dict) and parsed.get("stream")
     )
@@ -280,21 +282,21 @@ async def forward(
             if parsed is not None
             else {"raw": _text(body)}
         ),
-        headers_meta={
-            "route": route.name,
-            "protocol": route.protocol,
-            "key_id": key.id,
-            "key_label": key.label,
-            "stream": stream_requested,
-            "client_host": request.client.host if request.client else None,
-            "user_agent": request.headers.get("user-agent"),
-            "body_bytes": len(body),
-        },
+        route=route.name,
+        protocol=route.protocol,
+        key_id=key.id,
+        key_label=key.label,
+        credential_header=credential_header,
+        model=model,
+        stream=stream_requested,
+        client_host=request.client.host if request.client else "",
+        headers=request.headers.items(),
+        body_bytes=len(body),
     )
     observer = usage_observer(
         usage=usage,
         route=route,
-        model=str(parsed.get("model") or "") if isinstance(parsed, dict) else "",
+        model=model,
         protocol=route.protocol,
         stream=stream_requested,
         endpoint=f"/{path.lstrip('/')}",
@@ -310,7 +312,7 @@ async def forward(
         )
         upstream = await client.send(upstream_request, stream=True)
     except httpx.HTTPError as exc:
-        recorder.end_error(prefix, exc)
+        recorder.end_error(prefix, exc, duration_ms=_elapsed_ms(started))
         _notify(
             observer,
             UpstreamOutcome(None, _elapsed_ms(started), None, f"upstream unreachable: {exc}"),
@@ -367,13 +369,29 @@ async def _buffered_response(
     document = _parse_json(payload)
     tokens: TokenCounts | None = None
     error = ""
+    headers = _response_headers(upstream)
+    elapsed = _elapsed_ms(started)
     if document is not None:
         if status >= 400:
             error = f"upstream returned HTTP {status}: {_summary(document)}"
-            recorder.end_error(prefix, document, status_code=status)
+            recorder.end_error(
+                prefix,
+                f"upstream returned HTTP {status}",
+                status_code=status,
+                duration_ms=elapsed,
+                upstream_headers=headers,
+                upstream_body=document,
+            )
         else:
-            recorder.end_json(prefix, document, status_code=status)
             tokens = extract_json_usage(document)
+            recorder.end_json(
+                prefix,
+                document,
+                status_code=status,
+                duration_ms=elapsed,
+                upstream_headers=headers,
+                tokens=tokens,
+            )
     else:
         text = _text(payload)
         if status >= 400:
@@ -382,9 +400,18 @@ async def _buffered_response(
                 prefix,
                 text[:2000] or f"upstream returned HTTP {status} with an empty body",
                 status_code=status,
+                duration_ms=elapsed,
+                upstream_headers=headers,
+                upstream_body={"raw": text[:2000]},
             )
         else:
-            recorder.end_json(prefix, {"raw": text}, status_code=status)
+            recorder.end_json(
+                prefix,
+                {"raw": text},
+                status_code=status,
+                duration_ms=elapsed,
+                upstream_headers=headers,
+            )
     _notify(
         observer,
         UpstreamOutcome(status, _elapsed_ms(started), tokens if status < 400 else None, error),
@@ -392,7 +419,7 @@ async def _buffered_response(
     return Response(
         content=payload,
         status_code=status,
-        headers=_response_headers(upstream),
+        headers=headers,
     )
 
 
@@ -407,6 +434,7 @@ def _streaming_response(
 ) -> StreamingResponse:
     status = upstream.status_code
     tee = _SseTee(route.protocol)
+    headers = _response_headers(upstream)
 
     async def event_gen():
         finished = False
@@ -437,11 +465,20 @@ def _streaming_response(
                 text=tee.text,
                 raw_events=tee.events,
                 status_code=status,
+                duration_ms=_elapsed_ms(started),
+                upstream_headers=headers,
+                tokens=tee.tokens if tee.tokens.reported else None,
             )
             finished = True
             finish()
         except httpx.HTTPError as exc:
-            recorder.end_error(prefix, exc, status_code=status)
+            recorder.end_error(
+                prefix,
+                exc,
+                status_code=status,
+                duration_ms=_elapsed_ms(started),
+                upstream_headers=headers,
+            )
             finished = True
             finish(error=f"upstream error: {exc}")
             raise
@@ -452,6 +489,9 @@ def _streaming_response(
                     text=tee.text,
                     raw_events=tee.events,
                     status_code=status,
+                    duration_ms=_elapsed_ms(started),
+                    upstream_headers=headers,
+                    tokens=tee.tokens if tee.tokens.reported else None,
                 )
                 finish(error="stream ended before completion")
             await upstream.aclose()
@@ -459,5 +499,5 @@ def _streaming_response(
     return StreamingResponse(
         event_gen(),
         status_code=status,
-        headers=_response_headers(upstream),
+        headers=headers,
     )
