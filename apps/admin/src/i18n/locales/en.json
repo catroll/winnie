@@ -199,5 +199,9 @@
   "To": "To",
   "not selectable": "not selectable",
   "{{failed}} folders failed.": "{{failed}} folders failed.",
-  "{{messages}} messages · {{unread}} unread": "{{messages}} messages · {{unread}} unread"
+  "{{messages}} messages · {{unread}} unread": "{{messages}} messages · {{unread}} unread",
+  "HTML": "HTML",
+  "Raw": "Raw",
+  "Syncing every folder…": "Syncing every folder…",
+  "The raw message is not cached.": "The raw message is not cached."
 }

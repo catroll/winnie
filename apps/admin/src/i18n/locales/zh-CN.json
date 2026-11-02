@@ -1015,5 +1015,9 @@
   "To": "收件人",
   "not selectable": "不可选",
   "{{failed}} folders failed.": "{{failed}} 个文件夹同步失败。",
-  "{{messages}} messages · {{unread}} unread": "{{messages}} 封邮件 · {{unread}} 封未读"
+  "{{messages}} messages · {{unread}} unread": "{{messages}} 封邮件 · {{unread}} 封未读",
+  "HTML": "网页",
+  "Raw": "原文",
+  "Syncing every folder…": "正在同步所有文件夹…",
+  "The raw message is not cached.": "这封邮件的原文尚未缓存。"
 }

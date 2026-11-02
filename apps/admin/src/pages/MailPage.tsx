@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { ApiError, api } from '../api/client';
@@ -9,12 +9,29 @@ import { tr } from '../i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/hooks';
 
+type Pane = 'text' | 'html' | 'raw';
+
+/**
+ * A mail body is written by someone else, so the markup is rendered in a frame
+ * that cannot run a script, navigate the console, or submit a form. Images and
+ * inline styles are allowed: without them most real mail is a wall of text.
+ */
+const FRAME_POLICY =
+  "default-src 'none'; img-src * data:; style-src 'unsafe-inline' *; font-src * data:; media-src *";
+
+const frameDocument = (markup: string) =>
+  `<!doctype html><html><head><meta charset="utf-8">` +
+  `<meta http-equiv="Content-Security-Policy" content="${FRAME_POLICY}">` +
+  `<style>body{margin:12px;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;}</style>` +
+  `</head><body>${markup}</body></html>`;
+
 /**
  * The mailbox as the cache sees it.
  *
- * The sync is explicit: it is the only action that touches the server, and it
- * walks every folder. Reading a message costs one download the first time and
- * is free afterwards, so the reading pane can be reopened without a connection.
+ * Opening the page starts one sync, because a cache is only useful if it is not
+ * stale; the list renders from what is already cached while that runs, so the
+ * page is usable before the server has answered. Reading a message costs one
+ * download the first time, marks it read, and is free afterwards.
  */
 export function MailPage() {
   const [folder, setFolder] = useState('');
@@ -22,6 +39,7 @@ export function MailPage() {
   const [query, setQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [selected, setSelected] = useState<MailCachedMessage | null>(null);
+  const [pane, setPane] = useState<Pane>('html');
   const [opening, setOpening] = useState('');
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState('');
@@ -40,6 +58,9 @@ export function MailPage() {
     [folder, query, unreadOnly],
   );
 
+  const { reload: reloadFolders } = folders;
+  const { reload: reloadMessages } = messages;
+
   // A search should not fire on every keystroke; 300 ms is long enough to type
   // a word and short enough that the list feels live.
   useEffect(() => {
@@ -50,39 +71,65 @@ export function MailPage() {
   const configured =
     settings.status === 'success' && settings.data.enabled && settings.data.can_receive;
 
-  const sync = async () => {
-    setSyncing(true);
-    setActionError('');
-    setNotice('');
-    try {
-      const result = await api.syncMail();
-      const failed = result.errors.length
-        ? ' ' + tr('{{failed}} folders failed.', { failed: String(result.errors.length) })
-        : '';
-      setNotice(
-        tr('Synced {{folders}} folders, {{fetched}} new messages.', {
-          folders: String(result.folders),
-          fetched: String(result.fetched),
-        }) + failed,
-      );
-      folders.reload();
-      messages.reload();
-    } catch (caught) {
-      setActionError(caught instanceof ApiError ? caught.detail : String(caught));
-    } finally {
-      setSyncing(false);
+  const sync = useCallback(
+    async ({ quiet = false }: { quiet?: boolean } = {}) => {
+      setSyncing(true);
+      setActionError('');
+      if (!quiet) {
+        setNotice('');
+      }
+      try {
+        const result = await api.syncMail();
+        const failed = result.errors.length
+          ? ' ' +
+            tr('{{failed}} folders failed.', { failed: String(result.errors.length) })
+          : '';
+        if (!quiet || result.fetched > 0) {
+          setNotice(
+            tr('Synced {{folders}} folders, {{fetched}} new messages.', {
+              folders: String(result.folders),
+              fetched: String(result.fetched),
+            }) + failed,
+          );
+        }
+        reloadFolders();
+        reloadMessages();
+      } catch (caught) {
+        setActionError(caught instanceof ApiError ? caught.detail : String(caught));
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [reloadFolders, reloadMessages],
+  );
+
+  // One automatic sync per visit, once the settings say there is a mailbox to
+  // sync. The ref survives React's double-invoked effects in development.
+  const autoSynced = useRef(false);
+  useEffect(() => {
+    if (autoSynced.current || !configured) {
+      return;
     }
-  };
+    autoSynced.current = true;
+    void sync({ quiet: true });
+  }, [configured, sync]);
 
   const open = async (message: MailCachedMessage) => {
     setActionError('');
-    if (message.has_body && message.body) {
+    if (message.has_body && message.has_raw && message.body) {
       setSelected(message);
       return;
     }
     setOpening(message.id);
     try {
-      setSelected(await api.mailMessage(message.id));
+      const full = await api.mailMessage(message.id);
+      setSelected(full);
+      if (message.unread && !full.unread) {
+        // Opening marks the message read on the server, so the badges and the
+        // "New" marker have to follow.
+        reloadMessages();
+        reloadFolders();
+      }
     } catch (caught) {
       setActionError(caught instanceof ApiError ? caught.detail : String(caught));
     } finally {
@@ -100,6 +147,17 @@ export function MailPage() {
           .at(-1) ?? ''
       : '';
 
+  const panes: { key: Pane; label: string; available: boolean }[] = selected
+    ? [
+        { key: 'html', label: tr('HTML'), available: selected.has_html },
+        { key: 'text', label: tr('Text'), available: Boolean(selected.body) },
+        { key: 'raw', label: tr('Raw'), available: selected.has_raw },
+      ]
+    : [];
+  const activePane = panes.find((row) => row.key === pane && row.available)
+    ? pane
+    : (panes.find((row) => row.available)?.key ?? 'text');
+
   return (
     <>
       <PageHeader title="Mail" crumbs={[{ label: 'Settings', to: '/settings' }]} />
@@ -109,7 +167,7 @@ export function MailPage() {
             <button
               type="button"
               className="btn btn-primary"
-              onClick={sync}
+              onClick={() => void sync()}
               disabled={syncing || !configured}
             >
               {syncing ? (
@@ -125,9 +183,11 @@ export function MailPage() {
               )}
             </button>
             <span className="small text-secondary">
-              {lastSynced
-                ? tr('Last synced {{when}}', { when: formatDateTime(lastSynced) })
-                : tr('Never synced')}
+              {syncing
+                ? tr('Syncing every folder…')
+                : lastSynced
+                  ? tr('Last synced {{when}}', { when: formatDateTime(lastSynced) })
+                  : tr('Never synced')}
             </span>
             {stats ? (
               <span className="badge text-bg-light ms-auto">
@@ -231,16 +291,34 @@ export function MailPage() {
             <div className="col-lg-9">
               {selected ? (
                 <div className="card">
-                  <div className="card-header d-flex flex-wrap align-items-center gap-2">
-                    <h3 className="card-title mb-0 text-truncate">{selected.subject || tr('(no subject)')}</h3>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary ms-auto"
-                      onClick={() => setSelected(null)}
-                    >
-                      <i className="bi bi-arrow-left me-1" aria-hidden="true" />
-                      {tr('Back to messages')}
-                    </button>
+                  <div className="card-header">
+                    <div className="d-flex flex-wrap align-items-center gap-2">
+                      <h3 className="card-title mb-0 text-truncate">
+                        {selected.subject || tr('(no subject)')}
+                      </h3>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary ms-auto"
+                        onClick={() => setSelected(null)}
+                      >
+                        <i className="bi bi-arrow-left me-1" aria-hidden="true" />
+                        {tr('Back to messages')}
+                      </button>
+                    </div>
+                    <ul className="nav nav-tabs card-header-tabs mt-2">
+                      {panes.map((row) => (
+                        <li className="nav-item" key={row.key}>
+                          <button
+                            type="button"
+                            className={`nav-link${activePane === row.key ? ' active' : ''}`}
+                            disabled={!row.available}
+                            onClick={() => setPane(row.key)}
+                          >
+                            {row.label}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                   <div className="card-body">
                     <dl className="row mb-3 small">
@@ -257,9 +335,29 @@ export function MailPage() {
                         {selected.folder_display || selected.folder} · #{selected.uid}
                       </dd>
                     </dl>
-                    <pre className="mb-0 text-wrap font-monospace small">
-                      {selected.body || tr('The body is not cached for this message.')}
-                    </pre>
+                    {!selected.has_body ? (
+                      <p className="text-secondary mb-0">
+                        {tr('The body is not cached for this message.')}
+                      </p>
+                    ) : activePane === 'html' ? (
+                      <iframe
+                        title={selected.subject || tr('(no subject)')}
+                        className="w-100 border rounded bg-white"
+                        sandbox=""
+                        referrerPolicy="no-referrer"
+                        srcDoc={frameDocument(selected.body_html)}
+                        style={{ height: '32rem' }}
+                      />
+                    ) : activePane === 'text' ? (
+                      <pre className="mb-0 text-wrap font-monospace small">{selected.body}</pre>
+                    ) : (
+                      <pre
+                        className="mb-0 font-monospace small"
+                        style={{ maxHeight: '32rem', overflow: 'auto' }}
+                      >
+                        {selected.body_raw || tr('The raw message is not cached.')}
+                      </pre>
+                    )}
                   </div>
                 </div>
               ) : (

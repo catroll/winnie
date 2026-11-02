@@ -1286,8 +1286,14 @@ export interface MailCachedMessage {
   unread: boolean;
   size: number;
   has_body: boolean;
+  /** The sender's markup, rendered in a sandboxed frame. */
+  has_html: boolean;
+  /** The RFC 822 source is cached and the "Raw" tab can show it. */
+  has_raw: boolean;
   message_id: string;
   body: string;
+  body_html: string;
+  body_raw: string;
 }
 
 export interface MailSyncResult {
