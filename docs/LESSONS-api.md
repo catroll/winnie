@@ -851,3 +851,75 @@ sender and the recipient are the same account, the receiving side's archive is
 the only record; a missing copy in the expected mailbox is a property of the
 provider's routing, not of the send. Pick the second mailbox for the delivery
 assertion, and use the sender's Sent folder for the "did it leave" assertion.
+
+## A fetched message is not a legacy `Message`, and `formataddr` undoes the decode (2026-11-02)
+
+**Signal.** `GET /api/v1/settings/mail/messages` answered a 500 and the log ended
+with:
+
+```
+File "winnie_mail/client.py", line 101, in _plain_text
+    body = part.get_content()
+AttributeError: 'Message' object has no attribute 'get_content'
+```
+
+The same bytes parsed fine in a REPL, because the REPL called
+`message_from_bytes(raw, policy=policy.default)` and the client had called
+`message_from_bytes(raw)`.
+
+**Cause.** `email.message_from_bytes` defaults to `compat32`, whose parts are
+`email.message.Message`: no `get_content()`, no `get_content_type()` semantics,
+and headers that keep their raw encoded form. The modern API (`get_body`,
+`get_content`, decoded headers, `Address` objects) only exists under
+`email.policy.default`. This is the same family of failure as `get_payload()`
+vs `get_content()` — a method that exists in one policy silently does not exist
+in the other, and the traceback names the method, not the missing policy.
+
+**Fix.** `message_from_bytes(raw, policy=policy.default)` in the one place that
+parses, and assert on a *real* message in a test rather than on a hand-built
+`EmailMessage`, whose `get_content` would have worked regardless.
+
+**Second trap, same test run.** With the parse fixed, the sender column showed
+`=?utf-8?b?572R5piT6YKu566x6LSm5Y+35a6J5YWo?= <safe@service.netease.com>`.
+`_addresses` *was* decoding correctly and then re-encoding: it passed the pair
+through `email.utils.formataddr`, which escaped the non-ASCII display name back
+into an encoded-word — base64-identical to the original, so the round trip looked
+like "decoding does not work". Render for display, do not serialise for the wire:
+
+```python
+from email.headerregistry import Address
+str(Address(display_name=name, addr_spec=address))   # 网易邮箱账号安全 <safe@…>
+formataddr((name, address))                          # =?utf-8?b?572R5…
+```
+
+**Generalisable.** `email.policy.default` is not cosmetic: it decides which
+methods the objects have. And a decode step that is followed by a encode step in
+the same function can return its input unchanged — test the *rendered value*
+(`sender == "网易邮箱账号安全 <safe@…>"`), never "the helper was called".
+
+## A new credential file is not ignored until you check (2026-11-02)
+
+**Signal.** The mailbox feature wrote `data/mail/<user_id>.yaml` containing a
+real 126 authorization code, and `git status` listed the directory as untracked.
+`.gitignore` excluded `data/*.db`, `data/ai.yaml` and `data/gateway-keys.yaml` —
+every credential file the project had made *before* this one, because each had
+been added when it was created. Nothing excluded `data/mail/`.
+
+**Cause.** The ignore list is written per feature and grows by memory; a new
+secret path is not covered by an old rule, and a wildcard like `data/` would also
+swallow files that are meant to be committed (schemas, fixtures, seeds).
+
+**Check.** Before a feature writes a real secret, ask git:
+
+```bash
+git check-ignore -v data/mail/<user_id>.yaml   # silence means COMMITTABLE
+```
+
+and after adding the rule, the same command must name the pattern that matches.
+`git status` alone is not enough — an untracked file is easy to `git add -A` by
+habit, and the commit would carry the password.
+
+**Fix.** `data/mail/` in `.gitignore`, next to `data/gateway-keys.yaml`, with the
+comment saying why. **Generalisable.** The moment a storage decision creates a
+new place for a secret is the moment to prove it is ignored; never infer the
+ignore rule from the file living under `data/`.

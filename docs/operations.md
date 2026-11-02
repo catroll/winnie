@@ -39,6 +39,10 @@ Notes:
   `DELETE /api/v1/phone/devices/{id}/data`; revoking the device needs
   `DELETE /api/v1/phone/devices/{id}` (see
   [phone.md](./phone.md#8-privacy-and-security)).
+- **Mail has no process of its own.** It is a capability inside the API: the
+  owner's SMTP/IMAP/POP3 account is read from `data/mail/<user_id>.yaml` on each
+  operation, so a settings change needs no restart. There is no polling loop —
+  a caller asks for messages (see [mail.md](./mail.md)).
 - The index daemon is loopback-only by design; the browser reaches it through
   the API, and `/admin/*` is not exposed to remote clients.
 - In production the admin console is built once (`make admin-build`) and served
@@ -102,6 +106,18 @@ dropped before `winnie_api.main._configure_logging` installed a root handler.
 `WINNIE_LOG_LEVEL=DEBUG make api` lowers the threshold for a session; `httpx`,
 `httpcore`, `sqlalchemy.engine` and `watchfiles` stay at `WARNING` so their
 chatter does not bury those lines.
+
+State and credentials on disk (all outside git except the database schema):
+
+| Path | Mode | Holds | Notes |
+|---|---|---|---|
+| `data/winnie.db` | `0644` | Application database | SQLite default; PostgreSQL in production |
+| `data/gateway-keys.yaml` | `0600` | Gateway key digests | Re-read by mtime |
+| `data/mail/<user_id>.yaml` | `0600` | Mailbox settings **including the password** | Read per operation; `data/mail/` is gitignored |
+| `apps/api/.env` | — | Deployment secrets (`AMAP_API_KEY`, the SMTP fallback, …) | Sourced by `make api`; a change needs a restart |
+
+The mailbox file is the reason `data/mail/` must stay in `.gitignore`: unlike the
+gateway keys it holds a real secret that can log in to the owner's mail.
 
 `make start` needs:
 

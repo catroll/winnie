@@ -8,7 +8,10 @@ actions and the optional model composer. Channels: push, ntfy and email are
 configured, and **email is proven end to end** (2026-11-02: the authorization
 code in `apps/api/.env` logged in to `smtp.126.com:465`, and
 `POST /api/v1/proactive/test {"channel": "email"}` came back
-`{"delivered": true, "receipt": "smtp ninedoors@126.com"}`). Open: the `winnie`
+`{"delivered": true, "receipt": "smtp ninedoors@126.com"}`). The mailbox itself
+now lives in the owner's settings rather than only in the environment — see
+[mail.md](./mail.md) — and the environment block below is the fallback for a
+deployment that has not filled the form in. Open: the `winnie`
 calendar alarm path (§6), a deep link into the conversation, and a
 physical-device run. Last updated: 2026-11-02.
 
@@ -572,8 +575,12 @@ Prerequisite: the current debug APK
    URL. On a public ntfy server the **topic name is the only credential** —
    anyone who knows it can read the messages — so keep it random and out of
    git, or self-host.
-4. **Email**: the 126 mailbox needs its **authorization code**, not the login
-   password, in `WINNIE_SMTP_PASSWORD`. Without it the channel reports the
+4. **Email**: configure the mailbox at console → **Settings** (or
+   `PUT /api/v1/settings/mail`); the form covers SMTP and IMAP/POP3, tests both
+   directions, and shows the newest messages. Stored settings win, and only a
+   deployment with no stored account falls back to this section's environment
+   settings. That fallback needs the 126 **authorization code**, not the login
+   password, in `WINNIE_SMTP_PASSWORD`. Without either, the channel reports the
    missing variable and the ladder skips it. `POST /api/v1/proactive/test`
    with `{"channel": "email"}` tests that rung alone. The account is
    `ninedoors@126.com`, `smtp.126.com:465` with implicit TLS.
