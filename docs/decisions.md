@@ -2661,3 +2661,61 @@ longer records gateway traffic in its own usage ledger.
 for aggregation, while the current phase is the knowledge base. The executable
 plan, phases and acceptance criteria are in
 [newapi-gateway.md](./newapi-gateway.md). Backlog: P4 in [todo.md](./todo.md).
+
+## Error collection is host-owned, and the supervisor writes a spool (2026-11-03)
+
+**Decision.** Failures are collected inside the API host
+(`apps/api/src/winnie_api/devloop`): an ASGI middleware for unhandled exceptions
+and 5xx answers, a root log handler for ERROR records from any capability, an
+in-process detector for the services the API can probe, and a spool directory
+that `scripts/watchdog.py` writes to while the API is down. Incidents dedupe by
+fingerprint, a recovery row is stored resolved, and **Diagnose** makes one
+read-only model call over a bounded evidence bundle. Design and phases are in
+[self-repair.md](./self-repair.md).
+
+**Why the host and not a capability package.** Collection observes every
+capability's loggers and the whole ASGI app, and must keep working when a
+capability is switched off. The same reasoning already keeps the usage ledger in
+the host. A package would still need the host to install the middleware, and
+`winnie-devloop` as a package would have to be imported by the host while
+importing nothing back — a package that exists only to be called by one host is
+the host, with extra steps. When P2 grows a worktree and its own state machine,
+that part becomes a package because it owns state and tests of its own.
+
+**Why the watchdog writes a spool instead of POSTing.** The incident that matters
+most is "the API was down", and it cannot be posted to the API at the moment it
+happens. A spool file also needs no credential on disk and no new unauthenticated
+endpoint. The drain waits two seconds after the last write so a half-written line
+is never read, and deletes a file only after every line in it was recorded.
+
+**Why recovery is resolved on insert, and a resolved incident reopens.** A
+recovery is history, not work: leaving it open puts an "index answered again"
+row in the owner's list next to the outage it explains. A resolved incident that
+recurs is open again because the failure is back; an ignored or acknowledged one
+keeps the owner's decision, because that decision was about the failure and the
+failure has not changed.
+
+**Rejected: recording every 4xx.** Validation errors and 404s are the caller's
+mistake, and they arrive in bursts that would bury a real 500. The switch exists
+(`devloop.capture_client_errors`) but is off; a 5xx is always recorded.
+
+**Rejected: deduplicating on the traceback or the exact message.** One bug
+produces a new message per request (an id, a port, a count), which is how a log
+viewer turns one failure into hundreds of rows. The fingerprint masks UUIDs, hex
+identifiers and numbers of three digits or more, and adds the innermost
+application frame — enough to separate two bugs and few enough to merge repeats.
+
+**Rejected: letting the diagnostician read the repository with tools.** A tool
+loop would be more capable and far less predictable: it costs many calls, it can
+wander, and it makes the answer impossible to reproduce from the incident. The
+bundle is assembled locally, capped at 24 KB, and every diagnosis is stored with
+the model that produced it.
+
+**Verified.** The live stack collected a stopped index as one `service_unhealthy`
+incident with 12 occurrences and resolved it on the next successful probe; the
+watchdog's spool entry for the same outage was drained within one detector tick
+and auto-resolved by the recovery event; the console's 503s while the index was
+down became one `http_error` incident with 4 occurrences. The Errors page was
+driven in headless Firefox against a throwaway API: counts, filters, table,
+detail panel, diagnosis and both themes render, and **Diagnose** without a bound
+model answers `503 diagnosis is unavailable: no chat model is bound`.

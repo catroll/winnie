@@ -55,6 +55,14 @@ answer `503`.
 | Document index proxy | `GET /api/v1/index/status`; `GET/PUT /api/v1/index/config`; `POST /api/v1/index/{search,build,skill}` | router-level `admin_required` |
 | News | every `/api/v1/news/*` route (status, runs, drafts, sources, events) | router-level `admin_required` |
 | Global usage | `GET /api/v1/usage/overview`; `GET /api/v1/usage/records`; `GET /api/v1/usage/balances`; `POST /api/v1/usage/balances/refresh` | router-level `admin_required` |
+| Errors | `GET /api/v1/errors`; `GET /api/v1/errors/summary`; `GET /api/v1/errors/{id}`; `POST /api/v1/errors/{id}/status`; `POST /api/v1/errors/{id}/diagnose` | router-level `admin_required` |
+
+The errors router is mounted even when `devloop.enabled` is false, and answers
+`503 error collection is disabled (devloop.enabled is false)` — a 404 would look
+like a broken deployment instead of a switched-off feature. A diagnosis with no
+bound chat model answers `503 diagnosis is unavailable: no chat model is bound`. A
+traceback names internal paths and data shapes, which is why the whole surface is
+administrator-only rather than owner-scoped.
 
 The AI and news routers are only registered when their feature is enabled, and
 the index proxy only when `index.enabled` is true. When they are registered, the

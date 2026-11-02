@@ -1263,3 +1263,36 @@ gate cannot regress to "works for short prompts".
 different purpose than it was built for. When two reads of the same input exist —
 one complete, one friendly — the friendly one is almost always the one that gets
 picked by accident, and the failure is silent by construction.
+
+## A naive UTC datetime's `.timestamp()` is eight hours wrong on a UTC+8 host
+
+**Signal.** The watchdog spool was never drained, no error was recorded, and
+`drain_spool` returned `0` without raising. Instrumenting the age check showed
+`age: -28769.99` seconds for a file written 30 seconds earlier.
+
+**Cause.** `utcnow()` returns a *naive* datetime holding UTC wall-clock time.
+`datetime.timestamp()` interprets a naive value in the **host's local zone**, so
+on this machine (UTC+8) it produced an epoch eight hours in the past. Comparing
+that against `os.stat().st_mtime` (a real epoch) gave a large negative age, and
+the settle window `if age < 2: continue` skipped every file, forever.
+
+**Check.** Never derive an epoch from a naive datetime:
+
+```python
+time.time()                 # correct for comparing with st_mtime
+dt.timestamp()              # wrong unless dt is timezone-aware
+```
+
+If a naive value must be converted, attach `timezone.utc` first:
+`dt.replace(tzinfo=timezone.utc).timestamp()`. A quick sanity check is that an
+age should be small and positive for a file that was just written; a negative age
+is the signature of exactly this bug.
+
+**Fix and guard.** `Detector.drain_spool` compares `time.time()` with the file's
+`st_mtime`. The spool drain test (`test_watchdog_spool_is_drained_and_recovery_resolves`)
+writes a file with an old mtime and asserts it is consumed, so a regression to a
+wall-clock comparison fails in CI rather than in a quiet log.
+
+**Generalisable.** A "skip if too new" rule is a guard; a guard that compares two
+clocks must take both from the same clock source. Naive datetimes are a *display*
+type in this codebase, not a timing type.

@@ -113,7 +113,7 @@ Success for the current phase:
 | M12 | State sensing | A signal ingest, TTL projections, the every-turn digest and a `state` skill answer "where am I", "what am I doing" and "did I sleep", each correct or `unknown` with a reason | Planned |
 | M13 | Room senses | A camera and a room microphone feed the same signals without a vendor cloud, on an isolated VLAN, with encrypted storage and a visible indicator | Planned |
 | M14 | Mail | One mailbox per account, send and receive, configured in the console; the proactive email rung reads it | **Core done** — send/receive, settings API, console page, the incremental message cache, the Mail page and the assistant's read-only `search_mail`/`read_mail` verified against 126 |
-| M15 | Self-repair | A failure is detected and recovered, reproduced in an isolated worktree, diagnosed from evidence and — for a named narrow class — repaired as a verified diff the owner approves | Planned — design in [self-repair.md](./self-repair.md) |
+| M15 | Self-repair | A failure is detected and recovered, collected as an incident, diagnosed from evidence and — for a named narrow class — repaired as a verified diff the owner approves | **P0/P1 done** — the watchdog, the incident store, the Errors page and read-only diagnosis work; P2 manual repair and P3 patrol are planned in [self-repair.md](./self-repair.md) |
 | M16 | Gateway on new-api | Clients call `/v1` on new-api with Winnie-issued tokens; channels and models are managed from the console; the old gateway is off | Planned — low priority, after phase 2 ([plan](./newapi-gateway.md)) |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
