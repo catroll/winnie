@@ -87,6 +87,7 @@ Success for the current phase:
 | Console | Browser console: assistant chat — typed or as a voice conversation with spoken replies — and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | Byte-level OpenAI/Anthropic proxy, Winnie gateway keys, server-held vendor credentials, SSE, logs | `winnie-gateway` | Done |
+| Gateway | Run new-api as the data plane, managed entirely from the Winnie console (deferred) | new-api + `apps/api` bridge | Planned — low priority ([plan](./newapi-gateway.md)) |
 | Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
 | Schedule | Read and edit the owner's weekly Markdown schedule: days, events, times, tags, week-level items | `winnie-schedule` + `apps/api/schedule` + console Schedule page | Done |
 | State | Owner state (`place`/`body`/`focus`/`availability`): signal ingest, TTL projections, the every-turn digest and a `state` skill | `winnie-state` | Planned |
@@ -113,6 +114,7 @@ Success for the current phase:
 | M13 | Room senses | A camera and a room microphone feed the same signals without a vendor cloud, on an isolated VLAN, with encrypted storage and a visible indicator | Planned |
 | M14 | Mail | One mailbox per account, send and receive, configured in the console; the proactive email rung reads it | **Core done** — send/receive, settings API, console page, the incremental message cache, the Mail page and the assistant's read-only `search_mail`/`read_mail` verified against 126 |
 | M15 | Self-repair | A failure is detected and recovered, reproduced in an isolated worktree, diagnosed from evidence and — for a named narrow class — repaired as a verified diff the owner approves | Planned — design in [self-repair.md](./self-repair.md) |
+| M16 | Gateway on new-api | Clients call `/v1` on new-api with Winnie-issued tokens; channels and models are managed from the console; the old gateway is off | Planned — low priority, after phase 2 ([plan](./newapi-gateway.md)) |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 Rows are grouped by delivery phase, which is why M12/M13 (planned) and M14
@@ -151,6 +153,12 @@ new surface area. The full sequence is §8.
 - SSE streaming is passed through chunk by chunk; each ask/answer pair is
   recorded locally and every call is attributed to its key in the usage ledger.
 - Covered by `apps/api/tests/test_gateway.py` and `test_gateway_keys.py`.
+
+**Deferred replacement.** A later, low-priority direction replaces this data
+plane with new-api: clients call `/v1` directly, new-api owns channels and
+protocol conversion, and Winnie keeps the accounts, keys and console. The plan,
+the feature parity costs and the reasons it is not scheduled are in
+[newapi-gateway.md](./newapi-gateway.md) (M16).
 
 ### 5.2 Accounts — Done
 
@@ -806,6 +814,14 @@ console, and a chat answer cites a knowledge line it was built from.
   worker, task editing.
 - M7: TLS, PostgreSQL, Redis/arq, reverse proxy, backups with a restore
   rehearsal, deployment guide and structured logs.
+
+### Deferred — gateway on new-api (M16, low priority)
+
+Not part of phases 0–4. The in-process gateway works; moving the data plane to
+new-api trades byte-level transparency for protocol conversion, channel
+management and per-channel retries. The decision and the executable plan are in
+[newapi-gateway.md](./newapi-gateway.md); the backlog entry is P4 in
+[todo.md](./todo.md). It should not start before phase 2 is delivered.
 
 ### Cross-cutting backlog
 

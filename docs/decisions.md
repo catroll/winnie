@@ -2633,3 +2633,31 @@ so a separate list would be a second, silently divergent gate. Putting the
 mapping in `config.yaml`: that file is the gateway-only fallback and the console
 cannot edit it, so the mapping would be invisible exactly where an operator looks
 first.
+
+## Gateway data plane moves to new-api (2026-11-03, deferred)
+
+**Decision.** The model data plane will be new-api, not the in-process proxy.
+Clients call `/v1` on new-api with Winnie-issued tokens (`sk-...`); Winnie keeps
+the accounts, the console and the client-facing key records, and manages
+new-api's channels, models and tokens through its admin API with a scoped
+personal access token. new-api runs on SQLite. The channel page covers the
+common fields only. There is no billing module: unlimited tokens plus a large
+service-user quota and `LogConsumeEnabled=false` make the quota non-blocking,
+not absent.
+
+**Why.** The owner wants new-api's model→channel routing, protocol conversion
+and channel features without a second place to administer. The in-process
+gateway's byte-level transparency is deliberately given up: a fixed path list
+instead of arbitrary paths, modelled headers instead of pass-through, new-api's
+logs instead of the local ask/answer pair.
+
+**What this costs.** Existing Winnie keys cannot be converted — the key file
+stores only digests — so every client key must be reissued. Per-key model
+overrides have no new-api equivalent and are dropped. Virtual models must be
+re-expressed as channel model lists plus `model_mapping`, or retired. Winnie no
+longer records gateway traffic in its own usage ledger.
+
+**Why deferred.** It replaces a working component and loses parity in exchange
+for aggregation, while the current phase is the knowledge base. The executable
+plan, phases and acceptance criteria are in
+[newapi-gateway.md](./newapi-gateway.md). Backlog: P4 in [todo.md](./todo.md).

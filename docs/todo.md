@@ -463,3 +463,29 @@ reads and edits it. Two follow-ups are deliberately open:
       answers 404 for one that does not exist yet, because the skeleton is the
       WLB generator's job. If that generator is retired, this endpoint and the
       CLI would both need it.
+
+## P4 — gateway on new-api (deferred, low priority)
+
+The data plane moves to new-api (B: new-api public, SQLite, common channel
+fields only); the Winnie console keeps accounts, API keys, channels and models.
+Do not start before phase 2. Full plan: [newapi-gateway.md](./newapi-gateway.md).
+
+- [ ] Bind new-api to loopback (fork patch) and bootstrap it: setup, a scoped
+      PAT, `SelfUseModeEnabled`, `LogConsumeEnabled=false`, a large service-user
+      quota, a SQLite backup job; audit which client paths and models are used.
+- [ ] `newapi` client + bridge API: channels CRUD, test, fetch models, status;
+      contract tests against a fake with the real envelopes (HTTP 200 with
+      `success: false`).
+- [ ] Key ↔ token bridge: create on key creation (find the id by listing, read
+      the `sk-` secret once), delete on revoke, reconcile orphans; tests for
+      new-api down and for a token created but unreadable.
+- [ ] Console: Model gateway page with the common channel fields only; API keys
+      page issues new-api tokens; remove the Gateway routes page at cutover.
+- [ ] Migrate the registry's routes and virtual models to channels + model
+      mapping; drop per-key overrides explicitly; reissue every client key
+      (gateway keys are digests, so their plaintext cannot be recovered).
+- [ ] Parallel run, then `gateway.enabled: false`; update `openai-proxy.md` and
+      `operations.md`; keep the old key file for one release as rollback.
+- [ ] Optional: per-token usage from new-api's `/api/log` in the console, and
+      per-key model limits; optional fork early-return if the per-request quota
+      writes hurt.
