@@ -236,6 +236,30 @@ RAW_SECOND = (
     + "\r\n第二条消息的正文。\r\n"
 ).encode("utf-8")
 
+# A multipart message with both parts: the sender's markup and the flattened
+# text must come from different parts of the same download.
+RAW_HTML = (
+    "From: =?utf-8?b?572R5piT6YKu566x6LSm5Y+35a6J5YWo?= <safe@service.example.com>\r\n"
+    "To: winnie@example.com\r\n"
+    "Subject: =?utf-8?b?5paw6K6+5aSH55m75b2V5o+Q6YaS?=\r\n"
+    "Date: Mon, 2 Nov 2026 22:00:08 +0800\r\n"
+    "Message-ID: <html@example.com>\r\n"
+    "MIME-Version: 1.0\r\n"
+    'Content-Type: multipart/alternative; boundary="BOUND"\r\n'
+    "\r\n"
+    "--BOUND\r\n"
+    "Content-Type: text/plain; charset=utf-8\r\n"
+    "Content-Transfer-Encoding: 8bit\r\n"
+    "\r\n"
+    "您的邮箱刚刚在新设备上登录。\r\n"
+    "--BOUND\r\n"
+    "Content-Type: text/html; charset=utf-8\r\n"
+    "Content-Transfer-Encoding: 8bit\r\n"
+    "\r\n"
+    "<table><tr><td>新设备登录提醒</td></tr></table>\r\n"
+    "--BOUND--\r\n"
+).encode("utf-8")
+
 
 class FakeImap:
     """A server-side mailbox, shared across connections like a real one.
@@ -308,8 +332,8 @@ class FakeImap:
         name = folder.strip('"')
         if name not in self.boxes:
             return "NO", [b"no such mailbox"]
-        assert readonly is True
         assert self.sent_identity, "126 refuses SELECT until the ID command is sent"
+        self.readonly = readonly
         self.folder = name
         return "OK", [str(len(self.boxes[name])).encode()]
 
@@ -322,6 +346,15 @@ class FakeImap:
         box = self.boxes[self.folder]
         if command == "SEARCH":
             return "OK", [b" ".join(str(uid).encode() for uid in sorted(box))]
+        if command == "STORE":
+            # STORE is how opening a message clears its unread flag; a read-only
+            # mailbox must refuse it, like a real server does.
+            if getattr(self, "readonly", True):
+                return "NO", [b"mailbox is read-only"]
+            target = int(args[0])
+            flags = self.flags[self.folder]
+            flags[target] = (flags.get(target, b"") + b" \\Seen").strip()
+            return "OK", [f"{target} (FLAGS ({flags[target].decode()}))".encode()]
         if command == "FETCH":
             uids = [int(value) for value in str(args[0]).split(",")]
             spec = str(args[1])
@@ -464,6 +497,8 @@ def test_one_connection_walks_every_folder(fake_imap, tmp_path: Path) -> None:
     results = client.sync_all(a_settings(tmp_path), plans, limit=10)
 
     assert len(fake_imap.instances) == 1, "a sweep must not log in once per folder"
+    # A sweep never writes: it must not clear the unread flag of what it reads.
+    assert fake_imap.instances[0].readonly is True
     assert [result.folder.name for result in results] == ["INBOX", "Sent", "Parent"]
     assert results[0].snapshot is not None
     assert [message.uid for message in results[0].snapshot.fetched] == ["101", "102"]
@@ -490,6 +525,23 @@ def test_reading_one_message_returns_its_body(fake_imap, tmp_path: Path) -> None
     message = client.fetch_body(a_settings(tmp_path), folder="INBOX", uid="102")
     assert message.uid == "102"
     assert "第二条消息的正文" in message.body
+    # Reading marks it read, on the server and in what the caller gets back.
+    assert message.unread is False
+    assert b"\\Seen" in fake_imap.seen_flags["INBOX"][102]
+    # The three renderings arrive in the same download.
+    assert message.html == ""  # the fixture is a plain-text message
+    assert "Subject:" in message.raw and "第二条消息的正文" in message.raw
+
+
+def test_reading_an_html_message_keeps_the_markup(fake_imap, tmp_path: Path) -> None:
+    fake_imap.mailboxes["INBOX"][103] = RAW_HTML
+    fake_imap.seen_flags["INBOX"][103] = b""
+    message = client.fetch_body(a_settings(tmp_path), folder="INBOX", uid="103")
+    assert "<table" in message.html
+    assert "新设备登录提醒" in message.html
+    # The flattened text is what the assistant reads, and it has no tags.
+    assert "<table" not in message.body
+    assert b"\\Seen" in fake_imap.seen_flags["INBOX"][103]
 
 
 class FakePop3:
@@ -915,6 +967,7 @@ async def test_opening_a_message_downloads_its_body_once(
             body="the whole body",
             unread=True,
             message_id="<1@example.com>",
+            raw="Subject: x\r\n\r\nbody",
         )
 
     monkeypatch.setattr(client, "fetch_body", body)
@@ -924,6 +977,122 @@ async def test_opening_a_message_downloads_its_body_once(
     second = await mail_client.get(f"/api/v1/mail/messages/{cached[0]['id']}")
     assert second.json()["body"] == "the whole body"
     assert calls == ["1"], "the second open must read the cache, not the server"
+
+
+@pytest.mark.asyncio
+async def test_opening_a_message_clears_its_unread_flag(
+    mail_client: httpx.AsyncClient, monkeypatch
+) -> None:
+    await mail_client.put("/api/v1/settings/mail", json=a_payload())
+    monkeypatch.setattr(
+        client,
+        "list_folders",
+        lambda settings: [client.FolderInfo(name="INBOX", display_name="INBOX")],
+    )
+    monkeypatch.setattr(
+        client,
+        "sync_all",
+        lambda settings, plans, *, limit: [
+            client.FolderResult(plan.folder, a_snapshot("INBOX", "1", "新设备登录提醒"))
+            for plan in plans
+        ],
+    )
+    await mail_client.post("/api/v1/mail/sync")
+    listed = (await mail_client.get("/api/v1/mail/messages")).json()
+    assert listed[0]["unread"] is True
+    assert (await mail_client.get("/api/v1/mail/folders")).json()["stats"]["unread"] == 1
+
+    # The server clears \Seen during the download, so the answer comes back read.
+    monkeypatch.setattr(
+        client,
+        "fetch_body",
+        lambda settings, *, folder, uid: client.MailMessage(
+            uid=uid,
+            subject="新设备登录提醒",
+            sender="sender@example.com",
+            to="winnie@example.com",
+            date="2026-11-02T22:00:08+08:00",
+            snippet="snippet",
+            body="text body",
+            unread=False,
+            message_id="<1@example.com>",
+            html="<b>html body</b>",
+            raw="Subject: 新设备登录提醒\r\n\r\nbody",
+        ),
+    )
+    opened = await mail_client.get(f"/api/v1/mail/messages/{listed[0]['id']}")
+    assert opened.status_code == 200, opened.text
+    payload = opened.json()
+    assert payload["unread"] is False
+    assert payload["has_html"] is True
+    assert payload["body_html"] == "<b>html body</b>"
+    assert payload["body_raw"].startswith("Subject:")
+
+    again = (await mail_client.get("/api/v1/mail/messages")).json()
+    assert again[0]["unread"] is False
+    # The folder badge follows in the same write, or the sidebar keeps lying.
+    assert (await mail_client.get("/api/v1/mail/folders")).json()["stats"]["unread"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_body_cached_before_the_tabs_is_refetched_once(
+    mail_client: httpx.AsyncClient, monkeypatch
+) -> None:
+    """Rows written before HTML and raw were cached hold only ``body``."""
+    await mail_client.put("/api/v1/settings/mail", json=a_payload())
+    monkeypatch.setattr(
+        client,
+        "list_folders",
+        lambda settings: [client.FolderInfo(name="INBOX", display_name="INBOX")],
+    )
+    monkeypatch.setattr(
+        client,
+        "sync_all",
+        lambda settings, plans, *, limit: [
+            client.FolderResult(plan.folder, a_snapshot("INBOX", "1", "新设备登录提醒"))
+            for plan in plans
+        ],
+    )
+    await mail_client.post("/api/v1/mail/sync")
+    message_id = (await mail_client.get("/api/v1/mail/messages")).json()[0]["id"]
+
+    calls: list[str] = []
+
+    def body(settings, *, folder, uid):
+        calls.append(uid)
+        return client.MailMessage(
+            uid=uid,
+            subject="新设备登录提醒",
+            sender="sender@example.com",
+            to="winnie@example.com",
+            date="2026-11-02T22:00:08+08:00",
+            snippet="snippet",
+            body="text body",
+            unread=False,
+            message_id="<1@example.com>",
+            raw="Subject: x\r\n\r\nbody",
+        )
+
+    monkeypatch.setattr(client, "fetch_body", body)
+    # Simulate the old row: a body, no html, no raw.
+    import sqlite3
+
+    from winnie_mail.models import MailMessage as Row
+
+    service = mail_client._transport.app.state.mail_service  # type: ignore[attr-defined]
+    session_factory = service.cache.session_factory
+    async with session_factory() as session:
+        row = await session.get(Row, __import__("uuid").UUID(message_id))
+        row.body = "old body"
+        row.body_html = None
+        row.body_raw = None
+        await session.commit()
+
+    opened = await mail_client.get(f"/api/v1/mail/messages/{message_id}")
+    assert opened.status_code == 200, opened.text
+    assert calls == ["1"], "a row without raw must be downloaded once more"
+    assert opened.json()["has_raw"] is True
+    assert opened.json()["unread"] is False
 
 
 @pytest.mark.asyncio

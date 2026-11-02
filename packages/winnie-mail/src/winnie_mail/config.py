@@ -18,4 +18,4 @@ class MailConfig(BaseModel):
     default_timeout_seconds: float = Field(default=20.0, ge=3.0, le=120.0)
     # How many of the newest messages per folder a sync keeps in the cache. The
     # sync fetches headers only; a larger number costs bandwidth, not bodies.
-    per_folder_limit: int = Field(default=50, ge=1, le=200)
+    per_folder_limit: int = Field(default=300, ge=1, le=1000)

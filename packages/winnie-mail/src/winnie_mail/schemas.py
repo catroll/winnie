@@ -174,7 +174,11 @@ class MailFolderList(BaseModel):
 
 
 class MailCacheMessage(BaseModel):
-    """A cached message; ``body`` is empty until someone opens it."""
+    """A cached message; the three body fields are empty until someone opens it.
+
+    ``body`` is the flattened text, ``body_html`` the sender's markup (rendered
+    in a sandbox by the console) and ``body_raw`` the RFC 822 source.
+    """
 
     id: str
     folder: str
@@ -189,8 +193,12 @@ class MailCacheMessage(BaseModel):
     unread: bool = False
     size: int = 0
     has_body: bool = False
+    has_html: bool = False
+    has_raw: bool = False
     message_id: str = ""
     body: str = ""
+    body_html: str = ""
+    body_raw: str = ""
 
 
 class MailSyncResult(BaseModel):

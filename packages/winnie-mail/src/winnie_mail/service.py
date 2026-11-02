@@ -35,7 +35,7 @@ class MailService:
         *,
         cache: MailCache | None = None,
         timeout_seconds: float = 20.0,
-        per_folder_limit: int = 50,
+        per_folder_limit: int = 300,
     ) -> None:
         self.store = store
         self.cache = cache
@@ -224,12 +224,18 @@ class MailService:
         return await self.messages(user_id, query=query, limit=limit)
 
     async def message(self, user_id: str, message_id: str) -> dict | None:
-        """One cached message, downloading its body the first time it is opened."""
+        """One cached message, downloading its body the first time it is opened.
+
+        The download also marks the message read on the server, which is why the
+        body is not re-read on a later open: the cache is correct from then on.
+        """
         cache = self._require_cache()
         row = await cache.message(user_id, message_id)
         if row is None:
             return None
-        if not row.get("has_body"):
+        # A row cached before the reading pane had HTML and raw tabs holds only
+        # ``body``; refetching once fills the other two and marks it read.
+        if not row.get("has_body") or not row.get("has_raw"):
             settings = self.load(user_id)
             if not settings.can_receive():
                 return row

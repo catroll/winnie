@@ -23,6 +23,7 @@ import base64
 import binascii
 import html
 import imaplib
+import logging
 import poplib
 import re
 import smtplib
@@ -36,10 +37,16 @@ from typing import Iterable
 
 from winnie_mail.settings import MailSettings, ReceiveSettings, SmtpSettings
 
+logger = logging.getLogger(__name__)
+
 # `imaplib` refuses any verb it does not know, and RFC 2971's ID is not built in.
 imaplib.Commands.setdefault("ID", ("NONAUTH", "AUTH", "SELECTED"))
 
 ID_ARGUMENTS = '("name" "winnie" "version" "0.1" "vendor" "winnie")'
+
+# How many uids go into one FETCH. A 300-message window is 3 round trips at this
+# size instead of 15 at 20; the answer is a few hundred kilobytes of headers.
+HEADER_BATCH = 100
 
 TAG_BREAK = re.compile(r"(?is)<(script|style).*?</\1>")
 TAG = re.compile(r"(?s)<[^>]+>")
@@ -69,7 +76,12 @@ class MailUnavailable(MailError):
 
 @dataclass(frozen=True)
 class MailMessage:
-    """One message as the console shows it: headers plus a short body preview."""
+    """One message as the console shows it: headers plus three renderings.
+
+    ``body`` is the flattened text the assistant reads, ``html`` is the markup
+    the reading pane renders in a sandbox, and ``raw`` is the RFC 822 source for
+    the "Raw" tab. All three are capped: this is a mailbox mirror, not an archive.
+    """
 
     uid: str
     subject: str
@@ -80,6 +92,8 @@ class MailMessage:
     body: str
     unread: bool
     message_id: str
+    html: str = ""
+    raw: str = ""
 
 
 @dataclass(frozen=True)
@@ -162,6 +176,34 @@ def _header(value: str | None) -> str:
         return str(value).strip()
 
 
+def _html_part(message) -> str:
+    """The first text/html part, or "" when the message has none.
+
+    Returned verbatim: the console renders it inside a sandboxed frame, and
+    stripping the markup here would only lose the styling the sender meant.
+    """
+    for part in message.walk():
+        if part.get_content_maintype() != "text":
+            continue
+        if part.get_content_subtype() != "html":
+            continue
+        if part.get("Content-Disposition", "").startswith("attachment"):
+            continue
+        try:
+            body = part.get_content()
+        except (LookupError, ValueError):
+            continue
+        if isinstance(body, str) and body.strip():
+            return body
+    if not message.is_multipart() and message.get_content_subtype() == "html":
+        try:
+            body = message.get_content()
+        except (LookupError, ValueError):
+            return ""
+        return body if isinstance(body, str) else ""
+    return ""
+
+
 def _plain_text(message) -> str:
     """The best text part, preferring text/plain over stripped HTML."""
     if message.is_multipart():
@@ -230,7 +272,15 @@ def _date_of(message) -> str:
         return raw
 
 
-def _parse(raw: bytes, *, uid: str, unread: bool, body_limit: int = 4000) -> MailMessage:
+def _parse(
+    raw: bytes,
+    *,
+    uid: str,
+    unread: bool,
+    body_limit: int = 4000,
+    html_limit: int = 500_000,
+    raw_limit: int = 200_000,
+) -> MailMessage:
     message = message_from_bytes(raw, policy=policy.default)
     text = _plain_text(message)
     return MailMessage(
@@ -243,6 +293,8 @@ def _parse(raw: bytes, *, uid: str, unread: bool, body_limit: int = 4000) -> Mai
         body=text.strip()[:body_limit],
         unread=unread,
         message_id=_header(message.get("Message-ID")),
+        html=_html_part(message)[:html_limit],
+        raw=raw.decode("utf-8", "replace")[:raw_limit],
     )
 
 
@@ -415,11 +467,13 @@ def _imap_login(config: ReceiveSettings, settings: MailSettings, timeout: float)
     return client
 
 
-def _imap_select(client: imaplib.IMAP4, folder: str) -> tuple[int, int]:
-    """Select one folder read-only. Returns the uid validity and the count."""
+def _imap_select(
+    client: imaplib.IMAP4, folder: str, *, readonly: bool = True
+) -> tuple[int, int]:
+    """Select one folder. Returns the uid validity and the message count."""
     quoted = '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
     try:
-        status, data = client.select(quoted, readonly=True)
+        status, data = client.select(quoted, readonly=readonly)
     except imaplib.IMAP4.error as exc:
         raise MailTransportError(f"imap select {folder} failed: {exc}") from exc
     if status != "OK":
@@ -438,11 +492,18 @@ def _imap_select(client: imaplib.IMAP4, folder: str) -> tuple[int, int]:
     return validity, total
 
 
-def _imap_open(settings: MailSettings, folder: str) -> tuple[imaplib.IMAP4, int, int]:
-    """Log in and select one folder read-only. Returns the client, validity, count."""
+def _imap_open(
+    settings: MailSettings, folder: str, *, readonly: bool = True
+) -> tuple[imaplib.IMAP4, int, int]:
+    """Log in and select one folder. Returns the client, validity and count.
+
+    Read-only unless the caller is about to change a flag: ``BODY.PEEK[]`` alone
+    never sets ``\Seen``, so marking a message read needs a writable mailbox and
+    an explicit ``STORE``.
+    """
     client = _imap_login(settings.receive, settings, settings.timeout_seconds)
     try:
-        validity, total = _imap_select(client, folder)
+        validity, total = _imap_select(client, folder, readonly=readonly)
     except MailError:
         try:
             client.logout()
@@ -496,8 +557,8 @@ def _fetch_units(parts) -> list[tuple[str, bytes, bytes, int]]:
 def _imap_headers(client: imaplib.IMAP4, uids: list[int]) -> list[HeaderMessage]:
     """Fetch headers only, in batches of 20 uids (one round trip per batch)."""
     messages: list[HeaderMessage] = []
-    for start in range(0, len(uids), 20):
-        batch = uids[start : start + 20]
+    for start in range(0, len(uids), HEADER_BATCH):
+        batch = uids[start : start + HEADER_BATCH]
         status, parts = client.uid(
             "FETCH",
             ",".join(str(uid) for uid in batch),
@@ -517,8 +578,8 @@ def _imap_headers(client: imaplib.IMAP4, uids: list[int]) -> list[HeaderMessage]
 def _imap_flags(client: imaplib.IMAP4, uids: list[int]) -> dict[str, bool]:
     """Refresh the read state of messages already cached, without headers."""
     flags: dict[str, bool] = {}
-    for start in range(0, len(uids), 20):
-        batch = uids[start : start + 20]
+    for start in range(0, len(uids), HEADER_BATCH):
+        batch = uids[start : start + HEADER_BATCH]
         status, parts = client.uid(
             "FETCH", ",".join(str(uid) for uid in batch), "(UID FLAGS)"
         )
@@ -813,7 +874,9 @@ def fetch_body(settings: MailSettings, *, folder: str, uid: str) -> MailMessage:
     _check_receive(settings)
     folder = folder or (settings.receive.folder or "INBOX")
     if settings.receive.protocol == "imap":
-        client, _validity, _total = _imap_open(settings, folder)
+        # Writable: opening a message marks it read, which is what every mail
+        # client does and what makes the unread badge go down.
+        client, _validity, _total = _imap_open(settings, folder, readonly=False)
         try:
             status, parts = client.uid("FETCH", uid, "(UID FLAGS BODY.PEEK[])")
             if status != "OK":
@@ -822,10 +885,19 @@ def fetch_body(settings: MailSettings, *, folder: str, uid: str) -> MailMessage:
             if not units:
                 raise MailTransportError(f"imap returned no message for uid {uid}")
             unit_uid, flags, raw, _size = units[0]
+            unread = b"\\Seen" not in flags
+            if unread:
+                status, data = client.uid("STORE", str(unit_uid), "+FLAGS", "(\\Seen)")
+                if status == "OK":
+                    unread = False
+                else:
+                    # A read-only mailbox is a legitimate server answer; the
+                    # body is still worth showing, so this is not an error.
+                    logger.info("imap store Seen for %s failed: %r", unit_uid, data)
             return _parse(
                 raw,
                 uid=unit_uid,
-                unread=b"\\Seen" not in flags,
+                unread=unread,
                 body_limit=20000,
             )
         except imaplib.IMAP4.error as exc:

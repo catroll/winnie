@@ -298,10 +298,26 @@ class MailCache:
             )
             if row is None:
                 return None
+            was_unread = row.unread
             row.body = message.body
+            row.body_html = message.html or None
+            row.body_raw = message.raw or None
             row.snippet = message.snippet or row.snippet
             row.unread = message.unread
             row.body_fetched_at = utcnow()
+            if was_unread and not message.unread and row.folder:
+                # Opening a message clears its unread flag on the server, so the
+                # folder's badge has to follow in the same transaction or the
+                # sidebar keeps claiming unread mail that has been read.
+                folder = await session.scalar(
+                    select(MailFolder).where(
+                        MailFolder.user_id == user_id,
+                        MailFolder.protocol == row.protocol,
+                        MailFolder.name == row.folder,
+                    )
+                )
+                if folder is not None and folder.unread > 0:
+                    folder.unread -= 1
             await session.commit()
             labels = await self._labels(session, user_id)
             return self._labelled(row.view(with_body=True), labels)

@@ -101,7 +101,12 @@ class MailFolder(Base):
 
 
 class MailMessage(Base):
-    """One cached message. ``body`` is NULL until someone opens it."""
+    """One cached message.
+
+    ``body``, ``body_html`` and ``body_raw`` are NULL until someone opens it:
+    the sweep stores headers, and the reading pane's three tabs are filled by the
+    one download that an open performs.
+    """
 
     __tablename__ = "mail_messages"
     __table_args__ = (
@@ -128,6 +133,10 @@ class MailMessage(Base):
     unread: Mapped[bool] = mapped_column(Boolean, default=False)
     size: Mapped[int] = mapped_column(Integer, default=0)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The sender's markup, rendered in a sandbox, and the RFC 822 source for the
+    # "Raw" tab. Both are capped by the parser, not by the column.
+    body_html: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
     body_fetched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -147,10 +156,14 @@ class MailMessage(Base):
             "unread": self.unread,
             "size": self.size,
             "has_body": self.body_fetched_at is not None,
+            "has_html": bool(self.body_html),
+            "has_raw": bool(self.body_raw),
             "message_id": self.message_id,
         }
         if with_body:
             payload["body"] = self.body or ""
+            payload["body_html"] = self.body_html or ""
+            payload["body_raw"] = self.body_raw or ""
         return payload
 
 
