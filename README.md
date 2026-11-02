@@ -8,15 +8,16 @@ infrastructure below it exists to serve the assistant.
 
 | Layer | What it gives you | Status |
 |-------|-------------------|--------|
-| **Assistant** | Chat, web search, scheduled tasks, long-term memory and opt-in local file/command tools | **Core implemented** |
+| **Assistant** | Streamed chat, web search, scheduled tasks, long-term memory with a nightly tidy, and opt-in local file/command tools | **Core implemented** |
 | **Meeting notes** | File-first transcription with live captions, cross-lingual transcript and structured minutes | Backend implemented; live ASR validated; device run pending |
 | **News production** | Seven-stage pipeline from public sources to a reviewed draft and a dated digest, with API, console and assistant access | **Core implemented** |
 | **Android client** | Assistant chat with Markdown, on-device "winnie" wake word into a hands-free voice turn, 5-second change-checked phone sync, record with live captions, reminders, remembered sign-in, English/Chinese UI | **MVP implemented; wake word not yet measured on a device** |
-| **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; confirmed calendar and SMS writes | **Core implemented; device run pending** |
+| **Phone data** | Calendar, call log, SMS, contacts, notifications, location, installed apps and device info synced to the server; calendar events created on request, update/delete and SMS confirmed | **Core implemented; device run pending** |
 | **Push notifications** | Assistant reminders, scheduled briefs and phone-action results arrive on the phone through a self-hosted stream | **Core implemented; device run pending** |
 | **Mail** | One mailbox per account: send, receive, list and test, configured in the console; the proactive email rung reads it | **Core implemented** |
 | **Proactive assistance** | Notices birthdays and work items without being asked, decides whether to interrupt, says what to do, and escalates until acknowledged; the console lists every item it sent and why | **Core implemented; physical-device run pending** |
-| **Management console** | Web view of meetings, transcripts, minutes, assistant chat — typed or as a hands-free voice conversation with spoken replies — and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs, drafts and digests, AI providers (suppliers and LLM usage), gateway routes and collected errors with a read-only diagnosis | **MVP implemented** |
+| **Management console** | Web view of meetings, transcripts, minutes, assistant chat — typed or as a hands-free voice conversation with spoken replies — and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs, drafts and digests, mail and settings, AI providers (suppliers and LLM usage), gateway routes and collected errors with a read-only diagnosis | **MVP implemented** |
+| **Self-repair** | Every failure collected into one incident, local services supervised and restarted, and one read-only model diagnosis per incident; an isolated, gated repair is planned | **Local levels implemented; repair not started** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
 | **Personal state** | Where you are, what you are doing and whether you slept — sensed, carried with a freshness stamp, never invented | Planned (proposal) |
@@ -86,7 +87,10 @@ registry (web, weather, document index, memory, scheduled tasks and local
 execution), append-only Markdown conversations under `~/Documents/Mine/Winnie`,
 long-term memory distilled from those files and recalled through the local index
 service, and scheduled tasks the assistant creates and cancels when asked in
-conversation. The Android tab renders replies as Markdown and shares one
+conversation. Replies stream token by token instead of waiting for the whole
+answer, and a nightly pass merges duplicate memory notes and retires ones the
+owner has corrected, keeping a pre-image of every run. The Android tab renders
+replies as Markdown and shares one
 conversation history with the console and the web page; tool output stays
 collapsed until it is opened. Two watches are on
 by default: a daily weather check records an umbrella or clothing notice only
@@ -218,8 +222,9 @@ and endpoint list are in [docs/meetings.md](./docs/meetings.md).
 
 ## Roadmap
 
-Next: the knowledge base (2), then state and senses (8). Everything else below
-is validation and hardening on capabilities that already run.
+Next: the knowledge base (phase 2), then state and senses (phase 3), then release.
+Everything else below is validation and hardening on capabilities that already
+run, except the repair levels of self-repair, which are planned and gated.
 
 1. **Meeting notes** — validate and tune the Doubao and LLM provider paths on
    real recordings; evaluate a second ASR vendor on bilingual audio; run the
@@ -227,26 +232,29 @@ is validation and hardening on capabilities that already run.
    then cross-meeting search.
 2. **Knowledge base** — Git-backed Markdown, knowledge-base UI, classification
    and tagging, re-indexing, retrieval-augmented chat.
-3. **Assistant capabilities** — first slice done: chat, web search, memory and
-   scheduled tasks. Streaming, task creation from chat, vector retrieval and a
-   worker for 24/7 task execution remain.
+3. **Assistant capabilities** — first slice done: streamed chat, web search,
+   memory, the nightly tidy and scheduled tasks. Task editing, vector retrieval
+   and a worker for 24/7 task execution remain.
 4. **News production** — first slice done: material to reviewed draft and a
    dated digest, console page and assistant skill. A worker-backed run, a digest
    surface in the console and the assistant, a per-request digest window and a
    real-model quality comparison remain.
-5. **Phone data** — first slice done: sync, query, assistant tools and the
-   confirmed write path. A device run, a console page, a command poll separate
-   from the data sync and SMS delivery receipts remain.
+5. **Phone data** — first slice done: sync, query, assistant tools, the console
+   page and the write path. A device run, a command poll separate from the data
+   sync and SMS delivery receipts remain.
 6. **Push notifications** — first slice done: durable backlog, WebSocket stream,
    the notify tool, scheduled-task and phone-command events, and the Android
    foreground service. A device run, Redis fan-out for multiple workers,
    notification actions and more event sources remain.
-7. **Production readiness** — migrations, queue-backed background work,
-   retention and backups, deployment hardening.
+7. **Self-repair** — detection, collection and read-only diagnosis are running;
+   an isolated worktree, a gated patch and a verification run are the next
+   levels, not yet scheduled.
 8. **State & senses** — sense where the owner is, what they are doing and
    whether they slept (phone, PC agent, watch); room cameras and microphones as
    eyes and ears. Proposed in [docs/state.md](./docs/state.md) and
    [docs/senses.md](./docs/senses.md), sequenced after the knowledge base.
+9. **Production readiness** — migrations, queue-backed background work,
+   retention and backups, deployment hardening.
 
 Details and design rationale are in [DESIGN.md](./DESIGN.md). Concrete follow-ups,
 including the ASR evaluation and provider verification, are in
@@ -266,9 +274,9 @@ including the ASR evaluation and provider verification, are in
 | Android client | Kotlin, Jetpack Compose, OkHttp, kotlinx.serialization, WorkManager |
 | Phone data | SQLAlchemy tables in `winnie-phone`, WorkManager sync, notification listener |
 | Knowledge source | Git-managed Markdown |
-| Vector index | Qdrant |
+| Document index | SQLite + FTS5, lexical (v1); a dense tier is planned |
 | Async jobs | Redis + arq (inline queue for local development) |
-| Model access | LiteLLM over OpenAI-compatible APIs |
+| Model access | OpenAI- and Anthropic-compatible wire protocols, proxied byte for byte; internal calls use an OpenAI-compatible chat API |
 | News pipeline | Python package, stdlib collectors, JSON file store |
 
 ## Documentation

@@ -1,6 +1,6 @@
 # Winnie project plan and status
 
-Last updated: 2026-11-02.
+Last updated: 2026-11-03.
 
 This is the single high-level view of what Winnie is trying to become, how the
 work is sequenced, and what is actually finished. Deeper material stays in the
@@ -78,13 +78,13 @@ Success for the current phase:
 | Knowledge base | Markdown in Git: browse, edit, classify, version, search | `winnie-knowledge` note sink only | Partial |
 | Meeting notes | File-first upload, ASR, language detection, translation, minutes, export | `winnie-meetings` | Core done |
 | Meeting notes | Live captions while recording | WebSocket + Android recorder | Core done |
-| News | Six-stage pipeline from public sources to a sourced, reviewed draft | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
-| Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
+| News | Seven-stage pipeline from public sources to a sourced, reviewed draft and a digest | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
+| Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads, creates calendar events on request and executes confirmed SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
 | Push | Durable notification backlog, WebSocket stream to the phone, assistant reminder tool, scheduled-task and phone-command events | `winnie-push` + `apps/android` + `notify` skill | Core done |
 | Mail | One mailbox per account: send, receive, an incremental local cache the console and the assistant read, configured in the console; the proactive email rung reads it | `winnie-mail` + console Settings and Mail pages | Core done |
 | Proactive | Detection, policy, composition and tracked delivery of interventions the owner did not ask for | `winnie-proactive` + console inbox | Core done — Android action, alarm path and device run open |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
-| Console | Browser console: assistant chat — typed or as a voice conversation with spoken replies — and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
+| Console | Browser console: assistant chat — typed, streamed, or a voice conversation with spoken replies — conversation history, chat skills, meetings, transcripts/minutes, phone data, the weekly schedule, scheduled tasks, news, mail and settings, AI providers, LLM usage, gateway routes, collected errors with a read-only diagnosis, account | `apps/admin` | MVP done |
 | Accounts | Local users, Argon2id, bearer sessions, throttling, reset | `winnie-core/auth` | Done |
 | Gateway | Byte-level OpenAI/Anthropic proxy, Winnie gateway keys, server-held vendor credentials, SSE, logs | `winnie-gateway` | Done |
 | Gateway | Run new-api as the data plane, managed entirely from the Winnie console (deferred) | new-api + `apps/api` bridge | Planned — low priority ([plan](./newapi-gateway.md)) |
@@ -93,7 +93,7 @@ Success for the current phase:
 | State | Owner state (`place`/`body`/`focus`/`availability`): signal ingest, TTL projections, the every-turn digest and a `state` skill | `winnie-state` | Planned |
 | Senses | Room cameras and microphones: ambient detection plus `look`/`listen`/`speak` | Frigate + senses tools | Planned |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
-| Self-repair | Failure detection, isolated worktree, evidence-based diagnosis and a gated, verified diff | `winnie-devloop` (planned) | Planned |
+| Self-repair | Every failure collected into one incident, supervision of the local services, one read-only model diagnosis per incident; isolation, patch and a gated verified diff | `apps/api/devloop` + `scripts/watchdog.py` + console Errors page | Core done — L0/L1 shipped; L2 (repair) planned |
 
 ## 4. Milestones
 
@@ -105,9 +105,9 @@ Success for the current phase:
 | M3 | File-first meetings | Real bilingual meeting is recorded, transcribed, translated, summarized, exported and written as a note; retention and jobs verified | **Core done** — pipeline and live ASR work; long bilingual fixture and real LLM minutes still pending |
 | M4 | Live captions | PCM stream, live caption UI, canonical file pass, foreground recording and reconnect | **Core done** — captions and final pass work; foreground service, reconnect and streaming usage records are open |
 | M5 | Knowledge base | Markdown in Git is the source of truth; browse/edit/classify/version/search; notes are indexed and retrievable | Planned |
-| M6 | Assistant | A reachable assistant that chats, searches, runs conversation-managed tasks and remembers from local files through the index | **Core done** — chat, search, index-backed recall and chat-managed tasks work; streaming, vector retrieval and an out-of-process worker are open |
+| M6 | Assistant | A reachable assistant that chats, searches, runs conversation-managed tasks and remembers from local files through the index | **Core done** — chat with streamed replies, search, index-backed recall, chat-managed tasks and the nightly memory tidy work; vector retrieval and an out-of-process worker are open |
 | M8 | News production | A run over real sources groups reports into events, writes one sourced draft per event, reviews it and stops at a reviewed Markdown file; console and assistant operate it | **Core done** — end-to-end verified with the fake model; real-model quality, a worker-backed run and Markdown rendering are open |
-| M9 | Phone data | The phone syncs every enabled scope on a schedule; the console shows it; the assistant answers questions from it and a confirmed calendar/SMS write is executed by the phone | **Core done** — sync, query, console page, tools and the command queue are implemented and tested; a physical-device run and SMS delivery receipts are open |
+| M9 | Phone data | The phone syncs every enabled scope on a schedule; the console shows it; the assistant answers questions from it, creates a calendar event without asking, and executes a confirmed SMS write on the phone | **Core done** — sync, query, console page, tools and the command queue are implemented and tested; a physical-device run and SMS delivery receipts are open |
 | M10 | Push | A notification published on the server reaches the phone while it is idle, survives a reconnect from the backlog, and is used for reminders, scheduled briefs and phone-action results | **Core done** — stream, backlog, tool and Android service are implemented and tested; a device run, Redis fan-out and notification actions are open |
 | M11 | Proactive assistance | A birthday on the phone becomes dated interventions at the configured stages, arrives over a channel whose delivery is tracked, escalates when unacknowledged, and appears in the digest; the same question in chat answers from the data with its source | **Partial** — engine, push/ntfy/email ladder, digest, console Inbox, acknowledgement (console, email/ntfy link, Android actions) and the optional model composer implemented and tested; the `winnie` alarm path, the deep link and a device run are open |
 | M12 | State sensing | A signal ingest, TTL projections, the every-turn digest and a `state` skill answer "where am I", "what am I doing" and "did I sleep", each correct or `unknown` with a reason | Planned |
@@ -124,7 +124,9 @@ when a milestone is defined, not by order.
 **M9** adds the phone as a data source: the Android client uploads the scopes
 its owner enables, `winnie-phone` merges them by device and record id, and the
 assistant reads them through two skills. Writes are commands the phone claims
-after the owner confirms them in chat.
+after the owner confirms them in chat; creating a calendar event is the one
+write that submits itself, because a correction is one message away
+([decisions](./decisions.md)).
 
 **M11** is under way: the engine plans birthdays and work items, delivers
 through a bounded ladder, and records whether the owner acknowledged. The
@@ -133,9 +135,10 @@ are in [proactive.md](./proactive.md).
 
 The current phase is **phase 2, the knowledge base (M5)**. Phases 0 and 1 are
 complete enough to build on: the gateway, accounts, assistant, meetings, news,
-phone data, push and the proactive engine are implemented and tested, and what
-remains in them is validation on real hardware and real model keys rather than
-new surface area. The full sequence is §8.
+phone data, push, mail and the proactive engine are implemented and tested, and
+self-repair reaches as far as detecting, collecting and diagnosing a failure.
+What remains in phase 1 is validation on real hardware and real model keys
+rather than new surface area. The full sequence is §8.
 
 ## 5. Completion by capability
 
@@ -152,7 +155,14 @@ new surface area. The full sequence is §8.
   managed on the console's API keys page, separately for each account.
 - SSE streaming is passed through chunk by chunk; each ask/answer pair is
   recorded locally and every call is attributed to its key in the usage ledger.
-- Covered by `apps/api/tests/test_gateway.py` and `test_gateway_keys.py`.
+- The client's `model` name is resolved through the published catalog: a virtual
+  model (an id plus alias spellings) maps to one supplier model, so the gateway
+  forwards the supplier's own id and refuses an unpublished name with `400`
+  before a byte leaves the process. A key may override where a published name is
+  served; the session record keeps both the asked-for and the upstream name.
+  With an empty catalog the name travels through unchanged.
+- Covered by `apps/api/tests/test_gateway.py`, `test_gateway_keys.py` and
+  `test_ai.py`.
 
 **Deferred replacement.** A later, low-priority direction replaces this data
 plane with new-api: clients call `/v1` directly, new-api owns channels and
@@ -312,14 +322,16 @@ Working:
 - Chat: a ChatGPT-like conversation with the assistant, plus the full history
   from every channel (console, phone page, API and scheduled task runs),
   filterable by channel. Any transcript can be reopened, including its tool
-  blocks; a task-run record is read-only. Replies render Markdown — lists, task
-  items, fenced code, tables, links, quotes and emphasis — while the owner's own
-  turn is shown as typed. A microphone button runs a hands-free voice
-  conversation: the browser records 16 kHz mono WAV, the server transcribes it on
-  the phone's ASR binding, the transcript is sent, and the reply is spoken with
-  the platform's own voices before the microphone reopens. Any assistant message
-  can be replayed from its speaker button, and a Voice / Rate menu picks the
-  voice; a dictated turn is marked so the model answers for the ear.
+  blocks; a task-run record is read-only. Replies are streamed as the model
+  writes them, so the bubble grows instead of showing a spinner. Markdown is
+  rendered — lists, task items, fenced code, tables, links, quotes and
+  emphasis — while the owner's own turn is shown as typed. A microphone button
+  runs a hands-free voice conversation: the browser records 16 kHz mono WAV, the
+  server transcribes it on the phone's ASR binding, the transcript is sent, and
+  the reply is spoken with the platform's own voices before the microphone
+  reopens. Any assistant message can be replayed from its speaker button, and a
+  Voice / Rate menu picks the voice; a dictated turn is marked so the model
+  answers for the ear.
 - Meetings: paginated list; detail with stage, processing error, transcript and
   translations, structured minutes, Markdown/TXT export, minutes regeneration
   and deletion.
@@ -353,13 +365,20 @@ Working:
   API/model and binds them. Each
   OpenAI/Anthropic endpoint is independently a gateway route or an internal-only
   provider. Changing a binding takes effect on the next model call; adding a
-  gateway endpoint adds its route immediately. API keys are environment-variable
-  names shown with a set/missing indicator, never key values; a keyless OpenAI
+  gateway endpoint adds its route immediately. A supplier's key is entered in
+  the console and stored on its registry record — the page reports
+  `api_key_present` and the last four characters, never the value — and a
+  rotation takes effect on the next call with no restart; a keyless OpenAI
   endpoint is gateway-only and cannot serve an internal feature.
 - Model runtime: shared timeout, token, temperature, retry and chunk limits live
   in the registry and are editable in the console; they apply to the next call.
 - Gateway routes: protocol, upstream, API base and proxy paths from the AI
   provider registry (or from `config.yaml` when the registry is disabled).
+- Errors: one row per failure shape with count, service, level and innermost
+  application frame; filters by status, service and message; the detail opens
+  the traceback, request context and — on request — a read-only diagnosis
+  (component, `file:line`, cause, confidence, next steps). Nothing on the page
+  writes, restarts or deletes.
 - Account: profile, session expiry and password change. A password change
   revokes every session and returns to login with a notice.
 - AdminLTE's own colour-mode control (light/dark/auto) and responsive sidebar.
@@ -414,12 +433,8 @@ Open:
 - Production serving (reverse proxy plus SPA fallback) is documented in
   `apps/admin/README.md`, but no deployment configuration is checked in.
 - The knowledge-base UI remains planned; this console now covers the assistant
-  chat, meetings, scheduled tasks, AI providers, routes and the account.
-- Chat replies are non-streaming; the page shows a thinking indicator and
-  re-reads the file after the reply. SSE is the next additive step.
-- Provider credentials stay in the process environment; rotating a key still
-  requires an API restart. Entering secrets in the browser was rejected for this
-  slice (see [decisions](./decisions.md)).
+  chat, meetings, scheduled tasks, AI providers, routes, mail, the schedule,
+  phone data, errors and the account.
 
 ### 5.7 Knowledge base — Partial
 
@@ -459,6 +474,11 @@ Working:
 - `POST /api/v1/assistant/chat` runs a bounded tool loop in
   `packages/winnie-chat`; the page at `/api/v1/assistant/ui` is phone-sized and
   needs no build step, and the console at `/chat` is the desktop surface.
+- The same route answers server-sent events when the body carries
+  `"stream": true`: `start` (so a new conversation has an id), `token`, `tool`,
+  `done` and `error`. The assistant message is stored only on `done`, so a
+  stream cut mid-sentence leaves no half reply in the transcript; there is no
+  retry mid-stream. The JSON path is unchanged for the scheduler and the phone.
 - The chat engine selects enabled skills and builds the system prompt from their
   instructions. Registered skills include core, web, weather, gold, documents
   (the local index), memory, tasks, news and local (files/commands); phone
@@ -487,6 +507,13 @@ Working:
   memory read in process.
 - Memory is distilled from the conversation files with a per-conversation
   watermark, deduplicated, and written back with provenance.
+- A nightly tidy pass (default 04:00, `memory.tidy.schedule`) merges
+  near-duplicate notes and retires entries whose premise the owner corrected:
+  deterministic comparison first, then one narrow model question per candidate,
+  and the code refuses a merge that would drop a content character or a
+  retirement that cannot be quoted verbatim. Every run copies the pre-image and
+  the plan to `.state/memory-backups/`; `GET`/`POST /assistant/memory/tidy`
+  expose the schedule, the last result and a manual run.
 - Scheduled tasks are created, listed and cancelled **in conversation**
   (`schedule_task`, `list_tasks`, `cancel_task`); the model must confirm the
   schedule and content before creating one. Task runs cannot create tasks.
@@ -526,11 +553,15 @@ Verified:
 - The `winnie-local` suite covers the whitelist policy (paths, git options,
   path-qualified executables), reviewer JSON/timeout/error handling, redaction,
   whitelisted bypass, review allow/deny, and the fail-closed disabled path.
-- `468 passed` in the backend suite.
+- `586 passed` in the backend suite.
+- A real socket returned chunked SSE with `start`/`token`/`done` and the right
+  headers; a real DeepSeek turn arrived in three chunks, the first at 0.55 s.
+- The tidy pass ran against a copy of the real profile with the configured
+  model: it tried to collapse three separate appointment days into one line and
+  the content guard refused it, writing nothing.
 
 Open:
 
-- Streaming replies (SSE).
 - The scheduler lives in the API process, so tasks do not run while the API is
   down; a separate worker is the next step for true 24/7 behaviour.
 - Vector retrieval would grow a dense tier in the index, not in the assistant.
@@ -546,8 +577,8 @@ Open:
 
 Working:
 
-- Six stages behind versioned JSON contracts: material, clean, aggregate,
-  search, generate, review.
+- Seven stages behind versioned JSON contracts: material, clean, aggregate,
+  search, generate, review, digest.
 - RSS, Tencent hot list and tophub collectors with per-source failure isolation
   and a one-hour cache; a failing source is reported, never fatal.
 - Rule filtering before any model call; extraction as a second filter; hard
@@ -600,9 +631,12 @@ Working:
 - WorkManager runs the periodic sync (30 minutes by default, 15 minimum) and
   debounced one-shot syncs follow content changes and new notifications.
 - The assistant has a read skill (`phone`) and a write skill (`phone_write`).
-  Writes are proposed, expire unconfirmed, and are executed by the phone on its
-  next sync with the result reported back. The prompt also carries a small
-  digest: last sync, next 24 hours, unread SMS, missed calls today.
+  Creating a calendar event submits directly and reads the event back (title,
+  local start–end, place) for correction; update, delete and SMS stay proposed,
+  expire unconfirmed, and are executed by the phone on its next sync with the
+  result reported back. The split is a module constant checked where the write
+  happens, not prompt wording. The prompt also carries a small digest: last sync,
+  next 24 hours, unread SMS, missed calls today.
 - A phone screen in the app shows consent, per-scope permission state, sync
   status, server counts and a confirmed delete-on-server action.
 - Server-side retention is per kind and runs on every sync.
@@ -614,7 +648,8 @@ Verified:
   search, retention, wipe, cross-account isolation, revocation, the command
   lifecycle and expiry.
 - `apps/api/tests/test_phone_tools.py` covers tool formatting, proposals,
-  confirmation, the prompt digest and the scheduled-turn exclusion.
+  confirmation, unattended calendar creation, the prompt digest and the
+  scheduled-turn exclusion.
 - Android unit tests cover the wire contract, cursor mapping for SMS/calls/
   calendar, preferences, the notification buffer and a Robolectric render of
   the consent screen. The debug APK builds.
@@ -703,7 +738,7 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **468 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **586 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -725,6 +760,9 @@ Open:
 | Admin console flows | Firefox against a disposable API copy | Login, meetings, export/regenerate/delete, routes, account, password change, dark mode, mobile, revoked session passed |
 | Admin scheduled-tasks page | Firefox against a disposable assistant root | Active, paused, failing and ignored definitions rendered with schedule, next/last run, error and prompt; run history filtered by task, paged newest first, with errors and unreadable lines; light, dark, mobile and empty states passed |
 | Admin chat page | Firefox against a disposable API and assistant root | Login, new console conversation, four-channel history and filter, task record read-only, tool trace, light/dark, 390 px mobile; no horizontal overflow |
+| Chat streaming | `curl -N` against the real socket with `"stream": true` | `text/event-stream` with `start`/`token`/`done` and `X-Accel-Buffering: no`; a real DeepSeek turn in three chunks, the first at 0.55 s |
+| Memory tidy | `POST /assistant/memory/tidy` on a copy of the real profile | the model's attempt to collapse three appointment days was refused by the content guard; pre-image and plan written under `.state/memory-backups/` |
+| Admin errors page | Firefox against a throwaway API | Counts, status/service/message filters, table, traceback, request context and diagnosis in both themes; **Diagnose** without a bound model showed the API's `503` |
 | Local assistant tools | Disposable service with a scripted model | `read_file`/`write_file`; command pending until the next "确认" turn; file and command audit lines |
 | Local LLM review | `winnie-local` test suite | Whitelisted reads skipped the reviewer; non-whitelisted write/command allowed or denied; malformed JSON, timeout and provider errors denied; denied actions changed nothing |
 | Chat engine and skills | `winnie-chat` and API tests | Registry persistence and duplicate rejection; enabled-only schemas and prompt; disabled-tool rejection; scheduled filtering; skills list/toggle/persistence |
@@ -769,10 +807,10 @@ later phase depends on the data model and index the earlier one builds.
 | Phase | Milestones | Status | Exit criteria |
 |---|---|---|---|
 | 0 — Foundation | M0, M1, M2 | Done | Packages, host, migrations, gateway and accounts verified |
-| 1 — Capabilities | M3, M4, M6, M8, M9, M10, M11, M14 | Core done | Each capability works end to end; device runs, real-model quality and the M11 alarm path open |
+| 1 — Capabilities | M3, M4, M6, M8, M9, M10, M11, M14, M15 | Core done | Each capability works end to end; device runs, real-model quality and the M11 alarm path open |
 | **2 — Knowledge base (next)** | M5 | Planned | A note is browsed, edited, reverted and searched; a chat answer cites a line of it |
 | 3 — Senses | M12, M13 | Planned | State answers carry freshness; a room event reaches the assistant without a vendor cloud |
-| 4 — Release | M6 remainder, M7 | Partial | Streaming and a worker run out of process; a clean deploy is backed up and restored |
+| 4 — Release | M6 remainder, M7 | Partial | A worker runs out of process; a clean deploy is backed up and restored |
 
 Phase 1 is complete enough to build on. The gateway, accounts, assistant,
 meetings, news, phone data, push, mail and the proactive engine are implemented
@@ -810,8 +848,8 @@ console, and a chat answer cites a knowledge line it was built from.
 
 ### Phase 4 — release (M6 remainder, M7)
 
-- M6 remaining: SSE streaming, vector retrieval in the index, an out-of-process
-  worker, task editing.
+- M6 remaining: vector retrieval in the index, an out-of-process worker, task
+  editing.
 - M7: TLS, PostgreSQL, Redis/arq, reverse proxy, backups with a restore
   rehearsal, deployment guide and structured logs.
 
