@@ -2489,3 +2489,62 @@ phone and cannot be taken back, and `calendar.delete` destroys data the owner
 did not mention in that message. Also rejected: a config key per kind — one
 constant is easier to audit than a YAML list that can silently disagree with
 the tool schema.
+
+---
+
+## An unattended memory pass needs a checked contract, not a careful prompt (2026-11-03)
+
+**Decision.** The memory notes get a nightly pass — `MemoryTidy`, scheduled at
+`memory.tidy.schedule` (default `daily 04:00`) — that merges notes saying the
+same thing and retires notes that are dead. The model proposes; the code
+decides, and every change has to pass a deterministic check before it is
+written.
+
+**Why a built-in pass, not a scheduled task.** The owner's ask was "Winnie
+should tidy its memory on its own, not me". A conversation-created task runs as
+a normal chat turn, and a chat turn cannot write `profile/`: the file tools
+protect it (`_build_workspace` lists `root / "profile"` in `protected`). It
+would also be non-deterministic — the same six bullets rewritten wherever the
+model felt like it. The pass reads and writes the notes through `MemoryStore`,
+the one component that already knows the file format.
+
+**Why the guards.** A prompt that says "keep every detail" is a wish. The
+2026-11-02 cleanup showed what the model actually produces: a merged rule that
+sometimes loses a detail, and a "duplicate" that was really a correction. So a
+merge must overlap every note it replaces (`dice >= min_member_similarity`), a
+retirement must quote the entry verbatim (`evidence` is checked as a substring),
+a `duplicate`/`superseded` retirement must name the surviving entry and be
+similar to it, and the rendered file is re-parsed before it is written — every
+surviving note must be present, in order, word for word. Any of those failing
+means no change, not a warning in the log.
+
+**Why a candidate scan first.** Sending ten files a night to be told "nothing to
+do" wastes money and invites a model to invent work. Pairs are compared locally
+by CJK bigram overlap and punctuation-insensitive identity, so a clean memory
+costs no merge call, and an unchanged file is not swept again for `resweep_days`.
+
+**Why 04:00 and no push.** The pass writes files and leaves a notice in
+`conversations/`; it does not need the owner awake, and a 04:00 push would wake
+him for housekeeping. `notify: true` exists for an owner who moves the schedule
+to a waking hour.
+
+**Where it lives.** `winnie_assistant.memory_tidy`; config under
+`assistant.memory.tidy`; `GET`/`POST /assistant/memory/tidy`. Every run copies
+the pre-image of each touched file and its plan to
+`.state/memory-backups/<run>/`, keeping `keep_backups` (20) runs, so a bad merge
+is a `cp` away from undone.
+
+**Consequences.** A note can disappear without the owner asking — that is the
+feature — but only when the model can quote the words that justify it, the note
+is at least a week old, and the notice names it with the reason. A contradiction
+that spans two files beyond the similar pair the pass can see is still a
+conversation, not a sweep: the pass merges and retires, it does not re-interview
+the owner.
+
+**Rejected.** Letting the model rewrite whole files — the file then becomes a
+model's summary of a model's summary. Dropping "obsolete" notes without a quote,
+because that is exactly the operation that loses facts. Running after every chat
+turn instead of nightly: the owner wants to read one notice, not forty. And a
+prompt-only rule in `procedures.md` telling the assistant to keep its own memory
+tidy — the same kind of note that failed to stop the weather bug: prompt text is
+not a mechanism.

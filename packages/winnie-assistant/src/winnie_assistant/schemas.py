@@ -95,6 +95,32 @@ class DistillRead(BaseModel):
     facts: int
     empty: int
 
+class MemoryTidyStatusRead(BaseModel):
+    enabled: bool
+    schedule: str
+    next_run: str | None = None
+    last_run: str | None = None
+    last_status: str | None = None
+    last_summary: str = ""
+    last_conversation_id: str | None = None
+    last_error: str = ""
+    similarity: float = 0.55
+    retire_min_age_days: int = 7
+    notify: bool = False
+
+
+class MemoryTidyRunRead(BaseModel):
+    status: str
+    merges: int = 0
+    retired: int = 0
+    files: list[str] = Field(default_factory=list)
+    message: str = ""
+    conversation_id: str = ""
+    checked_at: datetime
+    error: str = ""
+    rejected: int = 0
+
+
 
 class TaskRead(BaseModel):
     id: str

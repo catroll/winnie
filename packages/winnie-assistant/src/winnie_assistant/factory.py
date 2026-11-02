@@ -24,6 +24,7 @@ from winnie_local import (
     Workspace,
 )
 from winnie_assistant.memory import MemoryStore
+from winnie_assistant.memory_tidy import MemoryTidy
 from winnie_assistant.news import NewsGateway
 from winnie_assistant.notify import Notifier
 from winnie_assistant.mail import MailGateway
@@ -167,6 +168,23 @@ def build_assistant_service(
         if gold_service is not None
         else None
     )
+    # Built whenever memory exists, even when the pass is disabled, so the
+    # status endpoint can say why nothing happens instead of omitting the field.
+    memory_tidy = (
+        MemoryTidy(
+            config=config.memory.tidy,
+            memory=memory,  # type: ignore[arg-type]
+            model=resolved_model,
+            store=store,
+            notifier=notifier,
+            timezone=timezone,
+            state_path=root / ".state" / "memory-tidy.json",
+            backup_dir=root / ".state" / "memory-backups",
+            clock=clock,
+        )
+        if memory is not None
+        else None
+    )
     toolbox = ToolBox(
         search=search,
         index=index,
@@ -240,6 +258,7 @@ def build_assistant_service(
         index=index,
         weather_watch=weather_watch,
         gold_watch=gold_watch,
+        memory_tidy=memory_tidy,
         timezone=timezone,
         clock=clock,
     )

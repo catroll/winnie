@@ -184,6 +184,20 @@ assistant:
     recall_chars: 1200
     # Recent messages the match looks at, so "那明天呢？" still finds its subject.
     recall_context_messages: 6
+    # The nightly pass that merges notes saying the same thing and retires
+    # notes the model can quote as dead. It works from candidates, so a clean
+    # memory costs no model call. Every change is backed up first.
+    tidy:
+      enabled: true
+      schedule: daily 04:00
+      # Two notes are the same fact above this Dice overlap.
+      similarity: 0.55
+      # A merge must still resemble every note it replaces.
+      min_member_similarity: 0.4
+      # A retirement must be this old before it runs unattended.
+      retire_min_age_days: 7
+      # A 04:00 push would wake the owner; the notice is the record.
+      notify: false
   tasks:
     enabled: true
     # Written by the assistant when a task is created in conversation; do not

@@ -27,6 +27,8 @@ from winnie_assistant.schemas import (
     DocumentSearchRead,
     MemoryFileRead,
     MemoryListRead,
+    MemoryTidyRunRead,
+    MemoryTidyStatusRead,
     MessageRead,
     SkillListRead,
     SkillToggleRequest,
@@ -345,6 +347,44 @@ async def distill_memory(
         conversations=result.conversations,
         facts=result.facts,
         empty=result.empty,
+    )
+
+
+@router.get("/memory/tidy", response_model=MemoryTidyStatusRead)
+async def memory_tidy_status(
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> MemoryTidyStatusRead:
+    """When the merge-and-retire pass runs next, and what it did last time."""
+    return MemoryTidyStatusRead(**service.memory_tidy_status())
+
+
+@router.post("/memory/tidy", response_model=MemoryTidyRunRead)
+async def tidy_memory(
+    service: AssistantService = Depends(get_service),
+    _: str = Depends(get_user_id),
+) -> MemoryTidyRunRead:
+    """Run the pass now, for the console or a manual test.
+
+    A manual run does not move the daily schedule and leaves no notice, because
+    the caller already has the result.
+    """
+    if service.memory_tidy is None:
+        raise HTTPException(status_code=409, detail="memory is disabled")
+    try:
+        result = await service.tidy_memory()
+    except AssistantModelError as exc:
+        raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc
+    return MemoryTidyRunRead(
+        status=result.status,
+        merges=result.merges,
+        retired=result.retired,
+        files=list(result.files),
+        message=result.message,
+        conversation_id=result.conversation_id,
+        checked_at=result.checked_at,
+        error=result.error,
+        rejected=result.rejected,
     )
 
 

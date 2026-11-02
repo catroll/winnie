@@ -21,6 +21,7 @@ from winnie_assistant.index_client import IndexClient, IndexHit
 from winnie_assistant.layout import ensure_layout
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.memory_builder import DistillResult, MemoryBuilder
+from winnie_assistant.memory_tidy import MemoryTidy, TidyResult
 from winnie_assistant.scheduler import (
     AssistantScheduler,
     ScheduledTask,
@@ -55,6 +56,7 @@ class AssistantService:
         gold_watch: GoldWatch | None,
         timezone: ZoneInfo,
         clock=None,
+        memory_tidy: MemoryTidy | None = None,
     ) -> None:
         self.config = config
         self.root = root
@@ -70,6 +72,7 @@ class AssistantService:
         self.index = index
         self.weather_watch = weather_watch
         self.gold_watch = gold_watch
+        self.memory_tidy = memory_tidy
         self.timezone = timezone
         self.clock = clock or (lambda: datetime.now(timezone))
         self._distill_task: asyncio.Task[None] | None = None
@@ -88,6 +91,8 @@ class AssistantService:
             await self.weather_watch.start()
         if self.gold_watch is not None:
             await self.gold_watch.start()
+        if self.memory_tidy is not None:
+            await self.memory_tidy.start()
         if self.builder is not None and self.config.memory.auto_distill:
             self._schedule_distill()
 
@@ -97,6 +102,8 @@ class AssistantService:
             await self.weather_watch.stop()
         if self.gold_watch is not None:
             await self.gold_watch.stop()
+        if self.memory_tidy is not None:
+            await self.memory_tidy.stop()
         if self._distill_task is not None:
             self._distill_task.cancel()
             try:
@@ -216,6 +223,32 @@ class AssistantService:
             except Exception:  # noqa: BLE001 - the sweep is the backstop
                 logger.warning("reindexing %s failed", path, exc_info=True)
 
+    async def tidy_memory(self) -> TidyResult:
+        """Run the merge-and-retire pass now, for the console or a test."""
+        if self.memory_tidy is None:
+            raise RuntimeError("memory is disabled")
+        result = await self.memory_tidy.run_now()
+        if result.files:
+            await self.reindex_memory(list(result.files))
+        return result
+
+    def memory_tidy_status(self) -> dict:
+        if self.memory_tidy is None:
+            return {
+                "enabled": False,
+                "schedule": self.config.memory.tidy.schedule,
+                "next_run": None,
+                "last_run": None,
+                "last_status": None,
+                "last_summary": "",
+                "last_conversation_id": None,
+                "last_error": "",
+                "similarity": self.config.memory.tidy.similarity,
+                "retire_min_age_days": self.config.memory.tidy.retire_min_age_days,
+                "notify": self.config.memory.tidy.notify,
+            }
+        return self.memory_tidy.status()
+
     def _schedule_distill(self) -> None:
         if self.builder is None:
             return
@@ -296,4 +329,5 @@ class AssistantService:
             },
             "weather": self.weather_status(),
             "gold": self.gold_status(),
+            "memory_tidy": self.memory_tidy_status(),
         }

@@ -37,6 +37,47 @@ class IndexConfig(BaseModel):
     limit: int = Field(default=8, ge=1, le=50)
 
 
+class MemoryTidyConfig(BaseModel):
+    """The nightly pass that merges duplicate notes and retires dead ones.
+
+    The defaults make it boring: nothing is proposed unless two notes are
+    measurably the same fact, and nothing is deleted unless the model quotes the
+    words that justify it and the note is at least a week old.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    # Quiet hour: the pass writes files and leaves a notice, it does not need to
+    # run while the owner is talking to the assistant.
+    schedule: str = "daily 04:00"
+    # Two notes are candidates for one fact above this Dice overlap. Below it
+    # they are different facts that merely share words.
+    similarity: float = Field(default=0.55, ge=0.30, le=1.0)
+    # A merge must still resemble every note it replaces, so it cannot keep one
+    # fact and drop another.
+    min_member_similarity: float = Field(default=0.40, ge=0.10, le=1.0)
+    # A retirement that names a survivor must resemble it by this much.
+    retire_similarity: float = Field(default=0.50, ge=0.10, le=1.0)
+    merge_batch: int = Field(default=6, ge=2, le=20)
+    max_merges_per_run: int = Field(default=8, ge=0, le=50)
+    max_sweeps_per_run: int = Field(default=6, ge=0, le=50)
+    retire_max_per_run: int = Field(default=3, ge=0, le=20)
+    # A note written this recently is never retired unattended: the owner may
+    # still be correcting it.
+    retire_min_age_days: int = Field(default=7, ge=0, le=365)
+    # An unchanged file is swept again only after this long, so a quiet memory
+    # costs nothing while a stale note in it is still reconsidered eventually.
+    resweep_days: int = Field(default=30, ge=1, le=365)
+    max_file_chars: int = Field(default=8000, ge=500, le=100_000)
+    max_fact_chars: int = Field(default=500, ge=50, le=2000)
+    keep_backups: int = Field(default=20, ge=1, le=200)
+    # A 04:00 push would wake the owner for housekeeping. The notice in the
+    # conversation store is the record; switch this on for a waking-hour run.
+    notify: bool = False
+    tick_seconds: float = Field(default=60.0, ge=5.0, le=3600.0)
+
+
 class MemoryConfig(BaseModel):
     """Long-term memory notes, distilled from conversation files."""
 
@@ -58,6 +99,7 @@ class MemoryConfig(BaseModel):
     # Recent messages used as part of the match, so a follow-up that says
     # nothing by itself ("那明天呢？") still reaches the notes about its subject.
     recall_context_messages: int = Field(default=6, ge=0, le=30)
+    tidy: MemoryTidyConfig = Field(default_factory=MemoryTidyConfig)
 
 
 class TasksConfig(BaseModel):

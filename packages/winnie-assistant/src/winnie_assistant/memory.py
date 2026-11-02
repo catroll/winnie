@@ -88,8 +88,14 @@ def normalize(text: str) -> str:
 _FACT_NOISE = re.compile(r"[\s，。；：、？！,.;:!?（）()【】\[\]“”\"'‘’《》<>·—…─-]+")
 
 
-def _fact_key(text: str) -> str:
+def fact_key(text: str) -> str:
+    """The identity of a fact: punctuation and spacing do not change it."""
     return _FACT_NOISE.sub("", normalize(text))
+
+
+# The tidy step compares facts it did not write, so the same identity is needed
+# there; keep the old name working for anything inside this module.
+_fact_key = fact_key
 
 
 def _recall_terms(text: str) -> tuple[set[str], set[str], set[str]]:
@@ -360,9 +366,21 @@ class MemoryStore:
 
 
 def _parse_file(path: Path, relpath: str) -> tuple[list[MemoryEntry], MemoryFile]:
-    text = path.read_text(encoding="utf-8")
+    return parse_memory(
+        path.read_text(encoding="utf-8"), relpath=relpath, stem=path.stem
+    )
+
+
+def parse_memory(
+    text: str, *, relpath: str, stem: str
+) -> tuple[list[MemoryEntry], MemoryFile]:
+    """Parse one memory file's text.
+
+    Split out from the file read so an unapplied rewrite can be parsed and
+    verified before it is written: a tidy run has to prove that the file it is
+    about to replace still says everything it said.
+    """
     header, body = split_front_matter(text)
-    stem = path.stem
     category = str(header.get("category") or stem)
     # A pinned category is the contract: files written before a category was
     # pinned carry `pinned: false` in their front matter, and honouring that

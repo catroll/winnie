@@ -122,8 +122,8 @@ documents:
 ├── tasks/
 │   ├── tasks.json             # written by the assistant, not by hand
 │   └── runs.jsonl
-└── .state/                    # derived: memory watermark, next-run state,
-                               # command/file audit and overwrite backups
+└── .state/                    # derived: watermarks, next-run state, command
+                               # and file audits, overwrite and tidy backups
 ```
 
 The local file tools are separate from this storage: they operate under
@@ -292,6 +292,57 @@ question about a project can hit a note the owner wrote, and a question about
 the assistant's memory hits `Winnie/`. The prompt tells the model that paths
 under `Winnie/` are its own files, and every hit carries its path so the
 distinction stays visible.
+
+### 5.3 Tidy
+
+The distiller only appends, and it sees one conversation at a time, so notes
+accumulate: the same rule arrives three times in different words, a fake model's
+placeholder stays for ever, and a note that a later correction made false is
+still recalled as true. `MemoryTidy`
+(`packages/winnie-assistant/src/winnie_assistant/memory_tidy.py`) runs on
+`memory.tidy.schedule` (default `daily 04:00`) and fixes exactly that.
+
+The pass is deterministic first:
+
+1. Every pair of notes is compared by character bigrams — Chinese has no spaces
+   — and by punctuation-insensitive identity (`fact_key`). Clusters of
+   near-duplicates above `memory.tidy.similarity` (0.55) are merge candidates;
+   nothing else is proposed.
+2. Each cluster gets one model call: a single merged sentence, or `distinct`.
+3. Each file that changed, or has not been swept for `resweep_days`, gets one
+   sweep call: which entries are dead, and *which words say so*.
+
+The pass writes the owner's memory unattended, so every change is checked, not
+just logged:
+
+| Change | Guard |
+| --- | --- |
+| merge | must overlap **every** note it replaces above `min_member_similarity` (0.4), **and** keep every content character that only one source has — names, places, digits — so it cannot keep one fact and drop another. Three notes that differ only by a name overlap heavily; this is the check that refuses a sentence naming one of the three |
+| retire (`obsolete`, `test_artifact`) | `evidence` must be a verbatim substring of the entry, and the entry must be at least `retire_min_age_days` (7) old |
+| retire (`duplicate`, `superseded`) | must also name a `survivor` entry and overlap it above `retire_similarity` (0.5) |
+| the whole rewrite | re-parsed before writing: every surviving note must be there, in order, verbatim |
+
+A merge lands in the pinned file when its cluster spans categories, so a rule
+cannot be demoted out of the system prompt by being merged. The pre-image of
+every changed file is copied to `.state/memory-backups/<run>/` together with the
+plan (the model's output, the reasons, the evidence); the newest
+`memory.tidy.keep_backups` runs are kept, and the run leaves a notice in
+`conversations/` saying what moved. Restoring a run is a plain `cp` from that
+directory. The notice is the record: `notify: false` is the default because a
+04:00 push would wake the owner for housekeeping.
+
+The pass costs nothing when it has nothing to do — no candidate means no merge
+call, and an unchanged file is not swept again until `resweep_days` (30) elapse.
+A cluster the model answers `distinct`, or whose merge the guards refuse, is
+remembered by fingerprint and not offered again until one of its notes changes,
+so a stable memory is silent night after night.
+A file it cannot reproduce byte-for-byte apart from the lines it edits is
+skipped rather than reformatted: the one file it does not understand is the one
+it must not rewrite.
+
+Two endpoints expose it: `GET /assistant/memory/tidy` (schedule, next run, what
+the last run did) and `POST /assistant/memory/tidy` (run now; a manual run does
+not move the schedule and leaves no notice).
 
 ## 6. Chat engine, skills and tools
 
@@ -687,6 +738,8 @@ accounts are disabled the local owner is used.
 | PUT | `/assistant/skills/{name}` | enable or disable one skill; body `{enabled: bool}` |
 | GET | `/assistant/memory` | profile files with entry counts and the digest |
 | POST | `/assistant/memory/distill` | run the distillation now |
+| GET | `/assistant/memory/tidy` | the tidy pass's schedule, next run and last result |
+| POST | `/assistant/memory/tidy` | run the tidy pass now, without moving its schedule or leaving a notice |
 | GET | `/assistant/documents/search?q=` | index-backed search with provenance |
 | GET | `/assistant/weather` | the weather watch's schedule and last result |
 | POST | `/assistant/weather/check` | run the weather check now, without moving its schedule |
@@ -935,6 +988,7 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
 | A7 | Default weather watch | Daily forecast check writes an umbrella/clothing notice only when advice changed; the skill exposes the same forecast to chat; admin can switch it off | Done |
 | A8 | Gold price watch with app push | Samples every 5 minutes; a ≥1% hourly or ≥2.5% daily move records a notice and pushes the Winnie app; the skill exposes the quote to chat; admin can switch it off | Done |
 | A9 | The memory read path | A fact written in one turn is in the next turn's prompt (pinned digest or recall); a paraphrase finds the note; the weather rule reaches the tool as a per-call location | Done |
+| A10 | Nightly memory tidy | Duplicate notes merge into one; a dead note is retired when the model quotes it and it is a week old; a merge that drops a detail, a quote that is not in the entry, and a rewrite that loses a note are all refused; every change is backed up and summarised in a notice | Done |
 
 Follow-ups after this slice, in order:
 
