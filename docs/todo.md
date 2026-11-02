@@ -4,6 +4,41 @@ Prioritized follow-ups for the personal-assistant backend. Keep entries concrete
 enough to start without re-reading the design. The milestone view and completion
 status are in [plan.md](./plan.md).
 
+## P0 — M5 knowledge base (the next phase)
+
+> Phase 2 of [plan.md](./plan.md) §8. Exit criterion: a finished meeting note is
+> browsed, edited, reverted and searched in the console, and a chat answer cites
+> a line it was built from.
+>
+> Decision needed before the first commit: **where the repository lives.** The
+> index watches `~/Documents/Mine` and the WLB checkout, so a repository under
+> `~/Documents/Mine/Winnie` is searchable the moment a note is written; the
+> current note sink (`apps/api/data/kb/meetings`, gitignored) is invisible to the
+> assistant. Recommendation: `git init` the documents root, ignore
+> `conversations/` and `.state/`, and keep knowledge under `knowledge/`.
+
+- [ ] Create the repository: `git init` at the documents root, a `.gitignore`
+      for `conversations/` and `.state/`, a first commit, and a `README.md` that
+      states what belongs in it and what does not.
+- [ ] Add a repository layer to `winnie-knowledge`: `write(path, text, source)`,
+      `delete(path, source)` and `revert(commit)`, each one commit whose message
+      records the source (`ui-edit`, `auto-extract`, `reindex`). Nothing writes
+      the working tree without committing it.
+- [ ] Point the meeting note sink at `knowledge/meetings/` and write it through
+      that layer, so a finished meeting is committed and immediately indexed
+      instead of landing outside every root.
+- [ ] Console Knowledge page: browse the tree, open a note, edit with a Markdown
+      preview, save (a `ui-edit` commit), list the history, show a diff, revert.
+- [ ] Classification: one category plus multi-tag, `unsorted` when confidence is
+      low, front matter as the on-disk form; deterministic first (existing tags,
+      path), the bound model only for notes that have none.
+- [ ] Re-index the affected path after a revert (`POST /admin/index`) rather than
+      waiting for the watcher, then prove the chat cites the restored line — that
+      is the exit rehearsal, not an extra test.
+- [ ] Fold the meeting note and the profile notes into this repository without
+      changing their on-disk format; the note is the first real document the
+      page and the citation are tested on.
+
 ## P0 — first real meeting and bilingual fixture
 
 > The `volcengine` supplier key is configured in the gitignored `data/ai.yaml`
