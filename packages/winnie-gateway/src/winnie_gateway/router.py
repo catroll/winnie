@@ -189,6 +189,21 @@ def _authenticate(
     return record, None
 
 
+def _json_body(body: bytes) -> dict[str, Any] | None:
+    """The call's JSON object, parsed whole.
+
+    Not the recorder's snapshot: that truncates a body past 8 KB to keep the
+    log readable, and a truncated body has no ``model`` field. Resolving from it
+    would silently forward an unpublished model whose prompt happened to be
+    long.
+    """
+    try:
+        parsed = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _route_for_vendor(
     request: Request, vendor: str, protocol: str
 ) -> Route | None:
@@ -217,8 +232,8 @@ def _resolve_model(
     """
     if catalog is None or catalog.empty:
         return _Call(route=entry, body=body)
-    parsed = snapshot_body(body)
-    if not isinstance(parsed, dict):
+    parsed = _json_body(body)
+    if parsed is None:
         return _Call(route=entry, body=body)
     requested = str(parsed.get("model") or "").strip()
     if not requested:

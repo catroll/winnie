@@ -565,3 +565,28 @@ async def test_without_a_catalog_the_model_travels_unchanged(
     assert response.status_code == 200
     assert json.loads(upstream.requests[-1].content)["model"] == "anything-goes"
 
+
+
+async def test_a_long_prompt_does_not_hide_an_unpublished_model(
+    gateway_app,
+    gateway_client: httpx.AsyncClient,
+    upstream,
+) -> None:
+    """The gate reads the whole body; the record's 8 KB snapshot is not the gate.
+
+    The recorder truncates what it stores, and a truncated body has no ``model``
+    field at all. Resolving from it would let an unpublished model through
+    whenever the prompt happened to be long enough.
+    """
+    _publish(gateway_app)
+    response = await gateway_client.post(
+        OPENAI_URL,
+        json={
+            "model": "gpt-5.5",
+            "messages": [{"role": "user", "content": "x" * 20_000}],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not published" in response.json()["error"]["message"]
+    assert upstream.requests == []
