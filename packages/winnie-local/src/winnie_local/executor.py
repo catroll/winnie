@@ -228,7 +228,14 @@ class LocalExecutor:
             if not decision.allow:
                 return self._denied(decision)
         note = self._note(whitelisted, decision)
-        if commands.require_confirmation:
+        # A whitelisted action is read-only by construction (path-confined
+        # reads, read-only git, or a public HTTP GET), so it does not ask for a
+        # confirmation that can only ever say yes. Writes and reviewed actions
+        # keep the gate.
+        needs_confirmation = commands.require_confirmation and not (
+            whitelisted and self.whitelist.unattended
+        )
+        if needs_confirmation:
             pending = self.pending.put(
                 conversation_id,
                 kind="run_command",

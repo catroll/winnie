@@ -1,20 +1,39 @@
 """Whitelist policy for local actions.
 
-This is a guardrail, not a security boundary. It covers read-only file tools and
-a small set of read-only commands whose path arguments stay inside the workspace.
-Everything else goes to the LLM reviewer. Adding a write command to the configured
-allowlist removes the review for that command; the human confirmation settings
-still apply.
+This is a guardrail, not a security boundary. It covers read-only file tools, a
+small set of read-only commands whose path arguments stay inside the workspace,
+and read-only HTTP GETs for public data. Everything else goes to the LLM
+reviewer and, unless confirmed later, does not run.
+
+Whitelisted actions ran the review only in the first version, so `ls` and every
+`curl` still waited for a "确认" before doing a read. That is what the owner kept
+hitting: the confirmation asked the human to approve a request that changes
+nothing on the machine. A whitelisted action now also runs unattended; the
+confirmation gate is for writes and for actions the reviewer had to allow.
 """
 
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from winnie_local.local import CommandPlan, LocalToolError, Workspace, WritePlan
 
 # These are read-only commands; their non-option arguments are checked as paths.
 PATH_COMMANDS = frozenset({"ls", "cat", "head", "tail", "wc"})
+# Read-only network fetches. Only GET requests to public hosts qualify: no
+# upload, no output file, no request body, no header, no cookie, no proxy and no
+# private or loopback address.
+NETWORK_READ_COMMANDS = frozenset({"curl"})
+CURL_BARE_FLAGS = frozenset(
+    {"-s", "--silent", "-S", "--show-error", "-f", "--fail",
+     "-L", "--location", "--compressed"}
+)
+CURL_VALUE_FLAGS = frozenset({"-m", "--max-time"})
+CURL_MAX_TIME = 120
+_PRIVATE_HOSTS = frozenset({"localhost", "localhost.localdomain"})
+_PRIVATE_SUFFIXES = (".local", ".localhost", ".internal", ".lan", ".home.arpa")
 GIT_FORBIDDEN = (
     "--output",
     "--ext-diff",
@@ -36,10 +55,14 @@ class Whitelist:
         operations: list[str] | tuple[str, ...],
         commands: list[str] | tuple[str, ...],
         git_subcommands: list[str] | tuple[str, ...],
+        unattended: bool = True,
     ) -> None:
         self.operations = frozenset(operations)
         self.commands = frozenset(commands)
         self.git_subcommands = frozenset(git_subcommands)
+        # A whitelisted action is read-only, so it does not need a human yes.
+        # Set false to keep the old "whitelisted but still confirm" behaviour.
+        self.unattended = unattended
 
     def allows(
         self,
@@ -61,6 +84,8 @@ class Whitelist:
         if "/" in plan.argv[0] or "\\" in plan.argv[0]:
             return False
         name = Path(plan.argv[0]).name
+        if name in NETWORK_READ_COMMANDS:
+            return self._network_read(plan)
         if name == "git":
             return self._git(plan, workspace)
         if name not in self.commands:
@@ -121,3 +146,86 @@ class Whitelist:
         if subcommand == "branch":
             return all(arg in GIT_BRANCH_SAFE for arg in rest)
         return True
+
+    def _network_read(self, plan: CommandPlan) -> bool:
+        """True for a curl GET that only reads public HTTP data."""
+        args = plan.argv[1:]
+        if plan.argv[0] != "curl" or not args:
+            return False
+        urls = 0
+        index = 0
+        while index < len(args):
+            arg = args[index]
+            index += 1
+            if arg == "--":
+                rest = args[index:]
+                if not rest or not all(_public_url(item) for item in rest):
+                    return False
+                return True
+            if arg.startswith("-") and arg != "-":
+                if not _curl_flag_allowed(arg):
+                    return False
+                if arg in CURL_VALUE_FLAGS:
+                    if index >= len(args) or not _seconds(args[index]):
+                        return False
+                    index += 1
+                continue
+            if not _public_url(arg):
+                return False
+            urls += 1
+        return urls > 0
+
+
+def _curl_flag_allowed(arg: str) -> bool:
+    if arg in CURL_BARE_FLAGS:
+        return True
+    if arg in CURL_VALUE_FLAGS:
+        return True
+    if arg.startswith("--max-time="):
+        return _seconds(arg.split("=", 1)[1])
+    if arg.startswith("-m") and len(arg) > 2:
+        return _seconds(arg[2:])
+    # Combined short flags such as -sS, and nothing else: -o, -d, -F, -T, -H,
+    # -b, -c, -u, -x, -K and --proxy all fail here.
+    if arg.startswith("-") and not arg.startswith("--"):
+        return all(char in "sSfL" for char in arg[1:])
+    return False
+
+
+def _seconds(value: str) -> bool:
+    return value.isdigit() and 1 <= int(value) <= CURL_MAX_TIME
+
+
+def _public_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if parsed.username or parsed.password:
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if not host or host in _PRIVATE_HOSTS or host.endswith(_PRIVATE_SUFFIXES):
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        # A name with no dot is an intranet host, not a public endpoint.
+        if "." not in host:
+            return False
+        # Numeric and hex spellings ("2130706433", "0x7f.0.0.1") still resolve
+        # to an address; pass only a real name or a real IP literal.
+        if not any(char.isalpha() for char in host):
+            return False
+        if host.startswith("0x") or host.rsplit(".", 1)[-1].isdigit():
+            return False
+        return True
+    return not (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+    )

@@ -277,9 +277,12 @@ LOCAL = SkillManifest(
     instructions="""\
 Read a file before overwriting it, and pass the sha256 from read_file as
 expected_sha256.
-Overwriting or appending a file and every run_command return a PENDING id and
-change nothing. Explain exactly what will happen, ask the user to reply with an
-explicit confirmation, and call confirm_action on the next turn.
+A read-only command the policy trusts (ls, cat, head, tail, wc, git status,
+git rev-parse, git ls-files, or a curl GET of public data) runs immediately and
+changes nothing, so never ask the user to confirm it. Any other run_command, a
+file overwrite or an append returns a PENDING id and changes nothing: explain
+exactly what will happen, ask the user to reply with an explicit confirmation,
+and call confirm_action on the next turn.
 Local actions may be rejected by the security reviewer. Report the reason and
 do not retry with a different command to bypass it.
 Do not read credentials or secrets, and do not run destructive, privileged or

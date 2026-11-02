@@ -259,6 +259,8 @@ assistant:
     # restores full shell power.
     allow: []
     env: {}
+    # Confirmation before a command the whitelist did not clear. A whitelisted
+    # read-only command (ls, cat, git status, a curl GET) runs straight away.
     require_confirmation: true
     pending_ttl_seconds: 300
   # Every local action that is not on the whitelist gets one LLM review before
@@ -276,6 +278,9 @@ assistant:
       # status/rev-parse/ls-files do not run a repository diff/textconv helper.
       # Add diff, log or show only for repositories you trust.
       git_subcommands: ["status", "rev-parse", "ls-files"]
+      # Read-only whitelisted actions run without a confirmation. bad: false
+      # brings back "reply 确认" for reads too.
+      unattended: true
 
 # News production pipeline (packages/winnie-news). A run collects material,
 # cleans and extracts it, groups reports of one event, searches for missing

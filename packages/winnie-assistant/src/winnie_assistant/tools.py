@@ -449,11 +449,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "name": "run_command",
             "description": (
                 "Run a local program with an argv array and no shell. It runs as "
-                "the owner's user and is not sandboxed. The first call returns a "
-                "PENDING id and runs nothing; after the user confirms, call "
-                "confirm_action on the next turn. Do not read credentials or run "
-                "destructive commands unless the user explicitly asked for that "
-                "exact action."
+                "the owner's user and is not sandboxed. A read-only command the "
+                "policy trusts (ls, cat, wc, git status, or a curl GET of public "
+                "data) runs immediately and needs no confirmation. Anything else "
+                "returns a PENDING id and runs nothing: after the user confirms, "
+                "call confirm_action on the next turn. Do not read credentials or "
+                "run destructive commands unless the user explicitly asked for "
+                "that exact action."
             ),
             "parameters": {
                 "type": "object",

@@ -452,9 +452,10 @@ Working:
   File paths are confined to `assistant.workspace.root` and protected paths;
   overwrites carry the sha256 they read, are backed up and require a later
   explicit confirmation. Every non-whitelisted action gets one LLM review
-  (the bound assistant.chat model, fail-closed) before it can become pending; whitelisted
-  read-only operations skip it. Commands run as the API user after review and
-  confirmation and are audited under `.state/`; they are not sandboxed.
+  (the bound assistant.chat model, fail-closed) before it can become pending;
+  whitelisted read-only operations skip the review and the confirmation, and run
+  straight away. Commands run as the API user after review and confirmation and
+  are audited under `.state/`; they are not sandboxed.
   Scheduled task runs get neither group.
 - Each conversation records where it started (`channel`: `admin`, `web`, `api`
   or `task`); the console filters the history by channel and opens task runs

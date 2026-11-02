@@ -39,7 +39,7 @@ from winnie_assistant.service import AssistantService
 from winnie_assistant.skills import build_skills
 from winnie_assistant.gold import GoldService, GoldWatch
 from winnie_assistant.tools import ToolBox
-from winnie_assistant.weather import WeatherService, WeatherWatch
+from winnie_assistant.weather import ForecastCache, WeatherService, WeatherWatch
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,12 @@ def build_assistant_service(
     )
 
     weather = (
-        WeatherService(config.weather, http=http, timezone=timezone)
+        WeatherService(
+            config.weather,
+            http=http,
+            timezone=timezone,
+            cache=ForecastCache(root / ".state" / "weather-cache.json"),
+        )
         if config.weather.enabled
         else None
     )
@@ -348,6 +353,7 @@ def _build_local(
             operations=config.local.whitelist.operations,
             commands=config.local.whitelist.commands,
             git_subcommands=config.local.whitelist.git_subcommands,
+            unattended=config.local.whitelist.unattended,
         ),
         pending=PendingActions(ttl_seconds=config.exec.pending_ttl_seconds),
         model_name=model_name,

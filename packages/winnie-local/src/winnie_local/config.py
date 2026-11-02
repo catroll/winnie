@@ -42,6 +42,9 @@ class WhitelistConfig(BaseModel):
     git_subcommands: list[str] = Field(
         default_factory=lambda: list(DEFAULT_WHITELIST_GIT)
     )
+    # Whitelisted actions are read-only, so they run without a confirmation.
+    # Set false to keep asking before even a whitelisted command runs.
+    unattended: bool = True
 
 
 class LocalConfig(BaseModel):

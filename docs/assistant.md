@@ -448,7 +448,14 @@ secret patterns redacted, and must return
 `{"allow": bool, "risk": "low|medium|high", "reason": "..."}`. A timeout,
 provider error or malformed answer denies. The decision is appended to
 `.state/review.jsonl`; the raw content is not. Whitelisted read-only operations
-skip the review; they are configured under `assistant.local.whitelist`.
+skip the review and run immediately — a whitelisted action cannot change the
+machine, so asking "确认" for it only teaches the owner to distrust the prompt.
+They are configured under `assistant.local.whitelist`, plus a read-only network
+rule: `curl` with a plain GET to a public `http(s)` URL and no output file,
+request body, header, cookie or proxy. Anything that writes, uploads, changes
+the verb, carries a credential, or targets loopback/private/intranet addresses
+is not whitelisted and stays under review plus confirmation
+(`local.whitelist.unattended: false` restores the confirmation for reads).
 
 Search results, fetched pages, file contents and command output are framed as
 untrusted data, because prompt injection is the obvious attack on a tool-using
@@ -477,6 +484,18 @@ and the `weather` skill owns both:
 
 No model call is involved in the watcher. A daily check costs one HTTP request
 and cannot hallucinate a temperature.
+
+### Forecast cache
+
+A forecast is written to `.state/weather-cache.json` and reused for 30 minutes.
+The key is the question, not the wording — rounded coordinates, the place label
+and the **local date** — so "today" can never be answered with yesterday's
+forecast and a different place never shares an entry. A second question in the
+same conversation, or a first question after a restart, therefore costs no
+request; the reply keeps the original `数据取自 HH:MM`, which is how the owner
+can tell how old the number is. The file is capped at 8 entries and pruned on
+every write. Open-Meteo refreshes its model a few times a day, so 30 minutes is
+inside the noise; a corrupt file is ignored and rebuilt.
 
 ### Rules
 
@@ -796,7 +815,9 @@ not a sandbox. `exec.pending_ttl_seconds` bounds how long a confirmation can wai
 `local.review` is the second gate: non-whitelisted actions are denied unless
 the bound `assistant.chat` model returns an explicit JSON allow.
 `local.whitelist` is the
-explicit bypass for read-only operations. The default git whitelist is
+explicit bypass for read-only operations, and whitelisted actions run without a
+confirmation (`local.whitelist.unattended`, default `true`). The default git
+whitelist is
 `status`, `rev-parse` and `ls-files`; `diff`, `log` and `show` can run
 repository-configured textconv/external-diff helpers, so they are reviewed by
 default. Adding a write command or a shell here removes its review; the human
@@ -828,7 +849,8 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
   `assistant.workspace.root`/`extra_roots` and refuse the assistant's own storage
   and common credential paths. Commands run as the API user with a minimal
   environment and are **not sandboxed**. Both are audited under `.state/`, and
-  overwrites/commands require a later explicit confirmation. Enable them only
+  overwrites and non-whitelisted commands require a later explicit
+  confirmation. Enable them only
   with `auth.enabled: true` and on a trusted network.
 - **Auth.** When accounts are enabled every assistant route requires a bearer
   token. The instance is single-user, so the token is access control, not a
@@ -845,8 +867,8 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
 - **Prompt injection.** Search results, fetched pages, local documents, file
   contents and command output are untrusted data. Local side effects exist only
   behind the local tools: paths are confined and audited, commands are audited
-  and rate-bounded by a timeout, and overwrites/commands require a human
-  confirmation in a later turn. The model cannot execute by calling the tool
+  and rate-bounded by a timeout; overwrites and non-whitelisted commands require
+  a human confirmation in a later turn, while whitelisted reads do not. The model cannot execute by calling the tool
   twice in one turn.
 - **Confirmation is a turn boundary.** A pending action is tied to the
   conversation and to the turn that created it. It runs only when the next user
@@ -859,11 +881,14 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
   The decision and reason go to `.state/review.jsonl`; file contents and command
   output do not.
 - **The whitelist is explicit and read-only by default.** `list_files`,
-  `read_file`, `pwd`, `ls`, `cat`, `head`, `tail`, `wc`, and the git
-  `status`/`rev-parse`/`ls-files` subcommands skip the review. The policy still
-  checks their path arguments against the workspace and refuses credential
-  paths. Adding a write command or a shell to `local.whitelist.commands` makes
-  it auto-approved; that is the owner's explicit risk.
+  `read_file`, `pwd`, `ls`, `cat`, `head`, `tail`, `wc`, a read-only `curl` GET
+  of a public URL, and the git `status`/`rev-parse`/`ls-files` subcommands skip
+  the review and the confirmation. The policy still checks path arguments
+  against the workspace, refuses credential paths, and rejects a `curl` that
+  writes a file, sends a body or a header, changes the verb, or resolves to
+  loopback/private/intranet addresses. Adding a write command or a shell to
+  `local.whitelist.commands` makes it auto-approved; that is the owner's
+  explicit risk.
 - **Review data leaves the process.** The review sends the user's current
   message and a bounded, redacted action summary/preview to the model provider.
   Do not use a remote review model for files that must never leave the machine.

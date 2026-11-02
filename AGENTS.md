@@ -76,6 +76,16 @@ than re-fetching silently. Gold prices, exchange rates and news all change
 during a conversation; a cache that states its age beats a fresh-looking number
 with no timestamp.
 
+## The product's confirmation gate is code, not prompt
+
+`winnie-local`'s `LocalExecutor` decides whether a local action runs. A
+whitelisted read-only action now runs immediately; anything else is reviewed and
+then waits for the owner's "确认" in a later turn. Remembered preferences reach
+the model as prompt text only, so a note in `profile/` saying "don't ask me"
+cannot suppress the gate — that is exactly the bug that made the owner repeat
+himself three times. To change what gets confirmed, change the policy or its
+config, never the wording of the prompt.
+
 ## Never write secrets into the cache
 
 It is plain JSON on disk (outside git). No tokens, no auth headers, no mailbox
