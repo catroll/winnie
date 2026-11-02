@@ -923,3 +923,119 @@ habit, and the commit would carry the password.
 comment saying why. **Generalisable.** The moment a storage decision creates a
 new place for a secret is the moment to prove it is ignored; never infer the
 ignore rule from the file living under `data/`.
+
+## A FETCH answer starts with the sequence number, not the UID (2026-11-02)
+
+**Signal.** The mail cache looked correct after its first sync — 329 messages,
+decoded subjects — and the very next sync reported `fetched: 329` and left
+`{"messages": 0}` behind. Nothing raised, nothing logged a warning, and the
+folder rows kept their counters, so the folders looked healthy while every
+message had vanished.
+
+**Cause.** `client.uid("FETCH", uids, "(FLAGS BODY.PEEK[HEADER] RFC822.SIZE)")`
+answers with lines like `* 3 FETCH (FLAGS (\Seen) BODY[HEADER] {412}`. The `3`
+is the **sequence number** — the position of the message in the mailbox — and
+only an explicit `UID` in the item list makes the server echo the real UID. The
+parser read the leading number, so the cache stored `1..46` while the server's
+UIDs were `1320681402…`. On the next sweep the known set and `SEARCH ALL`
+intersected in nothing, so each folder produced *every* message as new **and**
+every cached UID as deleted; `apply` deletes `removed` after upserting, so it
+deleted precisely the rows it had just written. The second sync was a wipe that
+reported success.
+
+**Check.** Print what a FETCH actually returns and compare it with the numbers the
+cache holds:
+
+```bash
+python - <<'PY'
+import imaplib
+m = imaplib.IMAP4_SSL("imap.126.com", 993); m.login(u, p); m.select("INBOX", readonly=True)
+print(m.uid("SEARCH", None, "ALL"))
+print(m.uid("FETCH", "1320681402", "(FLAGS BODY.PEEK[HEADER])")[1][0][0])
+print(m.uid("FETCH", "1320681402", "(UID FLAGS BODY.PEEK[HEADER])")[1][0][0])
+PY
+```
+
+The first prefix is `b'1 (FLAGS …'`, the second `b'1 (UID 1320681402 FLAGS …'`.
+If the two numbers differ, the parser is wrong.
+
+**Fix.** Ask for `UID` in every FETCH item list (`(UID FLAGS BODY.PEEK[HEADER]
+RFC822.SIZE)`, `(UID FLAGS)`, `(UID FLAGS BODY.PEEK[])`) and parse
+`rb"\bUID (\d+)"`; raise if it is missing rather than falling back to the
+sequence number. Guard it with a fake server whose UIDs are *not* `1..N`
+(`101, 102, 103` in `apps/api/tests/test_mail.py`) and with
+`test_syncing_twice_keeps_the_cache`, which applies two snapshots and asserts
+the rows survive.
+
+**Generalisable.** A cache that reports "everything is new" every time is not
+slow, it is keyed on the wrong number, and a delete-after-insert write path turns
+that into data loss. When two identifiers exist for the same thing, assert they
+are different in the tests — a fake that numbers its objects `1, 2, 3` hides this
+class of bug completely.
+
+## 126 throttles rapid IMAP logins, so one connection walks every folder (2026-11-02)
+
+**Signal.** Directly after a sync that opened 24 IMAP sessions in 17 seconds, a
+plain login failed at the TCP layer:
+
+```
+winnie_mail.client.MailTransportError: imap connect failed: ConnectionRefusedError: [Errno 111] Connection refused
+```
+
+while the port was demonstrably open — `/dev/tcp/imap.126.com/993` succeeded, and
+a fresh `python -c "imaplib.IMAP4_SSL('imap.126.com', 993)"` connected a few
+minutes later.
+
+**Cause.** Per-account connection throttling on the provider side: 24 short-lived
+TLS sessions in a burst look like abuse. Nothing in the protocol reports it — the
+refusal is at `connect()`, so there is no IMAP error to read, and a naive retry
+after 30 s makes it worse.
+
+**Check.** Count the logins a single operation performs before blaming the
+network:
+
+```bash
+grep -c 'imap connect' /tmp/api8000.log    # one per folder is the smell
+time curl -s -X POST localhost:8000/api/v1/mail/sync
+```
+
+**Fix.** Fetch the folder list on one connection and sync every folder on a
+second (`client.sync_all(plans)`): `SELECT` per folder on a live session, one
+`LOGOUT`. 24 logins/17 s became 2 logins/3.2 s, and the refusal disappeared. A
+folder the server refuses is recorded in `mail_folders.last_error` and the sweep
+continues with the rest.
+
+**Generalisable.** "Connection refused" on a port that other tools reach is a
+*policy* answer, not a routing one: look for a burst the client created before
+looking at DNS, firewalls or the provider's status page.
+
+## A bare timestamp is local time to whoever reads it (2026-11-02)
+
+**Signal.** The assistant answered a question about a 22:00 Beijing message with
+"14:00（北京时间）" — eight hours wrong, and confident. The database row was
+correct and the tool output was correct; the *text* was ambiguous.
+
+**Cause.** The tables store naive UTC (SQLite drops the offset), and the tool
+formatted `datetime.isoformat()` into `2026-11-02T14:00:08`. A language model has
+no column type to consult, so "14:00" it is local time. The same string in the
+console was rescued by `format.ts`, which appends `Z` before `new Date(...)` —
+that helper was written precisely because of this bug, and the assistant had no
+equivalent.
+
+**Check.** Ask for the value the model saw, not the value you meant:
+
+```bash
+curl 'http://127.0.0.1:8000/api/v1/mail/messages?limit=1' -H "Authorization: Bearer $T"
+# date must end in Z: 2026-11-02T14:37:59Z
+```
+
+and compare the rendered time with the timestamp inside the message itself —
+mail bodies usually quote their own time, which is a free oracle.
+
+**Fix.** Serialise with an explicit zone (`iso_utc()` appends `Z`) and render in
+the owner's zone with the offset spelled out (`2026-11-02 22:00 UTC+08:00`). The
+test asserts the *offset*, not the format: `test_search_mail_spells_out_the_timezone`.
+
+**Generalisable.** Any consumer that is not your own frontend needs the zone in
+the string. "It is our convention to store UTC" protects the database, not the
+reader.

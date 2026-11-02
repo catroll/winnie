@@ -81,7 +81,7 @@ Success for the current phase:
 | News | Six-stage pipeline from public sources to a sourced, reviewed draft | `winnie-news` + `apps/admin` News page + assistant skill | Core done |
 | Phone data | Calendar, calls, SMS, contacts, notifications, location, apps and device info synced from the phone; assistant reads and confirmed calendar/SMS writes | `winnie-phone` + `apps/android` + assistant skills | Core done |
 | Push | Durable notification backlog, WebSocket stream to the phone, assistant reminder tool, scheduled-task and phone-command events | `winnie-push` + `apps/android` + `notify` skill | Core done |
-| Mail | One mailbox per account: send, receive, list and test, configured in the console; the proactive email rung reads it | `winnie-mail` + console Settings page | Core done |
+| Mail | One mailbox per account: send, receive, an incremental local cache the console and the assistant read, configured in the console; the proactive email rung reads it | `winnie-mail` + console Settings and Mail pages | Core done |
 | Proactive | Detection, policy, composition and tracked delivery of interventions the owner did not ask for | `winnie-proactive` + console inbox | Core done — Android action, alarm path and device run open |
 | Client | Android sign-in, record, live captions, transcript, minutes | `apps/android` | MVP done |
 | Console | Browser console: assistant chat — typed or as a voice conversation with spoken replies — and conversation history, chat skills, meetings, transcripts/minutes, phone data, scheduled tasks, AI providers, LLM usage, gateway routes, account | `apps/admin` | MVP done |
@@ -110,7 +110,7 @@ Success for the current phase:
 | M11 | Proactive assistance | A birthday on the phone becomes dated interventions at the configured stages, arrives over a channel whose delivery is tracked, escalates when unacknowledged, and appears in the digest; the same question in chat answers from the data with its source | **Partial** — engine, push/ntfy/email ladder, digest, console Inbox, acknowledgement (console, email/ntfy link, Android actions) and the optional model composer implemented and tested; the `winnie` alarm path, the deep link and a device run are open |
 | M12 | State sensing | A signal ingest, TTL projections, the every-turn digest and a `state` skill answer "where am I", "what am I doing" and "did I sleep", each correct or `unknown` with a reason | Planned |
 | M13 | Room senses | A camera and a room microphone feed the same signals without a vendor cloud, on an isolated VLAN, with encrypted storage and a visible indicator | Planned |
-| M14 | Mail | One mailbox per account, send and receive, configured in the console; the proactive email rung reads it | **Core done** — send/receive, settings API and console page verified; an assistant tool and a local message cache are in flight |
+| M14 | Mail | One mailbox per account, send and receive, configured in the console; the proactive email rung reads it | **Core done** — send/receive, settings API, console page, the incremental message cache, the Mail page and the assistant's read-only `search_mail`/`read_mail` verified against 126 |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 Rows are grouped by delivery phase, which is why M12/M13 (planned) and M14
@@ -664,12 +664,19 @@ Working:
   fails on every item; the old environment settings remain a fallback.
 - Verified against the owner's 126 account: the SMTP and IMAP tests returned
   `ok`, and the ten newest INBOX messages decoded with subject and sender.
+- Recent mail is mirrored into `mail_folders` / `mail_messages`: one sweep of all
+  24 folders read 329 headers in 3.2 s, the second read 0 new in 2.8 s, and a
+  body is downloaded on first open and cached. The cursor is per folder
+  (`uid_validity` + `last_uid`, POP3 `UIDL`), so a sweep is incremental.
+- The console's **Mail** page lists folders, searches the cache and opens a
+  message; the assistant has `search_mail` / `read_mail` over the same cache and
+  answered a live chat turn from it. Both are read-only: there is no send tool.
 
 Open:
 
-- An assistant `mail` tool and a local message cache are in flight; until they
-  land the mailbox is operated from the console and the API.
-- One mailbox per user, no folders, rules or attachments beyond listing.
+- The cache window is the newest 50 per folder; attachments, HTML rendering and
+  a background polling loop are not implemented.
+- No filters, rules or moving messages between folders.
 
 ## 6. Verification snapshot
 

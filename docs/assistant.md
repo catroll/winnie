@@ -330,6 +330,7 @@ Skills are named bundles of tools, prompt instructions, permissions and policy.
 | `phone` | `phone_status`, `phone_search`, `phone_calendar`, `phone_calls`, `phone_messages`, `phone_notifications`, `phone_location`, `phone_apps` | `winnie-phone` queries over the copy the owner's phone uploaded |
 | `phone_write` | `phone_calendar_create`, `phone_calendar_update`, `phone_calendar_delete`, `phone_sms_send`, `phone_confirm`, `phone_cancel` | a `winnie-phone` command queue; the phone executes after a confirmation; chat only |
 | `notify` | `notify_user` | the push queue; a scheduled task result is pushed automatically |
+| `mail` | `search_mail`, `read_mail` | the cached mirror of the owner's mailbox in the application database; read-only |
 
 Tools and their inputs:
 
@@ -361,12 +362,23 @@ Tools and their inputs:
 | phone_write | `phone_calendar_create` / `update` / `delete`, `phone_sms_send` | the write's fields | a `PENDING <id>` proposal, never a completed action |
 | phone_write | `phone_confirm`, `phone_cancel` | `command_id` | `APPROVED` / `CANCELLED` and the next-sync caveat |
 | notify | `notify_user` | `title`, `body?` | confirmation; the phone shows it as an alert |
+| mail | `search_mail` | `query`, `folder?`, `unread_only?`, `limit?` | matching messages with their folder, sender, subject and the cache's age |
+| mail | `read_mail` | `message_id` | one message's headers and body, fetched on first open and cached |
 
 A scheduled task's result is pushed to the owner's phone automatically unless
 `assistant.tasks.notify_results` is off, because a brief nobody sees is not a
 brief. In conversation, `notify_user` is for a requested reminder or a result the
 owner wanted to be told about, not for every reply. Push delivery, the cursor and
 the Android foreground service are in [push.md](./push.md).
+
+Mail is a **data source**, not a channel the model may use to write: `mail` has
+`search_mail` and `read_mail` and nothing else, because a message body is written
+by someone else and a tool that can reply turns "here is a request in an email"
+into an action. The cache is filled by the mail capability's own sync (newest 50
+per folder, headers only, body on first open), so every result states its age and
+the instructions tell the model to say when that age matters. Times are rendered
+in the owner's zone with an explicit offset. The skill is offered only when a
+mailbox is configured, and it is scheduled-safe. Details in [mail.md](./mail.md).
 
 Phone answers are snapshots. The prompt carries a compact digest of the last
 sync time, the next 24 hours, unread SMS and today's missed calls, and every
