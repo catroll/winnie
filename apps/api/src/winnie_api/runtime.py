@@ -40,7 +40,7 @@ from winnie_api.ai.providers import (
 )
 from winnie_llm import ProviderRegistry
 from winnie_api.push.events import PhoneEventsAdapter
-from winnie_api.settings import Settings
+from winnie_api.settings import Settings, refuse_live_database_under_pytest
 
 
 @dataclass
@@ -91,8 +91,12 @@ def build_runtime(
     ):
         return None
 
+    database_url = settings.resolve_database_url()
+    # A test fixture that forgets `database=` must not reach the owner's data;
+    # see `refuse_live_database_under_pytest` for the incident behind this.
+    refuse_live_database_under_pytest(database_url)
     engine = create_engine(
-        settings.resolve_database_url(),
+        database_url,
         echo=settings.database.echo,
     )
     session_factory = create_session_factory(engine)

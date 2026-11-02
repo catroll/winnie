@@ -159,6 +159,34 @@ def _resolve_path(value: str) -> Path:
     return path
 
 
+_LIVE_DATA_ROOT = (_API_ROOT / "../../data").resolve()
+
+
+def refuse_live_database_under_pytest(url: str) -> None:
+    """Fail loud when a test would open the owner's real database.
+
+    A fixture that builds ``Settings()`` without ``database=`` gets
+    ``data/winnie.db``. ``test_phone_geocode`` did exactly that and synced a fake
+    Pixel location into the owner's phone data; the row outlived the test and
+    then looked like a real fix. A comment in one fixture does not stop the next
+    one, so the engine factory refuses instead, and the message names the fix.
+    Called from ``build_runtime``; inert outside a pytest process.
+    """
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    if not url.startswith("sqlite"):
+        return
+    _, separator, raw_path = url.partition(":///")
+    if not separator or not raw_path or raw_path == ":memory:":
+        return
+    path = Path(raw_path).resolve()
+    if path.parent == _LIVE_DATA_ROOT:
+        raise RuntimeError(
+            f"a test would open the live database {path}; "
+            "give the fixture database=DatabaseConfig(url=...) under tmp_path"
+        )
+
+
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, value in overlay.items():

@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from winnie_api.settings import DatabaseConfig, Settings, load_settings
+from winnie_api.settings import (
+    DatabaseConfig,
+    Settings,
+    load_settings,
+    refuse_live_database_under_pytest,
+)
 
 
 def test_relative_sqlite_url_becomes_absolute() -> None:
@@ -35,6 +40,24 @@ def test_meeting_paths_are_absolute() -> None:
 def test_nested_unknown_keys_are_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(meetings={"enabled": True, "typo": 1})
+
+
+def test_a_test_that_forgets_its_database_is_refused() -> None:
+    """A fixture that forgets ``database=`` used to reach the owner's data.
+
+    ``test_phone_geocode`` synced a fake Pixel location into ``data/winnie.db``
+    that way. The engine factory now refuses, and the message names the fix.
+    """
+    resolved = Settings().resolve_database_url()
+    assert resolved.endswith("/data/winnie.db")
+    with pytest.raises(RuntimeError, match="live database"):
+        refuse_live_database_under_pytest(resolved)
+
+
+def test_the_live_database_guard_is_inert_outside_pytest(monkeypatch) -> None:
+    """The running server may of course use the real database."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    refuse_live_database_under_pytest(Settings().resolve_database_url())
 
 
 def test_local_overlay_wins(tmp_path: Path) -> None:

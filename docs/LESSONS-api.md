@@ -1169,3 +1169,36 @@ done" while meaning it about a different schema.
 condition the moment its payload can grow. "Fetched at" answers *when*, not
 *what*; if the reader's needs change, the guard has to change with them, or the
 stale rows become permanently invisible.
+## A test fixture that forgets `database=` writes into the owner's phone data (2026-11-01, guarded 2026-11-02)
+
+**Signal.** A geocoding test called the live API and the address came back
+already resolved — no provider call at all. The database held a device
+`phone-key-geocode` / `Pixel`, a location `fix-1` at 北京市朝阳区望京街道阜通东大街6号,
+and a `location` sync cursor: the test's own fixtures.
+
+**Cause.** `Settings()` defaults `database.url` to
+`sqlite+aiosqlite:///../../data/winnie.db`, and one fixture built the app without
+overriding it. The test then synced into the owner's real database, where the
+row survived as if it were owner data — and because the geocode cache reuses
+nearby stored fixes, it was a legitimate reuse candidate for the next run. A
+comment in that fixture ("every fixture names its own database") is not a guard;
+three other fixtures in `conftest.py` still omitted `database=` at the time.
+
+**Fix (2026-11-02).** `build_runtime` calls
+`refuse_live_database_under_pytest` before creating the engine: a pytest process
+whose resolved SQLite path sits in the checkout's `data/` directory raises
+`RuntimeError: a test would open the live database …; give the fixture
+database=DatabaseConfig(url=...) under tmp_path`. Inert outside pytest. Pinned by
+`test_a_test_that_forgets_its_database_is_refused` and its outside-pytest
+counterpart; the three leftover rows were deleted after a backup under
+`.cache/db-backup/`.
+
+**Check.** When a test sees data it did not create, look for a fixture that
+resolves a *relative* default: `grep -n "Settings(" apps/api/tests/*.py` and
+inspect each one that has no `database=`. The guard now turns that mistake into
+a failure at the first request instead of a silent write.
+
+**Generalisable.** A default that points at production data makes "I forgot one
+field" and "I am writing to production" identical. Put the refusal in the code
+that opens the resource, not in a comment next to the call that forgot it.
+
