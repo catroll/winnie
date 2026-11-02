@@ -374,7 +374,7 @@ the Android foreground service are in [push.md](./push.md).
 Mail is a **data source**, not a channel the model may use to write: `mail` has
 `search_mail` and `read_mail` and nothing else, because a message body is written
 by someone else and a tool that can reply turns "here is a request in an email"
-into an action. The cache is filled by the mail capability's own sync (newest 50
+into an action. The cache is filled by the mail capability's own sync (newest 300
 per folder, headers only, body on first open), so every result states its age and
 the instructions tell the model to say when that age matters. Times are rendered
 in the owner's zone with an explicit offset. The skill is offered only when a

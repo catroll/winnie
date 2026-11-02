@@ -666,8 +666,9 @@ Working:
 - Verified against the owner's 126 account: the SMTP and IMAP tests returned
   `ok`, and the ten newest INBOX messages decoded with subject and sender.
 - Recent mail is mirrored into `mail_folders` / `mail_messages`: one sweep of all
-  24 folders read 329 headers in 3.2 s, the second read 0 new in 2.8 s, and a
-  body is downloaded on first open and cached. The cursor is per folder
+  24 folders read 664 headers (the newest 300 per folder) in 3.6 s, the second
+  read 0 new in 2.4 s, and a body is downloaded on first open, marks the message
+  read, and is cached with both its HTML and its raw source. The cursor is per folder
   (`uid_validity` + `last_uid`, POP3 `UIDL`), so a sweep is incremental.
 - The console's **Mail** page lists folders, searches the cache and opens a
   message; the assistant has `search_mail` / `read_mail` over the same cache and
@@ -675,8 +676,9 @@ Working:
 
 Open:
 
-- The cache window is the newest 50 per folder; attachments, HTML rendering and
-  a background polling loop are not implemented.
+- The cache window is the newest 300 per folder; attachments and a background
+  polling loop are not implemented, and HTML is rendered in a sandbox rather
+  than sanitised.
 - No filters, rules or moving messages between folders.
 
 ## 6. Verification snapshot

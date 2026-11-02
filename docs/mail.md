@@ -3,7 +3,7 @@
 Status: **implemented and verified end to end**, 2026-11-02. The owner's 126
 account (`ninedoors@126.com`) is configured through the API and the console
 Settings page, sends over SMTP, and is mirrored into the local cache: the first
-sweep read **24 folders / 329 headers in 3.2 s**, the second read **0 new
+sweep read **24 folders / 664 headers in 3.6 s**, the second read **0 new
 messages in 2.8 s**, and the assistant answered a real chat turn from that cache
 with `search_mail`. Last updated: 2026-11-02.
 
@@ -82,12 +82,33 @@ user can never read another's mail:
 | Table | Holds | Unique key |
 |---|---|---|
 | `mail_folders` | one row per folder: `display_name`, `selectable`, `uid_validity`, `last_uid`, `total`, `unread`, `last_synced_at`, `last_error` | `(user_id, protocol, name)` |
-| `mail_messages` | one row per message: subject, sender, recipients, `message_id`, `date`, size, `unread`, `snippet`, and `body` once somebody opens it | `(user_id, protocol, folder, uid)` |
+| `mail_messages` | one row per message: subject, sender, recipients, `message_id`, `date`, size, `unread`, `snippet`, and — once somebody opens it — `body`, `body_html` and `body_raw` | `(user_id, protocol, folder, uid)` |
 
-Headers only. A sweep stores what the `HEADER` field carries, so a thousand
-messages cost a few hundred kilobytes; the body is downloaded on the first
+Headers only. A sweep stores what the `HEADER` field carries, so 664 messages
+cost a few hundred kilobytes; the body is downloaded on the first
 `GET /api/v1/mail/messages/{id}` and kept, which is why opening a message once
 takes ~0.3 s and every later open ~0.02 s.
+
+The three body columns are the three tabs of the reading pane, and they arrive
+in one download:
+
+| Column | What it is | Cap |
+|---|---|---|
+| `body` | flattened text: the part `text/plain` if there is one, otherwise the HTML with its tags stripped | 20 000 chars |
+| `body_html` | the sender's `text/html` part, verbatim | 500 000 chars |
+| `body_raw` | the RFC 822 source, headers and all | 200 000 chars |
+
+The caps are the parser's, not the column's. `NULL` in all three means "not
+opened yet", and a row whose `body` exists without `body_raw` predates the tabs —
+the service refetches it once instead of showing two empty panes.
+
+**Opening a message marks it read.** The fetch selects the mailbox writable and
+sends `UID STORE +FLAGS (\Seen)` after `BODY.PEEK[]`, because `PEEK` deliberately
+does not set the flag; the cache row and the folder's `unread` count drop in the
+same transaction, so the sidebar cannot keep claiming unread mail that has been
+read. A server that refuses the `STORE` (read-only mailbox) still returns the
+body: the flag is the server's business, the message is not lost. POP3 has no
+such flag, so a message read there is read only in the cache.
 
 **The cursor is per folder, not per account.** IMAP numbers messages per mailbox
 with a 32-bit UID and tells you when that numbering is invalidated:
@@ -109,10 +130,13 @@ set of cached UIDLs: a UIDL the server no longer lists is a deleted message, a
 UIDL not in the cache is new, and everything reads as read because POP3 has no
 seen flag.
 
-`per_folder_limit` (default 50, `mail.per_folder_limit` in `config.yaml`) is the
+`per_folder_limit` (default 300, `mail.per_folder_limit` in `config.yaml`) is the
 window: the newest N messages of each folder, not the whole archive. The folder
 row still records the server's `total`, so the console can say `已删除 3826`
-while the cache holds the newest 50 of them.
+while the cache holds the newest 300 of them. Headers are fetched in batches of
+100 UIDs per `FETCH`, because a 300-message window at 20 per command is fifteen
+round trips per folder; the owner's mailbox went from 12.8 s to 3.6 s for the
+same 333 headers when the batch grew.
 
 ## Sync: one login for the whole mailbox
 
@@ -125,6 +149,10 @@ while the cache holds the newest 50 of them.
    headers of the window that is not cached yet, and refresh the flags of the
    cached window.
 3. One `LOGOUT`, then merge each folder's snapshot into the cache.
+
+The console runs one sweep when the Mail page opens, and the assistant's gateway
+runs one when the cache is older than 15 minutes. Both are ordinary callers of
+the same route; there is still no polling loop.
 
 The single connection is not a micro-optimisation. The first implementation
 logged in per folder: 24 TLS logins in 17 seconds, after which 126 refused every
@@ -164,7 +192,7 @@ All routes require a session and act on the caller's own settings.
 | `POST` | `/api/v1/mail/sync` | Sweep every folder and return `{protocol, folders, fetched, errors, stats}`. |
 | `GET` | `/api/v1/mail/folders` | Cached folders with `uid_validity`, `last_uid`, `total`, `unread`, `last_synced_at`, `last_error`, plus `stats`. |
 | `GET` | `/api/v1/mail/messages?folder=&q=&unread=&limit=&offset=` | Cached messages, newest first. `q` matches subject, sender, recipients, snippet and any cached body. |
-| `GET` | `/api/v1/mail/messages/{id}` | One message; downloads the body on first open and caches it. `404` for an id that is not cached. |
+| `GET` | `/api/v1/mail/messages/{id}` | One message with `body`, `body_html` and `body_raw`; downloads it on first open, marks it read, and caches all three. `404` for an id that is not cached. |
 
 The password rule in `PUT` is what makes a "leave it alone" form possible:
 `password: null` (or the key omitted) keeps the stored secret, `password: ""`
@@ -293,10 +321,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/settings/mail/test \
   -d '{"target":"smtp"}'
 # -> {"ok":true,"target":"smtp","detail":"smtp smtp.126.com:465 ok"}
 
-# First sweep: 24 folders, 329 headers.
+# First sweep: 24 folders, 664 headers at the 300-per-folder window.
 curl -X POST http://127.0.0.1:8000/api/v1/mail/sync -H 'Authorization: Bearer <session>'
 # -> {"protocol":"imap","folders":24,"fetched":329,"errors":[],
 #     "stats":{"messages":329,"unread":0,"folders":24}}
+# ...then a second sweep after the window grew to 300 added the rest:
+# -> {"protocol":"imap","folders":24,"fetched":333,"errors":[],
+#     "stats":{"messages":664,"unread":1,"folders":24}}
 
 # Second sweep: nothing new, and the cache is unchanged.
 curl -X POST http://127.0.0.1:8000/api/v1/mail/sync -H 'Authorization: Bearer <session>'
@@ -310,10 +341,17 @@ curl "http://127.0.0.1:8000/api/v1/mail/messages/$ID" -H 'Authorization: Bearer 
 # first open 0.288 s (network), second open 0.022 s (cache)
 ```
 
-The console path was driven in headless Firefox against `/mail`: 100 rows on the
-first page, folder badges (`已发送 3`, `INBOX 46`, `已删除 3826`), the account
-summary `329 messages · 0 unread`, and clicking a row opened the reading pane with
-decoded From/To/Received/Folder and the message text.
+The console path was driven in headless Firefox against `/mail`. Opening the page
+started a sweep on its own (`right after load: true` for the "Syncing…" state,
+then `Last synced Nov 2, 2026, 11:37 PM` and `664 messages · 0 unread`), the
+folder list showed every mailbox (`已删除 3826`, `已发送 4`, …), and opening the
+SendCloud weekly report rendered the sender's markup inside the sandboxed frame
+(`HTML*`, `frameChars: 57454`, `sandbox=""`, CSP
+`default-src 'none'; img-src * data: …`), with the **Raw** tab showing
+`Received: from ucmail246.sendcloud.org …`. Dark theme and a 390 px viewport were
+measured rather than eyeballed: `data-bs-theme=dark`, `body` `rgb(43, 48, 53)`,
+frame 304 px wide, no horizontal overflow, three tabs still visible, and no
+console errors.
 
 The assistant path was a real chat turn — *"我最近的邮件里有一封新设备登录提醒…"* —
 which called `search_mail` and answered with the subject, the sender and
@@ -330,10 +368,14 @@ check `/openapi.json` for the route you just added before believing a result
 
 - No scheduled polling loop. Sync runs when the console presses **Sync mailbox**
   or when the assistant's gateway finds the cache older than 15 minutes.
-- The cache holds the newest 50 messages per folder, not the archive. Older mail
+- The cache holds the newest 300 messages per folder, not the archive. Older mail
   is visible in the folder's `total` and nowhere else.
-- No attachment download and no message deletion; a stored body is text, capped
-  at 20 000 characters.
+- No attachment download: an attachment is visible in the raw source and nowhere
+  else. No message deletion.
+- HTML is rendered, not sanitised. The frame is `sandbox`ed without
+  `allow-scripts`/`allow-same-origin` and carries a CSP, so a sender's script
+  cannot run — but remote images and fonts do load, and a tracking pixel is
+  still a request. Nothing in the message can reach the console's own DOM.
 - No model-initiated sending. The assistant gets `search_mail` and `read_mail`
   only: outward communication stays behind a route the owner triggers, the same
   rule the proactive engine follows for its own channels.

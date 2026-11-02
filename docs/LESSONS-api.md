@@ -1082,3 +1082,78 @@ per client.
 configuration that cannot work, then blames the user for the failure it causes.
 When a data plane changes, grep for the words describing the old one in the same
 commit — the code has a compiler, the copy does not.
+
+## `BODY.PEEK[]` is a promise not to mark the message read (2026-11-02)
+
+**Signal.** A message was opened in the console, its text appeared in the reading
+pane, and the row still carried a **New** badge with the folder's unread count
+unchanged. Reopening it a week later changed nothing, and the server agreed: the
+account's own webmail still showed it unread.
+
+**Cause.** Two decisions, both individually reasonable, that cancelled each other
+out. The fetch asked for `BODY.PEEK[]` — `PEEK` is *defined* as "fetch the body
+without setting `\Seen`" — and the connection had selected the mailbox
+`readonly=True`, so even an explicit `STORE` would have been refused. Nothing
+raised; the message simply stayed unread, which is the same thing a client does
+when the owner decides not to mark mail read.
+
+**Check.** Ask the server what it thinks, not the cache:
+
+```bash
+python - <<'PY'
+import imaplib
+m = imaplib.IMAP4_SSL("imap.126.com", 993); m.login(u, p)
+m.select("INBOX", readonly=True)          # note the flag
+print(m.uid("FETCH", "1320681402", "(FLAGS)")[1])
+PY
+```
+
+and compare with the row: `select * from mail_messages where unread = 1;`. If the
+cache says unread and the server says unread, the write never happened — do not
+go looking at the query that loads the list.
+
+**Fix.** Select writable for the open, `BODY.PEEK[]` to read, then
+`UID STORE <uid> +FLAGS (\Seen)` to claim it, and treat a `NO` answer as "this
+mailbox is read-only, show the body anyway" rather than an error. Write the flag
+through to the cache and decrement the folder's counter **in the same
+transaction**, or the sidebar keeps counting mail that has been read. The reply
+carries `unread: false`, so the list can drop the badge without a second sync.
+
+**Generalisable.** `PEEK` is the right choice for a background sweep and the
+wrong one for a user-initiated open: the same fetch verb means different things
+depending on who asked. A read-only selection silently forbids every write, so a
+flag change needs its own selection — check the mode before debugging the
+`STORE`.
+
+## "Downloaded" is a completeness claim, and adding a field makes it false (2026-11-02)
+
+**Signal.** After adding HTML and raw source to the reading pane, messages that
+had been opened before the change showed `has_body: true`, an empty **HTML** tab,
+an empty **Raw** tab, and never refetched. New messages were fine.
+
+**Cause.** The guard was `if not row.has_body: fetch()`, and `has_body` means
+`body_fetched_at is not null` — a fact about the past, when `body` was the only
+column. The row was complete for the old reader and incomplete for the new one,
+and no code path could tell the difference, because the marker recorded *that* a
+download happened rather than *what* it brought.
+
+**Check.** Diff the marker against the fields the current reader needs:
+
+```sql
+SELECT COUNT(*) FROM mail_messages
+ WHERE body_fetched_at IS NOT NULL AND (body_html IS NULL AND body_raw IS NULL);
+```
+
+A non-zero count is the stale population — here 3 of 3 opened messages.
+
+**Fix.** Make the marker falsifiable: refetch when `not has_body or not has_raw`
+(`body_raw` is always non-empty for a real message, so it is a sound sentinel),
+and expose `has_html`/`has_raw` so the console can disable a tab instead of
+rendering an empty pane. The migration itself is innocent — adding two nullable
+columns is the cheap part; the expensive part is every row that says "already
+done" while meaning it about a different schema.
+
+**Generalisable.** A cache entry needs a version or a per-field completeness
+condition the moment its payload can grow. "Fetched at" answers *when*, not
+*what*; if the reader's needs change, the guard has to change with them, or the
+stale rows become permanently invisible.

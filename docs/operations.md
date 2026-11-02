@@ -119,7 +119,7 @@ State and credentials on disk (all outside git except the database schema):
 | `data/winnie.db` | `0644` | Application database | SQLite default; PostgreSQL in production |
 | `data/gateway-keys.yaml` | `0600` | Gateway key digests | Re-read by mtime |
 | `data/mail/<user_id>.yaml` | `0600` | Mailbox settings **including the password** | Read per operation; `data/mail/` is gitignored |
-| `mail_folders`, `mail_messages` | database | Cached headers, cursor and any opened body | Newest 50 per folder; `DELETE /api/v1/settings/mail` purges them |
+| `mail_folders`, `mail_messages` | database | Cached headers, cursor and any opened body | Newest 300 per folder; `DELETE /api/v1/settings/mail` purges them |
 | `apps/api/.env` | — | Deployment secrets (`AMAP_API_KEY`, the SMTP fallback, …) | Sourced by `make api`; a change needs a restart |
 
 The mailbox file is the reason `data/mail/` must stay in `.gitignore`: unlike the
