@@ -173,6 +173,41 @@ class MemoryStore:
 
     # -- prompt digest ----------------------------------------------------
 
+    def everything(self, limit: int = 6000) -> str:
+        """Every stored fact, for the distiller's "do not restate" context.
+
+        ``digest`` is the per-turn view: pinned categories only, because that is
+        what every request can afford. The distiller needs the opposite. A fact
+        it cannot see is a fact it restates in different words, and the exact-key
+        dedupe cannot catch a paraphrase — the owner's profile accumulated three
+        phrasings of one weather rule and six of one piano lesson, and the
+        categories that grew fastest (people, episodes) are not pinned at all,
+        so they never appeared in the excerpt the extractor was given.
+        """
+        self.refresh()
+        if limit <= 0:
+            return ""
+        lines: list[str] = []
+        used = 0
+        for category in CATEGORIES:
+            entries = [entry for entry in self._entries if entry.category == category]
+            if not entries:
+                continue
+            header = f"### {category}"
+            if used + len(header) > limit:
+                lines.append("… (more memory omitted)")
+                break
+            lines.append(header)
+            used += len(header) + 1
+            for entry in entries:
+                line = f"- {entry.text}"
+                if used + len(line) > limit:
+                    lines.append("- … (more memory omitted)")
+                    return "\n".join(lines)
+                lines.append(line)
+                used += len(line) + 1
+        return "\n".join(lines)
+
     def digest(self, limit: int | None = None) -> str:
         """The pinned memory that is always placed in the system prompt."""
         self.refresh()

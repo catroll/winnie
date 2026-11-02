@@ -195,3 +195,60 @@ def test_a_punctuation_variant_is_the_same_fact(tmp_path) -> None:
     assert memory.append("procedures", first, source="chat:1")
     assert not memory.append("procedures", variant, source="chat:2")
     assert len([e for e in memory.entries if "默认查询武汉" in e.text]) == 1
+
+
+def test_the_distiller_context_includes_unpinned_categories(tmp_path) -> None:
+    """The extractor must see every fact, not just the pinned prompt digest.
+
+    ``digest`` is what a turn can afford: identity, preferences, procedures and
+    constraints. The distiller was handed that same 1200-character excerpt, so
+    the facts it could not see — all of people and episodes — were restated in
+    new words on the next run. The profile ended up with six phrasings of one
+    piano lesson and three of one weather rule, and the exact-key dedupe kept
+    every one of them because none was a byte-for-byte match.
+    """
+    memory = MemoryStore(tmp_path)
+    memory.append("people", "段钊的生日是 10 月 31 日。", source="chat:1")
+    memory.append("episodes", "11 月 3 日 15:50 带图图去上课。", source="chat:1")
+    memory.append("preferences", "回答先给结论。", source="chat:1")
+
+    digest = memory.digest()
+    assert "段钊" not in digest  # not pinned: it never reached the extractor
+    assert "带图图" not in digest
+
+    everything = memory.everything()
+    assert "段钊的生日是 10 月 31 日。" in everything
+    assert "11 月 3 日 15:50 带图图去上课。" in everything
+    assert "回答先给结论。" in everything
+
+
+def test_the_distiller_prompt_carries_the_whole_profile(tmp_path) -> None:
+    """The builder, not just the store, hands the extractor every fact.
+
+    A future edit that switches the context back to ``digest()`` fails here
+    rather than silently re-introducing paraphrase duplicates.
+    """
+    from zoneinfo import ZoneInfo
+
+    from winnie_assistant.config import AssistantConfig
+    from winnie_assistant.conversations import ConversationStore
+    from winnie_assistant.memory_builder import MemoryBuilder
+
+    class NoModel:
+        async def chat(self, messages):  # pragma: no cover - never called
+            raise AssertionError("no model call expected")
+
+    memory = MemoryStore(tmp_path / "profile")
+    memory.append("people", "段钊的生日是 10 月 31 日。", source="chat:1")
+    builder = MemoryBuilder(
+        store=ConversationStore(tmp_path / "conversations"),
+        memory=memory,
+        model=NoModel(),
+        config=AssistantConfig(),
+        state_path=tmp_path / "state.json",
+        timezone=ZoneInfo("Asia/Shanghai"),
+    )
+
+    context = builder._existing_memory()
+    assert "段钊的生日是 10 月 31 日。" in context
+    assert "段钊的生日是 10 月 31 日。" not in memory.digest()

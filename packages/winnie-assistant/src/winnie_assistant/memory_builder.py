@@ -25,7 +25,9 @@ from winnie_assistant.memory import CATEGORIES, MemoryStore
 logger = logging.getLogger(__name__)
 
 MAX_TRANSCRIPT_CHARS = 8000
-DIGEST_CONTEXT_CHARS = 1200
+# The distiller is shown every stored fact, so the budget covers a whole profile
+# (85 facts were about 5 KB when this was written) rather than one prompt turn.
+MAX_MEMORY_CONTEXT_CHARS = 6000
 
 SYSTEM_PROMPT = """\
 You maintain the long-term memory of a personal assistant.
@@ -136,13 +138,23 @@ class MemoryBuilder:
                 paths=tuple(str(self.memory.root / f"{name}.md") for name in touched),
             )
 
+    def _existing_memory(self) -> str:
+        """What the extractor is told the assistant already knows.
+
+        Every stored fact, not the per-turn pinned digest: a fact the extractor
+        cannot see is one it restates in new words, and exact-key dedupe does
+        not catch a paraphrase. The pinned digest also omits people and
+        episodes, which is where the duplicates accumulated.
+        """
+        return self.memory.everything(limit=MAX_MEMORY_CONTEXT_CHARS)
+
     async def _extract(
         self, transcript: str, conversation_id: str, remaining: int
     ) -> list[tuple[str, str]]:
         system = SYSTEM_PROMPT.format(max_facts=remaining)
         user = (
-            "Existing memory (excerpt):\n"
-            f"{self.memory.digest(limit=DIGEST_CONTEXT_CHARS) or '(empty)'}\n\n"
+            "Existing memory:\n"
+            f"{self._existing_memory() or '(empty)'}\n\n"
             "Conversation:\n"
             f"{transcript[:MAX_TRANSCRIPT_CHARS]}"
         )

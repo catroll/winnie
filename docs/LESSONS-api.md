@@ -1202,3 +1202,36 @@ a failure at the first request instead of a silent write.
 field" and "I am writing to production" identical. Put the refusal in the code
 that opens the resource, not in a comment next to the call that forgot it.
 
+## A distiller that sees only the pinned digest restates every unpinned fact (2026-11-02)
+
+**Signal.** The owner's profile held 85 facts, and 25 of them were restatements:
+six phrasings of one Tuesday piano lesson, three of the 30-minute weather-cache
+rule, six of a contact's two phone numbers. The exact-key dedupe added on
+2026-11-01 ("a punctuation variant is the same fact") had kept every one.
+
+**Cause.** `MemoryBuilder._extract` gave the model `memory.digest(limit=1200)` as
+"existing memory". The digest is the *per-turn* view: pinned categories only
+(identity, preferences, procedures, constraints) and truncated. People and
+episodes — the two categories that grew duplicates fastest — never appeared in
+that excerpt, so the model had no way to know it was repeating itself, and
+paraphrases are not byte-identical, so `_fact_key` could not stop them.
+
+**Fix.** `MemoryStore.everything()` lists every fact in every category, and the
+distiller now uses it with a 6000-character budget (85 facts were ~3 KB), so
+what the extractor is told not to repeat is what the store actually holds.
+Pinned by `test_the_distiller_context_includes_unpinned_categories`. The 25
+restatements were removed from the live profile after a backup; facts that said
+anything new (a full address, a date, a relationship) were kept.
+
+**Rejected: fuzzy dedupe on write.** Measured character-set Jaccard over the real
+profile showed the unsafe pairs scoring as high as the safe ones: the genuinely
+different "段钊的生日是10月31日" / "胡珍妮的生日是10月31日" scored 0.81, while one
+lesson restated two ways scored 0.96 and two different dates of the same lesson
+scored 0.84. Any threshold that merged the restatements also merged two
+different people's birthdays. Duplicates are recoverable noise in a prompt;
+a silently dropped fact is not.
+
+**Generalisable.** When a model re-derives facts from transcripts, the context
+that matters is the *store*, not the prompt view. Ask which read path the
+writer was given: a digest capped for tokens will always be the wrong answer for
+a writer whose job is "do not repeat what you already have".
