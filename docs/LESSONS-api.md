@@ -736,3 +736,35 @@ be wrong at exactly the moment the owner notices.
 title), `test_a_stale_fix_falls_back_to_the_configured_place`,
 `test_a_broken_phone_does_not_cost_the_notice`,
 `test_follow_phone_can_be_turned_off`, `test_the_place_label_prefers_city_and_district`.
+
+## A memory citation is a promise about a line, and the parser was counting in a different file (2026-11-02)
+
+**Signal.** Cleaning up `profile/procedures.md` showed the digest claiming the
+default-city rule was at `procedures.md:8` while the file had it at line 13.
+
+**Cause.** `_parse_file` numbers entries from `body`, i.e. after
+`split_front_matter` removed the four header lines and the `# Category` heading.
+The prompt asks the model to "cite path:line", and the number it was given
+pointed four to five lines too high — at the top of the section, not the fact.
+The index did not have this bug (it returns real file lines), so the two
+citation sources disagreed about the same file.
+
+**Fix.** The offset is computed once
+(`len(text.split("\n")) - len(body.split("\n"))`) and added to every entry's
+line. `test_entry_lines_are_file_lines_not_body_lines` pins it.
+
+**And the cleanup itself exposed a dedupe bug.** `append` compared
+`normalize(text)` — whitespace collapsed, lowercased — so "若可获取经纬度，则…"
+and "若可获取经纬度则…" were two facts, and the distiller wrote the same rule
+three times in three phrasings. Dedupe now compares `_fact_key`, which also drops
+punctuation (`test_a_punctuation_variant_is_the_same_fact`). Near-duplicate
+phrasing beyond punctuation is still possible; the storage-level guard is
+approximate on purpose, and the `pinned` digest budget is what makes a
+duplicate costly.
+
+**Generalisable.** Any `path:line` you emit is checked by a human or a model
+against the file, so the line must be computed in file coordinates, not in
+whatever substring the parser happened to hold. And an "already remembered"
+check that compares exact strings will keep a corpus of paraphrases; if the
+writer is a language model, compare a normalised form — punctuation and
+whitespace carry no fact.

@@ -82,6 +82,16 @@ def normalize(text: str) -> str:
     return collapse_whitespace(text).lower()
 
 
+# Punctuation and whitespace that do not change what a fact says. Two notes that
+# differ only here are one fact: the distiller produced "若可获取经纬度，则…" and
+# "若可获取经纬度则…" as separate bullets, and exact-string dedupe kept both.
+_FACT_NOISE = re.compile(r"[\s，。；：、？！,.;:!?（）()【】\[\]“”\"'‘’《》<>·—…─-]+")
+
+
+def _fact_key(text: str) -> str:
+    return _FACT_NOISE.sub("", normalize(text))
+
+
 def _recall_terms(text: str) -> tuple[set[str], set[str], set[str]]:
     """Overlapping bigrams, content characters and Latin words of a message."""
     lowered = text.lower()
@@ -286,7 +296,8 @@ class MemoryStore:
             fact = fact[:2000].rstrip()
 
         self.refresh()
-        if any(normalize(entry.text) == normalize(fact) for entry in self._entries):
+        key = _fact_key(fact)
+        if any(_fact_key(entry.text) == key for entry in self._entries):
             return False
 
         stamp = (now or datetime.now()).date().isoformat()
@@ -327,6 +338,11 @@ def _parse_file(path: Path, relpath: str) -> tuple[list[MemoryEntry], MemoryFile
     title = stem.title()
     entries: list[MemoryEntry] = []
 
+    # Entries report their line in the *file*, not in the body: the front matter
+    # and the heading are part of what a reader opens, and a citation that is
+    # four lines off is worse than no citation.
+    offset = len(text.split("\n")) - len(body.split("\n"))
+
     lines = body.splitlines()
     index = 0
     paragraph: list[str] = []
@@ -336,7 +352,14 @@ def _parse_file(path: Path, relpath: str) -> tuple[list[MemoryEntry], MemoryFile
         nonlocal paragraph
         if paragraph:
             entries.append(
-                _entry(relpath, category, title, " ".join(paragraph), paragraph_line, pinned)
+                _entry(
+                    relpath,
+                    category,
+                    title,
+                    " ".join(paragraph),
+                    paragraph_line + offset,
+                    pinned,
+                )
             )
             paragraph = []
 
@@ -355,7 +378,7 @@ def _parse_file(path: Path, relpath: str) -> tuple[list[MemoryEntry], MemoryFile
                 parts.append(lines[index].strip())
                 index += 1
             entries.append(
-                _entry(relpath, category, title, " ".join(parts), start, pinned)
+                _entry(relpath, category, title, " ".join(parts), start + offset, pinned)
             )
             continue
         elif not stripped:

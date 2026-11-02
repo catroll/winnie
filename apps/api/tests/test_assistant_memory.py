@@ -163,3 +163,35 @@ def test_the_distiller_is_told_not_to_store_a_failed_lookup() -> None:
     from winnie_assistant.memory_builder import SYSTEM_PROMPT
 
     assert "Never store a failed lookup" in SYSTEM_PROMPT
+
+
+def test_entry_lines_are_file_lines_not_body_lines(tmp_path) -> None:
+    """A citation that is four lines off is worse than no citation."""
+    (tmp_path / "preferences.md").write_text(
+        "---\n"
+        'category: "preferences"\n'
+        "pinned: true\n"
+        'updated: "2026-11-01"\n'
+        "---\n"
+        "# Preferences\n"
+        "\n"
+        "- [2026-11-01] 第一条。\n"
+        "- [2026-11-01] 第二条。\n",
+        encoding="utf-8",
+    )
+
+    entries = MemoryStore(tmp_path).entries
+
+    assert [entry.line for entry in entries] == [8, 9]
+    assert entries[0].text == "第一条。"
+
+
+def test_a_punctuation_variant_is_the_same_fact(tmp_path) -> None:
+    """The distiller produced this pair; exact-string dedupe kept both."""
+    memory = MemoryStore(tmp_path)
+    first = "用户未指定地点时，若可获取经纬度，则按该经纬度查询当地天气；否则默认查询武汉的天气。"
+    variant = "用户未指定地点时，若可获取经纬度则按该经纬度查询当地天气，否则默认查询武汉的天气。"
+
+    assert memory.append("procedures", first, source="chat:1")
+    assert not memory.append("procedures", variant, source="chat:2")
+    assert len([e for e in memory.entries if "默认查询武汉" in e.text]) == 1
