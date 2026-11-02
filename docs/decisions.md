@@ -190,6 +190,22 @@ could not see a note written in the previous second, and pulls the whole owner
 document corpus into a prompt that asked for memory. The index stays the model's
 tool for the wider corpus; recall stays in-process over `profile/`.
 
+**The scheduled check resolves its place the same way the chat does.** One day
+after the read-path fix, the 07:00 push still arrived as "天气提醒 · 上海" while
+the chat answered from the phone's coordinates — the owner's rule was honoured by
+the path with a model and ignored by the path that talks first. The watcher now
+asks the phone for its most recent fix and uses it when it is newer than
+`weather.phone_fix_max_age_minutes` (120), falling back to the configured
+location otherwise, and the notice title, webhook body and state carry the place
+the forecast was actually for.
+
+Rejected: just change `weather.location` to 武汉. It fixes today's screenshot and
+breaks the first trip: the push would confidently report a city the owner left.
+Rejected: follow the phone unconditionally. A phone left on a desk reports last
+evening's city, and the scheduled notice is the one message nobody is looking at
+the screen for when it arrives. The age bound is what makes "coordinates when
+available" mean *now*.
+
 **Rejected: pin every category.** The digest is a fixed budget in every prompt;
 pinning `episodes` and `people` would spend it on facts that matter to a handful
 of questions and starve the rules that matter to all of them. Recall is the

@@ -219,7 +219,35 @@ class _FakeService:
         return self.check_result
 
 
-def _watch(tmp_path, *, registry=None, service=None, state=None, webhook=""):
+class _FakePhone:
+    """A phone that filters its fixes by ``since``, as the real query does."""
+
+    def __init__(self, fixes: list[dict]) -> None:
+        self.fixes = fixes
+        self.windows: list[datetime | None] = []
+
+    async def locations(self, *, since=None, until=None, limit=100):
+        self.windows.append(since)
+        if since is None:
+            return list(self.fixes)[:limit]
+        return [fix for fix in self.fixes if fix["captured_at"] >= since][:limit]
+
+
+class _BrokenPhone:
+    async def locations(self, *, since=None, until=None, limit=100):
+        raise RuntimeError("phone storage is down")
+
+
+def _watch(
+    tmp_path,
+    *,
+    registry=None,
+    service=None,
+    state=None,
+    webhook="",
+    phone=None,
+    follow_phone=True,
+):
     state_path = tmp_path / "state.json"
     if state is not None:
         state_path.write_text(json.dumps(state), encoding="utf-8")
@@ -227,6 +255,7 @@ def _watch(tmp_path, *, registry=None, service=None, state=None, webhook=""):
         schedule="daily 07:00",
         webhook=webhook,
         location="上海",
+        follow_phone=follow_phone,
     )
     clock = lambda: datetime(2026, 11, 1, 7, 0, tzinfo=TZ)
     return (
@@ -239,9 +268,44 @@ def _watch(tmp_path, *, registry=None, service=None, state=None, webhook=""):
             state_path=state_path,
             clock=clock,
             tick_seconds=3600,
+            phone=phone,
         ),
         state_path,
     )
+
+
+class _RecordingService(_FakeService):
+    """Records the arguments and labels its report with the place it was given."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls_with: list[dict] = []
+
+    async def check(self, **kwargs):
+        self.calls_with.append(kwargs)
+        base = await super().check()
+        label = str(kwargs.get("location") or "上海")
+        return WeatherCheck(
+            report=parse_open_meteo({"daily": FORECAST["daily"]}, label, TZ),
+            advisories=base.advisories,
+            message=base.message,
+            fingerprint=base.fingerprint,
+        )
+
+
+def _fix(minutes_ago: int, **extra) -> dict:
+    moment = datetime(2026, 11, 1, 7, 0, tzinfo=TZ)
+    from datetime import timedelta
+
+    return {
+        "captured_at": moment - timedelta(minutes=minutes_ago),
+        "latitude": 30.43759,
+        "longitude": 114.43433,
+        "city": "武汉市",
+        "district": "江夏区",
+        "address": "湖北省武汉市江夏区藏龙岛街道天纵水晶郦都",
+        **extra,
+    }
 
 
 async def test_tick_records_a_notice_once_per_advice(tmp_path) -> None:
@@ -405,3 +469,81 @@ async def test_weather_tool_passes_the_location_through() -> None:
         "weather_forecast", {"location": "武汉"}, conversation_id="c"
     )
     assert output.startswith("武汉")
+
+
+async def test_the_scheduled_check_follows_a_fresh_phone_fix(tmp_path) -> None:
+    """The owner's rule applies to the push too, not only to chat."""
+    service = _RecordingService()
+    phone = _FakePhone([_fix(10)])
+    watch, state_path = _watch(tmp_path, service=service, phone=phone)
+
+    run = await watch.run_now()
+
+    assert run.status == "ok"
+    assert service.calls_with == [
+        {
+            "location": "武汉市江夏区",
+            "latitude": 30.43759,
+            "longitude": 114.43433,
+        }
+    ]
+    # The query window is the configured freshness bound.
+    assert phone.windows == [datetime(2026, 11, 1, 5, 0, tzinfo=TZ)]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["last_location"] == "武汉市江夏区"
+    # The notice names the place the forecast is for, not the config default.
+    assert watch.store.list()[0].title == "天气提醒 · 武汉市江夏区"
+
+
+async def test_a_stale_fix_falls_back_to_the_configured_place(tmp_path) -> None:
+    service = _RecordingService()
+    phone = _FakePhone([_fix(180)])
+    watch, _ = _watch(tmp_path, service=service, phone=phone)
+
+    await watch.run_now()
+
+    assert service.calls_with == [{}]
+
+
+async def test_no_fix_falls_back_to_the_configured_place(tmp_path) -> None:
+    service = _RecordingService()
+    watch, _ = _watch(tmp_path, service=service, phone=_FakePhone([]))
+
+    await watch.run_now()
+
+    assert service.calls_with == [{}]
+
+
+async def test_a_broken_phone_does_not_cost_the_notice(tmp_path) -> None:
+    service = _RecordingService()
+    watch, _ = _watch(tmp_path, service=service, phone=_BrokenPhone())
+
+    run = await watch.run_now()
+
+    assert run.status == "ok"
+    assert service.calls_with == [{}]
+
+
+async def test_follow_phone_can_be_turned_off(tmp_path) -> None:
+    service = _RecordingService()
+    phone = _FakePhone([_fix(5)])
+    watch, _ = _watch(
+        tmp_path, service=service, phone=phone, follow_phone=False
+    )
+
+    await watch.run_now()
+
+    assert phone.windows == []
+    assert service.calls_with == [{}]
+
+
+def test_the_place_label_prefers_city_and_district() -> None:
+    from winnie_assistant.weather import _place_label
+
+    assert _place_label({"city": "武汉市", "district": "江夏区"}) == "武汉市江夏区"
+    assert _place_label({"city": "武汉市"}) == "武汉市"
+    assert (
+        _place_label({"city": "", "address": "湖北省武汉市江夏区某路"})
+        == "湖北省武汉市江夏区某路"
+    )
+    assert _place_label({"latitude": 30.5, "longitude": 114.3}) == "30.5000,114.3000"

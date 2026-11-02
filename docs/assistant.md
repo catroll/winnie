@@ -507,13 +507,27 @@ description, tool, `network` permission and availability; disabling it removes
 the tool from the model and makes the watcher skip its next due check.
 
 `weather_forecast` takes an optional `location` (or explicit coordinates) for the
-call. Without one it uses the configured location, and the scheduled watcher
-always uses it. The parameter exists because the memory rule "no location given
-→ 武汉" could otherwise be displayed in the prompt and then ignored: on
-2026-11-01 the assistant read that rule, said so in its reply, and still
-forecast 上海. The configured location remains the deployment default and the
-watcher's subject; per-answer overrides are the caller's to supply and are not
-persisted.
+call. Without one it uses the configured location. The parameter exists because
+the memory rule "no location given → 武汉" could otherwise be displayed in the
+prompt and then ignored: on 2026-11-01 the assistant read that rule, said so in
+its reply, and still forecast 上海. A caller that passes coordinates should pass
+`location` too, so the report is headed by a place name instead of raw numbers.
+
+The scheduled check resolves its place the same way the chat does, because the
+stored rule is a rule about the owner's questions, not about one code path:
+
+- with `follow_phone: true` (the default) the watcher asks the phone for its most
+  recent fix and uses those coordinates when the fix is newer than
+  `phone_fix_max_age_minutes` (120 by default);
+- otherwise — no phone, no recent fix, a lookup error, a `0,0` fix, or
+  `follow_phone: false` — it uses the configured location;
+- the notice title, the webhook body's `location` and `.state/weather.json`'s
+  `last_location` all carry the place the forecast was actually for.
+
+The age bound is the point: a phone that lay on a desk all night reports last
+evening's city, and "another city, confidently" is worse than the configured
+default. `GET /assistant/status` shows `location` (the configured place),
+`follow_phone` and `last_location` (the place the last run used).
 
 ### Data source and limits
 
@@ -720,6 +734,8 @@ assistant:
     location: 上海
     latitude: 31.2304
     longitude: 121.4737
+    follow_phone: true
+    phone_fix_max_age_minutes: 120
     schedule: daily 07:00
     webhook: ""
     rain_probability: 50

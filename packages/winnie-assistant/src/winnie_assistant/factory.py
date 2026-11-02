@@ -200,6 +200,7 @@ def build_assistant_service(
             http=http,
             clock=clock,
             tick_seconds=config.weather.tick_seconds,
+            phone=phone,
         )
         if weather is not None
         else None

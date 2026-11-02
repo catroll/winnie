@@ -517,7 +517,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "the weather, whether to take an umbrella, or what to wear. "
                 "Pass `location` whenever the user names a place (including a "
                 "place they have asked you to remember): without it the "
-                "configured default is used, which may be a different city."
+                "configured default is used, which may be a different city. "
+                "When you pass coordinates, pass `location` too — the readable "
+                "name from the phone address or the owner's words — or the "
+                "report will be headed by raw numbers."
             ),
             "parameters": {
                 "type": "object",

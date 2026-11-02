@@ -202,6 +202,11 @@ assistant:
     location: 上海
     latitude: 31.2304
     longitude: 121.4737
+    # The scheduled check follows the owner's rule: a phone fix newer than
+    # phone_fix_max_age_minutes wins, otherwise the place above. Set
+    # follow_phone: false to always use the configured place.
+    follow_phone: true
+    phone_fix_max_age_minutes: 120
     # "every 3h" is also valid; duplicate advice is not sent twice a day.
     schedule: daily 07:00
     webhook: ""

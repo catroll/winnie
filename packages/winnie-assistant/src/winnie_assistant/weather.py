@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -26,6 +26,7 @@ import httpx
 
 from winnie_assistant.config import WeatherConfig
 from winnie_assistant.conversations import ConversationStore
+from winnie_assistant.phone import PhoneGateway
 from winnie_assistant.files import atomic_write
 from winnie_assistant.scheduler import Schedule, parse_schedule
 
@@ -480,6 +481,7 @@ class WeatherWatch:
         http: httpx.AsyncClient | None = None,
         clock=None,
         tick_seconds: float = 30.0,
+        phone: PhoneGateway | None = None,
     ) -> None:
         self.config = config
         self.service = service
@@ -488,6 +490,7 @@ class WeatherWatch:
         self.timezone = timezone
         self.state_path = state_path
         self.http = http
+        self.phone = phone
         self.clock = clock or (lambda: datetime.now(timezone))
         self.tick_seconds = tick_seconds
         self._schedule: Schedule = parse_schedule(config.schedule)
@@ -513,6 +516,8 @@ class WeatherWatch:
         return {
             "enabled": self.config.enabled,
             "location": self.config.location,
+            "follow_phone": self.config.follow_phone,
+            "last_location": self._state.get("last_location"),
             "schedule": self.config.schedule,
             "next_run": self._state.get("next_run"),
             "last_run": self._state.get("last_run"),
@@ -562,8 +567,9 @@ class WeatherWatch:
                 moment,
                 advance=True,
             )
+        place = await self._place(moment)
         try:
-            check = await self.service.check()
+            check = await self.service.check(**place)
         except WeatherError as exc:
             logger.warning("weather check failed: %s", exc)
             return self._finish(
@@ -593,8 +599,9 @@ class WeatherWatch:
             )
             return self._finish(run, moment, advance=not manual)
 
+        self._state["last_location"] = check.report.location
         conversation = await self.store.create_notice(
-            title=f"天气提醒 · {self.config.location}",
+            title=f"天气提醒 · {check.report.location}",
             text=check.message,
             source="weather",
             channel="weather",
@@ -614,6 +621,39 @@ class WeatherWatch:
             error=delivery_error,
         )
         return self._finish(run, moment, advance=not manual)
+
+    async def _place(self, moment: datetime) -> dict[str, Any]:
+        """Coordinates for this check, per the owner's stored rule.
+
+        The rule is "use the coordinates when they are available, the configured
+        place otherwise". A fix older than ``phone_fix_max_age_minutes`` is not
+        available: reporting another city from last night's coordinates is worse
+        than the configured default. Any failure here falls back the same way,
+        because a missing location must not cost the owner the notice.
+        """
+        if not self.config.follow_phone or self.phone is None:
+            return {}
+        window = timedelta(minutes=self.config.phone_fix_max_age_minutes)
+        try:
+            fixes = await self.phone.locations(since=moment - window, limit=1)
+        except Exception:  # noqa: BLE001 - fall back to the configured place
+            logger.warning("weather: phone location lookup failed", exc_info=True)
+            return {}
+        if not fixes:
+            return {}
+        fix = fixes[0]
+        try:
+            latitude = float(fix["latitude"])
+            longitude = float(fix["longitude"])
+        except (KeyError, TypeError, ValueError):
+            return {}
+        if latitude == 0.0 and longitude == 0.0:
+            return {}
+        return {
+            "location": _place_label(fix),
+            "latitude": latitude,
+            "longitude": longitude,
+        }
 
     def _finish(
         self, run: WeatherRun, moment: datetime, *, advance: bool = True
@@ -649,8 +689,8 @@ class WeatherWatch:
                 self.config.webhook,
                 json={
                     "kind": "weather",
-                    "location": self.config.location,
-                    "title": f"天气提醒 · {self.config.location}",
+                    "location": check.report.location,
+                    "title": f"天气提醒 · {check.report.location}",
                     "text": check.message,
                     "conversation_id": conversation_id,
                 },
@@ -688,6 +728,23 @@ class WeatherWatch:
             json.dumps(self._state, ensure_ascii=False, indent=2, sort_keys=True)
             + "\n",
         )
+
+
+def _place_label(fix: dict[str, Any]) -> str:
+    """A short readable name for a location row: city + district, else address."""
+    city = str(fix.get("city") or "").strip()
+    district = str(fix.get("district") or "").strip()
+    if city and district and not city.endswith(district):
+        return f"{city}{district}"
+    if city:
+        return city
+    address = str(fix.get("address") or "").strip()
+    if address:
+        return address
+    try:
+        return f"{float(fix['latitude']):.4f},{float(fix['longitude']):.4f}"
+    except (KeyError, TypeError, ValueError):
+        return ""
 
 
 def _iso(value: datetime) -> str:

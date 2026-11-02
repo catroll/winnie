@@ -91,6 +91,12 @@ class WeatherConfig(BaseModel):
     # Daily check by default; "every 3h" is also valid. Duplicate advisories
     # on the same day are not sent again.
     schedule: str = "daily 07:00"
+    # The scheduled check follows the owner's own rule: use the phone's
+    # coordinates when there is a recent fix, otherwise the configured place.
+    # A fix older than this is ignored, so a phone that slept through the night
+    # does not report yesterday's city.
+    follow_phone: bool = True
+    phone_fix_max_age_minutes: int = Field(default=120, ge=15, le=1440)
     webhook: str = ""
     rain_probability: int = Field(default=50, ge=0, le=100)
     temperature_delta: float = Field(default=5.0, ge=1.0, le=20.0)

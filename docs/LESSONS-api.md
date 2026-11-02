@@ -696,3 +696,43 @@ If the file is newer than the process, the process is not running that file.
 **Fix.** `make restart SERVICES=api` after any change under `packages/`, or after
 editing `apps/api/.env`. Restarting one service keeps the admin and index
 processes alone.
+
+## A rule stored in memory is a rule for every path that acts, not just the one with a model (2026-11-02)
+
+**Signal.** The day after the memory read path was fixed, the 07:00 push still
+said `天气提醒 · 上海` and the owner asked "为什么是上海的温度？" — while the chat
+turn that followed correctly used the phone's coordinates.
+
+**Cause.** Two paths act on the same stored rule: the chat turn (model reads the
+prompt) and the scheduled watcher (no model, deterministic). The fix had been
+applied to the first: `AssistantAgent` recalled `procedures.md:14`, the model
+called `phone_location` and then `weather_forecast(latitude=…, longitude=…)`. The
+watcher calls `service.check()` with no arguments and titles the notice from
+`config.weather.location`, so it kept the configured 上海 forever.
+
+**Check.** When a behaviour is described by an owner preference, grep for every
+call site of the action, not every place the model reads the preference:
+
+```bash
+grep -rn "service.check()\|config.location" packages/winnie-assistant/src
+```
+
+Two hits — the chat tool and `WeatherWatch._check` — and only one had been taught
+the rule.
+
+**Fix.** `WeatherWatch._place` asks the phone for its latest fix and passes the
+coordinates plus a readable label (`武汉市江夏区`, from city + district) when the
+fix is newer than `weather.phone_fix_max_age_minutes` (120); otherwise the
+configured place. The notice title, the webhook `location` and
+`.state/weather.json:last_location` all report the place the forecast was for.
+
+**And the second-order lesson.** A default in configuration is not a fact about
+the owner: 上海 was the deployment's fallback, and both the model and the owner
+mistook it for the owner's city. Anything a push says on its own — before any
+question is asked — has to resolve the same live inputs as an answer, or it will
+be wrong at exactly the moment the owner notices.
+
+**Tests.** `test_the_scheduled_check_follows_a_fresh_phone_fix` (arguments and
+title), `test_a_stale_fix_falls_back_to_the_configured_place`,
+`test_a_broken_phone_does_not_cost_the_notice`,
+`test_follow_phone_can_be_turned_off`, `test_the_place_label_prefers_city_and_district`.

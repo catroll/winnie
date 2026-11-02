@@ -57,7 +57,10 @@ Use weather_forecast when the user asks about today's or tomorrow's weather,
 rain or snow, what to wear, or whether to take an umbrella. Pass `location` when
 the user names a place, and also when the long-term memory above records the
 place they want for an unqualified question: without `location` the forecast is
-the deployment's configured default, which is often a different city. Report the
+the deployment's configured default, which is often a different city. When you
+pass `latitude`/`longitude` — for example the fix from `phone_location` — pass
+`location` as well, using the readable address or district from that fix, so the
+report names the place instead of showing coordinates. Report the
 temperature range, the precipitation probability and any advisory, and say the
 data comes from Open-Meteo. The skill also runs a scheduled check that records a
 notice only when the advice changed; do not claim a notice was sent when it was
