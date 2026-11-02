@@ -1,6 +1,6 @@
 # Winnie project plan and status
 
-Last updated: 2026-11-01.
+Last updated: 2026-11-02.
 
 This is the single high-level view of what Winnie is trying to become, how the
 work is sequenced, and what is actually finished. Deeper material stays in the
@@ -88,6 +88,8 @@ Success for the current phase:
 | Gateway | Byte-level OpenAI/Anthropic proxy, Winnie gateway keys, server-held vendor credentials, SSE, logs | `winnie-gateway` | Done |
 | Observability | Per-call LLM usage ledger, price-based cost estimates and provider balances | `winnie-core/usage` + `apps/api/usage` | Done |
 | Schedule | Read and edit the owner's weekly Markdown schedule: days, events, times, tags, week-level items | `winnie-schedule` + `apps/api/schedule` + console Schedule page | Done |
+| State | Owner state (`place`/`body`/`focus`/`availability`): signal ingest, TTL projections, the every-turn digest and a `state` skill | `winnie-state` | Planned |
+| Senses | Room cameras and microphones: ambient detection plus `look`/`listen`/`speak` | Frigate + senses tools | Planned |
 | Operations | Health/readiness, migrations, retention, inline/arq jobs | `apps/api` | Partial |
 
 ## 4. Milestones
@@ -105,6 +107,8 @@ Success for the current phase:
 | M9 | Phone data | The phone syncs every enabled scope on a schedule; the console shows it; the assistant answers questions from it and a confirmed calendar/SMS write is executed by the phone | **Core done** — sync, query, console page, tools and the command queue are implemented and tested; a physical-device run and SMS delivery receipts are open |
 | M10 | Push | A notification published on the server reaches the phone while it is idle, survives a reconnect from the backlog, and is used for reminders, scheduled briefs and phone-action results | **Core done** — stream, backlog, tool and Android service are implemented and tested; a device run, Redis fan-out and notification actions are open |
 | M11 | Proactive assistance | A birthday on the phone becomes dated interventions at the configured stages, arrives over a channel whose delivery is tracked, escalates when unacknowledged, and appears in the digest; the same question in chat answers from the data with its source | **Partial** — engine, push/ntfy/email ladder, digest, console Inbox, acknowledgement (console, email/ntfy link, Android actions) and the optional model composer implemented and tested; the `winnie` alarm path, the deep link and a device run are open |
+| M12 | State sensing | A signal ingest, TTL projections, the every-turn digest and a `state` skill answer "where am I", "what am I doing" and "did I sleep", each correct or `unknown` with a reason | Planned |
+| M13 | Room senses | A camera and a room microphone feed the same signals without a vendor cloud, on an isolated VLAN, with encrypted storage and a visible indicator | Planned |
 | M7 | Production readiness | TLS, PostgreSQL, Redis worker, reverse proxy, backups with a restore rehearsal, deployment guide | Partial |
 
 **M9** adds the phone as a data source: the Android client uploads the scopes
@@ -498,7 +502,7 @@ Verified:
 - The `winnie-local` suite covers the whitelist policy (paths, git options,
   path-qualified executables), reviewer JSON/timeout/error handling, redaction,
   whitelisted bypass, review allow/deny, and the fail-closed disabled path.
-- `276 passed` in the backend suite.
+- `468 passed` in the backend suite.
 
 Open:
 
@@ -644,7 +648,7 @@ Open:
 
 | Check | Command or path | Result |
 |---|---|---|
-| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **276 passed** |
+| Backend suite | `cd apps/api && .venv/bin/python -m pytest -q` | **468 passed** |
 | Live assistant chat | DeepSeek + Bing RSS + `weather.com.cn` | Answer with a source URL in 3.0 s |
 | Memory distillation | `POST /api/v1/assistant/memory/distill` | One fact written to `profile/preferences.md` |
 | Assistant memory recall | `search_documents` + `read_document` through `winnie-index` | Cited `Winnie/profile/preferences.md:7` |
@@ -704,46 +708,45 @@ Not yet verified:
 
 ## 8. Next development plan
 
-Ordered by dependency and risk, not by novelty:
+Confirmed 2026-11-02: the next phase is the **M5 knowledge base MVP**, then the
+**state/senses sensing layer**. The meeting-notes hardening (M4), the bilingual
+validation (M3) and the proactive/phone/push device runs stay on the backlog and
+are picked up opportunistically — a physical-device session, a real model key —
+rather than blocking M5.
 
-1. **Finish M4 hardening.**
-   - Install the current APK on the phone and run a live-caption meeting over
-     the LAN address.
-   - Add a foreground service so recording and the stream survive backgrounding.
-   - Add reconnect with bounded retry; fail over to the file pass on a dropped
-     stream.
-   - Write streaming ASR usage records, or extend the LLM usage page with ASR
-     audio seconds, or explicitly document the double-cost tradeoff in the UI.
-   - Exit criteria: a 10-minute meeting recorded on the phone with live
-     captions, screen locked for part of it, ending in a `ready` transcript.
+1. **M5 knowledge base MVP — next.**
+   - Git-backed Markdown: a per-user repository (or directory tree); every write
+     is a commit whose message records the source (`ui-edit`, `auto-extract`,
+     `reindex`).
+   - Browse, edit, classify and tag in the console; version history and diff;
+     revert then re-index.
+   - Derived vector index aligned to Git HEAD, served to the assistant through
+     `winnie-index`; automatic single-category + multi-tag classification with a
+     low-confidence `unsorted` bucket. The meeting note sink and the assistant's
+     memory files become ordinary knowledge documents without changing their
+     on-disk format.
+   - Exit criteria: a meeting note is browsed, edited, reverted and searched in
+     the console, and a chat answer cites a knowledge line it was built from.
 
-2. **Close M3 validation.**
-   - Add the bilingual fixture (local only, never committed).
-   - Enable real translation and summarization with `DEEPSEEK_API_KEY`.
-   - Record a real meeting, fix timestamp/language/prompt issues, measure
-     latency, tokens and cost.
-   - Exit criteria: a real bilingual meeting produces a useful transcript,
-     translation, minutes and Markdown note, with usage rows.
+2. **State sensing and room senses — the phase after M5.**
+   - `packages/winnie-state`: ingest, TTL projections (`place`, `body`, `focus`,
+     `availability`), the every-turn prompt digest, and a `state` skill. Phone
+     `motion`/`screen`/`place` scopes and the PC agent come first
+     ([state.md](./state.md) §9 P0); the Health Kit sleep spike runs as a gate
+     before anything is built on it.
+   - Room cameras and microphones stay behind their own gates ([senses.md](./senses.md)
+     §8, §10): no vendor cloud, isolated VLAN, encrypted storage, a visible
+     indicator, no bathroom or bedroom camera.
+   - Both remain proposals until the owner answers [state.md](./state.md) §10;
+     the answers gate the first collected signal.
 
-3. **M5 knowledge base MVP.**
-   - Git-backed Markdown write/commit; browse, edit, classify and version.
-   - Derived index and retrieval; notes remain the source of truth.
-   - Exit criteria: the meeting note is searchable and an answer cites it.
-
-4. **M6 assistant.**
-   - Done: chat, web search, index-backed recall, memory distilled from
-     conversation files, and tasks created and cancelled in conversation.
-   - Next: SSE streaming, vector retrieval in the index, a worker so tasks run
-     while the API is down, and task editing.
-   - Exit criteria for the slice: a scheduled brief arrives on a phone through a
-     webhook, and a later chat answers from the distilled memory with a cited
-     path.
-
-5. **M7 production readiness.**
-   - TLS, PostgreSQL, Redis/arq, reverse proxy, backups and restore rehearsal,
-     deployment guide and structured logs.
-   - Exit criteria: a clean deployment can be backed up and restored, and meets
-     the security bar for real accounts.
+3. **Remaining backlog, not sequenced above.**
+   - M4/M9/M10/M11 device runs, the M3 bilingual fixture and the M8 real-model
+     news comparison (see [todo.md](./todo.md)).
+   - M6 assistant: SSE streaming, vector retrieval, an out-of-process worker,
+     task editing.
+   - M7 production readiness: TLS, PostgreSQL, Redis/arq, reverse proxy,
+     backups with a restore rehearsal, deployment guide.
 
 ## 9. Running and verifying
 

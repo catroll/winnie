@@ -18,6 +18,8 @@ infrastructure below it exists to serve the assistant.
 | **Management console** | Web view of meetings, transcripts, minutes, assistant chat — typed or as a hands-free voice conversation with spoken replies — and cross-channel conversation history, synced phone data, the weekly schedule, scheduled tasks, news runs, drafts and digests, AI providers (suppliers and LLM usage) and gateway routes | **MVP implemented** |
 | **Accounts** | Local users, Argon2id passwords and opaque bearer sessions | **Implemented** |
 | **Personal knowledge base** | Markdown in Git as the source of truth: browse, edit, classify, version and search | Planned |
+| **Personal state** | Where you are, what you are doing and whether you slept — sensed, carried with a freshness stamp, never invented | Planned (proposal) |
+| **Room senses** | Cameras and microphones as eyes and ears: ambient detection feeding `look`/`listen`/`speak` | Planned (proposal) |
 | **Document index** | Local `.md`/`.txt` index served to agents over MCP and HTTP, with an Agent Skill that declares both | **v1 implemented (lexical)** |
 | **Model gateway** | Byte-level OpenAI- and Anthropic-compatible proxy with per-route upstreams, Winnie gateway keys and complete local logs | **Implemented** |
 | **LLM usage** | Per-call tokens and latency, cost estimates and provider balances on the console's AI providers page | **Implemented** |
@@ -235,6 +237,10 @@ and endpoint list are in [docs/meetings.md](./docs/meetings.md).
    notification actions and more event sources remain.
 7. **Production readiness** — migrations, queue-backed background work,
    retention and backups, deployment hardening.
+8. **State & senses** — sense where the owner is, what they are doing and
+   whether they slept (phone, PC agent, watch); room cameras and microphones as
+   eyes and ears. Proposed in [docs/state.md](./docs/state.md) and
+   [docs/senses.md](./docs/senses.md), sequenced after the knowledge base.
 
 Details and design rationale are in [DESIGN.md](./DESIGN.md). Concrete follow-ups,
 including the ASR evaluation and provider verification, are in
