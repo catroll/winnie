@@ -233,6 +233,9 @@ answers "圆圆生日是什么时候" too.
   both are reversible from the inbox.
 - A collapsed catch-up: if the server was down across several stages, send one
   message that names what was missed, not four stale ones.
+- A P0/P1 item whose planned moment is older than `catch_up_hours` **expires**
+  instead of firing late. A "today is X's birthday" notification at 22:00 after
+  the date ended is noise; the digest still carries what is upcoming.
 
 ### Standing approval, and where the gate stays
 

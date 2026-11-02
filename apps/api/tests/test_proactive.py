@@ -127,12 +127,13 @@ def build(
     channels: dict | None = None,
     max_interrupts: int = 4,
     composer=None,
+    catch_up_hours: int = 48,
 ) -> ProactiveService:
     config = ProactiveConfig(
         enabled=True,
         timezone="Asia/Shanghai",
         root=str(tmp_path),
-        catch_up_hours=48,
+        catch_up_hours=catch_up_hours,
         max_interrupts_per_day=max_interrupts,
         quiet_hours=("22:30", "07:30"),
         channels=ChannelsConfig(order=["push", "ntfy", "email"]),
@@ -558,3 +559,86 @@ async def test_a_failed_composer_leaves_the_template_and_is_not_retried(
     assert composer.calls == 1
     assert "今天" in push.sent[0].title
     assert "上午发条消息" in push.sent[0].body
+
+
+class WritingChannel(RecordingChannel):
+    """A channel that writes to the same database, like push does.
+
+    Holding the proactive session's write transaction open while this runs is
+    what produced `sqlite3.OperationalError: database is locked` in the digest.
+    """
+
+    def __init__(self, name: str, sessions) -> None:
+        super().__init__(name)
+        self.sessions = sessions
+
+    async def send(self, message):
+        async with self.sessions() as session:
+            session.add(
+                models.ProactiveItem(
+                    user_id="probe",
+                    kind="probe",
+                    subject_key=f"probe:{message.title}",
+                    occurrence_key="x",
+                    stage="probe",
+                    priority=3,
+                    title="probe",
+                    body="",
+                    planned_at=datetime(2026, 1, 1),
+                )
+            )
+            await session.commit()
+        return await super().send(message)
+
+
+@pytest.mark.asyncio
+async def test_a_stale_reminder_is_expired_instead_of_sent_at_night(
+    tmp_path: Path, engine
+) -> None:
+    """The server was down all day; the 09:00 reminder must not fire at 22:00."""
+    clock = Clock(datetime(2026, 12, 20, 1, 0, tzinfo=UTC))  # 09:00 Shanghai
+    push = RecordingChannel("push")
+    service = build(
+        tmp_path,
+        sessions_for(engine),
+        clock=clock,
+        calendar=FakeCalendar([birthday_row()]),
+        contacts=FakeContacts([]),
+        channels={"push": push},
+        catch_up_hours=12,
+    )
+    await service.scan()
+
+    clock.moment += timedelta(hours=13)  # 22:00 the same evening
+    await service.dispatch()
+
+    assert push.sent == []
+    item = next(
+        row for row in await service.items(OWNER) if row["stage"] == "day"
+    )
+    assert item["status"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_the_digest_survives_a_channel_that_writes_to_the_database(
+    tmp_path: Path, engine
+) -> None:
+    clock = Clock(datetime(2026, 11, 2, 1, 0, tzinfo=UTC))
+    sessions = sessions_for(engine)
+    channel = WritingChannel("push", sessions)
+    service = build(
+        tmp_path,
+        sessions,
+        clock=clock,
+        calendar=FakeCalendar([birthday_row(on=date(2026, 11, 16))]),
+        contacts=FakeContacts([]),
+        channels={"push": channel},
+    )
+    await service.scan()
+
+    clock.moment = datetime(2026, 11, 2, 12, 30, tzinfo=UTC)  # 20:30 Shanghai
+    assert await service.digest() == 1
+    assert channel.sent
+    assert any(
+        row["status"] == "digested" for row in await service.items(OWNER)
+    )

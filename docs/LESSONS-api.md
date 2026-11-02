@@ -768,3 +768,34 @@ whatever substring the parser happened to hold. And an "already remembered"
 check that compares exact strings will keep a corpus of paraphrases; if the
 writer is a language model, compare a normalised form — punctuation and
 whitespace carry no fact.
+
+## A delivery channel that writes to the same SQLite file locks the engine out (2026-11-02)
+
+**Signal.** `proactive tick failed` with `sqlite3.OperationalError: database is
+locked` while sending the evening digest, and no digest row and no push event
+existed afterwards. The traceback ended inside the push channel's `send`.
+
+**Cause.** The engine held one session with an open write transaction — the
+digest row had been inserted and flushed — and then called the push channel,
+which opens its own connection to write `push_notifications`. SQLite allows one
+writer; the second connection waited out the busy timeout and raised. Nothing
+was wrong with the push service or the digest query.
+
+**Check.** The failed digest left no row (the old code rolled back), so the
+evidence is the log's final frame plus an empty `proactive_items` digest query
+and a missing `push_notifications` row for the same minute. Reproduce with a
+channel that writes to the same database in a test; the test passes only if the
+engine commits before calling out.
+
+**Fix.** `_deliver` commits the proactive session before it invokes a channel,
+and a digest whose delivery fails is deleted rather than left planned, so the
+next tick can retry the slot. The general rule is not about digests: **a channel
+is I/O, and a database write transaction must not be held across it.** If the
+channel writes to the same store, the open transaction is a lock you are holding
+against yourself.
+
+**Also learned the same day.** The API was down from 01:30 to 22:15 because the
+process that owned it was gone; the 09:00 birthday reminder never fired, and on
+restart the still-planned item would have fired at 22:00. Dispatch now expires a
+P0/P1 item older than `catch_up_hours`; a late reminder is not a reminder. A
+self-hosted reminder engine is only as reliable as the process running it.

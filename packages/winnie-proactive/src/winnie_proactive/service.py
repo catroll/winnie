@@ -386,6 +386,15 @@ class ProactiveService:
             for item in rows:
                 if item.status == "snoozed":
                     item.status = "planned"
+                planned = as_utc(item.planned_at)
+                if planned is not None and now_utc - planned > timedelta(
+                    hours=self.config.catch_up_hours
+                ):
+                    # A birthday reminder at 22:15 for a date that ended the
+                    # night before is noise, not a reminder. The digest still
+                    # carries what is upcoming.
+                    item.status = "expired"
+                    continue
                 decision = policy.decide(
                     priority=item.priority,
                     due_at=item.due_at,
@@ -518,7 +527,10 @@ class ProactiveService:
             session.add(item)
             await session.flush()
             if not await self._deliver(session, item, local_now, digest=True):
-                await session.rollback()
+                # The row was committed before the send; remove it so the next
+                # tick can try this slot again instead of finding a stale digest.
+                await session.delete(item)
+                await session.commit()
                 return 0
             for row in planned:
                 row.status = "digested"
@@ -538,6 +550,10 @@ class ProactiveService:
         digest: bool = False,
     ) -> bool:
         await self._maybe_compose(session, item)
+        # A channel may write to the same database (push does). Holding this
+        # session's write transaction open while it does turns SQLite into
+        # "database is locked", so persist our own state first.
+        await session.commit()
         message = self._message(item, digest=digest)
         for name in self._available_order():
             if _attempted(item.channels, name):
