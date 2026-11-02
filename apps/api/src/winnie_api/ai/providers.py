@@ -27,6 +27,7 @@ from winnie_llm import (
     RealtimeASRError,
     RealtimeASRProvider,
     RealtimeEvent,
+    StreamPart,
 )
 from winnie_meetings.integrations.summarize.base import (
     MinutesDraft,
@@ -81,6 +82,35 @@ class DynamicChatModel:
                 "choose an OpenAI-compatible one"
             )
         return await model.chat(messages, tools)
+
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ):
+        """The same turn, streamed when the supplier supports it.
+
+        A scripted fake has no stream, so it is adapted: the engine and every
+        caller above it see one fragment and a result.
+        """
+        provider = self.registry.resolve("assistant.chat")
+        if provider.kind == "fake":
+            model: Any = FakeChatModel()
+        elif provider.kind == "openai":
+            model = self.registry.chat_for(
+                "assistant.chat", http=self.http, usage=self.usage
+            )
+        else:
+            raise AIProviderError(
+                f"assistant.chat cannot use a {provider.kind} supplier; "
+                "choose an OpenAI-compatible one"
+            )
+        stream = getattr(model, "stream", None)
+        if stream is None:
+            yield StreamPart(result=await model.chat(messages, tools=tools))
+            return
+        async for part in stream(messages, tools=tools):
+            yield part
 
 
 class DynamicTranslator:

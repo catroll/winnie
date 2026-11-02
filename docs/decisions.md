@@ -2548,3 +2548,44 @@ turn instead of nightly: the owner wants to read one notice, not forty. And a
 prompt-only rule in `procedures.md` telling the assistant to keep its own memory
 tidy — the same kind of note that failed to stop the weather bug: prompt text is
 not a mechanism.
+
+## Replies stream as the model writes them (2026-11-03)
+
+**Decision.** `POST /assistant/chat` gains `"stream": true`: the same route, the
+same turn, the same stored conversation, delivered as server-sent events. The
+console and the phone page both read it. The plain JSON path is unchanged, so
+every existing client, the scheduler and the tests keep working.
+
+**Why.** A reply that takes six seconds to write is six seconds of a spinner.
+The model already produces text progressively; the only thing standing between
+that and the owner's screen was our own request handling. The browser also gets
+something it could not have before: the text arrives while the turn is still
+running, so reading aloud can start on the first sentence instead of the last.
+
+**How.** Three layers, each additive:
+
+1. `ChatClient.stream` posts with `stream: true`, parses the vendor's SSE, joins
+   tool-call argument fragments, and ends with the same `ChatResult` the
+   non-streaming call returns. Usage, the replayed assistant message and the
+   ledger therefore have one implementation, not two.
+2. `ChatEngine.run_stream` is `run` with the model round replaced by a streamed
+   one. The tool budget, argument parsing and error mapping are the same code.
+3. The route writes events (`start`, `token`, `tool`, `done`, `error`) and keeps
+   `X-Accel-Buffering: no`, because nginx would otherwise hold every token until
+   the turn ended, which is the bug this feature exists to remove.
+
+**Deliberate asymmetry.** Anything that can still be an HTTP status code — 404
+for an unknown conversation, 409 for a read-only task run — is decided *before*
+the response starts (`AssistantAgent.open`), so a client never has to parse a
+body to learn that the request failed. A failure after the headers went out
+becomes an `error` event, and the assistant message is stored only on `done`, so
+a stream that dies mid-sentence leaves no half reply in the transcript.
+
+**Cost.** No retry mid-stream: replaying text the owner has already read is worse
+than failing the turn. A vendor error after the first token is reported and the
+turn ends; the next message starts a new one.
+
+**Not done yet.** Speaking a reply sentence by sentence while it is being written
+needs a speech queue that does not cancel itself between chunks; the console
+still speaks the finished reply. Recorded in `docs/assistant.md` as the remaining
+follow-up.

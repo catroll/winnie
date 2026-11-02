@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from winnie_chat import ChatModel, SkillRegistry, SkillView
+from winnie_chat import ChatEvent, ChatModel, SkillRegistry, SkillView
 
-from winnie_assistant.agent import AssistantAgent
+from winnie_assistant.agent import AssistantAgent, PreparedTurn
 from winnie_assistant.config import AssistantConfig
 from winnie_assistant.conversations import ConversationStore
 from winnie_assistant.index_client import IndexClient, IndexHit
@@ -139,6 +140,40 @@ class AssistantService:
         if self.builder is not None and self.config.memory.auto_distill:
             self._schedule_distill()
         return reply
+
+    async def open_chat(
+        self,
+        text: str,
+        *,
+        conversation_id: str | None = None,
+        source: str = "chat",
+        channel: str = "api",
+        task_id: str = "",
+        title: str | None = None,
+        modality: str = "text",
+    ) -> PreparedTurn:
+        """Accept the user message; raises the same errors as ``chat``."""
+        return await self.agent.open(
+            text,
+            conversation_id=conversation_id,
+            source=source,
+            channel=channel,
+            task_id=task_id,
+            title=title,
+            modality=modality,
+        )
+
+    async def stream_chat(self, prepared: PreparedTurn) -> AsyncIterator[ChatEvent]:
+        """One chat turn as a stream of events, ending with ``done``.
+
+        Distillation is scheduled when the turn finishes, not when it starts:
+        a conversation that is still being written is not a finished transcript.
+        """
+        async for event in self.agent.stream(prepared):
+            if event.kind == "done":
+                if self.builder is not None and self.config.memory.auto_distill:
+                    self._schedule_distill()
+            yield event
 
     # -- skills ----------------------------------------------------------
 

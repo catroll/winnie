@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 
-from winnie_chat import SkillView
+from winnie_chat import ChatEvent, SkillView
 from winnie_core.auth.dependencies import get_user_id
 from winnie_assistant.agent import AssistantModelError
 from winnie_assistant.conversations import (
@@ -87,10 +89,42 @@ async def chat(
     payload: ChatRequest,
     service: AssistantService = Depends(get_service),
     _: str = Depends(get_user_id),
-) -> ChatResponse:
+) -> ChatResponse | StreamingResponse:
+    message = payload.message.strip()
+    if not payload.stream:
+        try:
+            reply = await service.chat(
+                message,
+                conversation_id=payload.conversation_id,
+                channel=payload.channel,
+                modality=payload.input,
+            )
+        except (InvalidConversationId, ConversationNotFound) as exc:
+            raise HTTPException(
+                status_code=404, detail="conversation not found"
+            ) from exc
+        except ConversationReadOnly as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="a scheduled task run is read-only; start a new conversation",
+            ) from exc
+        except AssistantModelError as exc:
+            raise HTTPException(
+                status_code=502, detail=f"model call failed: {exc}"
+            ) from exc
+        return ChatResponse(
+            conversation_id=reply.conversation_id,
+            reply=reply.text,
+            tools_used=reply.tools_used,
+            usage_tokens=reply.usage_tokens,
+        )
+
+    # Streaming: the conversation is created and the user message recorded
+    # before the response starts, so a missing or read-only conversation still
+    # gets 404/409 rather than a 200 whose body contains an error event.
     try:
-        reply = await service.chat(
-            payload.message.strip(),
+        prepared = await service.open_chat(
+            message,
             conversation_id=payload.conversation_id,
             channel=payload.channel,
             modality=payload.input,
@@ -102,14 +136,43 @@ async def chat(
             status_code=409,
             detail="a scheduled task run is read-only; start a new conversation",
         ) from exc
-    except AssistantModelError as exc:
-        raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc
-    return ChatResponse(
-        conversation_id=reply.conversation_id,
-        reply=reply.text,
-        tools_used=reply.tools_used,
-        usage_tokens=reply.usage_tokens,
+
+    async def events() -> AsyncIterator[str]:
+        try:
+            async for event in service.stream_chat(prepared):
+                yield _sse(event)
+        except AssistantModelError as exc:
+            yield _sse({"type": "error", "message": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - the stream has already begun
+            yield _sse({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # nginx buffers proxied responses by default, which would hold every
+            # token until the turn ended and make the stream pointless.
+            "X-Accel-Buffering": "no",
+        },
     )
+
+
+def _sse(payload: dict[str, object] | ChatEvent) -> str:
+    """One server-sent event line. The client reads JSON, not positions."""
+    if isinstance(payload, ChatEvent):
+        data: dict[str, object] = {
+            "type": payload.kind,
+            "text": payload.text,
+            "name": payload.name,
+            "conversation_id": payload.conversation_id,
+            "tools_used": list(payload.tools_used),
+            "usage_tokens": payload.usage_tokens,
+        }
+    else:
+        data = dict(payload)
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 @router.get("/conversations", response_model=ConversationListRead)

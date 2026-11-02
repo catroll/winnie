@@ -19,6 +19,10 @@ class ChatRequest(BaseModel):
     # Markdown answer that is pleasant to read is noise to listen to. Older
     # clients omit it and mean text.
     input: Literal["text", "voice"] = "text"
+    # Ask for the reply as server-sent events instead of one JSON body. The same
+    # route, the same turn and the same stored conversation; only the transport
+    # differs, so a client can switch without a second endpoint.
+    stream: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -95,6 +99,7 @@ class DistillRead(BaseModel):
     facts: int
     empty: int
 
+
 class MemoryTidyStatusRead(BaseModel):
     enabled: bool
     schedule: str
@@ -119,7 +124,6 @@ class MemoryTidyRunRead(BaseModel):
     checked_at: datetime
     error: str = ""
     rejected: int = 0
-
 
 
 class TaskRead(BaseModel):

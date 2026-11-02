@@ -153,7 +153,12 @@
       if (empty) empty.remove();
       const node = document.createElement("div");
       node.className = "msg " + role;
-      node.textContent = text;
+      // The body is its own element so a streamed reply can grow in place
+      // without rebuilding the bubble (and without losing the tool note).
+      const body = document.createElement("span");
+      body.className = "text";
+      body.textContent = text;
+      node.appendChild(body);
       if (tools && tools.length) {
         const note = document.createElement("span");
         note.className = "tools";
@@ -186,27 +191,66 @@
       typing.textContent = "Winnie is thinking…";
       $("messages").appendChild(typing);
       try {
+        // The reply arrives as server-sent events, so the bubble exists before
+        // the first token and grows while the model writes. The same route as
+        // the plain JSON call, one extra field.
         const response = await request("/chat", {
           method: "POST",
           body: JSON.stringify({
             message: text,
             conversation_id: conversationId,
             channel: "web",
+            stream: true,
           }),
         });
-        typing.remove();
         if (response.status === 401) {
+          typing.remove();
           addMessage("error", "Access token required. Open Settings and paste one.");
           setPanel(true);
           return;
         }
-        const body = await response.json().catch(() => ({}));
         if (!response.ok) {
+          typing.remove();
+          const body = await response.json().catch(() => ({}));
           addMessage("error", body.detail || "request failed: HTTP " + response.status);
           return;
         }
-        conversationId = body.conversation_id;
-        addMessage("assistant", body.reply, body.tools_used);
+        const node = addMessage("assistant", "");
+        const body = node.querySelector(".text");
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let reply = "";
+        for (;;) {
+          const step = await reader.read();
+          buffer += decoder.decode(step.value || new Uint8Array(), {
+            stream: !step.done,
+          });
+          let edge = buffer.indexOf("\n\n");
+          while (edge !== -1) {
+            const frame = buffer.slice(0, edge);
+            buffer = buffer.slice(edge + 2);
+            edge = buffer.indexOf("\n\n");
+            const line = frame.split("\n").find((row) => row.indexOf("data: ") === 0);
+            if (!line) continue;
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "start") {
+              conversationId = event.conversation_id || conversationId;
+            } else if (event.type === "token") {
+              if (!reply) typing.remove();
+              reply += event.text || "";
+              body.textContent = reply;
+              $("messages").scrollTop = $("messages").scrollHeight;
+            } else if (event.type === "done") {
+              reply = event.text || reply;
+              body.textContent = reply;
+            } else if (event.type === "error") {
+              addMessage("error", event.message || "the model call failed");
+            }
+          }
+          if (step.done) break;
+        }
+        typing.remove();
       } catch (error) {
         typing.remove();
         addMessage("error", "network error: " + error.message);

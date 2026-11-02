@@ -15,7 +15,7 @@ from winnie_chat import (
     SkillManifest,
     SkillRegistry,
 )
-from winnie_llm import ChatResult, ToolCall
+from winnie_llm import ChatResult, StreamPart, ToolCall
 from winnie_core.types import Usage
 
 
@@ -360,3 +360,55 @@ def test_prompt_asks_for_a_spoken_answer_only_on_a_voice_turn() -> None:
     assert "This message was dictated and the reply will be read aloud." in voice
     assert "two or three short sentences" in voice
     assert "recognition errors" in voice
+
+
+class _StreamingModel:
+    """A model that streams its text, so token events can be asserted."""
+
+    name = "streaming"
+
+    def __init__(self, pieces: list[str]) -> None:
+        self.pieces = pieces
+
+    async def chat(self, messages, tools=None):  # pragma: no cover - not called
+        raise AssertionError("the engine must use stream()")
+
+    async def stream(self, messages, tools=None):
+        for piece in self.pieces:
+            yield StreamPart(text=piece)
+        text = "".join(self.pieces)
+        yield StreamPart(
+            result=ChatResult(
+                text=text,
+                tool_calls=(),
+                model="streaming",
+                usage=Usage(provider="streaming", unit="token", quantity=3),
+                message={"role": "assistant", "content": text},
+            )
+        )
+
+
+async def test_run_stream_emits_tokens_then_the_assembled_result() -> None:
+    engine = ChatEngine(registry=SkillRegistry([]), model=_StreamingModel(["你", "好"]))
+    events = [event async for event in engine.run_stream(_turn())]
+
+    assert [event.kind for event in events] == ["token", "token", "done"]
+    assert "".join(event.text for event in events if event.kind == "token") == "你好"
+    assert events[-1].text == "你好"
+    assert events[-1].usage_tokens == 3
+
+
+async def test_run_stream_announces_a_tool_and_keeps_the_final_text() -> None:
+    """A streamed round that ends in a tool call continues the loop, and the
+    page is told which tool ran while the answer is still being written."""
+    skill = _FakeSkill()
+    registry = SkillRegistry([skill])
+    engine = ChatEngine(registry=registry, model=_ScriptedModel())
+    events = [event async for event in engine.run_stream(_turn())]
+
+    kinds = [event.kind for event in events]
+    assert kinds == ["tool", "token", "done"]
+    assert events[0].name == "echo"
+    assert events[1].text == "done"
+    assert events[-1].tools_used == ("echo",)
+    assert skill.calls

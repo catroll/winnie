@@ -2,6 +2,7 @@
 
 from winnie_chat.engine import ChatEngine, ChatModel, ChatModelError, parse_arguments
 from winnie_chat.models import (
+    ChatEvent,
     ChatReply,
     ChatResult,
     ChatTurn,
@@ -15,6 +16,7 @@ from winnie_chat.skill import SkillRegistry
 
 __all__ = [
     "ChatEngine",
+    "ChatEvent",
     "ChatModel",
     "ChatModelError",
     "ChatReply",

@@ -30,7 +30,7 @@ from winnie_llm.asr import (
     VolcengineASRProvider,
     VolcengineRealtimeASR,
 )
-from winnie_llm.chat import ChatClient, ChatResult, LLMCompletion, ToolCall
+from winnie_llm.chat import ChatClient, ChatResult, LLMCompletion, StreamPart, ToolCall
 from winnie_llm.json import parse_json_value
 from winnie_llm.keys import (
     DEFAULT_ENV_PATH,
@@ -103,6 +103,7 @@ __all__ = [
     "RouteEntry",
     "SeedInput",
     "SeedRoute",
+    "StreamPart",
     "StreamStarted",
     "ToolCall",
     "TranscriptUpdate",

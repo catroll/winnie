@@ -370,3 +370,60 @@ async def test_a_task_run_cannot_create_tasks(
 
     after = (await assistant_client.get("/api/v1/assistant/tasks")).json()["tasks"]
     assert [item["id"] for item in after] == [task["id"]]
+
+
+async def test_chat_streams_events_and_stores_the_same_conversation(
+    assistant_client: httpx.AsyncClient,
+) -> None:
+    """The streamed turn is a transport change, not a second code path.
+
+    The reply arrives as ``data:`` lines, the first one names the conversation
+    (the client needs it to route and to reload the transcript), and the file on
+    disk holds the same assistant message a non-streaming turn would have
+    written.
+    """
+    events: list[dict[str, object]] = []
+    async with assistant_client.stream(
+        "POST",
+        "/api/v1/assistant/chat",
+        json={"message": "你好", "stream": True},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        async for line in response.aiter_lines():
+            if line.startswith("data: "):
+                events.append(json.loads(line[6:]))
+
+    kinds = [event["type"] for event in events]
+    assert kinds[0] == "start", events
+    assert kinds[-1] == "done"
+    text = "".join(
+        str(event["text"]) for event in events if event["type"] == "token"
+    )
+    assert text.startswith("Fake reply")
+    assert events[-1]["text"] == text
+    conversation_id = events[0]["conversation_id"]
+    assert isinstance(conversation_id, str) and conversation_id
+
+    detail = await assistant_client.get(
+        f"/api/v1/assistant/conversations/{conversation_id}"
+    )
+    assert detail.status_code == 200
+    roles = [message["role"] for message in detail.json()["messages"]]
+    assert roles[-1] == "assistant"
+    assert detail.json()["messages"][-1]["text"] == text
+
+
+async def test_a_stream_on_a_missing_conversation_is_404_not_a_stream(
+    assistant_client: httpx.AsyncClient,
+) -> None:
+    """A 200 whose body says "not found" would be a worse contract than 404."""
+    response = await assistant_client.post(
+        "/api/v1/assistant/chat",
+        json={
+            "message": "你好",
+            "conversation_id": "20990101T000000Z-abcdef",
+            "stream": True,
+        },
+    )
+    assert response.status_code == 404

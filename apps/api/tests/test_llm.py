@@ -340,3 +340,121 @@ async def test_summarizer_chunks_long_transcripts_and_merges_usage() -> None:
     assert draft.summary == "merged summary"
     assert draft.usage is not None
     assert draft.usage.quantity == 50
+
+
+def _sse(events: list[dict]) -> bytes:
+    lines = [f"data: {json.dumps(event)}\n\n" for event in events]
+    lines.append("data: [DONE]\n\n")
+    return "".join(lines).encode()
+
+
+async def test_stream_assembles_text_and_reports_usage() -> None:
+    """Provider deltas become fragments, and the turn still ends in a result."""
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=_sse(
+                [
+                    {"choices": [{"delta": {"content": "你"}}]},
+                    {"choices": [{"delta": {"content": "好"}}]},
+                    {
+                        "choices": [{"delta": {}, "finish_reason": "stop"}],
+                        "usage": {"prompt_tokens": 7, "completion_tokens": 2},
+                    },
+                ]
+            ),
+        )
+
+    llm = _llm(handler)
+    parts = [part async for part in llm.stream([{"role": "user", "content": "hi"}])]
+
+    assert requests[0]["stream"] is True
+    assert [part.text for part in parts if part.result is None] == ["你", "好"]
+    result = parts[-1].result
+    assert result is not None
+    assert result.text == "你好"
+    assert result.usage.quantity == 9
+    assert result.message == {"role": "assistant", "content": "你好"}
+    await llm.http.aclose()
+
+
+async def test_stream_joins_tool_call_fragments() -> None:
+    """Arguments arrive in pieces and the name only once; the result is valid."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=_sse(
+                [
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "id": "call-1",
+                                            "function": {"name": "web_search"},
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "function": {"arguments": '{"query":'},
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "tool_calls": [
+                                        {
+                                            "index": 0,
+                                            "function": {"arguments": ' "winnie"}'},
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                ]
+            ),
+        )
+
+    llm = _llm(handler)
+    parts = [part async for part in llm.stream([{"role": "user", "content": "hi"}])]
+
+    result = parts[-1].result
+    assert result is not None
+    assert result.text == ""
+    assert result.tool_calls[0].name == "web_search"
+    assert json.loads(result.tool_calls[0].arguments) == {"query": "winnie"}
+    assert result.message["tool_calls"][0]["function"]["name"] == "web_search"
+    await llm.http.aclose()
+
+
+async def test_a_stream_that_returns_an_http_error_is_not_a_silent_reply() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "bad key"})
+
+    llm = _llm(handler)
+    with pytest.raises(RuntimeError, match="HTTP 401"):
+        async for _ in llm.stream([{"role": "user", "content": "hi"}]):
+            pass
+    await llm.http.aclose()

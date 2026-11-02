@@ -751,9 +751,41 @@ accounts are disabled the local owner is used.
 | GET | `/assistant/ui` | mobile-friendly chat page |
 | GET | `/assistant/status` | model, search, index, root, counts, scheduler state |
 
-The chat response is non-streaming in this slice. Streaming is an additive
-change behind the same route (SSE), and both chat surfaces are written so they
-can switch without moving state.
+`POST /assistant/chat` answers one JSON body by default and a stream of
+server-sent events when the request carries `"stream": true`. It is the same
+route, the same turn and the same stored conversation; only the transport
+differs, so a client switches by adding one field.
+
+```
+POST /api/v1/assistant/chat        {"message": "...", "stream": true}
+→ 200 text/event-stream
+data: {"type": "start", "conversation_id": "20261102T165555Z-08d377"}
+data: {"type": "token", "text": "今天的"}
+data: {"type": "tool",  "name": "web_search"}
+data: {"type": "done",  "text": "今天的天气……", "tools_used": ["web_search"]}
+```
+
+- `start` names the conversation before any text, because a client that opened a
+  new one has to route to it.
+- `token` carries the reply as the model produces it. The engine streams every
+  round, so a preamble written before a tool call is visible too.
+- `tool` reports a tool that finished, so the page can say what is happening
+  while the answer is still being written.
+- `done` repeats the assembled reply and ends the stream. A stream that ends
+  without it was cut short and the partial text must not be stored as a reply;
+  the server stores the assistant message only when the turn finishes.
+- `error` reports a failure that happened after the headers went out (a vendor
+  error mid-stream). Anything that can still be a status code — 404 for an
+  unknown conversation, 409 for a read-only task run — is decided before the
+  response starts, so a client never has to parse a body to learn that.
+
+The provider's own chunks are what make this real: `ChatClient.stream` parses
+SSE from the vendor, joins tool-call argument fragments, and ends with the same
+`ChatResult` the non-streaming call returns, so tools, usage and the replayed
+assistant message have one implementation. A model that cannot stream (the
+scripted fake in tests) is adapted to one fragment rather than given a second
+code path. The console at `/chat` and the phone page at `/assistant/ui` both
+read the stream and paint a bubble that grows.
 
 The console chat at `/chat` and the phone page at `/assistant/ui` call the same
 route. The console tags its turns `channel: admin`, the phone page `web`, a
@@ -992,7 +1024,9 @@ leaves `assistant.chat` unbound until a supplier model is configured. See
 
 Follow-ups after this slice, in order:
 
-1. Streaming replies over SSE.
+1. ~~Streaming replies over SSE.~~ Done: `/assistant/chat` streams when asked,
+   and both chat surfaces read it. Speaking a reply sentence by sentence while
+   it is still being written is the remaining piece.
 2. Vector retrieval once an embedding provider is configured; the index would
    grow a dense tier, not the assistant.
 3. Delivery adapters beyond webhook (ntfy/Telegram) behind one port.

@@ -8,13 +8,15 @@ message and tool traces, and stores the final assistant reply.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from winnie_chat import ChatEngine, ChatModel, ChatModelError, ChatTurn
+from winnie_chat import ChatEngine, ChatEvent, ChatModel, ChatModelError, ChatTurn
 
-from winnie_assistant.conversations import ConversationStore
+from winnie_assistant.conversations import Conversation, ConversationStore
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.tools import ToolBox
 from winnie_assistant.types import ChatReply
@@ -24,6 +26,14 @@ logger = logging.getLogger(__name__)
 
 class AssistantModelError(RuntimeError):
     """The configured model could not produce a turn."""
+
+
+@dataclass(frozen=True)
+class PreparedTurn:
+    """A conversation that has accepted the user message, ready to stream."""
+
+    conversation_id: str
+    turn: ChatTurn
 
 
 class AssistantAgent:
@@ -66,6 +76,46 @@ class AssistantAgent:
         owner: str = "local",
         modality: str = "text",
     ) -> ChatReply:
+        conversation, turn = await self._prepare(
+            text,
+            conversation_id=conversation_id,
+            source=source,
+            channel=channel,
+            task_id=task_id,
+            title=title,
+            owner=owner,
+            modality=modality,
+        )
+
+        async def on_tool(name: str, output: str) -> None:
+            await self.store.append(conversation.id, "tool", output, name=name)
+
+        try:
+            result = await self.engine.run(turn, on_tool=on_tool)
+        except ChatModelError as exc:
+            raise AssistantModelError(str(exc)) from exc
+
+        await self.store.append(conversation.id, "assistant", result.text)
+        return ChatReply(
+            text=result.text,
+            conversation_id=conversation.id,
+            tools_used=list(result.tools_used),
+            usage_tokens=result.usage_tokens,
+        )
+
+    async def _prepare(
+        self,
+        text: str,
+        *,
+        conversation_id: str | None,
+        source: str,
+        channel: str,
+        task_id: str,
+        title: str | None,
+        owner: str,
+        modality: str,
+    ) -> tuple[Conversation, ChatTurn]:
+        """Create the conversation and assemble one turn's prompt context."""
         conversation = await self.store.get_or_create(
             first_message=text,
             conversation_id=conversation_id,
@@ -126,20 +176,68 @@ class AssistantAgent:
             modality=modality,
         )
 
-        async def on_tool(name: str, output: str) -> None:
-            await self.store.append(
-                conversation.id, "tool", output, name=name
-            )
+        return conversation, turn
 
+    async def open(
+        self,
+        text: str,
+        *,
+        conversation_id: str | None = None,
+        source: str = "chat",
+        channel: str = "api",
+        task_id: str = "",
+        title: str | None = None,
+        owner: str = "local",
+        modality: str = "text",
+    ) -> PreparedTurn:
+        """Create the conversation and record the user message, before any I/O.
+
+        Streaming needs this split: a route cannot answer "404 conversation not
+        found" once it has started sending 200 with an event stream, so the
+        checks that can fail must run while a status code is still available.
+        """
+        conversation, turn = await self._prepare(
+            text,
+            conversation_id=conversation_id,
+            source=source,
+            channel=channel,
+            task_id=task_id,
+            title=title,
+            owner=owner,
+            modality=modality,
+        )
+        return PreparedTurn(conversation_id=conversation.id, turn=turn)
+
+    async def stream(self, prepared: PreparedTurn) -> AsyncIterator[ChatEvent]:
+        """The same turn as ``chat``, emitted while the model writes it.
+
+        The stored conversation is identical: the assembled text is appended
+        only when the stream finishes, so a turn that dies mid-stream leaves the
+        user message and any tool outputs recorded but never a half reply.
+        """
+        conversation_id, turn = prepared.conversation_id, prepared.turn
+        yield ChatEvent(kind="start", conversation_id=conversation_id)
+
+        async def on_tool(name: str, output: str) -> None:
+            await self.store.append(conversation_id, "tool", output, name=name)
+
+        done: ChatEvent | None = None
         try:
-            result = await self.engine.run(turn, on_tool=on_tool)
+            async for event in self.engine.run_stream(turn, on_tool=on_tool):
+                if event.kind == "done":
+                    done = event
+                    continue
+                yield event
         except ChatModelError as exc:
             raise AssistantModelError(str(exc)) from exc
 
-        await self.store.append(conversation.id, "assistant", result.text)
-        return ChatReply(
-            text=result.text,
-            conversation_id=conversation.id,
-            tools_used=list(result.tools_used),
-            usage_tokens=result.usage_tokens,
+        if done is None:  # pragma: no cover - run_stream always ends with done
+            raise AssistantModelError("the model stream ended without a reply")
+        await self.store.append(conversation_id, "assistant", done.text)
+        yield ChatEvent(
+            kind="done",
+            text=done.text,
+            conversation_id=conversation_id,
+            tools_used=done.tools_used,
+            usage_tokens=done.usage_tokens,
         )

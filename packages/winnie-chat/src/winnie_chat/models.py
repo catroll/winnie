@@ -75,6 +75,27 @@ class ChatTurn:
 
 
 @dataclass(frozen=True)
+class ChatEvent:
+    """One step of a streamed turn.
+
+    ``token`` carries a fragment of the reply as the model produced it, ``tool``
+    reports a tool that finished (so the page can say what is happening), and
+    ``done`` is always the last event and repeats the assembled result. A stream
+    that ends without ``done`` was cut short and the caller must not treat the
+    partial text as the reply.
+    """
+
+    kind: str
+    text: str = ""
+    name: str = ""
+    # The first event carries it, so a streaming client learns which
+    # conversation it is writing into before any text arrives.
+    conversation_id: str = ""
+    tools_used: tuple[str, ...] = ()
+    usage_tokens: float = 0.0
+
+
+@dataclass(frozen=True)
 class ChatResult:
     text: str
     tools_used: tuple[str, ...] = ()

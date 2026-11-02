@@ -12,8 +12,10 @@ was.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -66,11 +68,29 @@ class ChatResult:
     message: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class StreamPart:
+    """One step of a streamed turn.
+
+    Exactly one of the two fields is set. ``text`` is a fragment as the provider
+    produced it; ``result`` is the assembled turn and always comes last, so the
+    caller ends up with the same object ``chat`` would have returned.
+    """
+
+    text: str = ""
+    result: ChatResult | None = None
+
+
 class ChatClient:
     """Call a ``/chat/completions`` endpoint.
 
     Transient transport errors and retryable HTTP statuses are retried with
     exponential backoff. Usage recording never changes the call's result.
+
+    ``stream`` is the same call with ``stream: true``: it yields text as the
+    provider produces it and ends with the same ``ChatResult`` that ``chat``
+    returns, so a caller can switch without a second code path for tool calls,
+    usage or the replayed assistant message.
     """
 
     def __init__(
@@ -162,6 +182,152 @@ class ChatClient:
             model=str(body.get("model") or self.model),
             usage=_usage(body),
             message=_assistant_message(body),
+        )
+
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[StreamPart]:
+        """Yield the assistant turn as it is produced, then the whole result.
+
+        The wire format is server-sent events: ``data: {json}`` per chunk and a
+        final ``data: [DONE]``. Text arrives in ``choices[0].delta.content``;
+        tool calls arrive as fragments keyed by ``index`` and have to be joined
+        before they are JSON. ``stream_options.include_usage`` asks for the usage
+        chunk, which some providers omit — the ledger records what came back and
+        treats a missing count as unknown rather than as zero.
+
+        There is deliberately no retry here. A retry after the first delta would
+        replay text the owner has already read, so a transport failure mid-stream
+        is reported and the turn fails; the caller starts a new one.
+        """
+        started = time.perf_counter()
+        client = self.http or httpx.AsyncClient(
+            timeout=httpx.Timeout(self.timeout_seconds, connect=30.0)
+        )
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "max_tokens": self.max_output_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if tools:
+            payload["tools"] = tools
+        pieces: list[str] = []
+        calls: dict[int, dict[str, str]] = {}
+        usage: Any = None
+        provider_model = self.model
+        try:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            ) as response:
+                if response.status_code >= 400:
+                    body = (await response.aread())[:300]
+                    raise RuntimeError(
+                        "LLM request failed: "
+                        f"HTTP {response.status_code}: {body.decode('utf-8', 'replace')}"
+                    )
+                async for line in response.aiter_lines():
+                    if not line or line.startswith(":"):
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except ValueError:
+                        logger.warning("ignoring a malformed stream chunk: %r", data[:120])
+                        continue
+                    provider_model = str(chunk.get("model") or provider_model)
+                    if chunk.get("usage"):
+                        usage = chunk["usage"]
+                    for choice in chunk.get("choices") or []:
+                        delta = choice.get("delta") or {}
+                        piece = delta.get("content")
+                        if piece:
+                            pieces.append(str(piece))
+                            yield StreamPart(text=str(piece))
+                        for call in delta.get("tool_calls") or []:
+                            index = int(call.get("index") or 0)
+                            slot = calls.setdefault(
+                                index, {"id": "", "name": "", "arguments": ""}
+                            )
+                            if call.get("id"):
+                                slot["id"] = str(call["id"])
+                            function = call.get("function") or {}
+                            # A name is sent whole; opinions differ on whether it
+                            # can be split, so append only the first one and let
+                            # arguments accumulate fragment by fragment.
+                            if function.get("name") and not slot["name"]:
+                                slot["name"] = str(function["name"])
+                            if function.get("arguments"):
+                                slot["arguments"] += str(function["arguments"])
+        except Exception as exc:
+            self._record(
+                started,
+                provider_model=provider_model,
+                error=exc,
+                tools=tools,
+            )
+            raise
+        finally:
+            if self.http is None:
+                await client.aclose()
+
+        text = "".join(pieces)
+        tool_calls = tuple(
+            ToolCall(
+                id=slot["id"] or f"call_{index}",
+                name=slot["name"],
+                arguments=slot["arguments"] or "{}",
+            )
+            for index, slot in sorted(calls.items())
+            if slot["name"]
+        )
+        if not text and not tool_calls:
+            self._record(
+                started,
+                provider_model=provider_model,
+                error=RuntimeError("LLM stream contained no text content"),
+                tools=tools,
+            )
+            raise RuntimeError("LLM stream contained no text content")
+        message: dict[str, Any] = {"role": "assistant", "content": text}
+        if tool_calls:
+            message["tool_calls"] = [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": call.arguments},
+                }
+                for call in tool_calls
+            ]
+        self._record(
+            started,
+            provider_model=provider_model,
+            usage=usage,
+            tools=tools,
+            tool_calls=len(tool_calls),
+        )
+        yield StreamPart(
+            result=ChatResult(
+                text=text,
+                tool_calls=tool_calls,
+                model=provider_model,
+                usage=_usage({"usage": usage} if usage else {}),
+                message=message,
+            )
         )
 
     def _record(

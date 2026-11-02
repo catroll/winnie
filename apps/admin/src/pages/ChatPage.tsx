@@ -209,6 +209,9 @@ export function ChatPage() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [pendingUser, setPendingUser] = useState<string | null>(null);
+  // The reply as it arrives. Empty while the first token is still in flight,
+  // which is what keeps the "thinking" spinner visible until there is text.
+  const [streamingReply, setStreamingReply] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [voiceSettings, setVoiceSettings] = useState(readVoiceSettings);
   const [speakingKey, setSpeakingKey] = useState<string | null>(null);
@@ -224,13 +227,14 @@ export function ChatPage() {
     if (element) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [conversation?.messages.length, pendingUser, sending, conversationId]);
+  }, [conversation?.messages.length, pendingUser, sending, streamingReply, conversationId]);
 
   useEffect(() => {
     stopSpeaking();
     setSpeakingKey(null);
     setDraft('');
     setPendingUser(null);
+    setStreamingReply(null);
     setSendError(null);
   }, [conversationId]);
 
@@ -266,14 +270,21 @@ export function ChatPage() {
     setSending(true);
     setSendError(null);
     setPendingUser(message);
+    setStreamingReply('');
     setDraft('');
     try {
-      const response = await api.assistantChat({
-        message,
-        conversation_id: conversationId,
-        channel: 'admin',
-        input,
-      });
+      const response = await api.assistantChatStream(
+        {
+          message,
+          conversation_id: conversationId,
+          channel: 'admin',
+          input,
+        },
+        {
+          onToken: (text) => setStreamingReply((current) => (current ?? '') + text),
+        },
+      );
+      setStreamingReply(null);
       setPendingUser(null);
       setHistoryRevision((value) => value + 1);
       // The footer count comes from /status, which is otherwise fetched once.
@@ -288,6 +299,7 @@ export function ChatPage() {
       return response.reply;
     } catch (error) {
       setPendingUser(null);
+      setStreamingReply(null);
       setSendError(describe(error));
       setDraft(message);
       return null;
@@ -612,7 +624,17 @@ export function ChatPage() {
                         }}
                       />
                     ) : null}
-                    {sending ? <Thinking /> : null}
+                    {sending && !streamingReply ? <Thinking /> : null}
+                    {streamingReply ? (
+                      <Message
+                        message={{
+                          role: 'assistant',
+                          name: '',
+                          text: streamingReply,
+                          at: new Date().toISOString(),
+                        }}
+                      />
+                    ) : null}
                   </div>
                 </div>
 
