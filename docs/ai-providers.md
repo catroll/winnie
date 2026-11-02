@@ -4,13 +4,14 @@ The registry is the **only** place that selects a model. `config.yaml` no longer
 has an `llm` block, `assistant.model`, `meetings.translator` or
 `meetings.summarizer`.
 
-The unit a feature binds to is a **model**. A model belongs to a **supplier**;
-the supplier is resolved from the model and provides the API endpoint, key and
-model list. A feature never selects a supplier or an endpoint.
+The unit a feature binds to is a **virtual model**: a stable name for one
+supplier model. The feature selects the name, the name selects the supplier
+model, and the supplier is resolved from that model and provides the API
+endpoint, key and model list. A feature never selects a supplier or an endpoint.
 
 - Console page: **AI providers** (`/ai` in the admin app). Its **Suppliers** tab
-  is this registry; its **LLM usage** tab shows what the bound models cost (see
-  [usage.md](./usage.md))
+  holds suppliers, virtual models and the feature bindings; its **LLM usage**
+  tab shows what the bound models cost (see [usage.md](./usage.md))
 - API prefix: `/api/v1/ai`
 - State file: `data/ai.yaml` by default (gitignored)
 - Owner: `packages/winnie-llm` (`winnie_llm.registry`); `apps/api` only exposes
@@ -50,8 +51,8 @@ A **model** belongs to the supplier:
 
 **Sync models** calls the supplier's OpenAI-compatible `GET {base}/models`
 with the supplier key, reads `data[].id` (plus `owned_by` and `created`), and
-writes the catalog. A model that is still used by a binding or an endpoint
-default is kept if the supplier temporarily omits it.
+writes the catalog. A model that is still used by a virtual model, a direct
+binding or an endpoint default is kept if the supplier temporarily omits it.
 **Models** is the manual fallback for ASR and custom endpoints.
 
 `{base}` is the integration's `base_url` when it already ends in a version
@@ -71,7 +72,49 @@ mirrors whatever the supplier lists, so DashScope's resold third-party models
 the selector becomes noisy. A key or endpoint edited after the API process
 started needs a restart before a retry.
 
-A **feature binding** selects a supplier and a model:
+### Virtual models
+
+A **virtual model** is a stable alias for one supplier model:
+
+| Field | Meaning |
+|---|---|
+| `id` | Stable slug the feature bindings store, and the name a gateway client may call (`deepseek-flash`) |
+| `label` | Console label; defaults to the id |
+| `aliases` | Other call names the same platform model answers to (`deepseek-v4-flash`, `deepseek-v4.1-flash`) |
+| `vendor` | Supplier the name maps to |
+| `model` | Model id in that supplier's catalog |
+
+An **alias** is another spelling of the same platform model, not a model of its
+own: it carries no target, and it disappears when its row is deleted. Names are
+global — an id and every alias must be unique across the catalog, and a name
+claimed twice is refused when the file is read, because the gateway's answer
+would otherwise depend on file order. The gateway resolves a client's `model`
+through this table (see [openai-proxy.md § Model names](./openai-proxy.md)), so
+a row here is also a publicly callable name unless its supplier has no gateway
+route.
+
+Several features bind to the same alias, so changing the mapping moves all of
+them on their next call and no feature row is rewritten. That is the point of
+the layer: the console has one row per role (`chat-fast`, `chat-thinking`,
+`news-writer`) instead of one supplier/model per feature, and a vendor migration
+is one edit rather than seven.
+
+- The console shows virtual models in the **Virtual models** card, above
+  **Feature bindings**. A row lists its id, its aliases, its target and the
+  features that use it.
+- The target must be in the supplier catalog, and the supplier must have an
+  enabled internal endpoint the using feature can call. Creating the alias is
+  allowed before that endpoint exists; binding a feature to it is what fails.
+- Deleting an alias that a feature still uses is rejected (`409`) with the
+  feature keys. Retarget those rows first; the supplier model itself is never
+  deleted.
+- **Sync models** keeps a model an alias maps to even when the supplier omits
+  it temporarily, so a sync cannot break an alias.
+- A binding written by an older API caller can still name `vendor` + `model`
+  directly. The console shows it as a **Direct binding** option in that row only;
+  choosing an alias converts it on the next save.
+
+A **feature binding** selects a virtual model:
 
 | Feature | Uses |
 |---|---|
@@ -83,9 +126,14 @@ A **feature binding** selects a supplier and a model:
 
 An unbound feature has **no model** and fails with a clear error; there is no
 YAML fallback. A fresh registry leaves every model feature unbound until the
-owner configures a supplier model. Deleting the supplier API or removing a model
-that a binding uses is rejected or unbinds the feature with a message; choose a
-replacement model first.
+owner adds a supplier API, syncs its models, creates a virtual model and binds
+the feature. Deleting the supplier API or removing a model an alias maps to is
+rejected or unbinds the feature with a message; choose a replacement first.
+
+The whole **Feature bindings** table is edited together and saved with one
+**Save changes** button (`PUT /api/v1/ai/features`). The batch is validated
+against one candidate state, so one invalid row leaves every binding as it was.
+**Discard** drops the unsaved rows.
 
 ## Model runtime
 
@@ -172,6 +220,12 @@ imported from `packages/winnie-llm/.env` onto its record and internal calls stop
 reading the environment. The backup file is left exactly as it was. A fresh
 registry (a first start, or a deleted `data/ai.yaml`) imports the same backup
 once, so wiping the file does not lose the credentials.
+
+A `version: 7` registry is migrated to `version: 8`: every direct binding becomes
+a virtual model with the same target, and the binding stores the alias instead.
+Features that already shared a supplier model share one alias, so the migration
+never changes which model a feature calls and never invents a grouping the owner
+did not already have. A fresh registry writes `version: 8` directly.
 
 ## API keys
 
@@ -261,7 +315,7 @@ All endpoints require the same bearer session as the rest of the console.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/ai/config` | Suppliers, models, endpoints, bindings, runtime |
+| `GET` | `/api/v1/ai/config` | Suppliers, models, endpoints, virtual models, bindings, runtime |
 | `POST` | `/api/v1/ai/vendors` | Create a supplier |
 | `PUT` | `/api/v1/ai/vendors/{id}` | Update a supplier label/models |
 | `PUT` | `/api/v1/ai/vendors/{id}/key` | Store `{api_key}`; empty clears it; mirrors the env backup |
@@ -270,10 +324,15 @@ All endpoints require the same bearer session as the rest of the console.
 | `POST` | `/api/v1/ai/integrations` | Create the supplier API or a gateway route |
 | `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
 | `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it; unbind features if the supplier API is gone |
-| `PUT` | `/api/v1/ai/features/{feature}` | Bind `{vendor, model}`; empty vendor unbinds |
+| `POST` | `/api/v1/ai/virtual-models` | Create a virtual model (`id`, `label`, `aliases`, `vendor`, `model`) |
+| `PUT` | `/api/v1/ai/virtual-models/{id}` | Retarget or relabel one; every bound feature follows |
+| `DELETE` | `/api/v1/ai/virtual-models/{id}` | Delete one; rejected while a feature uses it |
+| `PUT` | `/api/v1/ai/features` | Save several bindings in one transaction: `{bindings: {feature: {virtual}}}` |
+| `PUT` | `/api/v1/ai/features/{feature}` | Bind one feature (`virtual`, or the legacy `vendor` + `model`); an explicit empty value unbinds |
 | `PUT` | `/api/v1/ai/runtime` | Update the shared model limits |
 
-Create a supplier, set its key, sync its models, then bind a feature to a model:
+Create a supplier, set its key, sync its models, then bind features through one
+virtual model:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/api/v1/ai/vendors \
@@ -301,15 +360,54 @@ curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/vendors/deepseek/key \
 curl -s -X POST http://127.0.0.1:8000/api/v1/ai/vendors/deepseek/models/sync \
   -H "Authorization: Bearer $TOKEN"
 
-curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features/assistant.chat \
+# One alias for every feature that should share this model.
+curl -s -X POST http://127.0.0.1:8000/api/v1/ai/virtual-models \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"vendor":"deepseek","model":"deepseek-chat"}'
+  -d '{"id":"chat-fast","label":"Chat (fast)","vendor":"deepseek","model":"deepseek-chat"}'
+
+# Bind the whole group in one write.
+curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/features \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"bindings":{
+    "assistant.chat":{"virtual":"chat-fast"},
+    "meetings.translate":{"virtual":"chat-fast"}
+  }}'
 ```
+
+To move both features to another supplier model later, edit the alias instead:
+
+```bash
+curl -s -X PUT http://127.0.0.1:8000/api/v1/ai/virtual-models/chat-fast \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"chat-fast","label":"Chat (fast)","vendor":"deepseek","model":"deepseek-reasoner"}'
+```
+
+A caller written against version 7 can still send `{"vendor":"deepseek","model":"deepseek-chat"}`
+to `PUT /api/v1/ai/features/{feature}`; the binding is stored directly and the
+console shows it as a **Direct binding**.
 
 Gateway routes are separate endpoint records with `"gateway": true`; they are
 not part of a feature binding. The console renders them as route rows under the
 supplier.
+
+## Why virtual models, and why one save
+
+- **The owner asked for roles, not model ids.** The registry already had seven
+  features pointing at whatever model was configured for that feature, so a
+  vendor change meant editing seven rows and remembering which ones shared a
+  model. An alias names the role once; the target is one field.
+- **A wrong batch must not half-apply.** The table is a single unit of intent, so
+  the server validates the whole candidate state before writing. A per-row PUT
+  loop would leave a partially applied table after one bad row.
+- **The migration preserves behaviour exactly.** Two features that shared a
+  supplier model share one alias after the upgrade; two that did not share one
+  do not become one. Consolidating aliases is the owner's decision.
+- **Direct bindings stay readable, not writable.** The v7 shape is still
+  accepted from API callers and shown as **Direct binding**, but the console
+  writes aliases so the next edit moves the feature onto the managed layer.
 
 ## Operational notes
 
@@ -320,7 +418,7 @@ supplier.
   loudly with the path and the validation error instead of silently falling
   back. Use the console for normal changes.
 - The file is written atomically (temporary file plus rename) with mode `0600`.
-- The file is `version: 7`. A `version: 1`–`6` file is migrated in place on the
+- The file is `version: 8`. A `version: 1`–`7` file is migrated in place on the
   next read; back it up first if it contains manual edits.
 - Multiple API processes share the file. The process that handled the console
   write refreshes its gateway table immediately; another process only re-reads

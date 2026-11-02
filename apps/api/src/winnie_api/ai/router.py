@@ -26,6 +26,7 @@ from winnie_llm import (
     ModelRuntimeConfig,
     ProviderRegistry,
     VendorDraft,
+    VirtualModelDraft,
 )
 
 router = APIRouter(
@@ -41,6 +42,18 @@ class ApiKeyDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     api_key: str = Field(default="", max_length=4096)
+
+
+class BindingBatchDraft(BaseModel):
+    """Several feature bindings saved as one transaction.
+
+    Keyed by feature so the caller states exactly which rows it means; an
+    omitted feature keeps its current binding.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    bindings: dict[str, BindingDraft] = Field(min_length=1)
 
 
 def _service(request: Request) -> ProviderRegistry:
@@ -82,6 +95,13 @@ def _vendor_view(service: ProviderRegistry, vendor_id: str) -> dict[str, Any]:
         if vendor["id"] == vendor_id:
             return vendor
     raise HTTPException(status_code=404, detail="supplier not found")
+
+
+def _virtual_view(service: ProviderRegistry, virtual_id: str) -> dict[str, Any]:
+    for virtual in service.view()["virtual_models"]:
+        if virtual["id"] == virtual_id:
+            return virtual
+    raise HTTPException(status_code=404, detail="virtual model not found")
 
 
 @router.get("/config")
@@ -235,6 +255,75 @@ async def set_runtime(
 ) -> dict[str, Any]:
     runtime = _service(request).set_runtime(payload)
     return {"runtime": runtime.model_dump(mode="json")}
+
+
+@router.post("/virtual-models", status_code=201)
+async def create_virtual_model(
+    request: Request,
+    payload: VirtualModelDraft,
+) -> dict[str, Any]:
+    """Create an alias for one supplier model."""
+    service = _service(request)
+    try:
+        record = service.create_virtual_model(payload)
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {"virtual_model": _virtual_view(service, record.id)}
+
+
+@router.put("/virtual-models/{virtual_id}")
+async def update_virtual_model(
+    request: Request,
+    virtual_id: str,
+    payload: VirtualModelDraft,
+) -> dict[str, Any]:
+    """Retarget or relabel an alias; every feature bound to it follows."""
+    service = _service(request)
+    try:
+        record = service.update_virtual_model(virtual_id, payload)
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {"virtual_model": _virtual_view(service, record.id)}
+
+
+@router.delete("/virtual-models/{virtual_id}")
+async def delete_virtual_model(
+    request: Request,
+    virtual_id: str,
+) -> dict[str, Any]:
+    """Delete an alias that no feature uses."""
+    service = _service(request)
+    try:
+        deleted, used_by = service.delete_virtual_model(virtual_id)
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {"id": deleted, "used_by": used_by}
+
+
+@router.put("/features")
+async def set_bindings(
+    request: Request,
+    payload: BindingBatchDraft,
+) -> dict[str, Any]:
+    """Save several feature bindings in one transaction.
+
+    The console sends every row the owner changed with one request, so a typo in
+    one row cannot leave the table half-applied. An empty binding unbinds its
+    feature.
+    """
+    service = _service(request)
+    try:
+        saved = service.set_bindings(payload.bindings)
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {
+        "saved": len(saved),
+        "bindings": {
+            feature: binding.model_dump(mode="json")
+            for feature, binding in saved.items()
+        },
+        "features": service.view()["features"],
+    }
 
 
 @router.put("/features/{feature}")

@@ -2589,3 +2589,49 @@ turn ends; the next message starts a new one.
 needs a speech queue that does not cancel itself between chunks; the console
 still speaks the finished reply. Recorded in `docs/assistant.md` as the remaining
 follow-up.
+
+## A model name is a platform promise, not a supplier's id (2026-11-03)
+
+**Decision.** The gateway now resolves every call through the registry's
+**virtual models**, which become the platform's model catalog. One row publishes
+a name (`deepseek-flash`), the other spellings it answers to
+(`deepseek-v4-flash`, `deepseek-v4.1-flash`) and where it is served (supplier +
+upstream model id). A client that sends a name the catalog does not publish is
+refused with `400` before a byte leaves the process; the message lists what is
+published. The body is re-serialised only to replace that one `model` field.
+
+**Why.** Suppliers rename models between releases, clients keep sending the old
+name for months, and a key holder must not be able to reach a supplier model the
+platform never published (it would be billed to us and invisible in the catalog).
+Naming had to become one place with two independent questions answered
+separately: *is this name ours?* and *where does it go?* Aliases answer the first,
+the target the second, and a per-key override changes only the second. Splitting
+them is what makes "move every caller to the new model" one edit that does not
+rename anything a client sends.
+
+**Precedence.** A name resolves as: key override (if the key has one for that
+name) → platform target from the catalog. There is no user or group layer yet.
+The gateway key store has `owner_id`, but the platform has no group object and
+no per-user model policy, so a "user override" would today be identical to a key
+override for every key that user holds. Adding a layer that cannot differ from
+the one below it is worse than not having it: it invites an operator to set a
+group override and expect it to apply. When accounts get a shared object, the
+layer goes *above* the key (user → group → key), because the more specific
+setting must win.
+
+**Where it lives.** The catalog is the registry (`data/ai.yaml`), edited in the
+console under *AI suppliers → Virtual models*; keys and their overrides are in
+`data/gateway-keys.yaml`. The gateway receives both as plain data on
+`app.state` (`model_catalog`, `vendor_routes`) rebuilt from one registry read, so
+a console edit takes effect on the next call. A gateway-only deployment
+(`ai.enabled: false`) has no catalog and forwards the name unchanged — the
+behaviour every earlier release had, and the reason the gate is "catalog is
+empty", not "model is unknown".
+
+**Rejected.** Passing unknown names through to the supplier (the old behaviour):
+it makes the catalog advisory and the bill unpredictable. A per-key allowlist of
+names *in addition to* overrides: the override already names a published model,
+so a separate list would be a second, silently divergent gate. Putting the
+mapping in `config.yaml`: that file is the gateway-only fallback and the console
+cannot edit it, so the mapping would be invisible exactly where an operator looks
+first.

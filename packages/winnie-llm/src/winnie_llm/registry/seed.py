@@ -12,6 +12,7 @@ models and binds one in the console. No fake supplier ships.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -22,6 +23,7 @@ from winnie_llm.registry.schema import (
     IntegrationRecord,
     ModelRecord,
     VendorRecord,
+    VirtualModelRecord,
     infer_vendor,
     utcnow,
     vendor_label_for,
@@ -145,12 +147,85 @@ def seed_state(seed: SeedInput) -> AIState:
             model=asr.default_model or "bigmodel",
         )
 
-    return AIState(
+    state = AIState(
         version=7,
         vendors=list(vendors.values()),
         integrations=integrations,
         bindings=bindings,
     )
+    # A fresh registry is written in the current shape, so the console starts
+    # with the seeded ASR binding already expressed as a virtual model.
+    virtualise_bindings(state)
+    return state
+
+
+def _virtual_id(model_id: str, vendor_id: str, taken: set[str]) -> str:
+    """A slug for a new alias, unique among the aliases already stored.
+
+    Two suppliers can offer the same model id; they get distinct aliases so the
+    console never has to guess which supplier a shared id meant.
+    """
+    slug = re.sub(r"[^a-z0-9-]+", "-", model_id.lower()).strip("-")[:63].strip("-")
+    if not slug:
+        slug = f"{vendor_id}-model"
+    if slug not in taken:
+        return slug
+    index = 2
+    while f"{slug}-{index}" in taken:
+        index += 1
+    return f"{slug}-{index}"
+
+
+def virtualise_bindings(state: AIState) -> bool:
+    """Version 8: every direct binding points at a virtual model instead.
+
+    The upgrade must not change which model a feature calls, so each distinct
+    ``vendor`` + ``model`` pair that a binding uses becomes one alias and every
+    binding that used the pair is repointed at it. Features that already share a
+    model therefore already share an alias; consolidating further is the
+    owner's decision in the console, not something a migration may invent.
+    """
+    if state.version >= 8:
+        return False
+    taken = {virtual.id for virtual in state.virtual_models}
+    by_target = {
+        (virtual.vendor, virtual.model): virtual.id
+        for virtual in state.virtual_models
+    }
+    vendors = {vendor.id: vendor for vendor in state.vendors}
+    for binding in state.bindings.values():
+        if binding.virtual or not binding.vendor or not binding.model:
+            continue
+        target = (binding.vendor, binding.model)
+        virtual_id = by_target.get(target)
+        if virtual_id is None:
+            virtual_id = _virtual_id(binding.model, binding.vendor, taken)
+            taken.add(virtual_id)
+            label = binding.model
+            vendor = vendors.get(binding.vendor)
+            if vendor is not None:
+                record = next(
+                    (item for item in vendor.models if item.id == binding.model),
+                    None,
+                )
+                if record is not None and record.label:
+                    label = record.label
+            state.virtual_models.append(
+                VirtualModelRecord(
+                    id=virtual_id,
+                    label=label,
+                    vendor=binding.vendor,
+                    model=binding.model,
+                )
+            )
+            by_target[target] = virtual_id
+        binding.virtual = virtual_id
+        binding.vendor = ""
+        binding.model = ""
+        binding.integration_id = None
+        binding.updated_at = utcnow()
+    state.version = 8
+    return True
 
 
 def _add_vendors(state: AIState) -> None:

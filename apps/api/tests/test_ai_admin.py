@@ -642,11 +642,14 @@ bindings:
         routes = (await client.get("/routes")).json()["routes"]
 
     stored = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert stored["version"] == 7
+    assert stored["version"] == 8
     # Version 6 removed the stored key variable; the derived name is only a
     # view, never part of the file. Version 7 stores the key on the supplier.
     assert all("api_key_env" not in item for item in stored["integrations"])
     assert all("api_key" in item for item in stored["vendors"])
+    # The upgraded binding is expressed as an alias that keeps its target.
+    assert [item["id"] for item in stored["virtual_models"]] == ["deepseek-chat"]
+    assert stored["bindings"]["assistant.chat"]["virtual"] == "deepseek-chat"
     by_name = {item["name"]: item for item in config["integrations"]}
     vendors = {item["id"]: item for item in config["vendors"]}
     assert "fake" not in by_name
@@ -1085,3 +1088,160 @@ async def test_vendor_check_says_when_a_supplier_has_no_probe(tmp_path: Path) ->
 
         unknown = await client.post("/api/v1/ai/vendors/nope/check")
         assert unknown.status_code == 404
+
+
+async def test_virtual_models_and_one_batch_save(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        await client.post(
+            "/api/v1/ai/vendors",
+            json={
+                "id": "deepseek",
+                "label": "DeepSeek",
+                "models": [
+                    {"id": "deepseek-chat"},
+                    {"id": "deepseek-reasoner"},
+                ],
+            },
+        )
+        endpoint = await client.post(
+            "/api/v1/ai/integrations",
+            json={
+                "name": "deepseek-internal",
+                "vendor": "deepseek",
+                "kind": "openai",
+                "base_url": "https://api.deepseek.com",
+                "default_model": "deepseek-chat",
+                "gateway": False,
+            },
+        )
+        assert endpoint.status_code == 201, endpoint.text
+
+        # A virtual model is a second name for one supplier model. Several
+        # feature rows point at the alias, so the target lives in one place.
+        fast = await client.post(
+            "/api/v1/ai/virtual-models",
+            json={
+                "id": "fast",
+                "label": "Fast replies",
+                "vendor": "deepseek",
+                "model": "deepseek-chat",
+            },
+        )
+        assert fast.status_code == 201, fast.text
+        assert fast.json()["virtual_model"]["used_by"] == []
+
+        thinking = await client.post(
+            "/api/v1/ai/virtual-models",
+            json={
+                "id": "thinking",
+                "vendor": "deepseek",
+                "model": "deepseek-reasoner",
+            },
+        )
+        assert thinking.status_code == 201, thinking.text
+
+        saved = await client.put(
+            "/api/v1/ai/features",
+            json={
+                "bindings": {
+                    "assistant.chat": {"virtual": "fast"},
+                    "news.extract": {"virtual": "fast"},
+                    "news.write": {"virtual": "fast"},
+                    "news.review": {"virtual": "thinking"},
+                }
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["saved"] == 4
+
+        config = (await client.get("/api/v1/ai/config")).json()
+        features = {item["key"]: item for item in config["features"]}
+        assert features["assistant.chat"]["virtual"] == "fast"
+        assert features["assistant.chat"]["model"] == "deepseek-chat"
+        assert features["news.review"]["virtual"] == "thinking"
+        assert features["news.review"]["model"] == "deepseek-reasoner"
+        aliases = {item["id"]: item for item in config["virtual_models"]}
+        assert aliases["fast"]["vendor_label"] == "DeepSeek"
+        assert aliases["fast"]["used_by"] == [
+            "assistant.chat",
+            "news.extract",
+            "news.write",
+        ]
+
+        # Retargeting the alias moves every feature bound to it, and no feature
+        # binding is rewritten.
+        retargeted = await client.put(
+            "/api/v1/ai/virtual-models/fast",
+            json={
+                "id": "fast",
+                "label": "Fast replies",
+                "vendor": "deepseek",
+                "model": "deepseek-reasoner",
+            },
+        )
+        assert retargeted.status_code == 200, retargeted.text
+        config = (await client.get("/api/v1/ai/config")).json()
+        features = {item["key"]: item for item in config["features"]}
+        assert features["assistant.chat"]["model"] == "deepseek-reasoner"
+        assert features["news.extract"]["model"] == "deepseek-reasoner"
+
+        # A rejected target is an error, not a half-applied save.
+        retired = await client.put(
+            "/api/v1/ai/virtual-models/fast",
+            json={
+                "id": "fast",
+                "vendor": "deepseek",
+                "model": "retired-model",
+            },
+        )
+        assert retired.status_code == 400, retired.text
+        assert "model catalog" in retired.json()["detail"]
+
+        # One bad row leaves the whole batch unapplied.
+        partial = await client.put(
+            "/api/v1/ai/features",
+            json={
+                "bindings": {
+                    "assistant.chat": {"virtual": "thinking"},
+                    "news.review": {"virtual": "missing"},
+                }
+            },
+        )
+        assert partial.status_code == 404, partial.text
+        config = (await client.get("/api/v1/ai/config")).json()
+        features = {item["key"]: item for item in config["features"]}
+        assert features["assistant.chat"]["virtual"] == "fast"
+
+        # An alias a feature uses cannot disappear underneath it.
+        in_use = await client.delete("/api/v1/ai/virtual-models/fast")
+        assert in_use.status_code == 409, in_use.text
+        assert "assistant.chat" in in_use.json()["detail"]
+
+        unused = await client.post(
+            "/api/v1/ai/virtual-models",
+            json={
+                "id": "spare",
+                "vendor": "deepseek",
+                "model": "deepseek-chat",
+            },
+        )
+        assert unused.status_code == 201, unused.text
+        deleted = await client.delete("/api/v1/ai/virtual-models/spare")
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {"id": "spare", "used_by": []}
+
+        missing = await client.delete("/api/v1/ai/virtual-models/nope")
+        assert missing.status_code == 404
+
+        # An empty binding unbinds a feature; the console sends this when the
+        # owner chooses "Not configured".
+        unbound = await client.put(
+            "/api/v1/ai/features",
+            json={"bindings": {"news.write": {"virtual": ""}}},
+        )
+        assert unbound.status_code == 200, unbound.text
+        config = (await client.get("/api/v1/ai/config")).json()
+        features = {item["key"]: item for item in config["features"]}
+        assert features["news.write"]["source"] == "none"
+        assert features["news.write"]["vendor"] == ""

@@ -9,6 +9,8 @@ import type {
   AIVendor,
   AIVendorCheck,
   AIVendorInput,
+  AIVirtualModel,
+  AIVirtualModelInput,
   AssistantChatResponse,
   AssistantConversation,
   AssistantConversationList,
@@ -420,9 +422,52 @@ export const api = {
     return request('/api/v1/ai/runtime', { method: 'PUT', body: runtime });
   },
 
+  createAIVirtualModel(
+    input: AIVirtualModelInput,
+  ): Promise<{ virtual_model: AIVirtualModel }> {
+    return request('/api/v1/ai/virtual-models', {
+      method: 'POST',
+      body: input,
+    });
+  },
+
+  updateAIVirtualModel(
+    virtualId: string,
+    input: AIVirtualModelInput,
+  ): Promise<{ virtual_model: AIVirtualModel }> {
+    return request(
+      `/api/v1/ai/virtual-models/${encodeURIComponent(virtualId)}`,
+      { method: 'PUT', body: input },
+    );
+  },
+
+  deleteAIVirtualModel(
+    virtualId: string,
+  ): Promise<{ id: string; used_by: string[] }> {
+    return request(
+      `/api/v1/ai/virtual-models/${encodeURIComponent(virtualId)}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  /**
+   * Save several feature bindings as one transaction.
+   *
+   * The server validates the whole table before writing, so the console's one
+   * save button cannot leave half the rows applied.
+   */
+  setAIFeatures(
+    bindings: Record<string, { virtual: string }>,
+  ): Promise<{ saved: number }> {
+    return request('/api/v1/ai/features', {
+      method: 'PUT',
+      body: { bindings },
+    });
+  },
+
   setAIFeature(
     feature: string,
-    binding: { vendor: string; model: string },
+    binding: { virtual?: string; vendor?: string; model?: string },
   ): Promise<{ feature: string; binding: { vendor: string; model: string } }> {
     return request(`/api/v1/ai/features/${encodeURIComponent(feature)}`, {
       method: 'PUT',
@@ -534,6 +579,128 @@ export const api = {
       method: 'POST',
       body: payload,
     });
+  },
+
+  /**
+   * The same chat turn, delivered as server-sent events.
+   *
+   * The endpoint is the same route as `assistantChat`; only the transport
+   * differs. `onToken` runs as text arrives, so the page can paint a reply
+   * while the model is still writing. The promise resolves with the assembled
+   * reply so a caller that needs the whole text (the voice loop, a copy button)
+   * does not have to accumulate it twice.
+   */
+  async assistantChatStream(
+    payload: {
+      message: string;
+      conversation_id?: string;
+      channel: 'admin' | 'web' | 'api';
+      input?: 'text' | 'voice';
+    },
+    handlers: {
+      onToken?: (text: string) => void;
+      onTool?: (name: string) => void;
+      onStart?: (conversationId: string) => void;
+    } = {},
+    signal?: AbortSignal,
+  ): Promise<AssistantChatResponse> {
+    const headers = new Headers({
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    });
+    const token = getToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/api/v1/assistant/chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...payload, stream: true }),
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error;
+      }
+      throw new ApiError(
+        0,
+        'Cannot reach the Winnie API. Check that the server is running and reachable.',
+      );
+    }
+    if (!response.ok) {
+      if (response.status === 401 && token) {
+        unauthorizedHandler?.();
+      }
+      let detail: unknown = null;
+      try {
+        detail = await response.json();
+      } catch {
+        // A non-JSON body still has a status worth reporting.
+      }
+      throw new ApiError(
+        response.status,
+        describeDetail(detail, `Request failed with HTTP ${response.status}.`),
+      );
+    }
+    if (!response.body) {
+      throw new ApiError(0, 'The reply stream could not be read.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let conversationId = payload.conversation_id ?? '';
+    let reply = '';
+    let failure: string | null = null;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        // Events are separated by a blank line; a chunk may end mid-event.
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary !== -1) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf('\n\n');
+          const line = frame.split('\n').find((entry) => entry.startsWith('data: '));
+          if (!line) {
+            continue;
+          }
+          const event = JSON.parse(line.slice(6)) as {
+            type: string;
+            text?: string;
+            name?: string;
+            conversation_id?: string;
+            message?: string;
+          };
+          if (event.type === 'start') {
+            conversationId = event.conversation_id ?? conversationId;
+            handlers.onStart?.(conversationId);
+          } else if (event.type === 'token') {
+            reply += event.text ?? '';
+            handlers.onToken?.(event.text ?? '');
+          } else if (event.type === 'tool') {
+            handlers.onTool?.(event.name ?? '');
+          } else if (event.type === 'done') {
+            reply = event.text ?? reply;
+            conversationId = event.conversation_id ?? conversationId;
+          } else if (event.type === 'error') {
+            failure = event.message ?? 'The model call failed.';
+          }
+        }
+        if (done) {
+          break;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (failure) {
+      throw new ApiError(502, failure);
+    }
+    return { conversation_id: conversationId, reply, tools_used: [], usage_tokens: 0 };
   },
 
   /**

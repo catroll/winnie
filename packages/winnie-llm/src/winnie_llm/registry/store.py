@@ -47,11 +47,18 @@ from winnie_llm.registry.schema import (
     VendorCheck,
     VendorDraft,
     VendorRecord,
+    VirtualModelDraft,
+    VirtualModelRecord,
     infer_vendor,
     utcnow,
     vendor_label_for,
 )
-from winnie_llm.registry.seed import SeedInput, migrate_state, seed_state
+from winnie_llm.registry.seed import (
+    SeedInput,
+    migrate_state,
+    seed_state,
+    virtualise_bindings,
+)
 from winnie_llm.runtime import ModelRuntimeConfig
 
 logger = logging.getLogger(__name__)
@@ -155,6 +162,11 @@ class ProviderRegistry:
             self._import_backup_keys(state)
             state.version = 7
             changed = True
+        # Virtual models were added in version 8. The migration runs after the
+        # key import so a version 5 file still picks its keys up from the
+        # backup on the same read.
+        if virtualise_bindings(state):
+            changed = True
         if changed:
             try:
                 state = AIState.model_validate(state.model_dump(mode="json"))
@@ -246,14 +258,46 @@ class ProviderRegistry:
             return integration
         return None
 
+    @staticmethod
+    def _bound_targets(
+        state: AIState, vendor_id: str
+    ) -> list[tuple[str, str]]:
+        """``(feature, model)`` for every binding that resolves to a supplier.
+
+        A virtual binding follows its alias, so "which features use this
+        supplier's model" has a different answer before and after the alias
+        moves. Asking here keeps that answer in one place.
+        """
+        targets: list[tuple[str, str]] = []
+        for feature, binding in state.bindings.items():
+            if binding.virtual:
+                virtual = state.virtual_model(binding.virtual)
+                if virtual is None or virtual.vendor != vendor_id:
+                    continue
+                targets.append((feature, virtual.model))
+            elif binding.vendor == vendor_id and binding.model:
+                targets.append((feature, binding.model))
+        return targets
+
     def resolve(self, feature: str) -> ResolvedProvider:
         spec = FEATURE_BY_KEY.get(feature)
         if spec is None:
             raise AINotFound(f"unknown AI feature: {feature}")
         state = self.state()
         binding = state.bindings.get(feature)
-        vendor_id = binding.vendor if binding is not None else ""
-        model = binding.model if binding is not None else ""
+        virtual_id = binding.virtual if binding is not None else ""
+        if virtual_id:
+            virtual = state.virtual_model(virtual_id)
+            if virtual is None:
+                raise AIProviderError(
+                    f"feature {feature} references missing virtual model "
+                    f"{virtual_id!r}"
+                )
+            vendor_id = virtual.vendor
+            model = virtual.model
+        else:
+            vendor_id = binding.vendor if binding is not None else ""
+            model = binding.model if binding is not None else ""
         legacy_integration = (
             state.integration(binding.integration_id)
             if binding is not None and binding.integration_id
@@ -304,6 +348,7 @@ class ProviderRegistry:
             key_env=self.keys.env_name(vendor.id),
             model=model,
             options=dict(integration.options),
+            virtual=virtual_id,
         )
 
     def route_entries(self) -> list[RouteEntry]:
@@ -550,10 +595,10 @@ class ProviderRegistry:
             )
 
         fetched_ids = {model.id for model in fetched}
-        used = {
-            binding.model
-            for binding in state.bindings.values()
-            if binding.vendor == vendor_id and binding.model
+        used = {model for _, model in self._bound_targets(state, vendor_id)} | {
+            virtual.model
+            for virtual in state.virtual_models
+            if virtual.vendor == vendor_id
         } | {
             integration.default_model
             for integration in state.integrations
@@ -662,11 +707,9 @@ class ProviderRegistry:
         # that is the other way a configured feature fails at call time, and
         # the model list already in hand answers it for free.
         missing = tuple(
-            f"{feature} · {binding.model}"
-            for feature, binding in state.bindings.items()
-            if binding.vendor == vendor.id
-            and binding.model
-            and binding.model not in catalog
+            f"{feature} · {model}"
+            for feature, model in self._bound_targets(state, vendor.id)
+            if model not in catalog
         )
         return VendorCheck(
             state="ok",
@@ -691,6 +734,10 @@ class ProviderRegistry:
                 self._integration_view(integration, state)
                 for integration in state.integrations
             ],
+            "virtual_models": [
+                self._virtual_view(virtual, state)
+                for virtual in state.virtual_models
+            ],
             "features": [self._feature_view(feature.key, state) for feature in FEATURES],
             "kinds": [
                 {
@@ -711,6 +758,7 @@ class ProviderRegistry:
             "updated_at": max(
                 [vendor.updated_at for vendor in state.vendors]
                 + [integration.updated_at for integration in state.integrations]
+                + [virtual.updated_at for virtual in state.virtual_models]
                 + [binding.updated_at for binding in state.bindings.values()],
                 default="",
             ),
@@ -782,10 +830,48 @@ class ProviderRegistry:
             "gateway_paths": paths,
         }
 
+    def _virtual_view(
+        self, virtual: VirtualModelRecord, state: AIState
+    ) -> dict[str, Any]:
+        vendor = state.vendor(virtual.vendor)
+        model = next(
+            (
+                item
+                for item in (vendor.models if vendor is not None else [])
+                if item.id == virtual.model
+            ),
+            None,
+        )
+        return {
+            **virtual.model_dump(mode="json"),
+            "vendor_label": vendor.label if vendor is not None else virtual.vendor,
+            "model_label": model.label if model is not None else virtual.model,
+            "used_by": sorted(
+                feature
+                for feature, binding in state.bindings.items()
+                if binding.virtual == virtual.id
+            ),
+        }
+
     def _feature_view(self, feature: str, state: AIState) -> dict[str, Any]:
         spec = FEATURE_BY_KEY[feature]
         binding = state.bindings.get(feature)
-        vendor = state.vendor(binding.vendor) if binding is not None else None
+        virtual = (
+            state.virtual_model(binding.virtual)
+            if binding is not None and binding.virtual
+            else None
+        )
+        vendor_id = (
+            virtual.vendor
+            if virtual is not None
+            else (binding.vendor if binding is not None else "")
+        )
+        model = (
+            virtual.model
+            if virtual is not None
+            else (binding.model if binding is not None else "")
+        )
+        vendor = state.vendor(vendor_id) if vendor_id else None
         integration = (
             self._internal_integration(state, vendor.id, spec.kinds)
             if vendor is not None
@@ -799,7 +885,12 @@ class ProviderRegistry:
             "requires_model": spec.requires_model,
             "vendor": vendor.id if vendor is not None else "",
             "vendor_label": vendor.label if vendor is not None else "",
-            "model": binding.model if binding is not None else "",
+            "model": model if vendor is not None else "",
+            # The alias the console edits, or empty for a direct binding. The
+            # resolved supplier and model above follow it, so a reader does not
+            # have to look the alias up itself.
+            "virtual": virtual.id if virtual is not None else "",
+            "virtual_label": virtual.label if virtual is not None else "",
             "source": "admin" if vendor is not None else "none",
             # Kept for diagnostics and older callers; the console binds by model.
             "integration_id": integration.id if integration is not None else None,
@@ -857,6 +948,12 @@ class ProviderRegistry:
                         raise AIProviderError(
                             f"cannot remove model {integration.default_model!r}: "
                             f"it is the default for {integration.name!r}"
+                        )
+                for virtual in state.virtual_models:
+                    if virtual.vendor == vendor_id and virtual.model in removed:
+                        raise AIProviderError(
+                            f"cannot remove model {virtual.model!r}: virtual "
+                            f"model {virtual.id!r} maps to it"
                         )
                 for feature, binding in state.bindings.items():
                     if binding.model not in removed:
@@ -935,7 +1032,10 @@ class ProviderRegistry:
             ]
             for feature, binding in state.bindings.items():
                 spec = FEATURE_BY_KEY[feature]
-                binding_vendor = binding.vendor
+                virtual = (
+                    state.virtual_model(binding.virtual) if binding.virtual else None
+                )
+                binding_vendor = virtual.vendor if virtual is not None else binding.vendor
                 if not binding_vendor and binding.integration_id:
                     legacy = state.integration(binding.integration_id)
                     binding_vendor = legacy.vendor if legacy is not None else ""
@@ -955,7 +1055,10 @@ class ProviderRegistry:
                         "compatible internal endpoint first"
                     )
                 if record.kind != "fake" and spec.requires_model:
-                    if not (binding.model or record.default_model):
+                    # A virtual binding already names the model it needs; only
+                    # a direct binding leans on the endpoint's default.
+                    bound_model = virtual.model if virtual is not None else binding.model
+                    if not (bound_model or record.default_model):
                         raise AIProviderError(
                             f"{feature} is bound to {record.name!r}; set a "
                             "model on the integration or the binding before "
@@ -983,70 +1086,207 @@ class ProviderRegistry:
             cleared: list[str] = []
             for feature, binding in state.bindings.items():
                 spec = FEATURE_BY_KEY[feature]
+                virtual = (
+                    state.virtual_model(binding.virtual) if binding.virtual else None
+                )
+                vendor_id = virtual.vendor if virtual is not None else binding.vendor
                 if binding.integration_id == integration_id:
-                    binding.vendor = ""
-                    binding.model = ""
-                    binding.integration_id = None
-                    binding.updated_at = utcnow()
+                    state.bindings[feature] = BindingRecord()
                     cleared.append(feature)
-                elif binding.vendor == record.vendor and self._internal_integration(
-                    state, binding.vendor, spec.kinds
+                elif vendor_id == record.vendor and self._internal_integration(
+                    state, vendor_id, spec.kinds
                 ) is None:
-                    binding.vendor = ""
-                    binding.model = ""
-                    binding.updated_at = utcnow()
+                    # The supplier has no internal endpoint left for this
+                    # feature, so the binding could not resolve anyway. Clear
+                    # the alias too: an empty binding has no target.
+                    state.bindings[feature] = BindingRecord()
                     cleared.append(feature)
             self._commit(state)
             return record.name, sorted(cleared)
 
-    def set_binding(self, feature: str, draft: BindingDraft) -> BindingRecord:
+    def create_virtual_model(
+        self, draft: VirtualModelDraft
+    ) -> VirtualModelRecord:
         with self._lock:
-            spec = FEATURE_BY_KEY.get(feature)
-            if spec is None:
-                raise AINotFound(f"unknown AI feature: {feature}")
             state = self.state().model_copy(deep=True)
-            vendor_id = draft.vendor
-            model = draft.model
-            if not vendor_id and draft.integration_id:
-                # Compatibility with the v3 API shape: derive the supplier
-                # from the endpoint the caller named.
-                legacy = state.integration(draft.integration_id)
-                if legacy is None:
-                    raise AINotFound(
-                        f"integration not found: {draft.integration_id}"
-                    )
-                vendor_id = legacy.vendor
-                model = model or legacy.default_model
-            if not vendor_id:
+            if state.virtual_model(draft.id) is not None:
+                raise AIConflict(
+                    f"a virtual model named {draft.id!r} already exists"
+                )
+            record = VirtualModelRecord(**draft.model_dump())
+            state.virtual_models.append(record)
+            self._commit(state)
+            return record
+
+    def update_virtual_model(
+        self, virtual_id: str, draft: VirtualModelDraft
+    ) -> VirtualModelRecord:
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            if draft.id != virtual_id:
+                raise AIProviderError(
+                    "virtual model id in the body does not match the path"
+                )
+            index = next(
+                (
+                    position
+                    for position, item in enumerate(state.virtual_models)
+                    if item.id == virtual_id
+                ),
+                None,
+            )
+            if index is None:
+                raise AINotFound(f"virtual model not found: {virtual_id}")
+            merged = state.virtual_models[index].model_dump()
+            merged.update(draft.model_dump())
+            merged["updated_at"] = utcnow()
+            record = VirtualModelRecord.model_validate(merged)
+            state.virtual_models[index] = record
+            # Every feature bound to the alias follows the new target on its
+            # next call; the commit rejects a target with no usable endpoint.
+            self._commit(state)
+            return record
+
+    def delete_virtual_model(self, virtual_id: str) -> tuple[str, list[str]]:
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            if state.virtual_model(virtual_id) is None:
+                raise AINotFound(f"virtual model not found: {virtual_id}")
+            used_by = sorted(
+                feature
+                for feature, binding in state.bindings.items()
+                if binding.virtual == virtual_id
+            )
+            if used_by:
+                raise AIConflict(
+                    f"virtual model {virtual_id!r} is used by "
+                    f"{', '.join(used_by)}; point those features at another "
+                    "virtual model first"
+                )
+            state.virtual_models = [
+                item for item in state.virtual_models if item.id != virtual_id
+            ]
+            self._commit(state)
+            return virtual_id, used_by
+
+    def _check_binding_target(
+        self,
+        state: AIState,
+        feature: str,
+        spec: Any,
+        vendor_id: str,
+        model: str,
+    ) -> None:
+        """The supplier must be reachable for this feature and name the model."""
+        vendor = state.vendor(vendor_id)
+        if vendor is None:
+            raise AINotFound(f"supplier not found: {vendor_id}")
+        integration = self._internal_integration(state, vendor.id, spec.kinds)
+        if integration is None:
+            raise AIProviderError(
+                f"supplier {vendor.label!r} has no enabled internal endpoint "
+                f"for {feature}"
+            )
+        if vendor.id == "fake":
+            return
+        if not model:
+            raise AIProviderError(
+                f"choose a model for {feature} from {vendor.label!r}"
+            )
+        if not any(item.id == model for item in vendor.models):
+            raise AIProviderError(
+                f"model {model!r} is not in the {vendor.label} catalog; "
+                "sync the supplier models first"
+            )
+
+    def _binding_record(
+        self, state: AIState, feature: str, draft: BindingDraft
+    ) -> BindingRecord:
+        """Turn one draft into the binding shape the state stores.
+
+        An explicitly empty draft unbinds the feature. A draft with no field at
+        all is a caller mistake and is rejected, because "clear this feature" has
+        to be stated rather than implied by an empty body. A ``virtual`` draft is
+        stored as the alias alone, so moving the alias is enough to move every
+        feature that uses it; ``vendor`` + ``model`` remains the direct shape for
+        API callers.
+        """
+        spec = FEATURE_BY_KEY[feature]
+        if draft.virtual:
+            if draft.vendor or draft.model:
+                raise AIProviderError(
+                    "bind a feature to either a virtual model or a supplier "
+                    "model, not both"
+                )
+            virtual = state.virtual_model(draft.virtual)
+            if virtual is None:
+                raise AINotFound(f"virtual model not found: {draft.virtual}")
+            self._check_binding_target(
+                state, feature, spec, virtual.vendor, virtual.model
+            )
+            return BindingRecord(virtual=virtual.id)
+        vendor_id = draft.vendor
+        model = draft.model
+        if not vendor_id and draft.integration_id:
+            # Compatibility with the v3 API shape: derive the supplier from
+            # the endpoint the caller named.
+            legacy = state.integration(draft.integration_id)
+            if legacy is None:
+                raise AINotFound(f"integration not found: {draft.integration_id}")
+            vendor_id = legacy.vendor
+            model = model or legacy.default_model
+        if not vendor_id:
+            if not draft.model_fields_set:
                 raise AIProviderError(
                     f"choose a model for {feature} in Admin -> AI suppliers"
                 )
-            vendor = state.vendor(vendor_id)
-            if vendor is None:
-                raise AINotFound(f"supplier not found: {vendor_id}")
-            integration = self._internal_integration(state, vendor.id, spec.kinds)
-            if integration is None:
-                raise AIProviderError(
-                    f"supplier {vendor.label!r} has no enabled internal endpoint "
-                    f"for {feature}"
-                )
-            if vendor.id == "fake":
-                model = "fake"
-            else:
-                model = model or integration.default_model
-                if not model:
-                    raise AIProviderError(
-                        f"choose a model for {feature} from {vendor.label!r}"
-                    )
-                if not any(item.id == model for item in vendor.models):
-                    raise AIProviderError(
-                        f"model {model!r} is not in the {vendor.label} catalog; "
-                        "sync the supplier models first"
-                    )
-            binding = BindingRecord(vendor=vendor.id, model=model)
+            return BindingRecord()
+        vendor = state.vendor(vendor_id)
+        if vendor is None:
+            raise AINotFound(f"supplier not found: {vendor_id}")
+        integration = self._internal_integration(state, vendor.id, spec.kinds)
+        if integration is None:
+            raise AIProviderError(
+                f"supplier {vendor.label!r} has no enabled internal endpoint "
+                f"for {feature}"
+            )
+        if vendor.id == "fake":
+            model = "fake"
+        else:
+            model = model or integration.default_model
+        self._check_binding_target(state, feature, spec, vendor.id, model)
+        return BindingRecord(vendor=vendor.id, model=model)
+
+    def set_binding(self, feature: str, draft: BindingDraft) -> BindingRecord:
+        if feature not in FEATURE_BY_KEY:
+            raise AINotFound(f"unknown AI feature: {feature}")
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            binding = self._binding_record(state, feature, draft)
             state.bindings[feature] = binding
             self._commit(state)
             return binding
+
+    def set_bindings(
+        self, drafts: dict[str, BindingDraft]
+    ) -> dict[str, BindingRecord]:
+        """Apply several feature bindings in one write.
+
+        The whole batch is validated against one candidate state, so a single
+        bad row leaves every binding untouched — the console's one save button
+        either applies the table or explains why it cannot.
+        """
+        saved: dict[str, BindingRecord] = {}
+        with self._lock:
+            state = self.state().model_copy(deep=True)
+            for feature, draft in drafts.items():
+                if feature not in FEATURE_BY_KEY:
+                    raise AINotFound(f"unknown AI feature: {feature}")
+                binding = self._binding_record(state, feature, draft)
+                state.bindings[feature] = binding
+                saved[feature] = binding
+            self._commit(state)
+            return saved
 
 
 _VERSIONED_BASE = re.compile(r"/v\d+$")

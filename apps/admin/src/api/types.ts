@@ -32,15 +32,30 @@ export interface GatewayKey {
   created_at: string;
   revoked_at: string | null;
   routes: string[];
+  /** Published model name -> "supplier/model", applied to this key's calls. */
+  overrides: Record<string, string>;
   /** Account that created the key; empty for a key older than ownership. */
   owner_id: string;
   owner_name: string;
+}
+
+/** A model name the platform publishes, with where it is served by default. */
+export interface PublishedModel {
+  id: string;
+  label: string;
+  aliases: string[];
+  vendor: string;
+  model: string;
 }
 
 export interface GatewayKeyList {
   keys: GatewayKey[];
   /** Route names a key may be limited to; not secret. */
   routes: string[];
+  /** The model names a client may ask for, and where they go by default. */
+  models: PublishedModel[];
+  /** Suppliers that have a gateway route, for an override to point at. */
+  suppliers: string[];
 }
 
 export interface GatewayKeyCreated {
@@ -52,6 +67,7 @@ export interface GatewayKeyCreated {
 export interface GatewayKeyDraft {
   label: string;
   routes: string[];
+  overrides: Record<string, string>;
 }
 
 export type UserRole = 'admin' | 'user';
@@ -497,6 +513,38 @@ export interface AIFeature {
   integration_name: string;
   vendor: string;
   vendor_label: string;
+  /** The alias the feature is bound to; empty for a direct binding. */
+  virtual: string;
+  virtual_label: string;
+}
+
+/**
+ * A stable alias for one supplier model.
+ *
+ * Features point at the alias instead of the supplier model, so retargeting
+ * every feature that shares a role is one edit on this record.
+ */
+export interface AIVirtualModel {
+  id: string;
+  label: string;
+  /** Other call names this platform model answers to. */
+  aliases: string[];
+  vendor: string;
+  vendor_label: string;
+  model: string;
+  model_label: string;
+  /** Feature keys bound to this alias. */
+  used_by: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIVirtualModelInput {
+  id: string;
+  label: string;
+  aliases: string[];
+  vendor: string;
+  model: string;
 }
 
 export interface ModelRuntime {
@@ -525,6 +573,7 @@ export interface AIProviderConfig {
   runtime: ModelRuntime;
   vendors: AIVendor[];
   integrations: AIIntegration[];
+  virtual_models: AIVirtualModel[];
   features: AIFeature[];
   kinds: AIKind[];
   updated_at: string;

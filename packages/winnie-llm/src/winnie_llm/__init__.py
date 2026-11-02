@@ -62,6 +62,8 @@ from winnie_llm.registry import (
     VendorCheck,
     VendorDraft,
     VendorRecord,
+    VirtualModelDraft,
+    VirtualModelRecord,
     infer_vendor,
     vendor_label_for,
 )
@@ -111,6 +113,8 @@ __all__ = [
     "VendorCheck",
     "VendorDraft",
     "VendorRecord",
+    "VirtualModelDraft",
+    "VirtualModelRecord",
     "VolcengineASRConfig",
     "VolcengineASRProvider",
     "VolcengineRealtimeASR",

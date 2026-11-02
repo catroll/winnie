@@ -12,6 +12,8 @@ import type {
   AIVendor,
   AIVendorCheck,
   AIVendorInput,
+  AIVirtualModel,
+  AIVirtualModelInput,
   ModelRuntime,
 } from '../api/types';
 import { EmptyState, ErrorBlock, LoadingBlock } from '../components/AsyncContent';
@@ -59,10 +61,36 @@ interface Editor {
   draft: FormState;
 }
 
-interface BindingState {
+/**
+ * The select value that keeps a legacy direct binding visible.
+ *
+ * The console binds features to virtual models; a binding written by an older
+ * API caller names a supplier model directly. Showing it as this special value
+ * keeps the row honest without letting the console write that shape again.
+ */
+const DIRECT = '__direct__';
+
+interface VirtualModelForm {
+  id: string;
+  label: string;
+  /** Comma-separated; the API takes the list. */
+  aliases: string;
   vendor: string;
   model: string;
 }
+
+interface VirtualModelEditor {
+  mode: 'create' | 'edit';
+  draft: VirtualModelForm;
+}
+
+const BLANK_VIRTUAL_FORM: VirtualModelForm = {
+  id: '',
+  label: '',
+  aliases: '',
+  vendor: '',
+  model: '',
+};
 
 const VOLCENGINE_DEFAULTS: Record<string, OptionValue> = {
   resource_id: 'volc.seedasr.auc',
@@ -93,6 +121,11 @@ function describe(error: unknown): string {
     return error.detail;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+/** What the binding table shows before the owner edits a row. */
+function baselineBinding(feature: AIFeature): string {
+  return feature.virtual || (feature.vendor ? DIRECT : '');
 }
 
 function formFromIntegration(integration: AIIntegration): FormState {
@@ -165,7 +198,16 @@ export function AIPage() {
   const [keyEditor, setKeyEditor] = useState<AIVendor | null>(null);
   const [keyError, setKeyError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<AIIntegration | null>(null);
-  const [bindings, setBindings] = useState<Record<string, BindingState>>({});
+  // One draft value per feature: a virtual model id, DIRECT for a legacy
+  // direct binding, or '' for unbound. The whole table is saved in one request.
+  const [bindings, setBindings] = useState<Record<string, string>>({});
+  const [virtualEditor, setVirtualEditor] = useState<VirtualModelEditor | null>(
+    null,
+  );
+  const [virtualError, setVirtualError] = useState('');
+  const [deleteVirtual, setDeleteVirtual] = useState<AIVirtualModel | null>(
+    null,
+  );
   const [runtimeDraft, setRuntimeDraft] = useState<ModelRuntime | null>(null);
   // The last probe per supplier. It is kept per vendor rather than in the
   // page message so two suppliers can be compared and a later unrelated edit
@@ -197,12 +239,10 @@ export function AIPage() {
     if (result.status !== 'success') {
       return;
     }
-    const next: Record<string, BindingState> = {};
+    const next: Record<string, string> = {};
     for (const feature of result.data.features) {
-      next[feature.key] = {
-        vendor: feature.vendor ?? '',
-        model: feature.model,
-      };
+      next[feature.key] =
+        feature.virtual || (feature.vendor ? DIRECT : '');
     }
     setBindings(next);
     setRuntimeDraft(result.data.runtime);
@@ -339,27 +379,143 @@ export function AIPage() {
     }
   };
 
-  const saveBinding = async (feature: AIFeature) => {
-    const binding = bindings[feature.key] ?? { vendor: '', model: '' };
-    setBusy(`feature:${feature.key}`);
+  const saveBindings = async (features: AIFeature[]) => {
+    const payload: Record<string, { virtual: string }> = {};
+    for (const feature of features) {
+      const baseline = baselineBinding(feature);
+      const value = bindings[feature.key] ?? baseline;
+      if (value === baseline) {
+        continue;
+      }
+      payload[feature.key] = { virtual: value === DIRECT ? '' : value };
+    }
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+    setBusy('bindings');
     setMessage(null);
     try {
-      await api.setAIFeature(feature.key, {
-        vendor: binding.vendor,
-        model: binding.model.trim(),
-      });
-      const selectedVendor = data?.vendors.find(
-        (item) => item.id === binding.vendor,
-      );
+      const response = await api.setAIFeatures(payload);
       setMessage({
         kind: 'success',
-        text: tr('{{feature}} now uses {{target}}.', {
-          feature: feature.label,
-          target: selectedVendor
-            ? `${selectedVendor.label} / ${binding.model || tr('no model')}`
-            : tr('no model (choose one before using it)'),
+        text: tr('Saved {{count}} feature bindings in one write.', {
+          count: response.saved,
         }),
       });
+      result.reload();
+    } catch (error) {
+      setMessage({ kind: 'danger', text: describe(error) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openCreateVirtual = () => {
+    setVirtualError('');
+    setMessage(null);
+    const vendor = data?.vendors.find((item) => item.models.length > 0);
+    setVirtualEditor({
+      mode: 'create',
+      draft: {
+        ...BLANK_VIRTUAL_FORM,
+        vendor: vendor?.id ?? '',
+        model: vendor?.models[0]?.id ?? '',
+      },
+    });
+  };
+
+  const openEditVirtual = (virtual: AIVirtualModel) => {
+    setVirtualError('');
+    setMessage(null);
+    setVirtualEditor({
+      mode: 'edit',
+      draft: {
+        id: virtual.id,
+        label: virtual.label,
+        aliases: virtual.aliases.join(', '),
+        vendor: virtual.vendor,
+        model: virtual.model,
+      },
+    });
+  };
+
+  const saveVirtualModel = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!virtualEditor) {
+      return;
+    }
+    const draft = virtualEditor.draft;
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(draft.id.trim())) {
+      setVirtualError(
+        tr(
+          'Virtual model id must be lowercase letters, digits and dashes, up to 63 characters.',
+        ),
+      );
+      return;
+    }
+    if (!draft.vendor || !draft.model) {
+      setVirtualError(
+        tr('Choose the supplier model this virtual model maps to.'),
+      );
+      return;
+    }
+    const input: AIVirtualModelInput = {
+      id: draft.id.trim(),
+      label: draft.label.trim(),
+      // Comma- or space-separated in the form; the API takes a list.
+      aliases: draft.aliases
+        .split(/[\s,]+/)
+        .map((alias) => alias.trim())
+        .filter(Boolean),
+      vendor: draft.vendor,
+      model: draft.model,
+    };
+    setBusy('virtual');
+    setVirtualError('');
+    try {
+      if (virtualEditor.mode === 'create') {
+        await api.createAIVirtualModel(input);
+        setMessage({
+          kind: 'success',
+          text: tr('Created virtual model {{name}}.', { name: input.label || input.id }),
+        });
+      } else {
+        await api.updateAIVirtualModel(draft.id, input);
+        setMessage({
+          kind: 'success',
+          text: tr(
+            'Updated {{name}}. Every feature bound to it now maps to {{target}}.',
+            {
+              name: input.label || input.id,
+              target: `${draft.vendor} / ${draft.model}`,
+            },
+          ),
+        });
+      }
+      setVirtualEditor(null);
+      result.reload();
+    } catch (error) {
+      setVirtualError(describe(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const removeVirtualModel = async () => {
+    if (!deleteVirtual) {
+      return;
+    }
+    setBusy('delete-virtual');
+    setMessage(null);
+    try {
+      await api.deleteAIVirtualModel(deleteVirtual.id);
+      setMessage({
+        kind: 'success',
+        text: tr('Deleted virtual model {{name}}.', {
+          name: deleteVirtual.label || deleteVirtual.id,
+        }),
+      });
+      setDeleteVirtual(null);
       result.reload();
     } catch (error) {
       setMessage({ kind: 'danger', text: describe(error) });
@@ -490,6 +646,32 @@ export function AIPage() {
   );
   const features = data?.features ?? [];
   const vendors = data?.vendors ?? [];
+  const virtualModels = data?.virtual_models ?? [];
+  const featureLabels = new Map(
+    features.map((feature) => [feature.key, feature.label]),
+  );
+  // Only the rows that differ from the saved state are sent, and the count is
+  // what the one save button reports.
+  const dirtyFeatures = features.filter(
+    (feature) =>
+      (bindings[feature.key] ?? baselineBinding(feature)) !==
+      baselineBinding(feature),
+  );
+  const virtualOptionsFor = (feature: AIFeature) => {
+    const current = bindings[feature.key] ?? baselineBinding(feature);
+    const compatibleVendors = new Set(
+      integrations
+        .filter(
+          (item) =>
+            !item.gateway && item.enabled && feature.kinds.includes(item.kind),
+        )
+        .map((item) => item.vendor),
+    );
+    return virtualModels.filter(
+      (virtual) =>
+        compatibleVendors.has(virtual.vendor) || virtual.id === current,
+    );
+  };
   const vendorGroups = vendors.map((vendor) => ({
     vendor,
     gatewayEndpoints: integrations.filter(
@@ -1057,13 +1239,168 @@ export function AIPage() {
                       <code>/{'{name}'}/v1/…</code>
                       {tr(
                         '; the gateway injects the supplier key downstream, and the environment variable is only for internal calls.',
+                      )}{' '}
+                      {tr(
+                        'A client asks for a virtual model by name, including its aliases; the gateway rewrites the name to the supplier model before forwarding.',
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="card mb-3">
+                    <div className="card-header d-flex flex-wrap align-items-center gap-2">
+                      <h3 className="card-title mb-0">{tr('Virtual models')}</h3>
+                      <div className="ms-auto">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={openCreateVirtual}
+                          disabled={disabled}
+                        >
+                          <i className="bi bi-plus-lg me-1" aria-hidden="true" />
+                          {tr('New virtual model')}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="card-body p-0">
+                      {virtualModels.length === 0 ? (
+                        <div className="p-3">
+                          <EmptyState message="No virtual models yet. Add one, map it to a supplier model, then point the feature bindings at it." />
+                        </div>
+                      ) : (
+                        <div className="table-responsive">
+                          <table className="table align-middle mb-0">
+                            <thead>
+                              <tr>
+                                <th scope="col">{tr('Virtual model')}</th>
+                                <th scope="col">{tr('Maps to')}</th>
+                                <th scope="col">{tr('Used by')}</th>
+                                <th scope="col" className="text-end">
+                                  {tr('Actions')}
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {virtualModels.map((virtual) => (
+                                <tr key={virtual.id}>
+                                  <td style={{ minWidth: '14rem' }}>
+                                    <div className="fw-semibold">{virtual.label}</div>
+                                    <code className="small text-secondary">
+                                      {virtual.id}
+                                    </code>
+                                    {virtual.aliases.length > 0 ? (
+                                      <div className="small text-secondary">
+                                        {tr('Aliases')}:{' '}
+                                        {virtual.aliases.map((alias) => (
+                                          <code className="me-1" key={alias}>
+                                            {alias}
+                                          </code>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </td>
+                                  <td style={{ minWidth: '14rem' }}>
+                                    <span>{virtual.vendor_label}</span>
+                                    {' / '}
+                                    <code>{virtual.model}</code>
+                                  </td>
+                                  <td>
+                                    {virtual.used_by.length === 0 ? (
+                                      <span className="text-secondary">—</span>
+                                    ) : (
+                                      virtual.used_by.map((key) => (
+                                        <span
+                                          className="badge text-bg-light border me-1 mb-1"
+                                          key={key}
+                                        >
+                                          {featureLabels.get(key) ?? key}
+                                        </span>
+                                      ))
+                                    )}
+                                  </td>
+                                  <td className="text-end text-nowrap">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-secondary me-1"
+                                      onClick={() => openEditVirtual(virtual)}
+                                      disabled={disabled}
+                                    >
+                                      {tr('Edit')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-outline-danger"
+                                      onClick={() => {
+                                        setMessage(null);
+                                        setDeleteVirtual(virtual);
+                                      }}
+                                      disabled={disabled}
+                                    >
+                                      {tr('Delete')}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                    <div className="card-footer small text-secondary">
+                      {tr(
+                        'A virtual model is a stable name for one supplier model. Feature bindings point at the name, so changing the mapping here moves every feature that uses it at once; no feature row is rewritten.',
                       )}
                     </div>
                   </div>
 
                   <div className="card">
-                    <div className="card-header">
+                    <div className="card-header d-flex flex-wrap align-items-center gap-2">
                       <h3 className="card-title mb-0">{tr('Feature bindings')}</h3>
+                      <div className="ms-auto d-flex flex-wrap align-items-center gap-2">
+                        {dirtyFeatures.length > 0 ? (
+                          <span className="badge text-bg-warning">
+                            {tr('{{count}} unsaved', {
+                              count: dirtyFeatures.length,
+                            })}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={() =>
+                            setBindings(
+                              Object.fromEntries(
+                                features.map((feature) => [
+                                  feature.key,
+                                  baselineBinding(feature),
+                                ]),
+                              ),
+                            )
+                          }
+                          disabled={disabled || dirtyFeatures.length === 0}
+                        >
+                          {tr('Discard')}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          onClick={() => saveBindings(dirtyFeatures)}
+                          disabled={disabled || dirtyFeatures.length === 0}
+                        >
+                          {busy === 'bindings' ? (
+                            <>
+                              <span
+                                className="spinner-border spinner-border-sm me-1"
+                                aria-hidden="true"
+                              />
+                              {tr('Saving…')}
+                            </>
+                          ) : (
+                            tr('Save changes ({{count}})', {
+                              count: dirtyFeatures.length,
+                            })
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <div className="card-body p-0">
                       <div className="table-responsive">
@@ -1071,56 +1408,29 @@ export function AIPage() {
                           <thead>
                             <tr>
                               <th scope="col">{tr('Feature')}</th>
-                              <th scope="col">{tr('Model')}</th>
-                              <th scope="col">{tr('Source')}</th>
-                              <th scope="col" className="text-end">
-                                {tr('Action')}
-                              </th>
+                              <th scope="col">{tr('Virtual model')}</th>
                             </tr>
                           </thead>
                           <tbody>
                             {features.map((feature) => {
-                              const binding =
-                                bindings[feature.key] ?? {
-                                  vendor: '',
-                                  model: '',
-                                };
-                              const modelGroups = vendors
-                                .map((vendor) => {
-                                  const internal = integrations.find(
-                                    (item) =>
-                                      item.vendor === vendor.id &&
-                                      !item.gateway &&
-                                      feature.kinds.includes(item.kind),
-                                  );
-                                  if (!internal) {
-                                    return null;
-                                  }
-                                  return { vendor, models: vendor.models };
-                                })
-                                .filter(
-                                  (group): group is NonNullable<typeof group> =>
-                                    group !== null,
-                                );
-                              const value =
-                                binding.vendor && binding.model
-                                  ? `${binding.vendor}|${binding.model}`
-                                  : '';
-                              const known = modelGroups.some(
-                                (group) =>
-                                  group.vendor.id === binding.vendor &&
-                                  group.models.some(
-                                    (model) => model.id === binding.model,
-                                  ),
-                              );
-                              const dirty =
-                                binding.vendor !== (feature.vendor ?? '') ||
-                                binding.model !== feature.model;
-                              const rowBusy = busy === `feature:${feature.key}`;
+                              const baseline = baselineBinding(feature);
+                              const value = bindings[feature.key] ?? baseline;
+                              const dirty = value !== baseline;
+                              const options = virtualOptionsFor(feature);
                               return (
-                                <tr key={feature.key}>
+                                <tr
+                                  key={feature.key}
+                                  className={dirty ? 'table-warning' : undefined}
+                                >
                                   <td style={{ minWidth: '16rem' }}>
-                                    <div className="fw-semibold">{feature.label}</div>
+                                    <div className="fw-semibold d-flex flex-wrap align-items-center gap-2">
+                                      <span>{feature.label}</span>
+                                      {dirty ? (
+                                        <span className="badge text-bg-warning">
+                                          {tr('Unsaved')}
+                                        </span>
+                                      ) : null}
+                                    </div>
                                     <div className="small text-secondary">
                                       {feature.description}
                                     </div>
@@ -1128,106 +1438,66 @@ export function AIPage() {
                                       {feature.key}
                                     </code>
                                   </td>
-                                  <td style={{ minWidth: '18rem' }}>
+                                  <td style={{ minWidth: '20rem' }}>
                                     <label
                                       className="visually-hidden"
-                                      htmlFor={`model-${feature.key}`}
+                                      htmlFor={`virtual-${feature.key}`}
                                     >
-                                      {tr('Model for {{feature}}', {
+                                      {tr('Virtual model for {{feature}}', {
                                         feature: feature.label,
                                       })}
                                     </label>
                                     <select
-                                      id={`model-${feature.key}`}
+                                      id={`virtual-${feature.key}`}
                                       className="form-select form-select-sm"
                                       value={value}
-                                      onChange={(event) => {
-                                        const raw = event.target.value;
-                                        const index = raw.indexOf('|');
-                                        const vendor =
-                                          index === -1 ? '' : raw.slice(0, index);
-                                        const model =
-                                          index === -1 ? '' : raw.slice(index + 1);
+                                      onChange={(event) =>
                                         setBindings((current) => ({
                                           ...current,
-                                          [feature.key]: { vendor, model },
-                                        }));
-                                      }}
-                                      disabled={disabled || rowBusy}
+                                          [feature.key]: event.target.value,
+                                        }))
+                                      }
+                                      disabled={disabled}
                                     >
-                                      <option value="">{tr('Not configured')}</option>
-                                      {modelGroups.map((group) => (
-                                        <optgroup
-                                          label={group.vendor.label}
-                                          key={group.vendor.id}
+                                      <option value="">
+                                        {tr('Not configured')}
+                                      </option>
+                                      {options.map((virtual) => (
+                                        <option
+                                          value={virtual.id}
+                                          key={virtual.id}
                                         >
-                                          {group.models.map((model) => (
-                                            <option
-                                              value={`${group.vendor.id}|${model.id}`}
-                                              key={model.id}
-                                            >
-                                              {model.label || model.id}
-                                              {model.context_window ? (
-                                                <>
-                                                  {' · '}
-                                                  {tr('{{tokens}} ctx', {
-                                                    tokens:
-                                                      model.context_window.toLocaleString(),
-                                                  })}
-                                                </>
-                                              ) : null}
-                                            </option>
-                                          ))}
-                                        </optgroup>
+                                          {virtual.label} → {virtual.vendor_label}{' '}
+                                          /{' '}
+                                          {virtual.model_label || virtual.model}
+                                        </option>
                                       ))}
-                                      {binding.vendor && binding.model && !known ? (
-                                        <option value={value}>
-                                          {binding.model} {tr('(not in the catalog)')}
+                                      {baseline === DIRECT ? (
+                                        <option value={DIRECT}>
+                                          {tr(
+                                            'Direct binding: {{vendor}} / {{model}}',
+                                            {
+                                              vendor:
+                                                feature.vendor_label ||
+                                                feature.vendor,
+                                              model: feature.model,
+                                            },
+                                          )}
                                         </option>
                                       ) : null}
                                     </select>
                                     <div className="form-text">
-                                      {feature.source === 'none'
-                                        ? tr('Choose the model this feature calls.')
-                                        : !known
-                                          ? tr(
-                                              'This model is not in a supplier catalog; sync it first.',
-                                            )
+                                      {options.length === 0 &&
+                                      baseline !== DIRECT
+                                        ? tr(
+                                            'No virtual model maps to a supplier this feature can call; add one above.',
+                                          )
+                                        : value
+                                          ? null
                                           : tr(
-                                              'Every feature calls the model selected here.',
+                                              'Choose the virtual model this feature calls.',
                                             )}
                                     </div>
-                                  </td>
-                                  <td>
-                                    {feature.source === 'admin' ? (
-                                      <span className="badge text-bg-success">
-                                        {tr('Admin')}
-                                      </span>
-                                    ) : (
-                                      <span className="badge text-bg-warning">
-                                        {tr('Not configured')}
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="text-end">
-                                    <button
-                                      type="button"
-                                      className="btn btn-sm btn-primary"
-                                      onClick={() => saveBinding(feature)}
-                                      disabled={disabled || rowBusy || !dirty}
-                                    >
-                                      {rowBusy ? (
-                                        <>
-                                          <span
-                                            className="spinner-border spinner-border-sm me-1"
-                                            aria-hidden="true"
-                                          />
-                                          {tr('Saving…')}
-                                        </>
-                                      ) : (
-                                        tr('Save')
-                                      )}
-                                    </button>
                                   </td>
                                 </tr>
                               );
@@ -1238,11 +1508,13 @@ export function AIPage() {
                     </div>
                     <div className="card-footer small text-secondary">
                       {tr(
-                        'Every feature calls the model selected here. The supplier is resolved from that model; there is no endpoint/provider choice in a feature binding. Models come from the supplier catalog; sync them with',
+                        'Features call the virtual model selected here. Several features can share one virtual model, so retargeting it moves all of them at once. Models come from the supplier catalog; sync them with',
                       )}{' '}
                       <strong>{tr('Sync models')}</strong> {tr('or add them under')}{' '}
-                      <strong>{tr('Models')}</strong>. <code>config.yaml</code>{' '}
-                      {tr('no longer selects a model.')}
+                      <strong>{tr('Models')}</strong>.{' '}
+                      {tr(
+                        'The whole table is saved in one write, and one invalid row leaves every binding unchanged.',
+                      )}
                     </div>
                   </div>
 
@@ -1317,6 +1589,37 @@ export function AIPage() {
           busy={busy === 'delete'}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={removeIntegration}
+        />
+      ) : null}
+
+      {virtualEditor ? (
+        <VirtualModelEditor
+          editor={virtualEditor}
+          vendors={vendors}
+          error={virtualError}
+          busy={busy === 'virtual'}
+          onChange={(patch) =>
+            setVirtualEditor((current) =>
+              current
+                ? { ...current, draft: { ...current.draft, ...patch } }
+                : current,
+            )
+          }
+          onCancel={() => {
+            setVirtualError('');
+            setVirtualEditor(null);
+          }}
+          onSubmit={saveVirtualModel}
+        />
+      ) : null}
+
+      {deleteVirtual ? (
+        <VirtualDeleteDialog
+          virtual={deleteVirtual}
+          featureLabels={featureLabels}
+          busy={busy === 'delete-virtual'}
+          onCancel={() => setDeleteVirtual(null)}
+          onConfirm={removeVirtualModel}
         />
       ) : null}
     </>
@@ -2316,6 +2619,300 @@ function IntegrationEditor({
               </button>
             </div>
           </form>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function VirtualModelEditor({
+  editor,
+  vendors,
+  error,
+  busy,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  editor: VirtualModelEditor;
+  vendors: AIVendor[];
+  error: string;
+  busy: boolean;
+  onChange: (patch: Partial<VirtualModelForm>) => void;
+  onCancel: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const draft = editor.draft;
+  const vendor = vendors.find((item) => item.id === draft.vendor);
+  const models = vendor?.models ?? [];
+
+  return (
+    <>
+      <div
+        className="modal fade show d-block"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-virtual-title"
+      >
+        <div className="modal-dialog modal-dialog-centered">
+          <form className="modal-content" onSubmit={onSubmit}>
+            <div className="modal-header">
+              <h5 className="modal-title" id="ai-virtual-title">
+                {editor.mode === 'create'
+                  ? tr('New virtual model')
+                  : tr('Edit {{name}}', {
+                      name: draft.label || draft.id,
+                    })}
+              </h5>
+              <button
+                type="button"
+                className="btn-close"
+                aria-label={tr('Close')}
+                onClick={onCancel}
+                disabled={busy}
+              />
+            </div>
+            <div className="modal-body">
+              {error ? (
+                <div className="alert alert-danger" role="alert">
+                  {error}
+                </div>
+              ) : null}
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label className="form-label" htmlFor="ai-virtual-id">
+                    {tr('Id')}
+                  </label>
+                  <input
+                    id="ai-virtual-id"
+                    className="form-control font-monospace"
+                    value={draft.id}
+                    onChange={(event) => onChange({ id: event.target.value })}
+                    placeholder="assistant-fast"
+                    required
+                    disabled={busy || editor.mode === 'edit'}
+                  />
+                  <div className="form-text">
+                    {tr('Stable name used by the feature bindings.')}
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label" htmlFor="ai-virtual-label">
+                    {tr('Label')}
+                  </label>
+                  <input
+                    id="ai-virtual-label"
+                    className="form-control"
+                    value={draft.label}
+                    onChange={(event) => onChange({ label: event.target.value })}
+                    placeholder={draft.id || tr('Same as the id')}
+                    disabled={busy}
+                  />
+                </div>
+                <div className="col-12">
+                  <label className="form-label" htmlFor="ai-virtual-aliases">
+                    {tr('Also answer to')}
+                  </label>
+                  <input
+                    id="ai-virtual-aliases"
+                    className="form-control font-monospace"
+                    value={draft.aliases}
+                    onChange={(event) => onChange({ aliases: event.target.value })}
+                    placeholder="deepseek-v4-flash, deepseek-v4.1-flash"
+                    disabled={busy}
+                  />
+                  <div className="form-text">
+                    {tr(
+                      'Comma-separated other call names for this model. A client that sends one of them reaches the same supplier model.',
+                    )}
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label" htmlFor="ai-virtual-vendor">
+                    {tr('Supplier')}
+                  </label>
+                  <select
+                    id="ai-virtual-vendor"
+                    className="form-select"
+                    value={draft.vendor}
+                    onChange={(event) => {
+                      const next = vendors.find(
+                        (item) => item.id === event.target.value,
+                      );
+                      onChange({
+                        vendor: event.target.value,
+                        model: next?.models[0]?.id ?? '',
+                      });
+                    }}
+                    disabled={busy}
+                    required
+                  >
+                    <option value="">{tr('Choose a supplier')}</option>
+                    {vendors.map((item) => (
+                      <option value={item.id} key={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-md-6">
+                  <label className="form-label" htmlFor="ai-virtual-model">
+                    {tr('Model')}
+                  </label>
+                  <select
+                    id="ai-virtual-model"
+                    className="form-select font-monospace"
+                    value={draft.model}
+                    onChange={(event) => onChange({ model: event.target.value })}
+                    disabled={busy || !draft.vendor}
+                    required
+                  >
+                    {models.length === 0 ? (
+                      <option value="">
+                        {tr('No models in this supplier catalog')}
+                      </option>
+                    ) : (
+                      models.map((model) => (
+                        <option value={model.id} key={model.id}>
+                          {model.label || model.id}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+              {draft.vendor && models.length === 0 ? (
+                <div className="alert alert-warning mt-3 mb-0" role="alert">
+                  {tr(
+                    'This supplier has no models yet. Sync them on the supplier row first, then choose one here.',
+                  )}
+                </div>
+              ) : null}
+              <p className="small text-secondary mt-3 mb-0">
+                {tr(
+                  'Every feature bound to this virtual model calls the supplier model above on its next call.',
+                )}
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={onCancel}
+                disabled={busy}
+              >
+                {tr('Cancel')}
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-1"
+                      aria-hidden="true"
+                    />
+                    {tr('Saving…')}
+                  </>
+                ) : (
+                  tr('Save virtual model')
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div className="modal-backdrop fade show" />
+    </>
+  );
+}
+
+function VirtualDeleteDialog({
+  virtual,
+  featureLabels,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  virtual: AIVirtualModel;
+  featureLabels: Map<string, string>;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const inUse = virtual.used_by.length > 0;
+  return (
+    <>
+      <div
+        className="modal fade show d-block"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-virtual-delete-title"
+      >
+        <div className="modal-dialog">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h5 className="modal-title" id="ai-virtual-delete-title">
+                {tr('Delete virtual model {{name}}?', {
+                  name: virtual.label || virtual.id,
+                })}
+              </h5>
+              <button
+                type="button"
+                className="btn-close"
+                aria-label={tr('Close')}
+                onClick={onCancel}
+                disabled={busy}
+              />
+            </div>
+            <div className="modal-body">
+              {inUse ? (
+                <div className="alert alert-warning mb-0" role="alert">
+                  {tr(
+                    'These features still use it. Point them at another virtual model first:',
+                  )}{' '}
+                  {virtual.used_by.map((key) => (
+                    <code className="me-1" key={key}>
+                      {featureLabels.get(key) ?? key}
+                    </code>
+                  ))}
+                </div>
+              ) : (
+                <p className="mb-0">
+                  {tr(
+                    'The alias is removed. The supplier model it mapped to stays in the catalog.',
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={onCancel}
+                disabled={busy}
+              >
+                {tr('Cancel')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={onConfirm}
+                disabled={busy || inUse}
+              >
+                {busy ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm me-1"
+                      aria-hidden="true"
+                    />
+                    {tr('Deleting…')}
+                  </>
+                ) : (
+                  tr('Delete virtual model')
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       <div className="modal-backdrop fade show" />

@@ -1,10 +1,15 @@
 """Admin-managed AI supplier registry and the features that use it.
 
 The registry is deliberately small: a supplier owns endpoints and a model
-catalog, and a binding says which endpoint/model serves a feature. Gateway
-routes are the endpoints with ``gateway: true``; internal jobs (assistant chat,
-translation, minutes, ASR) resolve the endpoint named by their binding at call
-time.
+catalog, a virtual model names one supplier model under a stable alias, and a
+binding says which virtual model serves a feature. Gateway routes are the
+endpoints with ``gateway: true``; internal jobs (assistant chat, translation,
+minutes, ASR) resolve the endpoint named by their binding at call time.
+
+A binding may still name ``vendor`` + ``model`` directly. That is the shape a
+version 7 file and the pre-virtual console used; it stays supported so an API
+caller written against it keeps working, but the console binds through a
+virtual model.
 """
 
 from __future__ import annotations
@@ -24,6 +29,11 @@ from winnie_llm.runtime import ModelRuntimeConfig
 IntegrationKind = Literal["openai", "anthropic", "volcengine_asr", "fake"]
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+# A model id travels in a JSON body, not in a URL, so it may keep the shape a
+# supplier uses: ``deepseek-v4.1-flash``, ``meta-llama/Llama-3-70B``,
+# ``gpt-5.6-sol``. The gateway only ever compares it for equality.
+_MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$")
 
 # A gateway route is a path prefix under the API root, so these names would
 # collide with the host's own endpoints.
@@ -333,6 +343,85 @@ class VendorRecord(VendorDraft):
         return value.strip()
 
 
+class VirtualModelDraft(BaseModel):
+    """A stable name for one supplier model.
+
+    Features bind to this name, never to the supplier model directly, so moving
+    every feature that shares a role to another model is one edit here. The name
+    keeps its id when the target changes; renaming it would silently unbind the
+    features that use it, so the console treats the id as fixed.
+
+    ``aliases`` are extra call names the same platform model answers to. They
+    exist because a supplier renames a model between versions and clients keep
+    sending the old name for a while: one platform model, several accepted
+    spellings, one upstream target. An alias never has its own target — a name
+    with a different target is a different platform model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str = ""
+    aliases: list[str] = Field(default_factory=list)
+    vendor: str
+    model: str
+
+    @field_validator("id")
+    @classmethod
+    def _id(cls, value: str) -> str:
+        name = value.strip()
+        if not _NAME_RE.fullmatch(name):
+            raise ValueError(
+                "virtual model id must be lowercase letters, digits and dashes, "
+                "start with a letter or digit, and be at most 63 characters"
+            )
+        return name
+
+    @field_validator("label", "vendor", "model")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("aliases")
+    @classmethod
+    def _aliases(cls, value: list[str]) -> list[str]:
+        seen: list[str] = []
+        for alias in value:
+            name = alias.strip()
+            if not name:
+                raise ValueError("a model alias must not be empty")
+            if not _MODEL_NAME_RE.fullmatch(name):
+                raise ValueError(
+                    f"model alias {name!r} must start with a letter or digit, "
+                    "use only letters, digits, dot, dash, underscore, colon, "
+                    "slash, at or plus, and be at most 128 characters"
+                )
+            if name not in seen:
+                seen.append(name)
+        return seen
+
+    @model_validator(mode="after")
+    def _required(self) -> VirtualModelDraft:
+        if not self.vendor:
+            raise ValueError("a virtual model needs a supplier")
+        if not self.model:
+            raise ValueError("a virtual model needs a model")
+        if not self.label:
+            self.label = self.id
+        if self.id in self.aliases:
+            raise ValueError(
+                f"virtual model {self.id!r} lists its own id as an alias"
+            )
+        return self
+
+
+class VirtualModelRecord(VirtualModelDraft):
+    """A stored virtual model, with timestamps."""
+
+    created_at: str = Field(default_factory=utcnow)
+    updated_at: str = Field(default_factory=utcnow)
+
+
 class IntegrationInput(BaseModel):
     """The fields a console user can change on an integration."""
 
@@ -407,7 +496,12 @@ class IntegrationDraft(IntegrationInput):
 
 
 class BindingRecord(BaseModel):
-    """Which supplier model serves one feature.
+    """Which model serves one feature.
+
+    ``virtual`` names a :class:`VirtualModelRecord` and is the shape the console
+    writes. ``vendor`` + ``model`` is the direct shape used before version 8 and
+    kept for API callers; the two forms are mutually exclusive. A binding with
+    neither is an unbound feature.
 
     ``integration_id`` is the v3 shape. It is kept only so a v3 file can be
     read and migrated; version 4 bindings always use ``vendor`` + ``model``.
@@ -415,12 +509,13 @@ class BindingRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    virtual: str = ""
     vendor: str = ""
     model: str = ""
     integration_id: str | None = None
     updated_at: str = Field(default_factory=utcnow)
 
-    @field_validator("vendor", "model")
+    @field_validator("virtual", "vendor", "model")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
@@ -429,24 +524,26 @@ class BindingRecord(BaseModel):
 class BindingDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # The console sends vendor + model. integration_id remains accepted for
-    # callers written against the v3 API; the store derives the vendor from it.
+    # The console sends ``virtual``. ``vendor`` + ``model`` and
+    # ``integration_id`` remain accepted for callers written against the older
+    # API shapes; the store resolves all three to one target.
+    virtual: str = ""
     vendor: str = ""
     model: str = ""
     integration_id: str | None = None
 
-    @field_validator("vendor", "model")
+    @field_validator("virtual", "vendor", "model")
     @classmethod
     def _strip(cls, value: str) -> str:
         return value.strip()
 
 
 class AIState(BaseModel):
-    """The whole file: suppliers, endpoints, models and feature bindings."""
+    """The whole file: suppliers, endpoints, models, aliases and bindings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    version: int = 7
+    version: int = 8
     # Shared tuning only; a supplier's base URL belongs to an integration and
     # its key is stored on the supplier record.
     runtime: ModelRuntimeConfig = Field(default_factory=ModelRuntimeConfig)
@@ -454,11 +551,14 @@ class AIState(BaseModel):
     # endpoint records (protocol/role), but it is one supplier in the console.
     vendors: list[VendorRecord] = Field(default_factory=list)
     integrations: list[IntegrationRecord] = Field(default_factory=list)
+    # Stable aliases the console binds features to. Each names one supplier
+    # model; the target can change without touching a single binding.
+    virtual_models: list[VirtualModelRecord] = Field(default_factory=list)
     bindings: dict[str, BindingRecord] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _consistent(self) -> AIState:
-        if self.version not in (1, 2, 3, 4, 5, 6, 7):
+        if self.version not in (1, 2, 3, 4, 5, 6, 7, 8):
             raise ValueError(f"unsupported ai settings version: {self.version}")
 
         vendor_ids: set[str] = set()
@@ -479,6 +579,38 @@ class AIState(BaseModel):
 
         by_id = {integration.id: integration for integration in self.integrations}
         vendors_by_id = {vendor.id: vendor for vendor in self.vendors}
+        virtual_by_id: dict[str, VirtualModelRecord] = {}
+        for virtual in self.virtual_models:
+            if virtual.id in virtual_by_id:
+                raise ValueError(f"duplicate virtual model id: {virtual.id}")
+            virtual_by_id[virtual.id] = virtual
+            vendor = vendors_by_id.get(virtual.vendor)
+            if vendor is None:
+                raise ValueError(
+                    f"virtual model {virtual.id!r} references missing supplier "
+                    f"{virtual.vendor!r}"
+                )
+            # A fake supplier offers no catalog; its model id is a placeholder.
+            if vendor.id != "fake" and not any(
+                model.id == virtual.model for model in vendor.models
+            ):
+                raise ValueError(
+                    f"virtual model {virtual.id!r} model {virtual.model!r} is "
+                    f"not in the {vendor.id!r} model catalog"
+                )
+        # Every id and every alias is one call name, and two platform models
+        # answering to the same name would make the gateway's answer depend on
+        # file order. Refuse the file instead.
+        claimed: dict[str, str] = {}
+        for virtual in self.virtual_models:
+            for name in (virtual.id, *virtual.aliases):
+                owner = claimed.get(name)
+                if owner is not None:
+                    raise ValueError(
+                        f"model name {name!r} is claimed by both {owner!r} and "
+                        f"{virtual.id!r}"
+                    )
+                claimed[name] = virtual.id
         if self.version >= 3:
             for integration in self.integrations:
                 if not integration.vendor:
@@ -509,6 +641,36 @@ class AIState(BaseModel):
             if feature is None:
                 raise ValueError(f"unknown feature in bindings: {key}")
             if self.version >= 4:
+                if binding.virtual:
+                    if binding.vendor or binding.model:
+                        raise ValueError(
+                            f"feature {key} binds to a virtual model and a "
+                            "supplier model at the same time"
+                        )
+                    virtual = virtual_by_id.get(binding.virtual)
+                    if virtual is None:
+                        raise ValueError(
+                            f"feature {key} references missing virtual model "
+                            f"{binding.virtual!r}"
+                        )
+                    # The alias itself is valid; the feature still needs an
+                    # enabled internal endpoint for the supplier it maps to.
+                    candidates = [
+                        integration
+                        for integration in self.integrations
+                        if integration.vendor == virtual.vendor
+                        and integration.enabled
+                        and not integration.gateway
+                        and integration.kind in feature.kinds
+                    ]
+                    if not candidates:
+                        raise ValueError(
+                            f"feature {key} uses virtual model "
+                            f"{virtual.id!r}, whose supplier "
+                            f"{virtual.vendor!r} has no enabled internal "
+                            "endpoint for this feature"
+                        )
+                    continue
                 if not binding.vendor:
                     # An unbound feature is represented by an empty binding.
                     continue
@@ -578,6 +740,12 @@ class AIState(BaseModel):
                 return vendor
         return None
 
+    def virtual_model(self, virtual_id: str) -> VirtualModelRecord | None:
+        for virtual in self.virtual_models:
+            if virtual.id == virtual_id:
+                return virtual
+        return None
+
 
 @dataclass(frozen=True)
 class RouteEntry:
@@ -621,7 +789,12 @@ class VendorCheck:
 
 @dataclass(frozen=True)
 class ResolvedProvider:
-    """Everything a dynamic adapter needs to build one real provider."""
+    """Everything a dynamic adapter needs to build one real provider.
+
+    ``virtual`` names the alias the feature is bound to, or is empty for a
+    direct ``vendor`` + ``model`` binding. ``vendor`` and ``model`` are always
+    the concrete target, so a caller never has to follow the alias itself.
+    """
 
     feature: str
     source: Literal["admin", "config"]
@@ -636,3 +809,4 @@ class ResolvedProvider:
     key_env: str
     model: str
     options: dict[str, Any]
+    virtual: str = ""
