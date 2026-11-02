@@ -36,6 +36,7 @@ export const NAVIGATION: readonly NavigationItem[] = [
   { to: '/ai', label: 'AI providers', icon: 'bi-cpu', end: false, group: 'administration', adminOnly: true },
   { to: '/gateway', label: 'Gateway routes', icon: 'bi-signpost-split', end: false, group: 'administration', adminOnly: true },
   { to: '/index', label: 'Document index', icon: 'bi-journal-text', end: false, group: 'administration', adminOnly: true },
+  { to: '/errors', label: 'Errors', icon: 'bi-bug', end: false, group: 'administration', adminOnly: true },
   { to: '/news', label: 'News', icon: 'bi-newspaper', end: false, group: 'administration', adminOnly: true },
 ];
 

@@ -1,5 +1,8 @@
 import type {
   AdminUser,
+  ErrorIncident,
+  ErrorIncidentList,
+  ErrorSummary,
   AdminUserCreate,
   AdminUserList,
   AdminUserUpdate,
@@ -1299,5 +1302,38 @@ export const api = {
     return request<PhoneDevice>(`/api/v1/phone/devices/${deviceId}/restore`, {
       method: 'POST',
     });
+  },
+
+  // -- error collection -------------------------------------------------
+
+  errorSummary(): Promise<ErrorSummary> {
+    return request<ErrorSummary>('/api/v1/errors/summary');
+  },
+
+  errors(
+    params: {
+      status?: string;
+      service?: string;
+      source?: string;
+      query?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<ErrorIncidentList> {
+    return request<ErrorIncidentList>(`/api/v1/errors${queryString(params)}`);
+  },
+
+  setErrorStatus(id: string, status: string): Promise<ErrorIncident> {
+    return request<ErrorIncident>(
+      `/api/v1/errors/${encodeURIComponent(id)}/status`,
+      { method: 'POST', body: { status } },
+    );
+  },
+
+  diagnoseError(id: string): Promise<ErrorIncident> {
+    return request<ErrorIncident>(
+      `/api/v1/errors/${encodeURIComponent(id)}/diagnose`,
+      { method: 'POST' },
+    );
   },
 };

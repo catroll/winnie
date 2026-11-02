@@ -8,6 +8,7 @@ import { AccountPage } from './pages/AccountPage';
 import { AIPage } from './pages/AIPage';
 import { ChatPage } from './pages/ChatPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { ErrorsPage } from './pages/ErrorsPage';
 import { InboxPage } from './pages/InboxPage';
 import { IndexPage } from './pages/IndexPage';
 import { KeysPage } from './pages/KeysPage';
@@ -66,6 +67,7 @@ export function App() {
               <Route path="/ai" element={<AIPage />} />
               <Route path="/gateway" element={<RoutesPage />} />
               <Route path="/index" element={<IndexPage />} />
+              <Route path="/errors" element={<ErrorsPage />} />
               <Route path="/users" element={<UsersPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />

@@ -1371,3 +1371,67 @@ export interface MailSyncResult {
   errors: { folder: string; error: string }[];
   stats: MailStats;
 }
+
+// -- error collection ---------------------------------------------------
+
+export type ErrorStatus = 'open' | 'acknowledged' | 'ignored' | 'resolved';
+export type ErrorLevel = 'warning' | 'error' | 'critical';
+
+/** The structured half of a diagnosis; null when the model answered prose. */
+export interface ErrorDiagnosisAnswer {
+  component: string;
+  file: string;
+  line: number;
+  cause: string;
+  confidence: number;
+  next_steps: string[];
+  notes: string;
+}
+
+export interface ErrorDiagnosis {
+  answer: ErrorDiagnosisAnswer | null;
+  /** The model's text as received, kept so a bad answer stays visible. */
+  raw: string;
+  model: string;
+  at: string;
+  evidence_bytes: number;
+}
+
+export interface ErrorIncident {
+  id: string;
+  fingerprint: string;
+  source: string;
+  kind: string;
+  service: string;
+  level: ErrorLevel;
+  message: string;
+  exception_type: string;
+  /** "path/file.py:123" inside this checkout, when known. */
+  location: string;
+  traceback: string;
+  context: Record<string, unknown>;
+  occurrences: number;
+  first_seen: string;
+  last_seen: string;
+  status: ErrorStatus;
+  acknowledged_at: string | null;
+  ignored_at: string | null;
+  resolved_at: string | null;
+  diagnosis: ErrorDiagnosis | null;
+  diagnosis_at: string | null;
+}
+
+export interface ErrorIncidentList {
+  items: ErrorIncident[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ErrorSummary {
+  open: number;
+  total: number;
+  last_24h: number;
+  by_status: Record<string, number>;
+  by_service: Record<string, number>;
+}
