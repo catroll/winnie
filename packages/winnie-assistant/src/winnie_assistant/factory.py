@@ -26,6 +26,7 @@ from winnie_local import (
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.news import NewsGateway
 from winnie_assistant.notify import Notifier
+from winnie_assistant.mail import MailGateway
 from winnie_assistant.phone import PhoneGateway
 from winnie_assistant.memory_builder import MemoryBuilder
 from winnie_assistant.scheduler import (
@@ -54,6 +55,7 @@ def build_assistant_service(
     model_name: str = "",
     news: NewsGateway | None = None,
     phone: PhoneGateway | None = None,
+    mail: MailGateway | None = None,
     notifier: Notifier | None = None,
 ) -> AssistantService:
     timezone = _timezone(config.timezone)
@@ -173,6 +175,7 @@ def build_assistant_service(
         weather=weather,
         gold=gold_watch,
         phone=phone,
+        mail=mail,
         notifier=notifier,
         timezone=timezone,
         clock=clock,

@@ -36,6 +36,13 @@ from winnie_local import (
 from winnie_assistant.memory import MemoryStore
 from winnie_assistant.news import NewsGateway
 from winnie_assistant.notify import Notifier
+from winnie_assistant.mail import MailGateway
+from winnie_assistant.mail_tools import (
+    MAIL_READ_TOOLS,
+    MAIL_TOOL_SCHEMAS,
+    MailToolError,
+    MailToolMixin,
+)
 from winnie_assistant.phone import PhoneGateway
 from winnie_assistant.phone_tools import (
     PHONE_TOOL_SCHEMAS,
@@ -581,6 +588,9 @@ TOOL_SCHEMAS.append(
 # registry decides whether they are offered at all, so the list stays complete
 # here and the filter lives in one place.
 TOOL_SCHEMAS.extend(PHONE_TOOL_SCHEMAS)
+# Mail is read-only: searching and opening what the cache already holds. Sending
+# stays behind a route the owner triggers, so there is no mail write tool.
+TOOL_SCHEMAS.extend(MAIL_TOOL_SCHEMAS)
 
 
 def tool_schemas(
@@ -608,7 +618,7 @@ def tool_schemas(
     return selected
 
 
-class ToolBox(PhoneToolMixin):
+class ToolBox(PhoneToolMixin, MailToolMixin):
     def __init__(
         self,
         *,
@@ -625,6 +635,7 @@ class ToolBox(PhoneToolMixin):
         weather: WeatherService | None = None,
         gold: GoldWatch | None = None,
         phone: PhoneGateway | None = None,
+        mail: MailGateway | None = None,
         notifier: Notifier | None = None,
         timezone: ZoneInfo | None = None,
         clock: Callable[[], datetime] | None = None,
@@ -642,6 +653,7 @@ class ToolBox(PhoneToolMixin):
         self.weather = weather
         self.gold = gold
         self.phone = phone
+        self.mail = mail
         self.notifier = notifier
         self.timezone = timezone or ZoneInfo("UTC")
         # `timezone` here is the ZoneInfo argument above, not the
@@ -756,11 +768,13 @@ class ToolBox(PhoneToolMixin):
                 output = await self._confirm_action(arguments, conversation_id)
             elif name in PHONE_TOOLS:
                 output = await self._phone_tool(name, arguments)
+            elif name in MAIL_READ_TOOLS:
+                output = await self._mail_tool(name, arguments)
             elif name == "notify_user":
                 output = await self._notify_user(arguments)
             else:
                 raise ToolError(f"unknown tool: {name}")
-        except (ToolError, LocalToolError, PhoneToolError) as exc:
+        except (ToolError, LocalToolError, PhoneToolError, MailToolError) as exc:
             return f"ERROR: {exc}"
         except Exception as exc:  # noqa: BLE001 - a tool must not break the turn
             logger.exception("assistant tool %s failed", name)

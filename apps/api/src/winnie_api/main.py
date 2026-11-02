@@ -50,6 +50,7 @@ from winnie_api.push.notify import PushNotifierAdapter
 from winnie_api.ai.router import router as ai_router
 from winnie_api.assistant_voice import router as assistant_voice_router
 from winnie_api.index_router import router as index_router
+from winnie_api.mail_gateway import MailGatewayAdapter
 from winnie_api.runtime import AppRuntime, build_runtime
 from winnie_api.proactive.adapters import (
     ModelComposer,
@@ -343,6 +344,14 @@ def create_app(
                     model=model,
                     model_name=getattr(model, "name", "") if model is not None else "",
                     news=NewsGatewayAdapter(news) if news is not None else None,
+                    mail=(
+                        MailGatewayAdapter(
+                            app.state.mail_service,
+                            resolve_owner=resolve_owner,
+                        )
+                        if app.state.mail_service is not None
+                        else None
+                    ),
                     phone=(
                         PhoneGatewayAdapter(
                             runtime.phone_service,
