@@ -498,7 +498,7 @@ export function UsagePanel() {
             )}
             <div className="card-footer small text-secondary">
               {tr(
-                "Balances come from the server-side keys of internal integrations. A gateway route forwards the client's own key, so proxied traffic does not appear here.",
+                "Balances come from the supplier key each endpoint injects, so gateway traffic is included in its supplier's balance. This table does not split that balance per client.",
               )}
             </div>
           </div>

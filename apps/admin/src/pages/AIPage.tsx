@@ -912,7 +912,7 @@ export function AIPage() {
                                     </td>
                                     <td style={{ minWidth: '8rem' }}>
                                       <span className="text-secondary">
-                                        {tr('client supplies the key')}
+                                        {tr('the gateway injects the supplier key')}
                                       </span>
                                     </td>
                                     <td style={{ minWidth: '8rem' }}>
@@ -971,9 +971,11 @@ export function AIPage() {
                       )}{' '}
                       <strong>{tr('Sync models')}</strong> {tr('reads its')}{' '}
                       <code>/models</code>{' '}
-                      {tr("API. Gateway routes forward the client's own vendor key at")}{' '}
+                      {tr("API. A gateway route is called with a Winnie key at")}{' '}
                       <code>/{'{name}'}/v1/…</code>
-                      {tr('; the environment variable is only for internal calls.')}
+                      {tr(
+                        '; the gateway injects the supplier key downstream, and the environment variable is only for internal calls.',
+                      )}
                     </div>
                   </div>
 

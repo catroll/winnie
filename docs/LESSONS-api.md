@@ -1039,3 +1039,46 @@ test asserts the *offset*, not the format: `test_search_mail_spells_out_the_time
 **Generalisable.** Any consumer that is not your own frontend needs the zone in
 the string. "It is our convention to store UTC" protects the database, not the
 reader.
+
+## A description can outlive the mechanism it describes (2026-11-02)
+
+**Signal.** The AI suppliers page labelled a gateway route's credential cell
+`client supplies the key`, and its footer said gateway routes "forward the
+client's own vendor key". Both were false: `proxy.py` drops `authorization`,
+`x-api-key` and `x-winnie-key` from the caller's headers and injects the route's
+supplier key. A reader concluded that pointing a route at a supplier was enough
+to let the host use that supplier — the exact configuration the same page then
+refuses with `No supplier API. Add it with Add route/API and switch Gateway route
+off`.
+
+**Cause.** The copy described the pre-`4c9900e` data plane, which said so itself —
+`forward.py: openai_upstream_headers()`, docstring *"只透传客户端鉴权头，服务端
+不注入上游密钥"* — and whose router checked an optional shared secret carried in
+the *same* two headers as the vendor key. `4c9900e` replaced the mechanism and the
+tests, and left the strings behind.
+
+**Check.** Grep the claims against the header policy, not against memory:
+
+```bash
+rg -n "client supplies|client's own key|forward the client" apps packages docs
+rg -n "_DROPPED_REQUEST_HEADERS" -A 14 packages/winnie-gateway/src/winnie_gateway/proxy.py
+```
+
+`authorization` inside the drop list and "client supplies the key" in the copy
+cannot both be true. The executable guard already existed:
+`test_invalid_and_vendor_keys_are_rejected` sends `Authorization: Bearer
+fake-vendor-key` and asserts `401`.
+
+**Fix.** One sentence per mechanism, each naming who holds the key: the caller
+presents a Winnie key, the gateway injects the supplier key. `client supplies the
+key` became `the gateway injects the supplier key`; the footer became "A gateway
+route is called with a Winnie key at `/{name}/v1/…`; the gateway injects the
+supplier key downstream". The balance footer was wrong in the same way and in a
+second direction: `BalanceService` queries every non-fake integration, so gateway
+spend *is* inside its supplier's balance — what the table does not do is split it
+per client.
+
+**Generalisable.** A stale description is not cosmetic: it proposes a
+configuration that cannot work, then blames the user for the failure it causes.
+When a data plane changes, grep for the words describing the old one in the same
+commit — the code has a compiler, the copy does not.

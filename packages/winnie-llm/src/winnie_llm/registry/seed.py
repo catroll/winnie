@@ -118,7 +118,8 @@ def seed_state(seed: SeedInput) -> AIState:
             label=_route_label(route.name),
             kind=route.protocol,
             base_url=route.base_url,
-            # Gateway routes forward the client's key; no server-side key.
+            # A gateway route is called with a Winnie key; the host injects the
+            # supplier credential from the vendor record on the way upstream.
             gateway=True,
         )
 
