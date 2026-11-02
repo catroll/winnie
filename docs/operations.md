@@ -137,6 +137,49 @@ gateway keys it holds a real secret that can log in to the owner's mail.
 - `~/.config/winnie-index/config.yaml` and the API venv for the index — run
   `make index-init` if the config is missing.
 
+## Supervision and errors
+
+The API records what it sees itself; a separate process covers the rest.
+
+```bash
+make watchdog          # supervise api,index,admin every 15s (Ctrl-C to stop)
+make watchdog-once     # one pass, to check the wiring
+make watchdog WATCHDOG_INTERVAL=10 WATCHDOG_SERVICES=api
+```
+
+`scripts/watchdog.py` polls each service's health endpoint, restarts a dead one
+through `scripts/services.sh restart <name>` with an exponential backoff
+(5s, 15s, 45s, 120s, 300s, then a 10-minute cooldown), and writes what it saw as
+JSON lines into `data/devloop/spool/`. It writes to the spool rather than to the
+API because the incident that matters most — "the API was down" — cannot be
+posted to the API while it is down.
+
+The API drains that spool every `devloop.detector.interval_seconds` and folds it
+into the same incidents table as its own failures:
+
+| Source | Caught by | Example |
+|---|---|---|
+| `api` | ASGI middleware | an unhandled exception, or any 5xx a handler returned |
+| `log` | root log handler | an `ERROR` from any capability, including background tasks |
+| `detector` | in-process poller | the index daemon or console not answering (it cannot see its own death) |
+| `watchdog` | the spool drain | a service that died and was restarted |
+
+Every failure is folded by fingerprint: one row per distinct failure shape, with
+`occurrences` and `last_seen` moving on each repeat. `devloop.capture_client_errors`
+is off by default — a 4xx is usually the caller's mistake and would bury a real
+500. Resolved and ignored incidents are pruned after `devloop.retention_days`.
+
+**Run the watchdog deliberately.** It treats "not answering" as "should be
+running", so `make stop` while it is running will be undone. Stop the watchdog
+first (Ctrl-C, or the systemd unit), then the stack.
+
+The console shows all of it under **Administration → Errors**: open / last 24h /
+total counts, a status and service filter, the detail panel with traceback and
+context, and **Diagnose** — a read-only model call over a bounded evidence bundle
+(the incident, `git status`/`git log`, the service's log tail, and a health
+snapshot). A diagnosis never changes the repository; without a bound chat model
+the button answers `503 diagnosis is unavailable: no chat model is bound`.
+
 ## Background jobs
 
 The checked-in configuration uses `jobs.backend: inline`, so the API processes

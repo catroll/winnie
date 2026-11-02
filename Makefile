@@ -56,7 +56,7 @@ ANDROID_USER_HOME ?= $(ROOT)/.android-user
 JAVA_HOME ?= $(shell readlink -f "$$(command -v java)" 2>/dev/null | sed 's:/bin/java$$::')
 
 .DEFAULT_GOAL := help
-.PHONY: help audio-check api android android-kws admin admin-build start stop restart status news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test schedule schedule-test schedule-skill
+.PHONY: help audio-check api android android-kws admin admin-build start stop restart status watchdog watchdog-once news-fetch index-init index-dry index-build index-serve index-status index-search index-skill index-test schedule schedule-test schedule-skill
 
 help: ## Show this help
 	@printf 'Winnie developer commands\n\n'
@@ -112,6 +112,22 @@ restart: ## Stop then start all SERVICES
 
 status: ## Show each managed service, its port and health
 	@$(SERVICE_ENV) SERVICES='$(SERVICES)' bash '$(ROOT)/scripts/services.sh' status
+
+# A separate process on purpose: the API cannot restart itself, and the incident
+# that matters most ("the API was down") cannot be posted to the API. Run this
+# only when you want supervision — `make stop` while it runs will be undone.
+WATCHDOG_SERVICES ?= api,index,admin
+WATCHDOG_INTERVAL ?= 15
+watchdog: ## Supervise SERVICES; restart a dead one and record it (Ctrl-C to stop)
+	@python3 '$(ROOT)/scripts/watchdog.py' \
+		--root '$(ROOT)' \
+		--services '$(WATCHDOG_SERVICES)' \
+		--interval '$(WATCHDOG_INTERVAL)' $(ARGS)
+
+watchdog-once: ## One supervision pass, for checking the wiring
+	@python3 '$(ROOT)/scripts/watchdog.py' \
+		--root '$(ROOT)' \
+		--services '$(WATCHDOG_SERVICES)' --once $(ARGS)
 
 admin: ## Run the admin console in the foreground (ADMIN_HOST:ADMIN_PORT)
 	@test -d '$(ADMIN_DIR)/node_modules' || { \

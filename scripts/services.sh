@@ -325,13 +325,25 @@ case "${1:-}" in
         stop_all
         ;;
     restart)
-        stop_all || true
-        start_all
+        # One service, for the watchdog and for a repair that touched one
+        # package; everything, for a human restarting the whole stack.
+        if [ $# -gt 1 ]; then
+            name="$2"
+            case " $SERVICES " in
+                *" $name "*) ;;
+                *) die "unknown or unmanaged service: $name (managed: $SERVICES)" ;;
+            esac
+            stop_one "$name" || true
+            start_one "$name"
+        else
+            stop_all || true
+            start_all
+        fi
         ;;
     status)
         status_all
         ;;
     *)
-        die "usage: $0 {start|stop|restart|status}"
+        die "usage: $0 {start|stop|restart [service]|status}"
         ;;
 esac
