@@ -209,6 +209,9 @@ OpenAI / Anthropic 透明代理落地时的踩坑与约定。
    the source on disk was already fixed. Touch a watched file to force a reload
    (`touch apps/api/src/winnie_api/main.py`), then confirm with a real request
    against `127.0.0.1:8000`, not with the file you just edited.
+   *Closed structurally on 2026-11-02: `make api` now passes one `--reload-dir`
+   per watch root, so a package edit reloads on its own — see
+   "`--reload` watches `apps/api`" below.*
 
 6. **Generalisation.** When a request body is validated in two layers, both
    layers must map their failures to a client-visible 4xx. The inner layer has
@@ -518,6 +521,7 @@ producing plausible answers that look like they ignored the prompt.
    500 until a reload happened for another reason; confirm with a real request
    against `127.0.0.1:8000`, and check the process start time against the file
    mtime (`ps -o lstart -p <uvicorn child>`, `stat -c %y <file>`).
+   *Fixed on 2026-11-02; the reloader now watches every package source tree.*
 
 6. **Generalisation.** A vendor's HTTP 200 is not a successful call: the status
    lives in a header (`X-Api-Status-Code`) and `20000003` is a *verdict about the
@@ -697,9 +701,17 @@ stat -c '%y' packages/winnie-phone/src/winnie_phone/service.py
 
 If the file is newer than the process, the process is not running that file.
 
-**Fix.** `make restart SERVICES=api` after any change under `packages/`, or after
-editing `apps/api/.env`. Restarting one service keeps the admin and index
-processes alone.
+**Fix (2026-11-02, structural).** `make api` now passes one `--reload-dir` per
+watch root — `apps/api` plus every `packages/*/src` — so the reloader follows
+the code instead of a single directory. Verified by starting the API on a spare
+port, touching `packages/winnie-assistant/src/winnie_assistant/memory.py`, and
+reading the log: `WatchFiles detected changes in '.../memory.py'. Reloading...`.
+The lesson had been written down on 2026-11-01 and was hit again on 2026-11-02
+(a changed package returned the old payload on :8000); a note that asks the next
+person to remember a restart is not a guard. The env-file half is unchanged:
+`.env` is read by the exec'ing shell, so editing it still needs
+`make restart SERVICES=api`, and since `--reload-dir` replaces uvicorn's default
+target, `apps/api` stays in the list so a `config.yaml` edit still reloads.
 
 ## A rule stored in memory is a rule for every path that acts, not just the one with a model (2026-11-02)
 

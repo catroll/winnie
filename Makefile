@@ -21,7 +21,14 @@ INDEX_CONFIG ?= $(HOME)/.config/winnie-index/config.yaml
 API_HOST ?= ::
 API_PORT ?= 8000
 API_RELOAD ?= 1
-API_RELOAD_FLAG := $(if $(filter 1 true yes on,$(API_RELOAD)),--reload,)
+# uvicorn's default reload target is the directory it was started in, and the API
+# runs from apps/api. The capability packages are installed editable from
+# packages/*/src, which sits outside that directory: an edit there used to leave
+# the running server on the old code while `make status` still said `healthy`,
+# because a listening port is not evidence that the code behind it is current.
+# Watch every package source tree as well, so the reloader follows the code.
+API_RELOAD_DIRS := $(API_DIR) $(wildcard $(ROOT)/packages/*/src)
+API_RELOAD_FLAG := $(if $(filter 1 true yes on,$(API_RELOAD)),--reload $(foreach dir,$(API_RELOAD_DIRS),--reload-dir '$(dir)'),)
 # Managed local services, in start order. Stop runs in reverse order.
 SERVICES ?= api index admin
 ADMIN_HOST ?= 127.0.0.1

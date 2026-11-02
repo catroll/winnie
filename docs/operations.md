@@ -78,6 +78,11 @@ make index-serve  # index daemon, logs in the terminal
 make admin        # Vite dev server, logs in the terminal
 ```
 
+The API reloader watches `apps/api` **and** every `packages/*/src`, so an edit in
+a capability package is live without a restart. An edit to `apps/api/.env` is
+not: the Make recipe sources that file into the shell that execs `uvicorn`, so
+use `make restart SERVICES=api` after changing it.
+
 Useful overrides:
 
 ```bash
