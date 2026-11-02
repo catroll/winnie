@@ -3,6 +3,47 @@
 Architecture and dependency choices that are not obvious from the code. Each
 entry records the alternative that was rejected and why.
 
+## A check asks the supplier, and says what it did not prove (2026-11-02)
+
+**Decision.** `POST /api/v1/ai/vendors/{id}/check` asks the supplier for its own
+model list with the stored key (`GET {base}/models`, which costs no tokens) and
+returns one of four verdicts: `ok` with the model count and any bound model the
+list no longer contains, `unauthorized` for `401`/`403`, `error` for any other
+status or an unreachable endpoint, and `unsupported` for a supplier that exposes
+only speech. The call is read-only: it does not refresh the gateway route table,
+does not write the registry, and the key never appears in the response. The
+console offers it as **Check** on a supplier row, and the line it renders next to
+an `ok` says that the key and the endpoint work, not that a completion succeeds.
+
+**Why.** "Key set" was the only signal the page had, and it is not evidence. A
+revoked key and a retired model both look configured until a real call fails —
+in a chat turn, a meeting pipeline or a nightly job — and the error arrives far
+from the console that could have caught it. `GET /models` uses exactly the
+credential an internal call or the gateway sends, so it answers the two ways a
+configured supplier goes stale at once, and reporting the missing bound models
+from the same response is free: a catalog change otherwise reads as the
+supplier's fault.
+
+**Rejected: send a one-token chat completion instead.** It proves more — that
+the model answers — but it spends money on every click and needs a model the
+caller may not have bound yet; a supplier with 200 models would still have been
+asked about one. The model list is the cheapest question that separates "the key
+is rejected" from "the endpoint failed", which was the question nobody could
+answer.
+
+**Rejected: report a rejected key as a check failure.** A `401` from the
+supplier is a *successful* check with an `unauthorized` verdict, so it is
+`200 {"check": {...}}` and the console renders it as data. A check that cannot
+be attempted at all — the supplier has no stored key — is `409`, because the
+request itself was impossible.
+
+**A speech-only supplier is `unsupported`, not an error.** Volcengine exposes an
+ASR API and no model list. The console hides **Check** there and the row already
+says why, while the endpoint still answers `unsupported` for a scripted caller
+or a row rendered before the endpoint changed. An Anthropic supplier is probed
+with `x-api-key` and `anthropic-version` instead of a bearer token, because
+sending `Authorization` to Anthropic would report every working key as rejected.
+
 ## A supplier key is stored with its models, and the env file becomes a backup (2026-11-02)
 
 **Decision.** Each supplier's API key is stored on its record in `data/ai.yaml`,

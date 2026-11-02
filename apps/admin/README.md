@@ -202,7 +202,12 @@ key**, created on the Gateway routes page and stored as a digest in
 `data/gateway-keys.yaml`.
 
 **Sync models** fetches the supplier's `/models` list with that key; **Models**
-is the manual fallback. Supplier marks are inline SVGs adapted from the WLB
+is the manual fallback. **Check** asks the supplier for that same list without
+changing anything: it reports whether the key is accepted, how many models came
+back, and any model a feature is bound to that the supplier no longer lists, so a
+revoked key or a retired model is visible before a chat or a meeting fails. It is
+offered where a supplier has an OpenAI or Anthropic endpoint to ask; a
+speech-only supplier has no model list and shows no button. Supplier marks are inline SVGs adapted from the WLB
 newapi `vendor-icons.js` catalog.
 
 The **Model runtime** card edits the shared timeout, token cap, temperature,

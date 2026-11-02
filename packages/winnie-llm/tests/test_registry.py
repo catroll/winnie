@@ -8,6 +8,8 @@ import pytest
 import yaml
 
 from winnie_llm import (
+    AIConflict,
+    AINotFound,
     AIProviderError,
     ApiKeys,
     BindingDraft,
@@ -340,3 +342,172 @@ def test_clearing_a_key_updates_the_backup(tmp_path: Path) -> None:
 
     assert registry.key_present("deepseek") is False
     assert env.read_text(encoding="utf-8") == "DEEPSEEK_API_KEY=\n"
+
+
+@pytest.mark.asyncio
+async def test_check_vendor_reports_the_catalog_and_a_missing_binding(
+    tmp_path: Path,
+) -> None:
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(
+        path, keys=_keys(tmp_path, DEEPSEEK_API_KEY="secret-key")
+    )
+    registry.load()
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        # The supplier retired the model the assistant is bound to; the key
+        # works, which is exactly the case a check has to distinguish.
+        return httpx.Response(200, json={"data": [{"id": "deepseek-reasoner"}]})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    check = await registry.check_vendor("deepseek", http=http)
+    await http.aclose()
+
+    assert check.state == "ok"
+    assert check.status == 200
+    assert check.models == 1
+    assert str(seen[0].url) == "https://api.deepseek.com/v1/models"
+    assert seen[0].headers["authorization"] == "Bearer secret-key"
+    assert check.missing_models == ("assistant.chat · deepseek-chat",)
+
+
+@pytest.mark.asyncio
+async def test_check_vendor_separates_a_rejected_key_from_a_failure(
+    tmp_path: Path,
+) -> None:
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(
+        path, keys=_keys(tmp_path, DEEPSEEK_API_KEY="wrong-key")
+    )
+    registry.load()
+
+    async def probe(response: httpx.Response):
+        http = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: response)
+        )
+        try:
+            return await registry.check_vendor("deepseek", http=http)
+        finally:
+            await http.aclose()
+
+    rejected = await probe(
+        httpx.Response(401, json={"error": {"message": "Authentication Fails"}})
+    )
+    assert rejected.state == "unauthorized"
+    assert rejected.status == 401
+    assert "Authentication Fails" in rejected.detail
+
+    broken = await probe(httpx.Response(503, text="upstream\nunavailable"))
+    assert broken.state == "error"
+    assert broken.status == 503
+    assert broken.detail == "upstream unavailable"
+
+    html = await probe(httpx.Response(200, text="<html>not json</html>"))
+    assert html.state == "error"
+    assert "non-JSON" in html.detail
+
+
+@pytest.mark.asyncio
+async def test_check_vendor_requires_a_key_and_says_when_it_cannot_probe(
+    tmp_path: Path,
+) -> None:
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(path, keys=_keys(tmp_path))
+    registry.load()
+
+    with pytest.raises(AIConflict) as raised:
+        await registry.check_vendor("deepseek")
+    assert "has no API key" in str(raised.value)
+
+    registry.set_api_key("volcengine", "speech-key")
+    unsupported = await registry.check_vendor("volcengine")
+    assert unsupported.state == "unsupported"
+    assert "no enabled OpenAI or Anthropic API" in unsupported.detail
+
+    with pytest.raises(AINotFound):
+        await registry.check_vendor("nope")
+
+
+@pytest.mark.asyncio
+async def test_check_vendor_uses_the_supplier_protocol_and_a_gateway_route(
+    tmp_path: Path,
+) -> None:
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(path, keys=_keys(tmp_path))
+    registry.load()
+    registry.create_vendor(
+        VendorDraft(id="claude", label="Claude", models=[ModelRecord(id="claude-x")])
+    )
+    registry.set_api_key("claude", "anthropic-key")
+    registry.create_integration(
+        IntegrationDraft(
+            name="claude-internal",
+            label="Claude API",
+            vendor="claude",
+            kind="anthropic",
+            base_url="https://api.anthropic.com",
+            gateway=False,
+            enabled=True,
+        )
+    )
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": [{"id": "claude-x"}]})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    check = await registry.check_vendor("claude", http=http)
+    await http.aclose()
+
+    # Anthropic does not read a bearer token, so a check that sent one would
+    # report every working key as rejected.
+    assert str(seen[0].url) == "https://api.anthropic.com/v1/models"
+    assert seen[0].headers["x-api-key"] == "anthropic-key"
+    assert seen[0].headers["anthropic-version"] == "2023-06-01"
+    assert "authorization" not in seen[0].headers
+    assert check.state == "ok"
+    assert check.missing_models == ()
+
+
+@pytest.mark.asyncio
+async def test_check_vendor_can_probe_a_gateway_only_supplier(tmp_path: Path) -> None:
+    path = _write_v5(tmp_path)
+    registry = ProviderRegistry(path, keys=_keys(tmp_path))
+    registry.load()
+    registry.create_vendor(
+        VendorDraft(id="mirror", label="Mirror", models=[ModelRecord(id="m1")])
+    )
+    registry.set_api_key("mirror", "mirror-key")
+    # No internal endpoint: the supplier only serves traffic through the
+    # gateway, and the key is still the one the registry stores.
+    registry.create_integration(
+        IntegrationDraft(
+            name="mirror-gateway",
+            label="Mirror gateway",
+            vendor="mirror",
+            kind="openai",
+            base_url="https://mirror.example.com/openai",
+            gateway=True,
+            enabled=True,
+        )
+    )
+
+    seen: list[httpx.Request] = []
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: (
+                seen.append(request)
+                or httpx.Response(200, json={"data": [{"id": "m1"}]})
+            )
+        )
+    )
+    check = await registry.check_vendor("mirror", http=http)
+    await http.aclose()
+
+    assert str(seen[0].url) == "https://mirror.example.com/openai/v1/models"
+    assert check.state == "ok"

@@ -1034,5 +1034,14 @@
   "HTML": "网页",
   "Raw": "原文",
   "Syncing every folder…": "正在同步所有文件夹…",
-  "The raw message is not cached.": "这封邮件的原文尚未缓存。"
+  "The raw message is not cached.": "这封邮件的原文尚未缓存。",
+  "Ask the supplier for its model list with the stored key": "用已保存的密钥向供应商索取模型列表",
+  "Check": "检查",
+  "A check proves the key and the endpoint; it does not prove that a completion succeeds.": "检查只能证明密钥和接口可用，不能证明补全请求会成功。",
+  "Missing from the supplier catalog: {{models}}": "供应商目录中已不存在：{{models}}",
+  "The check could not reach the supplier. {{detail}}": "无法连接到供应商。{{detail}}",
+  "The check failed (HTTP {{status}}). {{detail}}": "检查失败（HTTP {{status}}）。{{detail}}",
+  "The supplier accepted the key · {{count}} models": "供应商已接受该密钥 · {{count}} 个模型",
+  "The supplier rejected the key (HTTP {{status}}). {{detail}}": "供应商拒绝了该密钥（HTTP {{status}}）。{{detail}}",
+  "This supplier has no model list to check.": "该供应商没有可检查的模型列表。"
 }

@@ -154,6 +154,37 @@ async def set_vendor_key(
     return {"vendor": _vendor_view(service, vendor.id)}
 
 
+@router.post("/vendors/{vendor_id}/check")
+async def check_vendor(
+    request: Request,
+    vendor_id: str,
+) -> dict[str, Any]:
+    """Probe the supplier's own API with the stored key, without changing it.
+
+    The probe is the supplier's ``GET /models``: no tokens are spent, and the
+    answer separates "the key is rejected" from "the endpoint failed" and from
+    "a bound model is gone". Read-only: nothing is written to the registry and
+    the key never appears in the response.
+    """
+    service = _service(request)
+    try:
+        check = await service.check_vendor(
+            vendor_id, getattr(request.app.state, "http", None)
+        )
+    except AIProviderError as exc:
+        raise _error(exc) from exc
+    return {
+        "check": {
+            "state": check.state,
+            "status": check.status,
+            "url": check.url,
+            "models": check.models,
+            "missing_models": list(check.missing_models),
+            "detail": check.detail,
+        }
+    }
+
+
 @router.post("/integrations", status_code=201)
 async def create_integration(
     request: Request,

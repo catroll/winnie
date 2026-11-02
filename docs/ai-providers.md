@@ -222,6 +222,24 @@ A gateway route uses the same supplier key: the gateway injects it for a caller
 that presents a Winnie gateway key (created on the API keys page). A gateway-only
 record is never a feature target; the internal API button/config is separate.
 
+### Checking a key
+
+**Check** on a supplier row (`POST /api/v1/ai/vendors/{id}/check`) asks the
+supplier for its own model list with the stored key. It spends no tokens, sends
+the same credential an internal call or the gateway sends, and changes nothing.
+
+| Verdict | Meaning |
+|---|---|
+| `ok` | The supplier listed its models. The response carries the count and any model a bound feature names that the list no longer contains. |
+| `unauthorized` | `401`/`403`: the key is wrong, revoked or from another account. |
+| `error` | Any other status, or the endpoint could not be reached; `detail` carries the supplier's own message. |
+| `unsupported` | No enabled OpenAI or Anthropic endpoint to ask — a speech-only supplier (Volcengine ASR), or one whose only endpoint is switched off. |
+
+A missing key is a `409`, not a verdict: the check could not be attempted. A
+rejected key is a `200` with `state: "unauthorized"`, because the check itself
+worked. The probe proves the key and the endpoint; it does not prove that a
+completion succeeds, and the console says so beside the result.
+
 ## Changes take effect without a restart
 
 The capability packages are built once, but their provider ports are thin
@@ -248,6 +266,7 @@ All endpoints require the same bearer session as the rest of the console.
 | `PUT` | `/api/v1/ai/vendors/{id}` | Update a supplier label/models |
 | `PUT` | `/api/v1/ai/vendors/{id}/key` | Store `{api_key}`; empty clears it; mirrors the env backup |
 | `POST` | `/api/v1/ai/vendors/{id}/models/sync` | Fetch the model list from the supplier |
+| `POST` | `/api/v1/ai/vendors/{id}/check` | Probe the stored key against the supplier (read-only; no tokens) |
 | `POST` | `/api/v1/ai/integrations` | Create the supplier API or a gateway route |
 | `PUT` | `/api/v1/ai/integrations/{id}` | Update one |
 | `DELETE` | `/api/v1/ai/integrations/{id}` | Delete it; unbind features if the supplier API is gone |

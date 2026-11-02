@@ -596,6 +596,30 @@ class RouteEntry:
 
 
 @dataclass(frozen=True)
+class VendorCheck:
+    """What one probe of a supplier's own API learned about its stored key.
+
+    ``state`` is deliberately coarse, because the caller reacts differently to
+    each value: ``ok`` (the supplier answered and listed its models),
+    ``unauthorized`` (it answered 401/403, so the key is wrong or revoked),
+    ``error`` (any other status or a transport failure), and ``unsupported``
+    (this supplier has no cheap HTTP probe, e.g. a speech-only endpoint).
+
+    ``status`` is the supplier's own HTTP status, ``None`` when the request
+    never produced one. ``missing_models`` names the feature/model pairs bound
+    to this supplier that its catalog no longer contains — the second question a
+    key raises, after "is it accepted".
+    """
+
+    state: Literal["ok", "unauthorized", "error", "unsupported"]
+    status: int | None = None
+    url: str = ""
+    models: int | None = None
+    missing_models: tuple[str, ...] = ()
+    detail: str = ""
+
+
+@dataclass(frozen=True)
 class ResolvedProvider:
     """Everything a dynamic adapter needs to build one real provider."""
 

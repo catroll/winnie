@@ -44,6 +44,7 @@ from winnie_llm.registry.schema import (
     ModelRecord,
     ResolvedProvider,
     RouteEntry,
+    VendorCheck,
     VendorDraft,
     VendorRecord,
     infer_vendor,
@@ -574,6 +575,107 @@ class ProviderRegistry:
             self._commit(current)
             return target
 
+    async def check_vendor(
+        self, vendor_id: str, http: httpx.AsyncClient | None = None
+    ) -> VendorCheck:
+        """Probe the supplier's own API with the key stored on its record.
+
+        The probe is ``GET /models``: it spends no tokens, authenticates with
+        exactly the credential an internal call or the gateway would send, and
+        answers both questions a saved key raises — whether the supplier
+        accepts it, and whether the models the features are bound to still
+        exist. It does not prove that a completion succeeds; the console says
+        that next to the result rather than pretending otherwise.
+        """
+        state = self.state()
+        vendor = state.vendor(vendor_id)
+        if vendor is None:
+            raise AINotFound(f"supplier not found: {vendor_id}")
+        api_key = self.vendor_key(vendor.id)
+        if not api_key:
+            raise AIConflict(
+                f"supplier {vendor.label!r} has no API key; save one before "
+                "checking it"
+            )
+        target = _probe_target(state, vendor.id)
+        if target is None:
+            return VendorCheck(
+                state="unsupported",
+                detail=(
+                    f"supplier {vendor.label!r} has no enabled OpenAI or "
+                    "Anthropic API to probe"
+                ),
+            )
+        url, protocol = target
+        own_client = http is None
+        client = http or httpx.AsyncClient(timeout=10)
+        try:
+            try:
+                response = await client.get(
+                    url, headers=_probe_headers(protocol, api_key), timeout=10
+                )
+            except httpx.HTTPError as exc:
+                return VendorCheck(
+                    state="error", url=url, detail=f"{type(exc).__name__}: {exc}"
+                )
+        finally:
+            if own_client:
+                await client.aclose()
+
+        if response.status_code in (401, 403):
+            return VendorCheck(
+                state="unauthorized",
+                status=response.status_code,
+                url=url,
+                detail=_excerpt(response),
+            )
+        if response.status_code >= 400:
+            return VendorCheck(
+                state="error",
+                status=response.status_code,
+                url=url,
+                detail=_excerpt(response),
+            )
+        try:
+            payload = response.json()
+        except ValueError:
+            return VendorCheck(
+                state="error",
+                status=response.status_code,
+                url=url,
+                detail="the supplier returned a non-JSON model list",
+            )
+        items = payload.get("data") if isinstance(payload, dict) else payload
+        if not isinstance(items, list):
+            return VendorCheck(
+                state="error",
+                status=response.status_code,
+                url=url,
+                detail="the supplier returned no model list",
+            )
+        catalog = {
+            str(item.get("id") if isinstance(item, dict) else item).strip()
+            for item in items
+        }
+        catalog.discard("")
+        # A key that works can still point at a model the supplier retired;
+        # that is the other way a configured feature fails at call time, and
+        # the model list already in hand answers it for free.
+        missing = tuple(
+            f"{feature} · {binding.model}"
+            for feature, binding in state.bindings.items()
+            if binding.vendor == vendor.id
+            and binding.model
+            and binding.model not in catalog
+        )
+        return VendorCheck(
+            state="ok",
+            status=response.status_code,
+            url=url,
+            models=len(catalog),
+            missing_models=missing,
+        )
+
     def view(self) -> dict[str, Any]:
         state = self.state()
         return {
@@ -961,6 +1063,64 @@ def _openai_base(value: str) -> str:
     if _VERSIONED_BASE.search(base):
         return base
     return f"{base}/v1"
+
+
+def _probe_target(state: AIState, vendor_id: str) -> tuple[str, str] | None:
+    """The URL and protocol that answer "does this supplier's key work?".
+
+    An internal OpenAI endpoint comes first because it is the one internal
+    calls use; a gateway-only endpoint is still probeable, which covers a
+    supplier that serves OpenAI-compatible traffic only. Anthropic answers the
+    same ``GET /models`` shape with a header of its own. A speech-only supplier
+    has no cheap probe, and the caller reports that instead of guessing.
+    """
+    candidates = [
+        integration
+        for integration in state.integrations
+        if integration.vendor == vendor_id
+        and integration.enabled
+        and integration.base_url
+        and integration.kind in ("openai", "anthropic")
+    ]
+    candidates.sort(
+        key=lambda item: (
+            0 if (item.kind == "openai" and not item.gateway) else 1,
+            0 if item.kind == "openai" else 1,
+        )
+    )
+    for integration in candidates:
+        base = integration.base_url.strip().rstrip("/")
+        if not base:
+            continue
+        if integration.kind == "openai":
+            return f"{_openai_base(base)}/models", "openai"
+        root = base if _VERSIONED_BASE.search(base) else f"{base}/v1"
+        return f"{root}/models", "anthropic"
+    return None
+
+
+def _probe_headers(protocol: str, api_key: str) -> dict[str, str]:
+    """The credential headers the supplier itself expects.
+
+    Anthropic does not read ``Authorization``; sending a bearer token there
+    would make every check report the key as rejected.
+    """
+    if protocol == "anthropic":
+        return {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _excerpt(response: httpx.Response, limit: int = 300) -> str:
+    """One short line from the supplier's error body, for the console.
+
+    The body may be an HTML error page with newlines and scripts; the console
+    shows a single line, so it is collapsed and cut. A response body never
+    contains the key that was sent.
+    """
+    text = " ".join((response.text or "").split())
+    if not text:
+        return response.reason_phrase or f"HTTP {response.status_code}"
+    return text[:limit] + ("…" if len(text) > limit else "")
 
 
 def _volcengine_config(provider: ResolvedProvider) -> VolcengineASRConfig:

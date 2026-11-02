@@ -372,20 +372,29 @@ testable alone.
       need to bind the assistant/translation/minutes to an Anthropic endpoint.
       DeepSeek's OpenAI-compatible endpoint already covers them today, so this is
       not on the critical path.
-- [ ] Add a **Check** action per integration that performs one cheap call
-      (`GET /models`, or a one-token chat) and reports the provider's HTTP
-      response. "Key set" in the environment is not proof that the key works or
-      that the model exists; the missing-key path is tested, the wrong-key path
-      is not.
+- [x] Add a **Check** action per supplier that performs one cheap call and
+      reports the provider's answer. It is `GET /models` with the stored key
+      (no tokens, read-only) and reports four verdicts: `ok` with the model
+      count and any bound model the catalog no longer lists, `unauthorized`,
+      `error` and `unsupported`; a missing key is a `409`. Covered by
+      `packages/winnie-llm/tests/test_registry.py` (good key, rejected key,
+      non-JSON body, Anthropic headers, gateway-only supplier, speech-only
+      supplier) and `apps/api/tests/test_ai_admin.py` (the HTTP surface), plus a
+      Firefox run that clicks the button on three suppliers and reads the line
+      each renders. It proves the key and the endpoint, not that a completion
+      succeeds; `docs/decisions.md` records why a one-token chat was rejected.
 - [ ] Decide how the gateway route table should behave with more than one API
       process. Today only the process that handled the admin write refreshes its
       table; a TTL reload or a shared revision would remove the single-worker
       constraint. Keep this out of the provider-selection path until a
       multi-worker deployment is real.
-- [ ] If entering keys in the browser becomes a requirement, design an encrypted
-      secret store and a master-key lifecycle first. The current deliberate
-      choice is environment-only, documented in `docs/decisions.md`; do not add
-      a plaintext column as a shortcut.
+- [x] Entering keys in the browser shipped: the value is stored on the supplier
+      record in `data/ai.yaml` (mode `0600`, gitignored), written only by the
+      console, never returned, and mirrored into `packages/winnie-llm/.env` as a
+      backup. Encrypting it was considered and rejected — the master key would
+      sit in the same trust boundary — and is still the thing to revisit if the
+      registry ever serves a multi-tenant deployment. `docs/decisions.md` records
+      both.
 
 ## P2 — news production follow-ups
 

@@ -996,3 +996,92 @@ async def test_the_registry_imports_the_env_backup_once(tmp_path: Path, monkeypa
         config = (await client.get("/api/v1/ai/config")).json()
     openai = next(item for item in config["vendors"] if item["id"] == "openai")
     assert openai["api_key_hint"] == "…ckup"
+
+
+async def test_vendor_check_separates_a_good_key_a_bad_key_and_a_missing_one(
+    tmp_path: Path,
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path != "/v1/models":
+            return httpx.Response(500)
+        if request.headers["Authorization"] != "Bearer sk-check-key":
+            return httpx.Response(
+                401, json={"error": {"message": "Authentication Fails"}}
+            )
+        return httpx.Response(200, json={"data": [{"id": "m-one"}, {"id": "m-two"}]})
+
+    settings = _settings(tmp_path)
+    async with _open(settings, handler) as client:
+        await client.post(
+            "/api/v1/ai/vendors",
+            json={"id": "deepseek", "label": "DeepSeek", "models": []},
+        )
+        created = await client.post(
+            "/api/v1/ai/integrations",
+            json={
+                "name": "deepseek-internal",
+                "vendor": "deepseek",
+                "kind": "openai",
+                "base_url": "https://api.deepseek.com",
+                "gateway": False,
+            },
+        )
+        assert created.status_code == 201, created.text
+
+        # Without a key the check refuses to guess instead of reporting a 401
+        # that would look like a bad credential.
+        missing = await client.post("/api/v1/ai/vendors/deepseek/check")
+        assert missing.status_code == 409, missing.text
+        assert "has no API key" in missing.json()["detail"]
+
+        await client.put(
+            "/api/v1/ai/vendors/deepseek/key", json={"api_key": "sk-check-key"}
+        )
+        checked = await client.post("/api/v1/ai/vendors/deepseek/check")
+        assert checked.status_code == 200, checked.text
+        result = checked.json()["check"]
+        assert result["state"] == "ok"
+        assert result["status"] == 200
+        assert result["models"] == 2
+        assert result["missing_models"] == []
+        assert result["url"] == "https://api.deepseek.com/v1/models"
+        # The value is write-only here too.
+        assert "sk-check-key" not in checked.text
+
+        await client.put(
+            "/api/v1/ai/vendors/deepseek/key", json={"api_key": "wrong-key"}
+        )
+        rejected = await client.post("/api/v1/ai/vendors/deepseek/check")
+        assert rejected.status_code == 200, rejected.text
+        result = rejected.json()["check"]
+        assert result["state"] == "unauthorized"
+        assert result["status"] == 401
+        assert "Authentication Fails" in result["detail"]
+        assert "wrong-key" not in rejected.text
+
+    assert [str(request.url) for request in seen] == [
+        "https://api.deepseek.com/v1/models",
+        "https://api.deepseek.com/v1/models",
+    ]
+
+
+async def test_vendor_check_says_when_a_supplier_has_no_probe(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    async with _open(settings, lambda request: httpx.Response(500)) as client:
+        config = (await client.get("/api/v1/ai/config")).json()
+        speech = next(vendor for vendor in config["vendors"] if vendor["id"] == "volcengine")
+        await client.put(
+            f"/api/v1/ai/vendors/{speech['id']}/key", json={"api_key": "speech-key"}
+        )
+        unchecked = await client.post(f"/api/v1/ai/vendors/{speech['id']}/check")
+        assert unchecked.status_code == 200, unchecked.text
+        result = unchecked.json()["check"]
+        assert result["state"] == "unsupported"
+        assert result["status"] is None
+        assert "no enabled OpenAI or Anthropic API" in result["detail"]
+
+        unknown = await client.post("/api/v1/ai/vendors/nope/check")
+        assert unknown.status_code == 404

@@ -7,6 +7,7 @@ import type {
   AIIntegrationInput,
   AIProviderConfig,
   AIVendor,
+  AIVendorCheck,
   AIVendorInput,
   AssistantChatResponse,
   AssistantConversation,
@@ -368,6 +369,19 @@ export const api = {
     return request(
       `/api/v1/ai/vendors/${encodeURIComponent(vendorId)}/key`,
       { method: 'PUT', body: { api_key: apiKey } },
+    );
+  },
+
+  /**
+   * Probe the supplier's own API with the stored key.
+   *
+   * Read-only on the server: nothing is written, no tokens are spent, and the
+   * answer is the supplier's own status plus its model list.
+   */
+  checkAIVendor(vendorId: string): Promise<{ check: AIVendorCheck }> {
+    return request(
+      `/api/v1/ai/vendors/${encodeURIComponent(vendorId)}/check`,
+      { method: 'POST' },
     );
   },
 

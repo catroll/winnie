@@ -203,5 +203,10 @@
   "HTML": "HTML",
   "Raw": "Raw",
   "Syncing every folder…": "Syncing every folder…",
-  "The raw message is not cached.": "The raw message is not cached."
+  "The raw message is not cached.": "The raw message is not cached.",
+  "Missing from the supplier catalog: {{models}}": "Missing from the supplier catalog: {{models}}",
+  "The check could not reach the supplier. {{detail}}": "The check could not reach the supplier. {{detail}}",
+  "The check failed (HTTP {{status}}). {{detail}}": "The check failed (HTTP {{status}}). {{detail}}",
+  "The supplier accepted the key · {{count}} models": "The supplier accepted the key · {{count}} models",
+  "The supplier rejected the key (HTTP {{status}}). {{detail}}": "The supplier rejected the key (HTTP {{status}}). {{detail}}"
 }

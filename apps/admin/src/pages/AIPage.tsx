@@ -10,6 +10,7 @@ import type {
   AIProviderConfig,
   AIProviderKind,
   AIVendor,
+  AIVendorCheck,
   AIVendorInput,
   ModelRuntime,
 } from '../api/types';
@@ -166,6 +167,10 @@ export function AIPage() {
   const [deleteTarget, setDeleteTarget] = useState<AIIntegration | null>(null);
   const [bindings, setBindings] = useState<Record<string, BindingState>>({});
   const [runtimeDraft, setRuntimeDraft] = useState<ModelRuntime | null>(null);
+  // The last probe per supplier. It is kept per vendor rather than in the
+  // page message so two suppliers can be compared and a later unrelated edit
+  // does not erase the evidence that a key worked.
+  const [checks, setChecks] = useState<Record<string, AIVendorCheck>>({});
 
   // Any tab not named in the URL is the first one, so an unknown or stale
   // ``?tab=`` value still lands on a real section.
@@ -419,9 +424,39 @@ export function AIPage() {
           : tr('Cleared the {{label}} key.', { label: response.vendor.label }),
       });
       setKeyEditor(null);
+      // A probe describes the key that was stored when it ran; a new key
+      // invalidates it, so the old verdict must not linger next to the badge.
+      setChecks((current) => {
+        const next = { ...current };
+        delete next[vendor.id];
+        return next;
+      });
       result.reload();
     } catch (error) {
       setKeyError(describe(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * Ask the supplier itself whether the stored key works.
+   *
+   * The probe spends no tokens: it is the supplier's own model list, which is
+   * the cheapest endpoint that requires the same credential an internal call
+   * uses. It answers two questions the console could otherwise only guess at —
+   * whether the key is accepted, and whether the model a feature is bound to
+   * still exists. It does not prove that a completion succeeds, and the note
+   * beside the result says so.
+   */
+  const checkVendor = async (vendor: AIVendor) => {
+    setBusy(`check:${vendor.id}`);
+    setMessage(null);
+    try {
+      const response = await api.checkAIVendor(vendor.id);
+      setChecks((current) => ({ ...current, [vendor.id]: response.check }));
+    } catch (error) {
+      setMessage({ kind: 'danger', text: describe(error) });
     } finally {
       setBusy(null);
     }
@@ -465,10 +500,23 @@ export function AIPage() {
   const gatewayRoutes = integrations.filter(
     (integration) => integration.gateway_paths.length > 0,
   ).length;
-  // A gateway route forwards the caller's key, so only an internal endpoint
-  // uses the supplier key the registry stores.
+  // Both an internal endpoint and a gateway route send the supplier key the
+  // registry stores (the gateway swaps the caller's Winnie key for it), so a
+  // key saved on any supplier is in use. This counter stays about the internal
+  // endpoints because those are the ones a feature call resolves.
   const keyed = integrations.filter((integration) => !integration.gateway);
   const keysPresent = keyed.filter((integration) => integration.api_key_present);
+  // A probe needs an HTTP endpoint the supplier answers on its own behalf. It
+  // mirrors the server, which prefers the internal endpoint and falls back to a
+  // gateway route, and has nothing to ask a speech-only supplier.
+  const canProbe = (vendor: AIVendor) =>
+    integrations.some(
+      (item) =>
+        item.vendor === vendor.id &&
+        item.enabled &&
+        Boolean(item.base_url) &&
+        (item.kind === 'openai' || item.kind === 'anthropic'),
+    );
   const disabled = busy !== null;
 
   return (
@@ -786,6 +834,35 @@ export function AIPage() {
                                           />
                                           {tr('API key')}
                                         </button>
+                                        {canProbe(vendor) ? (
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-outline-secondary"
+                                            onClick={() => checkVendor(vendor)}
+                                            disabled={disabled || !vendor.api_key_present}
+                                            title={tr(
+                                              'Ask the supplier for its model list with the stored key',
+                                            )}
+                                          >
+                                            {busy === `check:${vendor.id}` ? (
+                                              <>
+                                                <span
+                                                  className="spinner-border spinner-border-sm me-1"
+                                                  aria-hidden="true"
+                                                />
+                                                {tr('Checking…')}
+                                              </>
+                                            ) : (
+                                              <>
+                                                <i
+                                                  className="bi bi-shield-check me-1"
+                                                  aria-hidden="true"
+                                                />
+                                                {tr('Check')}
+                                              </>
+                                            )}
+                                          </button>
+                                        ) : null}
                                         {vendor.internal_integration_id ? (
                                           <>
                                             <button
@@ -887,6 +964,11 @@ export function AIPage() {
                                           {tr('Models')}
                                         </button>
                                       </div>
+                                      {checks[vendor.id] ? (
+                                        <div className="mt-2">
+                                          <CheckResult check={checks[vendor.id]} />
+                                        </div>
+                                      ) : null}
                                     </div>
                                   </td>
                                 </tr>
@@ -2458,5 +2540,77 @@ function DeleteDialog({
       </div>
       <div className="modal-backdrop fade show" />
     </>
+  );
+}
+
+/**
+ * One probe result, in one line.
+ *
+ * The failures are different facts and must read differently: a rejected key
+ * (the owner pasted the wrong value), a supplier that answered with an error
+ * (not the key's fault), and a supplier with nothing to probe. A success still
+ * says what it did *not* test — "the key works" and "a completion works" are
+ * different claims, and the console should not blur them.
+ */
+function CheckResult({ check }: { check: AIVendorCheck }) {
+  const view = (() => {
+    switch (check.state) {
+      case 'ok':
+        return {
+          tone: 'text-success-emphasis',
+          icon: 'bi-check-circle-fill',
+          text: tr('The supplier accepted the key · {{count}} models', {
+            count: check.models ?? 0,
+          }),
+        };
+      case 'unauthorized':
+        return {
+          tone: 'text-danger-emphasis',
+          icon: 'bi-x-octagon-fill',
+          text: tr('The supplier rejected the key (HTTP {{status}}). {{detail}}', {
+            status: check.status ?? 0,
+            detail: check.detail,
+          }),
+        };
+      case 'unsupported':
+        return {
+          tone: 'text-secondary',
+          icon: 'bi-info-circle',
+          text: tr('This supplier has no model list to check.'),
+        };
+      default:
+        return {
+          tone: 'text-danger-emphasis',
+          icon: 'bi-exclamation-triangle-fill',
+          text: check.status
+            ? tr('The check failed (HTTP {{status}}). {{detail}}', {
+                status: check.status,
+                detail: check.detail,
+              })
+            : tr('The check could not reach the supplier. {{detail}}', {
+                detail: check.detail,
+              }),
+        };
+    }
+  })();
+  return (
+    <div className={`small ${view.tone}`} role="status">
+      <i className={`bi ${view.icon} me-1`} aria-hidden="true" />
+      {view.text}
+      {check.state === 'ok' ? (
+        <div className="text-secondary">
+          {tr(
+            'A check proves the key and the endpoint; it does not prove that a completion succeeds.',
+          )}
+        </div>
+      ) : null}
+      {check.missing_models.length > 0 ? (
+        <div className="text-warning-emphasis">
+          {tr('Missing from the supplier catalog: {{models}}', {
+            models: check.missing_models.join(', '),
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }

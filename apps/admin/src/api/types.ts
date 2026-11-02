@@ -432,6 +432,25 @@ export interface AIVendorInput {
   models: AIModel[];
 }
 
+/**
+ * What probing a supplier with its stored key found.
+ *
+ * `state` separates the outcomes the owner acts on differently: `ok` (the
+ * supplier listed its models), `unauthorized` (401/403, so the key is wrong or
+ * revoked), `error` (any other status, or the endpoint was unreachable), and
+ * `unsupported` (a speech-only supplier has no cheap HTTP probe).
+ * `missing_models` names the feature/model pairs bound to this supplier that
+ * its catalog no longer contains.
+ */
+export interface AIVendorCheck {
+  state: 'ok' | 'unauthorized' | 'error' | 'unsupported';
+  status: number | null;
+  url: string;
+  models: number | null;
+  missing_models: string[];
+  detail: string;
+}
+
 export interface AIIntegration {
   id: string;
   name: string;
