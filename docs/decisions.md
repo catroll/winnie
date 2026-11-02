@@ -2490,8 +2490,6 @@ did not mention in that message. Also rejected: a config key per kind — one
 constant is easier to audit than a YAML list that can silently disagree with
 the tool schema.
 
----
-
 ## An unattended memory pass needs a checked contract, not a careful prompt (2026-11-03)
 
 **Decision.** The memory notes get a nightly pass — `MemoryTidy`, scheduled at
