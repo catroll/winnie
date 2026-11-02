@@ -366,6 +366,20 @@ schedule:
   enabled: true
   root: ~/Projects/Mine/WLB
 
+# The owner's mailbox (packages/winnie-mail). One account per user, stored in a
+# mode-0600 YAML file under `root` and edited from the console's Settings page.
+# The same account sends the proactive email rung and can be read over IMAP or
+# POP3; nothing secret is ever returned by the API. `proactive.channels.email`
+# below stays as the environment-backed fallback for an account that has not
+# been saved yet. Set enabled: false to hide the Settings mail form and the
+# /api/v1/settings/mail routes.
+mail:
+  enabled: true
+  root: ../../data/mail
+  # A mailbox that cannot answer a login in this long is reported as a timeout
+  # by the Settings page instead of holding the request open.
+  default_timeout_seconds: 20.0
+
 # Proactive assistance (packages/winnie-proactive): birthdays, leave-by
 # reminders and the digest. Detection is code and never calls a model; the
 # channels below only carry what was already decided. `public_url` is the

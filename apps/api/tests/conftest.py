@@ -21,6 +21,7 @@ from winnie_assistant.config import (
 )
 from winnie_core.config import AuthConfig, JobsConfig
 from winnie_gateway.config import RouteConfig
+from winnie_mail.config import MailConfig
 from winnie_meetings.config import MeetingsConfig
 from winnie_phone.config import PhoneConfig, PhoneRetentionConfig
 from winnie_push.config import PushConfig
@@ -197,6 +198,9 @@ def meeting_settings(tmp_path: Path) -> Settings:
     return Settings(
         log_root=str(tmp_path / "logs"),
         routes={},
+        # These fixtures describe a host with only the capability under test, so
+        # every other default-enabled capability is switched off explicitly.
+        mail=MailConfig(enabled=False),
         meetings=MeetingsConfig(
             enabled=True,
             default_user_id="local",
@@ -302,6 +306,7 @@ def assistant_settings(tmp_path: Path) -> Settings:
     return Settings(
         log_root=str(tmp_path / "logs"),
         routes={},
+        mail=MailConfig(enabled=False),
         assistant=AssistantConfig(
             enabled=True,
             root=str(tmp_path / "assistant"),

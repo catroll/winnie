@@ -14,6 +14,9 @@ data/ai.yaml
 data/.ai.yaml*
 # Winnie gateway keys (digests only, but still a credential file).
 data/gateway-keys.yaml
+# Per-user mailbox settings: the file holds a plaintext mailbox password, so it
+# never enters the repository (mode 0600 on disk).
+data/mail/
 data/.gateway-keys-*
 **/__pycache__/
 **/.venv/

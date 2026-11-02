@@ -5,6 +5,7 @@ from pathlib import Path
 
 from winnie_api.main import create_app
 from winnie_api.settings import Settings
+from winnie_mail.config import MailConfig
 
 PACKAGES = Path(__file__).resolve().parents[3] / "packages"
 
@@ -78,3 +79,11 @@ def test_host_registers_the_assistant_when_enabled(assistant_settings: Settings)
 def test_host_registers_push_when_enabled(push_settings: Settings) -> None:
     app = create_app(settings=push_settings)
     assert "push" in app.state.capability_names
+
+
+def test_host_registers_mail_when_enabled(meeting_settings: Settings) -> None:
+    enabled = meeting_settings.model_copy(
+        update={"mail": MailConfig(enabled=True, root="/tmp/mail-test")}
+    )
+    app = create_app(settings=enabled)
+    assert "mail" in app.state.capability_names

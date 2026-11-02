@@ -14,8 +14,9 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 
+from winnie_mail.client import MailError
 from winnie_proactive.channels import EmailChannel, NtfyChannel
-from winnie_proactive.ports import Channel, Message
+from winnie_proactive.ports import Channel, ChannelError, Message
 
 COMPOSE_PROMPT = """\
 你在为一位个人助理改写要发给主人的提醒正文。
@@ -48,6 +49,51 @@ class PushChannel:
             data=dict(message.data),
         )
         return "push"
+
+
+class UserMailChannel:
+    """The email rung, sent from the mailbox the owner configured in Settings.
+
+    The stored account wins over the ``proactive.channels.email`` block: that
+    block cannot hold a password and can only read one from the environment,
+    while the console lets the owner point the rung at any provider. The
+    environment-backed channel stays as the fallback so an existing deployment
+    keeps working before the first save.
+    """
+
+    name = "email"
+
+    def __init__(
+        self,
+        service,
+        *,
+        resolve_owner: OwnerResolver,
+        fallback: EmailChannel | None = None,
+    ) -> None:
+        self.service = service
+        self.resolve_owner = resolve_owner
+        self.fallback = fallback
+
+    async def send(self, message: Message) -> str:
+        owner = await self.resolve_owner()
+        settings = self.service.load(owner) if owner else None
+        if settings is None or not settings.can_send():
+            if self.fallback is not None:
+                return await self.fallback.send(message)
+            raise ChannelError("no mailbox is configured in Settings")
+        body = message.body or message.title
+        ack_url = str(message.data.get("ack_url") or "")
+        if ack_url:
+            body += f"\n\n已收到：{ack_url}"
+        try:
+            return await self.service.send(
+                owner,
+                to=settings.address,
+                subject=message.title,
+                body=body,
+            )
+        except MailError as exc:
+            raise ChannelError(f"mail: {exc}") from exc
 
 
 class ModelComposer:
@@ -175,6 +221,7 @@ def build_channels(
     http: httpx.AsyncClient,
     push_service,
     resolve_owner: OwnerResolver,
+    mail_service=None,
 ) -> dict[str, Channel]:
     """Only channels that can actually deliver are registered.
 
@@ -190,6 +237,15 @@ def build_channels(
         if channel.topic:
             channels["ntfy"] = channel
     email = config.channels.email
-    if email.enabled and email.to and email.smtp_host:
-        channels["email"] = EmailChannel(email)
+    fallback = (
+        EmailChannel(email) if email.enabled and email.to and email.smtp_host else None
+    )
+    # Register the rung only if some mailbox exists to send from: a channel
+    # that can never deliver would be walked on every item and fail each time.
+    if mail_service is not None and (fallback is not None or mail_service.has_accounts()):
+        channels["email"] = UserMailChannel(
+            mail_service, resolve_owner=resolve_owner, fallback=fallback
+        )
+    elif fallback is not None:
+        channels["email"] = fallback
     return channels

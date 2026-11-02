@@ -1550,6 +1550,7 @@ dependencies = [
     { name = "winnie-knowledge" },
     { name = "winnie-llm" },
     { name = "winnie-local" },
+    { name = "winnie-mail" },
     { name = "winnie-meetings" },
     { name = "winnie-news" },
     { name = "winnie-phone" },
@@ -1585,6 +1586,7 @@ requires-dist = [
     { name = "winnie-knowledge", editable = "../../packages/winnie-knowledge" },
     { name = "winnie-llm", editable = "../../packages/winnie-llm" },
     { name = "winnie-local", editable = "../../packages/winnie-local" },
+    { name = "winnie-mail", editable = "../../packages/winnie-mail" },
     { name = "winnie-meetings", editable = "../../packages/winnie-meetings" },
     { name = "winnie-news", editable = "../../packages/winnie-news" },
     { name = "winnie-phone", editable = "../../packages/winnie-phone" },
@@ -1727,6 +1729,29 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = ">=2.13.0" }]
+
+[[package]]
+name = "winnie-mail"
+version = "0.1.0"
+source = { editable = "../../packages/winnie-mail" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "winnie-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "winnie-core", editable = "../../packages/winnie-core" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.1" },
+]
 
 [[package]]
 name = "winnie-meetings"

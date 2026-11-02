@@ -14,6 +14,7 @@ from winnie_assistant.config import AssistantConfig
 from winnie_core.config import AuthConfig, JobsConfig
 from winnie_core.usage.config import UsageConfig
 from winnie_gateway.config import GatewayConfig, RouteConfig
+from winnie_mail.config import MailConfig
 from winnie_meetings.config import MeetingsConfig
 from winnie_news.config import NewsConfig
 from winnie_phone.config import PhoneConfig
@@ -89,6 +90,7 @@ class Settings(BaseModel):
     schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     usage: UsageConfig = Field(default_factory=UsageConfig)
+    mail: MailConfig = Field(default_factory=MailConfig)
 
     def gateway_config(self) -> GatewayConfig:
         return GatewayConfig(
@@ -126,6 +128,9 @@ class Settings(BaseModel):
 
     def resolve_usage_root(self) -> Path:
         return _resolve_path(self.usage.root)
+
+    def resolve_mail_root(self) -> Path:
+        return _resolve_path(self.mail.root)
 
     def resolve_schedule_root(self) -> Path:
         return _resolve_path(self.schedule.root)

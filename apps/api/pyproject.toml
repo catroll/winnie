@@ -30,6 +30,7 @@ dependencies = [
     "winnie-schedule",
     "winnie-push",
     "winnie-llm",
+    "winnie-mail",
 ]
 
 [tool.uv.sources]
@@ -46,6 +47,7 @@ winnie-proactive = { path = "../../packages/winnie-proactive", editable = true }
 winnie-schedule = { path = "../../packages/winnie-schedule", editable = true }
 winnie-push = { path = "../../packages/winnie-push", editable = true }
 winnie-llm = { path = "../../packages/winnie-llm", editable = true }
+winnie-mail = { path = "../../packages/winnie-mail", editable = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -24,6 +24,9 @@ from winnie_core.usage.ledger import UsageLedger
 from winnie_gateway.capability import capability as gateway_capability
 from winnie_gateway.keystore import GatewayKeyStore
 from winnie_gateway.routes import Route
+from winnie_mail.capability import capability as mail_capability
+from winnie_mail.service import MailService
+from winnie_mail.settings import MailSettingsStore
 from winnie_meetings.capability import capability as meetings_capability
 from winnie_news.capability import capability as news_capability
 from winnie_news.service import NewsService
@@ -211,6 +214,14 @@ def create_app(
         app.state.schedule_error = ""
         app.state.proactive_service = None
         app.state.proactive_error = ""
+        app.state.mail_service = None
+        if resolved.mail.enabled:
+            # A file-backed per-user store, so it starts without the database and
+            # is available to the console and to the proactive email rung.
+            app.state.mail_service = MailService(
+                MailSettingsStore(resolved.resolve_mail_root()),
+                timeout_seconds=resolved.mail.default_timeout_seconds,
+            )
         if runtime is not None:
             await runtime.startup()
             app.state.auth_service = runtime.auth_service
@@ -244,6 +255,7 @@ def create_app(
                     http=http_client,
                     push_service=runtime.push_service,
                     resolve_owner=resolve_owner,
+                    mail_service=app.state.mail_service,
                 )
                 proactive = ProactiveService(
                     resolved.proactive,
@@ -377,6 +389,8 @@ def create_app(
         framework.register(phone_capability())
     if resolved.push.enabled:
         framework.register(push_capability())
+    if resolved.mail.enabled:
+        framework.register(mail_capability())
     if resolved.proactive.enabled:
         framework.register(proactive_capability())
     # The document index is not a capability: it is a separate daemon, and this
