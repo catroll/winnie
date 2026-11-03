@@ -18,7 +18,7 @@ from typing import Literal
 
 from winnie_news.clean.models import CleanItem
 from winnie_news.common.timeutil import now_iso
-from winnie_news.ports import LLMError, LLMPort
+from winnie_news.ports import LLMError, LLMPort, raise_if_balance_exhausted
 
 from .cards import extract_card, verify_candidate
 from .models import AggregateDecision, EventBatch, EventCard
@@ -88,6 +88,7 @@ async def _extract_cards(
             try:
                 cards[item.material_id] = await extract_card(item, llm)
             except Exception as exc:  # noqa: BLE001 - isolate one article
+                raise_if_balance_exhausted(exc)
                 logger.warning("card extraction failed for %s: %s", item.url, exc)
                 failures.append(
                     {

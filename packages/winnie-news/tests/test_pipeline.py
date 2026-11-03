@@ -7,6 +7,7 @@ from datetime import timedelta
 
 import pytest
 
+from winnie_llm import LLMInsufficientBalance
 from winnie_news.common.timeutil import now as news_now
 from winnie_news.config import NewsConfig
 from winnie_news.fake import FakeNewsLLM
@@ -193,3 +194,53 @@ def test_the_real_material_source_is_the_default() -> None:
     config = NewsConfig()
     service = NewsService(config, llm=FakeNewsLLM())
     assert service._material_source is get_all_materials
+
+
+class _UnpaidWriter:
+    """Extracts normally, then runs out of money at the first draft.
+
+    Mirrors the real failure: the supplier answers HTTP 402, every stage wraps it
+    as its own ``LLMError(...) from exc``, and the batch used to swallow one
+    copy per remaining event.
+    """
+
+    name = "unpaid"
+
+    def __init__(self) -> None:
+        self.fake = FakeNewsLLM()
+        self.writes = 0
+        self.reviews = 0
+
+    async def complete(self, messages, *, purpose: str = ""):
+        if purpose == "news.write":
+            self.writes += 1
+            raise LLMInsufficientBalance(
+                "the supplier refused the request because the account balance "
+                "is exhausted (HTTP 402): Insufficient Balance"
+            )
+        if purpose == "news.review":
+            self.reviews += 1
+        return await self.fake.complete(messages, purpose=purpose)
+
+
+@pytest.mark.asyncio
+async def test_an_unpaid_call_stops_the_batch_instead_of_every_event(tmp_path) -> None:
+    config = NewsConfig(enabled=True, root=str(tmp_path))
+    llm = _UnpaidWriter()
+    service = NewsService(
+        config,
+        llm=llm,
+        material_source=lambda **kwargs: material_batch(),
+    )
+    await service.startup()
+    run = await service.run_now()
+
+    # The run reports the cause once, instead of ending "partial" with an
+    # identical failure per event.
+    assert run.status == "failed"
+    assert "LLMBalanceExhausted" in run.error
+    assert "402" in run.error
+    # Proof the loop stopped: extraction ran for the whole batch, generation
+    # stopped at the first event, and no review was ever attempted.
+    assert llm.writes == 1
+    assert llm.reviews == 0

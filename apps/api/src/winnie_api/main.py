@@ -370,7 +370,12 @@ def create_app(
         if resolved.news.enabled:
             try:
                 news_llm = (
-                    DynamicNewsLLM(ai_settings, http_client, usage_ledger)
+                    DynamicNewsLLM(
+                        ai_settings,
+                        http_client,
+                        usage_ledger,
+                        balances=balance_service,
+                    )
                     if ai_settings is not None
                     else None
                 )

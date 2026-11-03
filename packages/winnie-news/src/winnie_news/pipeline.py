@@ -26,7 +26,11 @@ from winnie_news.common.timeutil import now_iso
 from winnie_news.config import NewsConfig
 from winnie_news.digest.build import build_digest_from_store
 from winnie_news.generate.generator import generate_draft
-from winnie_news.ports import LLMPort, SearchPort
+from winnie_news.ports import (
+    LLMPort,
+    SearchPort,
+    raise_if_balance_exhausted,
+)
 from winnie_news.review.reviewer import review_draft
 from winnie_news.search.search import search_events, usable_hits
 from winnie_news.store import NewsStore, RunRecord
@@ -221,6 +225,7 @@ async def _write_and_review(
                 event, hits, llm, config, requirements, revision=1
             )
         except Exception as exc:  # noqa: BLE001 - isolate one event
+            raise_if_balance_exhausted(exc)
             failures += 1
             event.status = "needs_review"
             logger.warning("event %s failed: %s", event.id, exc)

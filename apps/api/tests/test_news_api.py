@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
 import httpx
 
+from winnie_core.usage.config import UsageConfig
 from winnie_llm import BindingDraft, IntegrationDraft, VendorDraft
 from winnie_api.main import create_app
 from winnie_assistant.config import AssistantConfig, SearchConfig as AssistantSearchConfig
@@ -399,3 +401,115 @@ async def test_a_missing_supplier_key_blocks_a_run(tmp_path: Path) -> None:
         refused = await client.post("/api/v1/news/runs", json={})
         assert refused.status_code == 503
         assert "no API key" in refused.json()["detail"]
+
+
+@asynccontextmanager
+async def opened_with_supplier(tmp_path: Path, handler):
+    """A news run bound to a real OpenAI-compatible supplier.
+
+    The transport is a mock, so the test sees the exact body the client would
+    send to api.deepseek.com, and the ledger is a real file under ``tmp_path``.
+    """
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), timeout=httpx.Timeout(5.0)
+    )
+    settings = _settings(tmp_path).model_copy(
+        update={"usage": UsageConfig(enabled=True, root=str(tmp_path / "usage"))}
+    )
+    app = create_app(settings=settings, http=http)
+    async with app.router.lifespan_context(app):
+        ai = app.state.ai_settings
+        ai.create_vendor(
+            VendorDraft(
+                id="test-openai",
+                label="Test OpenAI",
+                models=[{"id": "deepseek-flash"}],
+            )
+        )
+        ai.create_integration(
+            IntegrationDraft(
+                name="test-openai",
+                label="Test OpenAI",
+                vendor="test-openai",
+                kind="openai",
+                base_url="https://api.deepseek.com",
+                gateway=False,
+            )
+        )
+        ai.set_api_key("test-openai", "test-key")
+        for feature in ("news.extract", "news.write", "news.review"):
+            ai.set_binding(
+                feature, BindingDraft(vendor="test-openai", model="deepseek-flash")
+            )
+        app.state.news_service._material_source = lambda **kwargs: material_batch()
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            yield client, tmp_path / "usage"
+    await http.aclose()
+
+
+async def test_news_requests_turn_thinking_off_and_bill_an_empty_reply(
+    tmp_path: Path,
+) -> None:
+    """The two halves of the 4.23 CNY diagnosis, over the real stack.
+
+    The request must state the switch, because the supplier's default is on; and
+    a 200 whose content is empty must reach the ledger with the tokens it cost,
+    because that is money already spent.
+    """
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if not request.url.path.endswith("/chat/completions"):
+            return httpx.Response(500)
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek-flash",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": ""},
+                        "finish_reason": "length",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 2400,
+                    "completion_tokens": 4096,
+                    "total_tokens": 6496,
+                },
+            },
+        )
+
+    async with opened_with_supplier(tmp_path, handler) as (client, usage_root):
+        started = await client.post("/api/v1/news/runs", json={})
+        assert started.status_code == 202
+        run_id = started.json()["id"]
+        for _ in range(200):
+            current = (await client.get(f"/api/v1/news/runs/{run_id}")).json()
+            if current["status"] != "running":
+                break
+            await asyncio.sleep(0.05)
+        # Every item failed extraction, so the batch refuses to continue. What
+        # this test asserts is the wire body and the ledger, not the outcome.
+        assert current["status"] == "failed"
+        assert "failed extraction" in current["error"]
+
+        assert bodies, "the run made no model call at all"
+        for body in bodies:
+            assert body["thinking"] == {"type": "disabled"}
+            assert body["model"] == "deepseek-flash"
+
+        rows = [
+            json.loads(line)
+            for path in sorted(usage_root.glob("usage-*.jsonl"))
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert rows, "the ledger recorded nothing"
+        for row in rows:
+            assert row["status"] == "error"
+            assert row["output_tokens"] == 4096
+            assert row["input_tokens"] == 2400
+            assert row["capability"] == "news.extract"

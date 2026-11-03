@@ -15,7 +15,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from winnie_news.common.timeutil import now_iso
-from winnie_news.ports import LLMError, LLMPort
+from winnie_news.ports import LLMError, LLMPort, raise_if_balance_exhausted
 
 from . import extract as extractor
 from .models import CleanBatch, CleanItem, DroppedItem
@@ -114,6 +114,7 @@ async def _extract_all(
                 extraction = await extractor.extract(item, llm)
                 results.append(extractor.to_clean_item(item, extraction, language=language))
             except Exception as exc:  # noqa: BLE001 - isolate one item
+                raise_if_balance_exhausted(exc)
                 logger.warning("extraction failed for %s: %s", item.get("url"), exc)
                 results.append(
                     DroppedItem(

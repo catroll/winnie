@@ -9,6 +9,7 @@ assistant's model. The client itself comes from ``winnie-llm``.
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
@@ -16,6 +17,7 @@ import httpx
 from winnie_core.usage.ledger import UsageSink
 from winnie_llm import AIProviderError, LLMCompletion, ProviderRegistry
 from winnie_news.fake import FakeNewsLLM
+from winnie_api.usage.balances import BalanceService
 
 # Purposes the pipeline uses. An unknown purpose falls back to extraction:
 # the pipeline only ever sends these three, and a silent typo should still run.
@@ -37,10 +39,12 @@ class DynamicNewsLLM:
         registry: ProviderRegistry,
         http: httpx.AsyncClient | None,
         usage: UsageSink | None = None,
+        balances: BalanceService | None = None,
     ) -> None:
         self.registry = registry
         self.http = http
         self.usage = usage
+        self.balances = balances
 
     @property
     def name(self) -> str:  # type: ignore[override]
@@ -70,17 +74,19 @@ class DynamicNewsLLM:
                 continue
             needs_key = provider.kind != "fake"
             key_ready = not needs_key or self.registry.key_present(provider.vendor)
+            balance_error = self._balance_error(provider)
             features.append(
                 {
                     "feature": feature,
-                    "ready": key_ready,
+                    "ready": key_ready and not balance_error,
                     "vendor": provider.vendor,
                     "vendor_label": provider.vendor_label,
                     "model": provider.model,
                     "kind": provider.kind,
                     "key_env": provider.key_env if needs_key else "",
                     "key_present": key_ready,
-                    "error": (
+                    "error": balance_error
+                    or (
                         ""
                         if key_ready
                         else (
@@ -94,6 +100,36 @@ class DynamicNewsLLM:
             "ready": all(feature["ready"] for feature in features),
             "features": features,
         }
+
+    def _balance_error(self, provider: Any) -> str:
+        """Refuse a run the account is already known not to be able to pay for.
+
+        The snapshot is whatever the console last fetched, so this is advice,
+        not a guarantee: no snapshot, a stale one, or a provider without a public
+        balance endpoint is no opinion. A 402 that still arrives mid-run is
+        handled by the pipeline, which stops on it.
+        """
+        if self.balances is None or provider.kind == "fake":
+            return ""
+        balance = self.balances.cached(provider.integration_id)
+        if (
+            balance is None
+            or not balance.supported
+            or balance.error
+            or not balance.total
+        ):
+            return ""
+        try:
+            total = Decimal(balance.total)
+        except InvalidOperation:
+            return ""
+        if total > 0:
+            return ""
+        currency = balance.currency or ""
+        return (
+            f"supplier {provider.vendor!r} reports a {balance.total} {currency} "
+            "balance, so a run would stop at its first call; top it up first"
+        )
 
     async def complete(
         self, messages: list[dict[str, Any]], *, purpose: str = ""

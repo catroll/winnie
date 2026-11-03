@@ -273,6 +273,21 @@ class BalanceService:
         self._cache: dict[str, tuple[float, ProviderBalance]] = {}
         self._lock = asyncio.Lock()
 
+    def cached(self, integration_id: str) -> ProviderBalance | None:
+        """The last snapshot for one integration, if it is still fresh.
+
+        Synchronous on purpose: a caller that has to decide *before* spending
+        money cannot wait for a network round trip, and a stale balance is worse
+        than no opinion at all.
+        """
+        entry = self._cache.get(integration_id)
+        if entry is None:
+            return None
+        fetched, balance = entry
+        if (time.monotonic() - fetched) >= self.ttl_seconds:
+            return None
+        return balance
+
     async def snapshot(self, *, refresh: bool = False) -> dict[str, Any]:
         integrations = [
             integration
