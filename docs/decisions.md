@@ -2719,3 +2719,50 @@ down became one `http_error` incident with 4 occurrences. The Errors page was
 driven in headless Firefox against a throwaway API: counts, filters, table,
 detail panel, diagnosis and both themes render, and **Diagnose** without a bound
 model answers `503 diagnosis is unavailable: no chat model is bound`.
+
+## A failed call is not a free call, and the news bill is an output bill (2026-11-03)
+
+The owner asked where 1.63 and 2.60 CNY went in two consecutive hours. Both
+hours are one news batch (`data/news/runs/20261103-014438-8ca9`, started
+01:44:38, status `partial`): 8 source documents became 210 material items, 130
+events, 129 writer calls and their reviews, and the run stopped at 02:52 when
+DeepSeek answered `HTTP 402 Insufficient Balance`.
+
+**The ledger reproduces the vendor bill to the fen, once the price table is
+right.** `data/usage/usage-YYYY-MM.jsonl` × deepseek-flash off-peak list
+(CNY 1 / 0.02 / 4 per 1M for cache miss / cache hit / output) gives 1.597 and
+2.213 for the two hours against a billed 1.63 and 2.60. Both hours are off-peak
+(Beijing peak is 09:00-12:00 and 14:00-18:00), which the numbers confirm: at peak
+rates the totals would double. So the console's own buckets are Beijing hours,
+and a mismatch of this shape means *token accounting*, not a price-table error.
+
+**Output tokens are 86% of the money; reasoning tokens are most of the output.**
+A draft is 200-300 characters, yet `news.write` averaged 1,882 output tokens per
+call and `news.review` 2,429. The cause is in `packages/winnie-llm`: the request
+body sets `max_tokens` (4096) and never sends a thinking switch, and DeepSeek's
+thinking mode is the **default**, so every extraction, draft and review pays for
+a chain of thought the pipeline does not read. Cheaper input is already handled
+(740k cache-hit tokens cost CNY 0.015 in hour 02); there is nothing left to win
+there.
+
+**The 0.39 CNY that the ledger scores as zero.** 22 calls returned `HTTP 200`
+with empty `content` because all 4096 output tokens went to reasoning, so
+`chat.py` raised "LLM response contained no text content" and recorded the event
+with `usage` omitted — while DeepSeek billed every one of those tokens. 22 ×
+4096 × CNY 4/M ≈ 0.36 explains the whole residual. The fix is one argument: the
+200 response's `usage` block is in scope on that branch and must be passed to
+`_record`. Until it is, a "no usage" row in the ledger means *unknown*, not
+*zero*, and the console will always under-report a run that hit the empty-content
+path.
+
+**A balance ceiling ends a batch mid-flight.** After the 402 the writer queued 22
+more calls in 8 seconds before the run gave up; they were rejected in 0.4 s each
+and cost nothing, but the run had already spent the balance and ended `partial`.
+A batch that can cost CNY 4 needs a pre-flight balance read (`GET /user/balance`
+already exists as a usage balance adapter) or at least a stop-on-402 rule, rather
+than discovering the ceiling as a burst of failures.
+
+**Verified.** Per-capability totals for the two hours, computed from the ledger:
+hour 01 `news.extract` 1.248 + `news.review` 0.169 + `news.write` 0.159 +
+`assistant.chat` 0.021; hour 02 `news.review` 1.155 + `news.write` 1.058; 43
+failed calls, 22 of them empty-content at 20-24 s and 22 rejected with 402.
