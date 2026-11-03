@@ -62,6 +62,14 @@ class FeatureSpec:
     description: str
     kinds: tuple[IntegrationKind, ...]
     requires_model: bool
+    # Whether this capability benefits from a chain of thought: True states it,
+    # False turns it off, and None (the default) says nothing and leaves the
+    # supplier's own behaviour alone. Silence matters — a supplier that is not
+    # DeepSeek may reject a field it does not know, so only a capability that
+    # needs the switch sends it. The news stages turn it off because they
+    # extract a record, write 200-300 characters and check one draft; a model
+    # that thinks by default spends the output budget doing that instead.
+    thinking: bool | None = None
 
 
 FEATURES: tuple[FeatureSpec, ...] = (
@@ -102,6 +110,7 @@ FEATURES: tuple[FeatureSpec, ...] = (
         ),
         kinds=("openai", "fake"),
         requires_model=True,
+        thinking=False,
     ),
     FeatureSpec(
         key="news.write",
@@ -109,6 +118,7 @@ FEATURES: tuple[FeatureSpec, ...] = (
         description="Writes one publishable draft from an event's coverage.",
         kinds=("openai", "fake"),
         requires_model=True,
+        thinking=False,
     ),
     FeatureSpec(
         key="news.review",
@@ -116,6 +126,7 @@ FEATURES: tuple[FeatureSpec, ...] = (
         description="Checks a draft against the material it was written from.",
         kinds=("openai", "fake"),
         requires_model=True,
+        thinking=False,
     ),
 )
 

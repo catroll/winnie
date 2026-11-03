@@ -441,14 +441,25 @@ class ProviderRegistry:
         *,
         http: httpx.AsyncClient | None = None,
         usage: Any = None,
+        thinking: bool | None = None,
     ) -> ChatClient:
-        """One OpenAI-compatible client bound to a feature's supplier model."""
+        """One OpenAI-compatible client bound to a feature's supplier model.
+
+        ``thinking`` defaults to the capability's own declaration in
+        :data:`FEATURES`: a stage that answers directly turns the chain of
+        thought off, so a supplier default of "on" cannot spend the output
+        budget on reasoning nobody reads. An undeclared capability sends
+        nothing. Pass True or False to override the declaration.
+        """
         provider = self.resolve(feature)
         if provider.kind != "openai":
             raise AIProviderError(
                 f"{feature} cannot use a {provider.kind} supplier; choose an "
                 "OpenAI-compatible one in Admin -> AI suppliers"
             )
+        spec = FEATURE_BY_KEY.get(provider.feature)
+        if thinking is None and spec is not None:
+            thinking = spec.thinking
         runtime = self.runtime()
         return ChatClient(
             base_url=_openai_base(provider.base_url),
@@ -456,6 +467,7 @@ class ProviderRegistry:
             model=provider.model,
             timeout_seconds=runtime.timeout_seconds,
             max_output_tokens=runtime.max_output_tokens,
+            thinking=thinking,
             temperature=runtime.temperature,
             max_retries=runtime.max_retries,
             retry_backoff_seconds=runtime.retry_backoff_seconds,

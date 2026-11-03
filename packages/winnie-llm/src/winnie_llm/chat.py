@@ -32,6 +32,15 @@ logger = logging.getLogger(__name__)
 RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 
 
+class LLMInsufficientBalance(RuntimeError):
+    """The supplier refused a call because the account cannot pay for it.
+
+    HTTP 402 is neither retryable nor an accident of one call: every later call
+    on the same key is refused the same way. A caller that walks a batch has to
+    stop on this, or it collects one identical failure per remaining item.
+    """
+
+
 @dataclass(frozen=True)
 class LLMCompletion:
     text: str
@@ -101,6 +110,7 @@ class ChatClient:
         model: str,
         timeout_seconds: float = 120.0,
         max_output_tokens: int = 4096,
+        thinking: bool | None = None,
         temperature: float = 0.2,
         max_retries: int = 2,
         retry_backoff_seconds: float = 1.0,
@@ -119,6 +129,10 @@ class ChatClient:
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.max_output_tokens = max_output_tokens
+        # None leaves the provider's own default alone. DeepSeek thinks unless
+        # the request says otherwise, so "off" is stated, never inferred from
+        # an absent field.
+        self.thinking = thinking
         self.temperature = temperature
         self.max_retries = max_retries
         self.retry_backoff_seconds = retry_backoff_seconds
@@ -162,9 +176,15 @@ class ChatClient:
         text = _message_text_or_none(body)
         tool_calls = _tool_calls(body)
         if not text and not tool_calls:
+            # A 200 with an empty content is still a billed call: the tokens it
+            # spent (all of them, when a thinking model never leaves its own
+            # chain of thought) were charged. Recording no usage here would make
+            # the ledger report a failure as free, and the bill would then look
+            # larger than the sum of its own rows.
             self._record(
                 started,
                 provider_model=str(body.get("model") or self.model),
+                usage=body.get("usage"),
                 error=RuntimeError("LLM response contained no text content"),
                 tools=tools,
             )
@@ -213,6 +233,7 @@ class ChatClient:
             "max_tokens": self.max_output_tokens,
             "stream": True,
             "stream_options": {"include_usage": True},
+            **_thinking_payload(self.thinking),
         }
         if tools:
             payload["tools"] = tools
@@ -230,6 +251,11 @@ class ChatClient:
                 },
                 json=payload,
             ) as response:
+                if response.status_code == 402:
+                    body = (await response.aread())[:300]
+                    raise _insufficient_balance(
+                        body.decode("utf-8", "replace")
+                    )
                 if response.status_code >= 400:
                     body = (await response.aread())[:300]
                     raise RuntimeError(
@@ -299,6 +325,7 @@ class ChatClient:
             self._record(
                 started,
                 provider_model=provider_model,
+                usage=usage,
                 error=RuntimeError("LLM stream contained no text content"),
                 tools=tools,
             )
@@ -377,6 +404,7 @@ class ChatClient:
             "messages": messages,
             "temperature": self.temperature,
             "max_tokens": self.max_output_tokens,
+            **_thinking_payload(self.thinking),
         }
         if tools:
             payload["tools"] = tools
@@ -413,6 +441,9 @@ class ChatClient:
                     retry_after=retry_after,
                 )
                 continue
+
+            if response.status_code == 402:
+                raise _insufficient_balance(response.text[:300])
 
             if response.status_code >= 400:
                 raise RuntimeError(
@@ -455,6 +486,26 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
         return min(max(float(value), 0.0), 30.0)
     except ValueError:
         return None
+
+
+def _thinking_payload(thinking: bool | None) -> dict[str, Any]:
+    """The request fragment that states the thinking mode, if one is chosen.
+
+    DeepSeek's own toggle is ``{"thinking": {"type": "enabled" | "disabled"}}``.
+    An unset flag sends nothing, which keeps the provider default and keeps the
+    body byte-for-byte what it was before this option existed.
+    """
+    if thinking is None:
+        return {}
+    return {"thinking": {"type": "enabled" if thinking else "disabled"}}
+
+
+def _insufficient_balance(body: str) -> LLMInsufficientBalance:
+    """Build the 402 failure, keeping the supplier's own wording in the message."""
+    return LLMInsufficientBalance(
+        "the supplier refused the request because the account balance is "
+        f"exhausted (HTTP 402): {body}"
+    )
 
 
 def _first_message(body: dict[str, Any]) -> dict[str, Any]:

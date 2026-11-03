@@ -30,7 +30,14 @@ from winnie_llm.asr import (
     VolcengineASRProvider,
     VolcengineRealtimeASR,
 )
-from winnie_llm.chat import ChatClient, ChatResult, LLMCompletion, StreamPart, ToolCall
+from winnie_llm.chat import (
+    ChatClient,
+    ChatResult,
+    LLMCompletion,
+    LLMInsufficientBalance,
+    StreamPart,
+    ToolCall,
+)
 from winnie_llm.json import parse_json_value
 from winnie_llm.keys import (
     DEFAULT_ENV_PATH,
@@ -94,6 +101,7 @@ __all__ = [
     "IntegrationRecord",
     "KINDS",
     "LLMCompletion",
+    "LLMInsufficientBalance",
     "MissingApiKey",
     "ModelRecord",
     "ModelRuntimeConfig",
