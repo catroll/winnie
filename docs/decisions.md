@@ -2766,3 +2766,59 @@ than discovering the ceiling as a burst of failures.
 hour 01 `news.extract` 1.248 + `news.review` 0.169 + `news.write` 0.159 +
 `assistant.chat` 0.021; hour 02 `news.review` 1.155 + `news.write` 1.058; 43
 failed calls, 22 of them empty-content at 20-24 s and 22 rejected with 402.
+
+## The news pipeline stopped thinking, and a 402 now ends the run (2026-11-03)
+
+Following the bill above: news runs without a chain of thought, a failed call
+records what it cost, and running out of money stops the batch instead of being
+rediscovered once per event.
+
+**The switch belongs to the capability, not to the runtime.** `FeatureSpec`
+gained a tri-state `thinking`: `False` sends `thinking: {"type": "disabled"}`,
+`None` sends nothing. The news features declare `False`; every other feature
+declares nothing, so its request body is unchanged. A global default in
+`ModelRuntimeConfig` was rejected: it would put a DeepSeek-shaped field into
+every supplier's body, and an OpenAI-compatible vendor is entitled to answer
+`400` for a field it does not know. Sending `enabled` explicitly for the
+assistant was rejected for the same reason — silence already means enabled on
+DeepSeek, so stating it buys nothing and risks a rejection elsewhere.
+
+**A 200 with no text is still a bill, so the ledger records it.** The empty-content
+branch in `chat.py` now passes the response's `usage` to `_record`; the row is
+`status: error` *and* carries tokens. Anything reading the ledger must accept
+that combination — the usage page already counts tokens for every row and tracks
+errors separately, so no report change was needed.
+
+**`HTTP 402` has its own exception, and the news pipeline stops on it.** The
+status is not in `RETRYABLE_STATUS` (retrying it only spends the same refusal),
+and it now raises `LLMInsufficientBalance`. Wrapping it as a generic `LLMError`
+and matching on the message was rejected: the stages already wrap provider
+failures as `LLMError(...) from exc`, so the pipeline would have to match text
+to find the invoice. Instead `raise_if_balance_exhausted` walks the cause chain
+—which those wrappers preserve—and re-raises `LLMBalanceExhausted` from the
+three per-item handlers (clean, aggregate, write/review). The run ends `failed`
+with one sentence; it used to end `partial` after twenty-two identical
+failures.
+
+**The balance pre-flight is advice, not a gate.** `DynamicNewsLLM.readiness`
+reads the *cached* snapshot (`BalanceService.cached`), never the network: a
+readiness check has to answer before spending money, and a stale balance is
+worse than no opinion. Zero or negative on a fresh snapshot reports the purpose
+not ready, so `POST /api/v1/news/runs` answers `503` with the amount instead of
+collecting material for a run that cannot finish. No snapshot means no opinion,
+and the 402 path still catches the real thing.
+
+**Not done:** `clean.max_items` was left at 200. It is a budget decision (~2 CNY
+of output per batch at 130 events), not a bug, and it is the owner's number.
+
+**Verified.** `packages/winnie-llm/tests/test_chat_thinking.py` (the switch is
+stated when off and absent when undeclared, the 200-empty row keeps 4096 output
+tokens, a 402 is raised once and not retried);
+`packages/winnie-news/tests/test_pipeline.py::test_an_unpaid_call_stops_the_batch_instead_of_every_event`
+(one write attempted, no review, run `failed`); and
+`apps/api/tests/test_news_api.py::test_news_requests_turn_thinking_off_and_bill_an_empty_reply`,
+which drives the real router and AI registry through a mock transport and reads
+the real ledger file. Against the live `data/ai.yaml` (copied, not edited) the
+three news features resolve to `deepseek/deepseek-flash` with `thinking=False`
+while `assistant.chat` stays `None`; the running dev server reloaded the change
+(worker started 08:49:07, after the edits).

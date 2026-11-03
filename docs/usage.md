@@ -71,6 +71,12 @@ A field is `null`, not `0`, when the provider did not report it. In particular:
   count in `message_delta`; the gateway merges the cumulative chunks.
 - A failed request (transport error, 4xx or 5xx) has no usage and its cost is
   unknown, not zero.
+- **A status is not a bill.** A `200` whose content is empty still came from the
+  model and is still charged: a thinking model that spends its whole output
+  budget on reasoning returns no text at all. The ledger records that usage and
+  marks the row `error`, so a row can carry tokens *and* an error. Recording it
+  as zero tokens would make the bill larger than the sum of its own rows — which
+  is exactly how 0.39 CNY of a 2.60 CNY hour went unexplained.
 
 The page therefore separates three cases: **priced** (tokens plus a price),
 **unpriced** (tokens reported, no matching price), and **no usage** (the

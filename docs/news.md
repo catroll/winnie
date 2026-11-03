@@ -383,6 +383,29 @@ in that state returns `503` naming the exact variable to set — before a single
 source is fetched, instead of failing at the first extraction ten seconds
 later. A service without a readiness probe (a test double) is treated as ready.
 
+### Cost per call
+
+The news purposes run **without a chain of thought**. A supplier that thinks by
+default would spend the output budget reasoning about a 200-character draft the
+pipeline does not want reasoned about: before this, one draft cost 1,882 output
+tokens and one review 2,429, of which most were reasoning nobody read, at 4 CNY
+per million output tokens. Extraction, writing and review all state
+`thinking: disabled`; the assistant does not, because its turns do benefit.
+A provider that does not know the field is never sent it.
+
+Two consequences worth knowing before you read a bill:
+
+- **Output tokens are the cost.** Input is nearly free on a warm cache; a batch
+  of 130 events costs about 2 CNY in output alone. `clean.max_items` is therefore
+  a spending limit, not a fetch limit.
+- **An exhausted balance stops the run.** The supplier answers `HTTP 402`, the
+  client raises `LLMInsufficientBalance`, and the pipeline aborts instead of
+  walking the rest of the batch: the run ends `failed` with that message, not
+  `partial` with one identical failure per remaining event. When the console has
+  a fresh balance snapshot showing zero, `/api/v1/news/status` reports the
+  purpose as not ready and starting a run answers `503` with the amount, so a
+  batch is not collected for a run that cannot finish.
+
 ## HTTP API
 
 All routes require the bearer token when accounts are enabled.

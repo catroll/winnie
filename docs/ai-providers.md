@@ -155,6 +155,15 @@ the feature binding; the supplier supplies the endpoint. Edit the limits in the
 **Model runtime** card or with `PUT /api/v1/ai/runtime`; a change applies on the
 next call.
 
+One limit is not in the table because it belongs to the capability, not to the
+registry settings: whether the call asks for a chain of thought. Each
+`FeatureSpec` declares it, and the news features declare it off, so their
+requests carry `thinking: {"type": "disabled"}` on DeepSeek. A capability that
+declares nothing sends nothing, which keeps every other supplier's request body
+exactly as it was — a field a vendor does not recognise can be a `400`, and
+silence is the safe default. See [news.md](./news.md#cost-per-call) for the bill
+that settled it.
+
 ## First start
 
 On the first start with `ai.enabled: true`, Winnie writes `data/ai.yaml` from the
