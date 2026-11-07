@@ -14,6 +14,7 @@ INDEX_DIR := $(ROOT)/packages/winnie-index
 ADMIN_DIR := $(ROOT)/apps/admin
 NEWS_DIR := $(ROOT)/packages/winnie-news
 SCHEDULE_DIR := $(ROOT)/packages/winnie-schedule
+SENSES_DIR := $(ROOT)/packages/winnie-senses
 ENV_FILE ?= $(API_DIR)/.env
 INDEX_PYTHON ?= $(API_DIR)/.venv/bin/python
 INDEX_CONFIG ?= $(HOME)/.config/winnie-index/config.yaml
@@ -228,3 +229,11 @@ schedule-test: ## Run the schedule test suite (includes a read-only corpus check
 
 schedule-skill: ## Install the schedule Agent Skill into ~/.agents/skills/winnie-schedule
 	@PYTHONPATH='$(SCHEDULE_DIR)/src' python3 -m winnie_schedule skill install
+
+# The room camera daemon is pillow + ffmpeg; the system python already has
+# both, so it runs without a package virtualenv.
+senses: ## Run the room capture daemon in the foreground
+	@PYTHONPATH='$(SENSES_DIR)/src' python3 -m winnie_senses.roomd $(ARGS)
+
+senses-test: ## Run the room capture daemon test suite
+	@cd '$(SENSES_DIR)' && PYTHONPATH='src' python3 -m unittest discover -s tests -t . -q

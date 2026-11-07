@@ -1,0 +1,19 @@
+[project]
+name = "winnie-senses"
+version = "0.1.0"
+description = "Room camera daemon: one process owns the UVC device, keeps motion-gated 3 fps minute segments"
+requires-python = ">=3.11"
+dependencies = ["pillow>=10"]
+
+[project.scripts]
+winnie-roomd = "winnie_senses.roomd.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/winnie_senses"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

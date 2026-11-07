@@ -9,6 +9,8 @@ data/*.db-*
 data/meetings/
 data/kb/
 data/news/
+# Room camera segments and the daemon's index (machine-local, large).
+data/camera/
 # Admin-managed AI providers; generated on first start and machine-local.
 data/ai.yaml
 data/.ai.yaml*
